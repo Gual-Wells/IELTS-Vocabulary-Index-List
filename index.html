@@ -75,6 +75,30 @@
         }
         .col-btn h2 { margin: 0; color: var(--text-main); font-size: 28px; }
         .col-btn p { margin: 0; font-size: 14px; color: var(--text-sub); }
+        .count-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #f0fbf9;
+            color: var(--primary-dark);
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid rgba(26,188,156,0.18);
+            white-space: nowrap;
+        }
+        .word-index {
+            color: var(--text-sub);
+            font-size: 13px;
+            min-width: 42px;
+            margin-right: 6px;
+            padding-top: 3px;
+            text-align: right;
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+        }
+
 
         .api-key-btn {
             position: absolute;
@@ -217,11 +241,11 @@
 
     <div id="home-view">
         <div class="columns-container">
-            <div class="col-btn" onclick="openCategory('A1')"><h2>A1</h2><p>词表</p></div>
-            <div class="col-btn" onclick="openCategory('A2')"><h2>A2</h2><p>词表</p></div>
-            <div class="col-btn" onclick="openCategory('B1')"><h2>B1</h2><p>词表</p></div>
-            <div class="col-btn" onclick="openCategory('B2')"><h2>B2</h2><p>词表</p></div>
-            <div class="col-btn" onclick="openCategory('C1')"><h2>C1</h2><p>词表</p></div>
+            <div class="col-btn" onclick="openCategory('A1')"><h2>A1</h2><p>词表</p><span class="count-badge" id="count-A1">0 词</span></div>
+            <div class="col-btn" onclick="openCategory('A2')"><h2>A2</h2><p>词表</p><span class="count-badge" id="count-A2">0 词</span></div>
+            <div class="col-btn" onclick="openCategory('B1')"><h2>B1</h2><p>词表</p><span class="count-badge" id="count-B1">0 词</span></div>
+            <div class="col-btn" onclick="openCategory('B2')"><h2>B2</h2><p>词表</p><span class="count-badge" id="count-B2">0 词</span></div>
+            <div class="col-btn" onclick="openCategory('C1')"><h2>C1</h2><p>词表</p><span class="count-badge" id="count-C1">0 词</span></div>
         </div>
         <div class="api-key-btn" onclick="openGroqSettings()">⚙️ 设置 AI Key</div>
     </div>
@@ -262,6 +286,7 @@
             <button class="side-btn" id="btn-jump" onclick="toggleJumpMode()" title="设置默认跳转位置">定</button>
             <button class="side-btn" onclick="openSearch('en')" title="英文搜索">英</button>
             <button class="side-btn" onclick="openSearch('zh')" title="中文翻译搜索">中</button>
+            <button class="side-btn" id="btn-number-mode" onclick="toggleNumberMode()" title="切换词汇序号显示">序</button>
             <button class="side-btn ai-action" id="btn-ai-check" onclick="toggleAiCheck()" title="AI核查拼写与词性">查</button>
             <button class="side-btn" style="background: #e67e22;" onclick="undo()" title="撤销">撤</button>
             <input type="file" id="file-import" accept=".txt,.md,.csv" class="hidden" onchange="handleFileImport(event)">
@@ -294,6 +319,7 @@
         let isJumpMode = false;
         let isExpanded = false;
         let isAiCheckMode = false;
+        let numberMode = Number(localStorage.getItem('numberMode') || 0); // 0无序号 1分组序号 2全局序号
         let historyStack = [];
         let searchMode = '';
         let searchDebounceTimer = null;
@@ -323,6 +349,30 @@
             t.innerText = msg;
             t.classList.add('show');
             setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        function getCategoryWordCount(cat) {
+            let total = 0;
+            if (appData[cat]) {
+                Object.values(appData[cat]).forEach(arr => total += arr.length);
+            }
+            return total;
+        }
+
+        function updateHomeCounts() {
+            ['A1','A2','B1','B2','C1'].forEach(cat => {
+                let el = document.getElementById('count-' + cat);
+                if (el) el.innerText = getCategoryWordCount(cat) + ' 词';
+            });
+        }
+
+        function toggleNumberMode() {
+            numberMode = (numberMode + 1) % 3;
+            localStorage.setItem('numberMode', numberMode);
+            let labels = ['无序号','分组序号','全局序号'];
+            showToast('序号模式：' + labels[numberMode]);
+            document.getElementById('btn-number-mode').classList.toggle('active', numberMode !== 0);
+            renderList();
         }
 
         function saveData() {
@@ -417,6 +467,7 @@
                 }
             }
             saveData();
+            updateHomeCounts();
             if(currentCategory) renderList();
             showToast(`成功导入并解析 ${importedCount} 个新词汇！`);
         }
@@ -434,6 +485,7 @@
         }
 
         function goHome() {
+            updateHomeCounts();
             document.getElementById('category-view').classList.add('hidden');
             document.getElementById('home-view').classList.remove('hidden');
             closeSearch();
@@ -468,6 +520,7 @@
             let catData = appData[currentCategory] || {};
             let html = '';
             let savedJump = localStorage.getItem('jump_' + currentCategory);
+            let globalIndex = 0;
 
             for(let letter of LETTERS) {
                 let items = catData[letter] || [];
@@ -478,7 +531,8 @@
                 html += `<summary>${letter} <span style="font-weight:normal;color:var(--text-sub);font-size:14px;">(${items.length})</span></summary>`;
                 html += `<div class="word-list">`;
                 
-                items.forEach((item, index) => {
+                items.forEach((item, index) {
+                    globalIndex++;
                     let safeW = escapeHTML(item.w);
                     let safeD = escapeHTML(item.d);
                     
@@ -496,7 +550,10 @@
                         html += `<span class="action-icon" onclick="editWord('${letter}', ${index}); event.stopPropagation();">✏️</span>`;
                     }
                     
-                    html += `<div class="word-content" onclick="handleWordClick(this)">
+                    let displayIndex = '';
+                    if (numberMode === 1) displayIndex = index + 1;
+                    if (numberMode === 2) displayIndex = globalIndex;
+                    html += `<div class="word-index">${displayIndex ? displayIndex + '.' : ''}</div><div class="word-content" onclick="handleWordClick(this)">
                                 <span class="word-w">${safeW}</span>
                                 ${safeD ? `<span class="word-d">${safeD}</span>` : ''}
                              </div>`;
@@ -1001,6 +1058,7 @@ List to check:\n`;
             setTimeout(() => el.style.transform = '', 300);
         }
             initSidebar();
+    document.addEventListener('DOMContentLoaded', updateHomeCounts);
     </script>
 </body>
 </html>

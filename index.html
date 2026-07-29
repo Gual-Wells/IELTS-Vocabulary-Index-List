@@ -318,6 +318,8 @@
         let isEditMode = false;
         let isJumpMode = false;
         let isExpanded = false;
+        // 小标题展开状态独立保存，不受序号/搜索/编辑等功能影响
+        let expandedSections = new Set();
         let isAiCheckMode = false;
         let numberMode = Number(localStorage.getItem('numberMode') || 0); // 0无序号 1分组序号 2全局序号
         let historyStack = [];
@@ -518,6 +520,13 @@
 
         function renderList() {
             let catData = appData[currentCategory] || {};
+
+            // 保存当前小标题展开状态，避免任何重新渲染功能改变折叠状态
+            document.querySelectorAll('#list-container details').forEach(d => {
+                if (d.open) expandedSections.add(d.dataset.letter);
+                else expandedSections.delete(d.dataset.letter);
+            });
+
             let html = '';
             let savedJump = localStorage.getItem('jump_' + currentCategory);
             let globalIndex = 0;
@@ -526,7 +535,7 @@
                 let items = catData[letter] || [];
                 if(items.length === 0 && !isEditMode) continue;
 
-                let openAttr = isExpanded ? 'open' : '';
+                let openAttr = expandedSections.has(letter) ? 'open' : '';
                 html += `<details id="sec-${letter}" data-letter="${letter}" ${openAttr}>`;
                 html += `<summary>${letter} <span style="font-weight:normal;color:var(--text-sub);font-size:14px;">(${items.length})</span></summary>`;
                 html += `<div class="word-list">`;
@@ -612,10 +621,15 @@
 
         function toggleExpand() {
             isExpanded = !isExpanded;
-            let details = document.querySelectorAll('details');
+            let details = document.querySelectorAll('#list-container details');
             details.forEach(d => {
-                if(isExpanded) d.setAttribute('open', '');
-                else d.removeAttribute('open');
+                if(isExpanded) {
+                    d.setAttribute('open', '');
+                    expandedSections.add(d.dataset.letter);
+                } else {
+                    d.removeAttribute('open');
+                    expandedSections.delete(d.dataset.letter);
+                }
             });
             document.getElementById('btn-expand').classList.toggle('active', isExpanded);
         }

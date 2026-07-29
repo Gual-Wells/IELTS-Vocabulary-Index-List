@@ -531,7 +531,7 @@
                 html += `<summary>${letter} <span style="font-weight:normal;color:var(--text-sub);font-size:14px;">(${items.length})</span></summary>`;
                 html += `<div class="word-list">`;
                 
-                items.forEach((item, index) {
+                items.forEach((item, index) => {
                     globalIndex++;
                     let safeW = escapeHTML(item.w);
                     let safeD = escapeHTML(item.d);

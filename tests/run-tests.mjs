@@ -90,6 +90,10 @@ const componentsCss = fs.readFileSync(path.join(root, 'css/components.css'), 'ut
 assert.match(componentsCss, /\.mobile-action-bar\s*\{[\s\S]*?display:\s*none;/, '桌面端默认必须隐藏移动操作栏');
 
 
+const appendSectionIndex = uiText.indexOf("elements['category-list'].append(details);");
+const populateOpenIndex = uiText.indexOf('if (details.open) populateSection(details, letter, list, globalIndexes);');
+assert.ok(appendSectionIndex >= 0 && populateOpenIndex > appendSectionIndex, '默认展开分组必须先连接 DOM 再填充词条');
+
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
 assert.equal(manifest.start_url, './');
 assert.equal(manifest.scope, './');

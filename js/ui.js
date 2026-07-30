@@ -235,7 +235,6 @@ async function renderCategory({ restorePosition = false } = {}) {
       const wordList = document.createElement('div');
       wordList.className = 'word-list';
       details.append(summary, wordList);
-      if (details.open) populateSection(details, letter, list, globalIndexes);
       details.addEventListener('toggle', () => {
         if (details.open) {
           uiState.currentRenderedGroups.add(letter);
@@ -243,7 +242,10 @@ async function renderCategory({ restorePosition = false } = {}) {
         } else uiState.currentRenderedGroups.delete(letter);
         saveExpandedGroups(category.id, uiState.currentRenderedGroups).catch(console.error);
       });
+      // The section must be connected before lazy population begins. Otherwise
+      // populateSection exits on !details.isConnected and the open group stays empty.
       elements['category-list'].append(details);
+      if (details.open) populateSection(details, letter, list, globalIndexes);
     }
   }
   renderPins();

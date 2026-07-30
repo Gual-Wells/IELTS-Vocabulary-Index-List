@@ -436,8 +436,8 @@
             if (!file) return;
             
             showModal({
-                title: "危险操作",
-                text: "此操作将【清空所有当前词库】，并使用文件内容从零重新建立。确定要继续吗？",
+                title: "覆盖导入",
+                text: `此操作将【清空当前 "${currentCategory}" 分类】的词汇，并导入文件中的对应词汇。确定要继续吗？`,
                 isDanger: true,
                 confirmText: "清空并导入",
                 onConfirm: () => {
@@ -455,8 +455,8 @@
         function processImportText(text) {
             if(!text.trim()) { showToast("文件内容为空"); return; }
             
-            // 从零重建数据结构
-            appData = { "A1": {}, "A2": {}, "B1": {}, "B2": {}, "C1": {}, "AWL": {} };
+            // 仅重置当前分类的数据
+            appData[currentCategory] = {};
             
             let lines = text.split('\n');
             let cat = null;
@@ -473,9 +473,11 @@
                 } else if(line.startsWith('## ')) {
                     letter = line.replace('##', '').trim().toUpperCase();
                     if(!/^[A-Z]$/.test(letter)) letter = '#';
-                    if(cat && !appData[cat][letter]) appData[cat][letter] = [];
+                    // 仅在匹配当前分类时创建结构
+                    if(cat === currentCategory && !appData[cat][letter]) appData[cat][letter] = [];
                 } else if(line.length > 0) {
-                    if(cat && letter) {
+                    // 仅当当前分类匹配时才处理单词
+                    if(cat === currentCategory && letter) {
                         if(!appData[cat][letter]) appData[cat][letter] = [];
                         let parsed = parseWordLine(line);
                         // 防重
@@ -488,17 +490,15 @@
                 }
             }
             
-            // 确保字典序
-            for (let c in appData) {
-                for (let l in appData[c]) {
-                    appData[c][l].sort((a, b) => a.w.toLowerCase().localeCompare(b.w.toLowerCase()));
-                }
+            // 确保当前分类字典序
+            for (let l in appData[currentCategory]) {
+                appData[currentCategory][l].sort((a, b) => a.w.toLowerCase().localeCompare(b.w.toLowerCase()));
             }
 
             saveData();
             updateHomeCounts();
-            if(currentCategory) renderList();
-            showToast(`成功从零导入并解析 ${importedCount} 个词汇！`);
+            renderList();
+            showToast(`成功在 ${currentCategory} 分类中导入 ${importedCount} 个词汇！`);
         }
 
         function parseWordLine(line) {

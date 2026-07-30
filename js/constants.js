@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.0.1';
+export const APP_VERSION = '2.0.2';
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 1;
 export const HISTORY_LIMIT = 100;

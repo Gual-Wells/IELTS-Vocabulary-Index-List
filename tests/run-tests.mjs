@@ -80,6 +80,15 @@ assert.ok(!/onclick\s*=|onchange\s*=|oninput\s*=/i.test(indexHtml), 'HTML 不应
 assert.ok(indexHtml.includes("script-src 'self'"));
 assert.ok(indexHtml.includes('./js/app.js'));
 
+const uiText = fs.readFileSync(path.join(root, 'js/ui.js'), 'utf8');
+assert.match(
+  uiText,
+  /import\s*\{[\s\S]*?\bgetExpandedGroups\b[\s\S]*?\}\s*from\s*['"]\.\/store\.js['"]/,
+  'ui.js 使用 getExpandedGroups 时必须从 store.js 导入',
+);
+const componentsCss = fs.readFileSync(path.join(root, 'css/components.css'), 'utf8');
+assert.match(componentsCss, /\.mobile-action-bar\s*\{[\s\S]*?display:\s*none;/, '桌面端默认必须隐藏移动操作栏');
+
 
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
 assert.equal(manifest.start_url, './');

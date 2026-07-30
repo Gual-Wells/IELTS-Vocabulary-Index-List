@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.2
+
+- 修复进入任意词表时 `getExpandedGroups is not defined` 导致列表无法渲染的问题。
+- 修复桌面宽屏仍显示移动端底部操作栏的问题。
+- 更新 Service Worker 缓存版本，避免继续加载 2.0.1 的错误模块。
+
 ## 2.0.0 — 2026-07-31
 
 - 从单文件原型完整重构为无构建 ES Modules 静态项目。

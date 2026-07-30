@@ -71,6 +71,7 @@ mark { background: var(--warning-soft); color: inherit; border-radius: 3px; padd
 .empty-state { border: 1px dashed var(--border-strong); border-radius: var(--radius-md); padding: 28px 18px; text-align: center; color: var(--text-muted); }
 
 .mobile-action-bar {
+  display: none;
   position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; padding: 7px 8px calc(7px + var(--safe-bottom));
   background: var(--surface-elevated); border-top: 1px solid var(--border); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
   grid-template-columns: repeat(5, 1fr); gap: 3px;

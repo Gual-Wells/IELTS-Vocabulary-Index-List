@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gual-vocabulary-index-v2.0.1';
+const CACHE_NAME = 'gual-vocabulary-index-v2.0.2';
 const APP_SHELL = new URL('./index.html', self.location.href).href;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest',

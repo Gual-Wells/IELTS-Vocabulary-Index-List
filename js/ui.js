@@ -10,7 +10,7 @@ import { fuzzySearch, searchByCandidates } from './search.js';
 import {
   addCategory, addWord, applyAnnotations, clearAnnotations, createBackup, deleteCategory, deleteEntryGlobally,
   dismissAnnotation, editEntry, getAllEntries, getAnnotation, getAnnotations, getCategories, getCategory,
-  getCategoryEntries, getEntriesForScope, getEntry, getLastPosition, getPins, getState, importIntoCategory,
+  getCategoryEntries, getEntriesForScope, getEntry, getExpandedGroups, getLastPosition, getPins, getState, importIntoCategory,
   moveCategory, previewImport, redo, removeEntryFromCategory, renameCategory, restoreBackup, saveExpandedGroups,
   saveLastPosition, setNumberMode, subscribe, togglePin, undo, replaceAnnotationsForEntries,
 } from './store.js';

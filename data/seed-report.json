@@ -1,0 +1,34 @@
+{
+  "sourceCounts": {
+    "A1": 901,
+    "A2": 872,
+    "B1": 809,
+    "B2": 1427,
+    "C1": 1315,
+    "AWL": 549,
+    "AVL": 548
+  },
+  "uniqueEntries": 5005,
+  "canonicalCounts": {
+    "A1": 899,
+    "A2": 791,
+    "B1": 691,
+    "B2": 1294,
+    "C1": 1277,
+    "AWL": 53,
+    "AVL": 0
+  },
+  "laterDuplicateOccurrences": 1416,
+  "multiSourceEntries": 862,
+  "mergedPosEntries": 351,
+  "internalDuplicateLines": {
+    "A1": 2,
+    "A2": 5,
+    "B1": 2,
+    "B2": 2,
+    "C1": 2,
+    "AWL": 1
+  },
+  "malformed": [],
+  "awlAvlNote": "AVL 与 AWL 内容相同，唯一区别是 AWL 内 region n. 重复一次；按全局优先级规则 AVL 无独占词条。"
+}

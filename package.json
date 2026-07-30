@@ -1,0 +1,9 @@
+{
+  "name": "gual-vocabulary-index",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-tests.mjs"
+  }
+}

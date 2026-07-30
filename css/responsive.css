@@ -1,0 +1,35 @@
+@media (max-width: 760px) {
+  .app-header { padding-left: 12px; padding-right: 12px; }
+  .main-content { padding: 16px 12px calc(88px + var(--safe-bottom)); }
+  .desktop-actions { display: none; }
+  .mobile-action-bar:not(.hidden) { display: grid; }
+  .category-grid { grid-template-columns: 1fr; }
+  .view-heading-row { align-items: center; }
+  .view-heading-row .secondary-button { padding: 8px 10px; }
+  .pin-bar { top: calc(68px + var(--safe-top)); }
+  .word-row { grid-template-columns: auto minmax(0,1fr) auto auto; }
+  .word-index { min-width: 28px; }
+  .inline-actions { flex-wrap: wrap; align-items: stretch; }
+  .inline-actions > * { flex: 1 1 150px; }
+  .category-manager-row { grid-template-columns: minmax(0,1fr) repeat(3, 38px); }
+}
+
+@media (min-width: 761px) {
+  .sheet-dialog { margin: auto; width: auto; }
+  .sheet-dialog .dialog-card { width: min(92vw, 760px); min-height: auto; border-radius: var(--radius-lg); }
+  .action-dialog { margin: auto; width: auto; }
+  .action-dialog .dialog-card { width: min(92vw, 520px); border-radius: var(--radius-lg); }
+  .toast { bottom: 30px; }
+}
+
+@media (max-width: 390px) {
+  .header-actions { gap: 5px; }
+  .icon-button { width: 40px; min-height: 40px; }
+  .app-subtitle { display: none; }
+  .search-panel { align-items: stretch; flex-direction: column; }
+  .search-panel button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+}

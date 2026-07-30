@@ -1,0 +1,571 @@
+# AVL
+## A
+abandon v.
+abstract adj., n.
+academy n.
+access n., v.
+accommodate v.
+accompany v.
+accumulate v.
+accurate adj.
+achieve v.
+acknowledge v.
+acquire v.
+adapt v.
+adequate adj.
+adjacent adj.
+adjust v.
+administrate v.
+adult n., adj.
+advocate v., n.
+affect v.
+aggregate n., adj., v.
+aid n., v.
+allocate v.
+alter v.
+alternative n., adj.
+ambiguous adj.
+amend v.
+analogy n.
+analyse v.
+annual adj.
+anticipate v.
+apparent adj.
+append v.
+appreciate v.
+approach v., n.
+appropriate adj.
+approximate adj., v.
+arbitrary adj.
+area n.
+aspect n.
+assemble v.
+assess v.
+assign v.
+assist v.
+assume v.
+assure v.
+attach v.
+attain v.
+attitude n.
+attribute v., n.
+author n.
+authority n.
+automate v.
+available adj.
+aware adj.
+## B
+behalf n.
+benefit n., v.
+bias n.
+bond n.
+brief adj.
+bulk n.
+## C
+capable adj.
+capacity n.
+category n.
+cease v.
+challenge n., v.
+channel n.
+chapter n.
+chart n.
+chemical adj., n.
+circumstance n.
+cite v.
+civil adj.
+clarify v.
+classic adj., n.
+clause n.
+code n.
+coherent adj.
+coincide v.
+collapse v., n.
+colleague n.
+commence v.
+commission n., v.
+commit v.
+commodity n.
+communicate v.
+community n.
+complex adj.
+compute v.
+conceive v.
+concentrate v.
+concept n.
+conclude v.
+concurrent adj.
+conduct v., n.
+confer v.
+confine v.
+confirm v.
+conflict n., v.
+conform v.
+consent n., v.
+consequent adj.
+considerable adj.
+consist v.
+constant adj.
+constitute v.
+constrain v.
+construct v.
+consult v.
+consume v.
+contact n., v.
+contemporary adj.
+context n.
+contract n., v.
+contradict v.
+contrary adj., n.
+contrast n., v.
+contribute v.
+controversy n.
+convene v.
+converse v.
+convert v.
+convince v.
+cooperate v.
+coordinate v.
+core n.
+corporate adj.
+correspond v.
+couple n.
+create v.
+credit n.
+criteria n.
+crucial adj.
+culture n.
+currency n.
+cycle n.
+## D
+data n.
+debate n., v.
+decade n.
+decline v., n.
+deduce v.
+define v.
+definite adj.
+demonstrate v.
+denote v.
+deny v.
+depress v.
+derive v.
+design n., v.
+despite prep.
+detect v.
+deviate v.
+device n.
+devote v.
+differentiate v.
+dimension n.
+diminish v.
+discrete adj.
+discriminate v.
+displace v.
+display v., n.
+dispose v.
+disproportion n.
+dispute n., v.
+document n., v.
+domain n.
+domestic adj.
+dominate v.
+draft n., v.
+drama n.
+duration n.
+dynamic adj.
+## E
+economy n.
+edit v.
+element n.
+eliminate v.
+emerge v.
+emphasis n.
+empirical adj.
+enable v.
+encounter v., n.
+energy n.
+enforce v.
+enhance v.
+enormous adj.
+ensure v.
+entity n.
+environment n.
+equate v.
+equip v.
+equivalent adj., n.
+erode v.
+error n.
+establish v.
+estate n.
+estimate v., n.
+ethic n.
+ethnic adj.
+evaluate v.
+eventual adj.
+evident adj.
+evolve v.
+exceed v.
+exclude v.
+exhibit v., n.
+expand v.
+expert n., adj.
+explicit adj.
+exploit v.
+export v., n.
+expose v.
+external adj.
+extract v., n.
+## F
+facilitate v.
+factor n.
+feature n., v.
+federal adj.
+fee n.
+file n., v.
+final adj.
+finance n., v.
+finite adj.
+flexible adj.
+fluctuate v.
+focus n., v.
+format n.
+formula n.
+forthcoming adj.
+found v.
+foundation n.
+framework n.
+function n., v.
+fund n., v.
+fundamental adj.
+## G
+gender n.
+generate v.
+generation n.
+globe n.
+goal n.
+grade n., v.
+grant v., n.
+guarantee n., v.
+guideline n.
+## H
+hence adv.
+hierarchy n.
+highlight v., n.
+hypothesis n.
+## I
+identical adj.
+identify v.
+ideology n.
+ignorance n.
+illustrate v.
+image n.
+immigrate v.
+impact n., v.
+implement v.
+implicate v.
+implicit adj.
+imply v.
+impose v.
+incentive n.
+incidence n.
+incline v.
+income n.
+incorporate v.
+index n.
+indicate v.
+individual adj., n.
+induce v.
+inevitable adj.
+infer v.
+infrastructure n.
+inherent adj.
+inhibit v.
+initial adj.
+initiate v.
+injure v.
+innovate v.
+input n.
+insert v.
+insight n.
+inspect v.
+instance n.
+institute n.
+instruct v.
+integral adj.
+integrate v.
+integrity n.
+intelligence n.
+intense adj.
+interact v.
+intermediate adj.
+internal adj.
+interpret v.
+interval n.
+intervene v.
+intrinsic adj.
+invest v.
+investigate v.
+invoke v.
+involve v.
+isolate v.
+issue n., v.
+item n.
+## J
+job n.
+journal n.
+justify v.
+## L
+label n., v.
+labour n.
+layer n.
+lecture n.
+legal adj.
+legislate v.
+levy n., v.
+liberal adj.
+licence n.
+likewise adv.
+link n., v.
+locate v.
+logic n.
+## M
+maintain v.
+major adj.
+manipulate v.
+manual adj.
+margin n.
+mature adj., v.
+maximize v.
+mechanism n.
+media n.
+mediate v.
+medical adj.
+medium n., adj.
+mental adj.
+method n.
+migrate v.
+military adj., n.
+minimal adj.
+minimize v.
+minimum n., adj.
+ministry n.
+minor adj.
+mode n.
+modify v.
+monitor n., v.
+motive n.
+mutual adj.
+## N
+negate v.
+network n.
+neutral adj.
+nevertheless adv.
+nonetheless adv.
+norm n.
+normal adj.
+notion n.
+## O
+obtain v.
+obvious adj.
+occupy v.
+occur v.
+odd adj.
+offset v.
+ongoing adj.
+option n.
+orient v.
+outcome n.
+output n.
+overall adj., adv.
+overlap v., n.
+overseas adv., adj.
+## P
+panel n.
+paradigm n.
+paragraph n.
+parallel adj.
+parameter n.
+participate v.
+partner n.
+passive adj.
+perceive v.
+percent n.
+period n.
+persist v.
+perspective n.
+phase n.
+phenomenon n.
+philosophy n.
+physical adj.
+plus prep., adj.
+policy n.
+portion n.
+pose v.
+positive adj.
+potential adj., n.
+practitioner n.
+precede v.
+precise adj.
+predict v.
+predominant adj.
+preliminary adj.
+presume v.
+previous adj.
+primary adj.
+prime adj.
+principal adj.
+principle n.
+prior adj.
+priority n.
+proceed v.
+process n., v.
+professional adj., n.
+prohibit v.
+project n., v.
+promote v.
+proportion n.
+prospect n.
+protocol n.
+psychology n.
+publish v.
+purchase n., v.
+pursue v.
+## Q
+qualitative adj.
+quote v., n.
+## R
+radical adj.
+random adj.
+range n., v.
+ratio n.
+rational adj.
+react v.
+recover v.
+refine v.
+regime n.
+region n.
+register v., n.
+regulate v.
+reinforce v.
+reject v.
+relax v.
+release v., n.
+relevant adj.
+reluctance n.
+rely v.
+remove v.
+require v.
+research n., v.
+reside v.
+resolve v.
+resource n.
+respond v.
+restore v.
+restrain v.
+restrict v.
+retain v.
+reveal v.
+revenue n.
+reverse v., n., adj.
+revise v.
+revolution n.
+rigid adj.
+role n.
+route n.
+## S
+scenario n.
+schedule n., v.
+scheme n.
+scope n.
+section n.
+sector n.
+secure adj., v.
+seek v.
+select v.
+sequence n.
+series n.
+sex n.
+shift v., n.
+significant adj.
+similar adj.
+simulate v.
+site n.
+so-called adj.
+sole adj.
+somewhat adv.
+source n.
+specific adj.
+specify v.
+sphere n.
+stable adj.
+statistic n.
+status n.
+straightforward adj.
+strategy n.
+stress n., v.
+structure n., v.
+style n.
+submit v.
+subordinate adj., n.
+subsequent adj.
+subsidy n.
+substitute n., v.
+successor n.
+survive v.
+suspend v.
+sustain v.
+symbol n.
+## T
+tape n.
+target n., v.
+task n.
+team n.
+technical adj.
+technique n.
+technology n.
+temporary adj.
+tense adj.
+terminate v.
+text n.
+theme n.
+theory n.
+thereby adv.
+thesis n.
+topic n.
+trace v., n.
+tradition n.
+transfer v., n.
+transform v.
+transit n.
+transmit v.
+transport n., v.
+trend n.
+trigger v., n.
+## U
+ultimate adj.
+undergo v.
+underlie v.
+undertake v.
+uniform adj., n.
+unify v.
+unique adj.
+utilize v.
+## V
+valid adj.
+vary v.
+vehicle n.
+version n.
+via prep.
+violate v.
+virtual adj.
+visible adj.
+vision n.
+visual adj.
+volume n.
+voluntary adj.
+## W
+welfare n.
+whereas conj.
+whereby adv.
+widespread adj.

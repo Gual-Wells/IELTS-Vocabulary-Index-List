@@ -402,7 +402,7 @@ const indexHtml = read('index.html');
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(indexHtml), 'HTML 不应包含内联事件处理器');
 assert.ok(indexHtml.includes("script-src 'self'"));
 assert.ok(indexHtml.includes('./js/app.js'));
-assert.ok(indexHtml.includes('name="application-version" content="2.4.0"'));
+assert.ok(indexHtml.includes('name="application-version" content="2.4.1"'));
 assert.ok(!/user-scalable\s*=\s*no/i.test(indexHtml));
 const ids = [...indexHtml.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
 assert.equal(new Set(ids).size, ids.length, 'HTML id 必须唯一');
@@ -436,6 +436,10 @@ assert.ok(aiText.includes('GROQ_MODEL_CATALOG_STORAGE'), '模型目录必须持�
 assert.ok(uiText.includes('createAiCheckBatches'), '大规模 AI 核查必须使用动态分批');
 assert.ok(uiText.includes('recommendedDelayMs'), 'AI 核查必须依据速率响应头主动等待');
 assert.ok(uiText.includes('startAnnotationReview'), 'AI 标注必须提供集中审阅入口');
+assert.ok(uiText.includes('function refreshRenderedAnnotationBadges()'), '标注状态变化后必须同步当前已渲染词条徽标');
+assert.ok(uiText.includes("if (type === 'annotations') refreshRenderedAnnotationBadges();"), '取消标注不得等待重新进入词表才刷新徽标');
+assert.ok(uiText.includes('const dismissedIndex = uiState.annotationReview.index;'), '审阅取消标注必须保留删除前索引');
+assert.ok(uiText.includes('Math.min(dismissedIndex, uiState.annotationReview.entryIds.length - 1)'), '取消中间或末尾标注后应导航到相邻项而非错误回跳');
 assert.ok(indexHtml.includes('id="annotation-review-bar"'));
 assert.ok(indexHtml.includes('id="ai-check-pause-button"'));
 
@@ -454,7 +458,7 @@ assert.ok(manifest.icons.every((icon) => icon.src.startsWith('./')));
 
 const swText = read('sw.js');
 assert.ok(swText.includes("const CACHE_PREFIX = 'gual-vocabulary-index-'"));
-assert.ok(swText.includes('`${CACHE_PREFIX}v2.4.0`'));
+assert.ok(swText.includes('`${CACHE_PREFIX}v2.4.1`'));
 assert.ok(swText.includes('./js/category-view-model.js'));
 assert.ok(swText.includes('./js/entry-model.js'));
 assert.ok(swText.includes("cache: 'no-store'"));
@@ -615,6 +619,16 @@ for (const file of [...moduleFiles.map((name) => `js/${name}`), 'sw.js']) {
       '恢复后单独修改序号模式不得阻塞业务数据撤销，也不得被旧历史覆盖');
 
     const accessBeforeEdit = store.getEntryByWord('access');
+    await store.replaceAnnotationsForEntries([accessBeforeEdit.id], [{
+      entryId: accessBeforeEdit.id,
+      spelling: { incorrect: false, suggestion: '' },
+      pos: { incorrect: true, suggestion: ['adj.'] },
+      reason: 'integration annotation',
+    }]);
+    assert.ok(store.getAnnotation(accessBeforeEdit.id));
+    await store.dismissAnnotation(accessBeforeEdit.id);
+    assert.equal(store.getAnnotation(accessBeforeEdit.id), null,
+      '取消标注必须在事务完成后立即更新内存状态');
     await store.replaceAnnotationsForEntries([accessBeforeEdit.id], [{
       entryId: accessBeforeEdit.id,
       spelling: { incorrect: false, suggestion: '' },

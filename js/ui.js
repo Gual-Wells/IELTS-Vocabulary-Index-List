@@ -144,6 +144,14 @@ function refreshAnnotationLaunchers() {
   elements['annotation-review-button'].classList.toggle('hidden', categoryCount === 0);
 }
 
+function refreshRenderedAnnotationBadges() {
+  document.querySelectorAll('[data-annotation-entry]').forEach((button) => {
+    if (!(button instanceof HTMLElement)) return;
+    const entryId = button.dataset.annotationEntry;
+    button.classList.toggle('hidden', !entryId || !getAnnotation(entryId));
+  });
+}
+
 function clearAnnotationTargetHighlight() {
   document.querySelectorAll('.annotation-review-target').forEach((row) => row.classList.remove('annotation-review-target'));
 }
@@ -1244,13 +1252,13 @@ function bindEvents() {
     if (entryId) openWordDialog(entryId);
   });
   elements['annotation-review-dismiss'].addEventListener('click', async () => {
-    const entryId = uiState.annotationReview.entryIds[uiState.annotationReview.index];
+    const dismissedIndex = uiState.annotationReview.index;
+    const entryId = uiState.annotationReview.entryIds[dismissedIndex];
     if (!entryId) return;
     try {
       await dismissAnnotation(entryId);
-      const nextIndex = Math.min(uiState.annotationReview.index, uiState.annotationReview.entryIds.length - 2);
       if (!syncAnnotationReviewList()) showToast('所有标注均已处理');
-      else await navigateAnnotationReview(Math.max(0, nextIndex));
+      else await navigateAnnotationReview(Math.min(dismissedIndex, uiState.annotationReview.entryIds.length - 1));
       refreshAnnotationLaunchers();
     } catch (error) { displayError(error); }
   });
@@ -1641,6 +1649,7 @@ export async function initializeUI() {
   subscribe(({ type, detail }) => {
     updateHistoryButtons();
     refreshAnnotationLaunchers();
+    if (type === 'annotations') refreshRenderedAnnotationBadges();
     if (uiState.annotationReview.active && type !== 'external-change') renderAnnotationReviewBar();
     if (type === 'external-change') {
       closeDataMutationDialogs();

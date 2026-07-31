@@ -1,4 +1,4 @@
-# GitHub Pages 部署
+# GitHub Pages 部署说明 — 2.2.1 Local Stable
 
 目标地址：
 
@@ -6,37 +6,64 @@
 https://gual-wells.github.io/IELTS-Vocabulary-Index-List/
 ```
 
-项目已经全部使用相对路径，适配该 GitHub Pages 子目录。
+## 必须使用清洁镜像替换
 
-## 替换现有仓库
+GitHub 网页端“Upload files”只新增或覆盖同名路径，不会删除新包中不存在的旧文件。云备份版曾增加过额外模块和文档，因此本次应使用 GitHub Desktop 或 Git 命令执行严格镜像替换。
 
-1. 下载并解压交付 ZIP。
-2. 将解压后目录中的**全部内容**放到仓库根目录，而不是再套一层文件夹。
-3. 提交并推送到当前 Pages 使用的分支。
-4. 在仓库 `Settings → Pages` 中确认发布来源为该分支根目录 `/ (root)`。
-5. 等待 GitHub Pages 部署完成后打开目标地址。
+### GitHub Desktop
 
-## 首次访问
+1. 克隆 `IELTS-Vocabulary-Index-List`。
+2. 打开本地仓库目录。
+3. 删除旧的网站文件和目录，但不要删除隐藏的 `.git`。
+4. 解压完整 ZIP。
+5. 将 ZIP 根目录中的 `index.html`、`sw.js`、`js/`、`css/`、`data/`、`assets/` 等直接复制到仓库根目录。
+6. 确认没有多套一层 `Vocabulary-Index-.../` 文件夹。
+7. 在 GitHub Desktop 中检查新增、修改和删除记录。
+8. Commit，例如 `Replace site with 2.2.1 local stable`，然后 Push。
+9. Pages 来源保持 `main / (root)`。
 
-首次打开会将 `data/seed.json` 写入 IndexedDB。之后运行时不再依赖种子文件，除非清除此站点的全部本地数据。
+## 数据是否会被覆盖
 
-建议首次部署后执行：
+部署程序文件不会清除现有 IndexedDB。正常升级会保留：
 
-1. Safari 正常标签页打开网站，确认首页显示 7 个词表和 5,005 个全局唯一词汇。
-2. 使用“分享 → 添加到主屏幕”。
-3. 从主屏幕启动，点按任一词汇，确认复制提示出现。
-4. 在设置中填写 Groq API Key，并点击“读取可用模型”。
-5. 导出一次完整 JSON，保存为初始备份。
+- 词表和词汇；
+- 来源关系；
+- PIN；
+- AI 标注；
+- 撤销历史；
+- Groq Key。
+
+应用只会自动删除已经废弃的 GitHub 云备份 Token、仓库配置和云状态。
+
+不要清除 Safari 网站数据；该操作会删除 IndexedDB。
 
 ## 更新缓存
 
-Service Worker 使用版本化缓存。发布新版时应同步修改：
+部署完成后：
 
-- `js/constants.js` 中的 `APP_VERSION`；
-- `sw.js` 中的 `CACHE_NAME`。
+### Windows Chrome
 
-当前版本已经调用 `skipWaiting()` 和 `clients.claim()`。若 Safari 仍显示旧界面：
+1. 关闭该网站全部标签页。
+2. 重新打开目标地址。
+3. 按 `Ctrl + Shift + R`。
+4. 设置页应显示 `Vocabulary Index 2.2.1`。
 
-1. 完全退出主屏幕应用后重开；
-2. 或在 Safari 的网站数据设置中删除该站点缓存；
-3. 不要删除网站数据，除非已有 JSON 备份，因为 IndexedDB 也会一并清除。
+### iPhone Safari / 主屏幕 PWA
+
+1. 从多任务界面关闭主屏幕应用和该网站的 Safari 标签页。
+2. 在 Safari 打开目标网址，等待 5–10 秒。
+3. 刷新一次；版本仍旧时再刷新一次。
+4. 设置页确认 `Vocabulary Index 2.2.1`。
+5. 再从主屏幕启动。
+
+Oxford 图标文件未更换，不需要重新制作图标。若主屏幕仍显示旧应用缓存，可删除主屏幕入口后重新添加；不要删除网站数据。
+
+## 部署后最低验收
+
+1. 首页显示 7 个词表、5,005 个全局唯一词汇。
+2. 普通进入 A1、A2、B1、B2、C1、AWL 时所有字母均收起。
+3. 手动展开 A、B，计数和内容稳定。
+4. 搜索或 PIN 跳转只展开目标字母。
+5. 点按词汇可以复制。
+6. 导出完整 JSON，再用该文件执行恢复预览。
+7. 设置页版本为 2.2.1。

@@ -1,0 +1,46 @@
+# Vocabulary Index 2.2.1 file manifest
+
+Total files (excluding this manifest and SHA list): 42
+
+.nojekyll	0 bytes
+BUG_FIX_REPORT_2.2.1.md	6107 bytes
+CHANGELOG.md	2933 bytes
+DATA_FORMATS.md	2181 bytes
+DATA_REPORT.md	990 bytes
+DEPLOY.md	2393 bytes
+README.md	2175 bytes
+SECURITY.md	1962 bytes
+TEST_REPORT_2.2.1.md	2338 bytes
+assets/icons/apple-touch-icon.png	33779 bytes
+assets/icons/icon-192.png	36899 bytes
+assets/icons/icon-512.png	151357 bytes
+css/base.css	3112 bytes
+css/components.css	12164 bytes
+css/responsive.css	1583 bytes
+css/tokens.css	1423 bytes
+data/seed-report.json	661 bytes
+data/seed.json	1461154 bytes
+data/source/A1.txt	11267 bytes
+data/source/A2.txt	11040 bytes
+data/source/AVL.txt	7475 bytes
+data/source/AWL.txt	7486 bytes
+data/source/B1.txt	10551 bytes
+data/source/B2.txt	18993 bytes
+data/source/C1.txt	17857 bytes
+index.html	18887 bytes
+js/ai.js	8236 bytes
+js/app.js	5021 bytes
+js/category-view-model.js	2065 bytes
+js/constants.js	953 bytes
+js/db.js	19109 bytes
+js/entry-model.js	2343 bytes
+js/import-export.js	20750 bytes
+js/search.js	2989 bytes
+js/store.js	36667 bytes
+js/ui.js	56519 bytes
+js/utils.js	6348 bytes
+manifest.webmanifest	568 bytes
+package.json	158 bytes
+sw.js	2595 bytes
+tests/MANUAL_CHECKLIST.md	2771 bytes
+tests/run-tests.mjs	21798 bytes

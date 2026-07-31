@@ -58,6 +58,22 @@
         <div id="global-search-status" class="search-status muted" aria-live="polite"></div>
         <div id="global-search-results" class="search-results hidden"></div>
 
+        <section class="data-safety-panel" aria-labelledby="data-safety-title">
+          <div class="data-safety-heading">
+            <div>
+              <h3 id="data-safety-title">本地数据</h3>
+              <p class="muted">词库保存在当前浏览器的 IndexedDB。清理网站数据前请导出 JSON。</p>
+            </div>
+            <span class="status-badge is-good">本地</span>
+          </div>
+          <div class="inline-actions data-safety-actions">
+            <button id="home-export-backup-button" class="primary-button" type="button">导出完整 JSON</button>
+            <button id="home-restore-backup-button" class="secondary-button" type="button">恢复 JSON 备份</button>
+            <button id="home-initialize-seed-button" class="danger-button" type="button">初始化内置词库</button>
+          </div>
+          <p class="data-safety-detail muted">恢复和初始化都会写入撤销历史；Groq Key 不包含在备份中。</p>
+        </section>
+
         <div id="category-grid" class="category-grid"></div>
       </section>
 
@@ -86,7 +102,6 @@
 
         <nav id="alphabet-nav" class="alphabet-nav" aria-label="字母导航"></nav>
         <div id="category-list" class="category-list"></div>
-        <div id="list-sentinel" class="list-sentinel" aria-hidden="true"></div>
       </section>
     </main>
 
@@ -181,7 +196,8 @@
       </header>
       <div class="action-list">
         <button data-menu-action="import" type="button">导入到当前词表</button>
-        <button data-menu-action="export-current" type="button">导出当前词表</button>
+        <button data-menu-action="export-current-md" type="button">导出当前词表 Markdown</button>
+        <button data-menu-action="export-current-csv" type="button">导出当前词表 CSV</button>
         <button data-menu-action="clear-annotations" type="button">清除当前 AI 标注</button>
         <button data-menu-action="jump-last" type="button">跳到上次浏览位置</button>
         <button data-menu-action="top" type="button">返回词表顶部</button>
@@ -260,7 +276,7 @@
           </select>
         </label>
         <p id="ai-check-estimate" class="muted"></p>
-        <div class="progress-track" aria-hidden="true"><span id="ai-check-progress"></span></div>
+        <progress id="ai-check-progress" class="progress-track" max="100" value="0" aria-label="AI 核查进度"></progress>
         <div id="ai-check-status" class="search-status muted" aria-live="polite"></div>
       </div>
       <footer class="dialog-footer">

@@ -1,63 +1,56 @@
-# Vocabulary Index 2.0
+# Vocabulary Index 2.2.1 Local Stable
 
-一个无需构建、可直接部署到 GitHub Pages 的本地优先英语词汇索引工具。
+无需构建、可直接部署到 GitHub Pages 的本地优先英语词汇索引工具。
 
-主要使用场景：在 iPhone Safari 添加到主屏幕，点按词汇即复制到剪贴板，再由快捷指令打开牛津英汉辞书进行查询。应用自身只维护 **词汇/短语和词性**，不保存释义、熟练度或复习数据。
+主要使用方式：在 iPhone Safari 添加到主屏幕，点按词汇复制词形，再通过快捷指令打开牛津英汉辞书。本工具只维护词汇/固定短语和词性，不保存释义、例句或熟练度。
+
+## 版本定位
+
+2.2.1 Local Stable 已彻底撤销 GitHub 云备份、PAT、远端 revision、自动同步和云快照功能。真实数据只存在于当前浏览器的 IndexedDB 中，长期备份通过手动导出完整 JSON 完成。
+
+首页提供：
+
+- 导出完整 JSON；
+- 恢复完整 JSON；
+- 初始化为内置 seed；
+- 撤销与重做。
+
+从曾短暂部署的云备份版升级时，应用会自动清除遗留的 GitHub Token、仓库配置及 IndexedDB 云状态，不清除词库、PIN、AI 标注或 Groq Key。
 
 ## 核心规则
 
-- 数据主存储为 IndexedDB，设计上限为 50,000 个全局唯一词条。
-- 词表顺序同时是重复词归属优先级。默认顺序：A1 → A2 → B1 → B2 → C1 → AWL → AVL。
-- 同一规范化词汇全局只显示一次；不同来源词表的词性自动合并。
-- 内部保留来源词表关系。替换、删除或调整较早词表时，词条可自动回落到下一个来源词表。
-- A–Z/# 只由词汇首字符自动派生，不再作为真实存储层。
-- 点击词汇只执行复制；学习与释义查询由外部辞书完成。
+- IndexedDB 主存储，校验和导入上限为 50,000 个全局唯一词条。
+- 默认优先级：A1 → A2 → B1 → B2 → C1 → AWL → AVL。
+- 同一规范化词汇全局只显示一次，各来源词性自动合并。
+- 内部保留来源关系；移除较早来源后自动回落到下一词表。
+- A–Z/# 是派生视图，不是物理存储层。
+- 普通进入词表时所有字母默认收起；搜索、PIN 或明确跳转才展开目标字母。
+- 点击词汇只复制词形，不复制词性。
 
-## 功能
+## 本地多实例保护
 
-- iPhone 与桌面响应式双布局。
-- 英语词汇本地模糊搜索；全局结果显示所属词表。
-- 中文查询通过 Groq 生成英语候选，再与本地词表匹配。
-- AI 新增候选，只包含英语词汇和词性。
-- AI 核查仅检查拼写与词性；只生成可取消的持久标注，不自动修改数据。
-- JSON、Markdown、CSV、TXT 导入。
-- “合并到当前词表”和“替换当前词表”两种导入事务。
-- 完整 JSON 备份恢复、Markdown/CSV 导出。
-- 持久化撤销/重做，最多 100 个事务并设 30 MB 历史容量上限。
-- 多书签固定与前后跳转。
-- 记录上次浏览词条。
-- 完整 PWA，可添加到主屏幕并离线查看、编辑。
+Safari 标签页与主屏幕 PWA 共享同一 IndexedDB。2.2.1 使用：
 
-## 本地运行
+- 全局 `dataRevision`；
+- IndexedDB 提交前快照校验；
+- BroadcastChannel 通知；
+- 回到前台时的轻量修订检查；
+- 单页面 mutation 队列。
 
-浏览器 ES Modules、IndexedDB 和 Service Worker 需要通过 HTTP(S) 访问，不能直接双击 `index.html`。
+陈旧实例不能静默覆盖较新数据；写入会被安全取消并重新载入最新状态。仍不建议主动在两个实例中同时连续编辑。
+
+## 运行和测试
+
+必须通过 HTTP(S) 访问，不能直接双击 `index.html`：
 
 ```bash
 python -m http.server 8000
 ```
 
-然后访问 `http://localhost:8000/`。
-
-## 测试
-
-无需安装依赖：
+自动化检查：
 
 ```bash
 npm test
 ```
 
-## 文件结构
-
-```text
-index.html
-manifest.webmanifest
-sw.js
-assets/icons/
-css/
-js/
-data/seed.json
-data/source/
-tests/
-```
-
-部署步骤见 [DEPLOY.md](DEPLOY.md)。数据规则见 [DATA_FORMATS.md](DATA_FORMATS.md)。
+部署见 [DEPLOY.md](DEPLOY.md)，数据格式见 [DATA_FORMATS.md](DATA_FORMATS.md)，修复清单见 [BUG_FIX_REPORT_2.2.1.md](BUG_FIX_REPORT_2.2.1.md)。

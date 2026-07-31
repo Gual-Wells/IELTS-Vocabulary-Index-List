@@ -1,8 +1,13 @@
-import { APP_VERSION, DB_NAME, DB_VERSION, HISTORY_LIMIT, HISTORY_SIZE_LIMIT } from './constants.js';
-import { approximateJsonSize } from './utils.js';
+import {
+  APP_VERSION, DB_NAME, DB_VERSION, HISTORY_LIMIT, HISTORY_SIZE_LIMIT, UI_STATE_VERSION,
+} from './constants.js';
+import { approximateJsonSize, normalizeWord } from './utils.js';
+import { canonicalizeBackup, validateBackup } from './import-export.js';
 
 const ENTITY_STORES = ['categories', 'entries', 'pins', 'annotations'];
+const ALL_MUTABLE_STORES = [...ENTITY_STORES, 'settings'];
 let databasePromise;
+let writeTail = Promise.resolve();
 
 function requestPromise(request) {
   return new Promise((resolve, reject) => {
@@ -19,10 +24,21 @@ function transactionPromise(transaction) {
   });
 }
 
+function enqueueWrite(task) {
+  const run = writeTail.then(task, task);
+  writeTail = run.catch(() => undefined);
+  return run;
+}
+
+function jsonEqual(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 export function openDatabase() {
   if (databasePromise) return databasePromise;
   databasePromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let blocked = false;
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains('categories')) {
@@ -48,10 +64,26 @@ export function openDatabase() {
     };
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => db.close();
+      if (blocked) {
+        db.close();
+        return;
+      }
+      db.onversionchange = () => {
+        db.close();
+        databasePromise = null;
+      };
+      db.addEventListener?.('close', () => { databasePromise = null; });
       resolve(db);
     };
-    request.onerror = () => reject(request.error ?? new Error('无法打开 IndexedDB'));
+    request.onblocked = () => {
+      blocked = true;
+      databasePromise = null;
+      reject(new Error('数据库升级被其他已打开页面阻止。请关闭此站点的其他标签页或主屏幕应用后重试。'));
+    };
+    request.onerror = () => {
+      databasePromise = null;
+      reject(request.error ?? new Error('无法打开 IndexedDB'));
+    };
   });
   return databasePromise;
 }
@@ -59,16 +91,18 @@ export function openDatabase() {
 export async function getAll(storeName) {
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readonly');
+  const completion = transactionPromise(tx);
   const result = await requestPromise(tx.objectStore(storeName).getAll());
-  await transactionPromise(tx);
+  await completion;
   return result;
 }
 
 export async function getValue(storeName, key) {
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readonly');
+  const completion = transactionPromise(tx);
   const result = await requestPromise(tx.objectStore(storeName).get(key));
-  await transactionPromise(tx);
+  await completion;
   return result;
 }
 
@@ -77,65 +111,199 @@ export async function getSetting(key, fallback = null) {
   return record ? record.value : fallback;
 }
 
-export async function setSetting(key, value) {
+async function setSettingRaw(key, value) {
   const db = await openDatabase();
   const tx = db.transaction('settings', 'readwrite');
+  const completion = transactionPromise(tx);
   tx.objectStore('settings').put({ key, value });
-  await transactionPromise(tx);
+  await completion;
+}
+
+export function setSetting(key, value) {
+  return enqueueWrite(() => setSettingRaw(key, value));
+}
+
+function assertSeedShape(seed) {
+  if (!seed || !Array.isArray(seed.categories) || !Array.isArray(seed.entries)) {
+    throw new Error('种子数据格式无效');
+  }
+  if (!seed.categories.length || !seed.entries.length) {
+    throw new Error('种子数据为空，已拒绝把数据库初始化为空词表');
+  }
+  validateBackup({ ...seed, pins: seed.pins ?? [], annotations: seed.annotations ?? [] });
+}
+
+export async function loadSeedBackup() {
+  const seedUrl = new URL('../data/seed.json', import.meta.url);
+  let response;
+  try {
+    response = await fetch(seedUrl, { cache: 'no-store' });
+  } catch (error) {
+    throw new Error(`无法读取内置词库：${error?.message || error}`);
+  }
+  if (!response.ok) throw new Error(`无法读取内置词库（HTTP ${response.status}）`);
+  const seed = await response.json();
+  assertSeedShape(seed);
+  return canonicalizeBackup({ ...seed, pins: seed.pins ?? [], annotations: seed.annotations ?? [] });
+}
+
+async function replaceDatabaseContents(backup) {
+  const canonical = canonicalizeBackup(backup);
+  await enqueueWrite(async () => {
+    const db = await openDatabase();
+    const tx = db.transaction([...ENTITY_STORES, 'settings', 'history'], 'readwrite');
+    const completion = transactionPromise(tx);
+    for (const storeName of ENTITY_STORES) tx.objectStore(storeName).clear();
+    tx.objectStore('settings').clear();
+    tx.objectStore('history').clear();
+    for (const category of canonical.categories) tx.objectStore('categories').put(category);
+    for (const entry of canonical.entries) tx.objectStore('entries').put(entry);
+    for (const pin of canonical.pins ?? []) tx.objectStore('pins').put(pin);
+    for (const annotation of canonical.annotations ?? []) tx.objectStore('annotations').put(annotation);
+    const settings = {
+      ...(canonical.settings ?? {}), initialized: true, appVersion: APP_VERSION,
+      uiStateVersion: UI_STATE_VERSION, historyPointer: 0, dataRevision: 0,
+    };
+    for (const [key, value] of Object.entries(settings)) tx.objectStore('settings').put({ key, value });
+    await completion;
+  });
 }
 
 async function seedDatabase() {
-  const seedUrl = new URL('../data/seed.json', import.meta.url);
-  let seed;
-  try {
-    const response = await fetch(seedUrl, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    seed = await response.json();
-  } catch (error) {
-    seed = {
-      categories: ['A1', 'A2', 'B1', 'B2', 'C1', 'AWL', 'AVL'].map((name, order) => ({
-        id: `cat_${name.toLowerCase()}`, name, label: name, order,
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })),
-      entries: [], pins: [], annotations: [], settings: { numberMode: 'none', historyLimit: HISTORY_LIMIT },
-    };
-    console.warn('无法读取种子数据，已创建空词表。', error);
-  }
+  await replaceDatabaseContents(await loadSeedBackup());
+}
 
-  const db = await openDatabase();
-  const tx = db.transaction([...ENTITY_STORES, 'settings', 'history'], 'readwrite');
-  for (const storeName of ENTITY_STORES) tx.objectStore(storeName).clear();
-  tx.objectStore('history').clear();
-  for (const category of seed.categories ?? []) tx.objectStore('categories').put(category);
-  for (const entry of seed.entries ?? []) tx.objectStore('entries').put(entry);
-  for (const pin of seed.pins ?? []) tx.objectStore('pins').put(pin);
-  for (const annotation of seed.annotations ?? []) tx.objectStore('annotations').put(annotation);
-  const settings = { ...(seed.settings ?? {}), initialized: true, appVersion: APP_VERSION, historyPointer: 0, historyMaxSequence: 0 };
-  for (const [key, value] of Object.entries(settings)) tx.objectStore('settings').put({ key, value });
-  await transactionPromise(tx);
+export async function recoverDatabaseFromBackup(backup) {
+  validateBackup(backup);
+  await replaceDatabaseContents(backup);
+}
+
+export async function resetDatabaseToSeed() {
+  await seedDatabase();
+}
+
+
+
+async function repairLegacyManualWordSources() {
+  const entries = await getAll('entries');
+  const changes = [];
+  for (const entry of entries) {
+    const manualWord = String(entry.manualWord ?? '').trim();
+    if (!manualWord) continue;
+    const expected = normalizeWord(manualWord);
+    if (!expected) continue;
+    const sources = Object.fromEntries(Object.entries(entry.sources ?? {}).map(([categoryId, source]) => [categoryId, {
+      ...source,
+      word: normalizeWord(source?.word) === expected ? source.word : manualWord,
+    }]));
+    const normalizedChanged = normalizeWord(entry.word) !== expected || entry.normalizedWord !== expected;
+    const sourcesChanged = Object.entries(sources).some(([categoryId, source]) => source.word !== entry.sources?.[categoryId]?.word);
+    if (!normalizedChanged && !sourcesChanged) continue;
+    const after = {
+      ...entry,
+      word: manualWord,
+      normalizedWord: expected,
+      sources,
+      updatedAt: new Date().toISOString(),
+    };
+    changes.push({ store: 'entries', key: entry.id, before: entry, after });
+  }
+  if (!changes.length) return;
+  const revision = Number(await getSetting('dataRevision', 0));
+  await writeChangesWithoutHistory(changes, revision);
+}
+
+async function purgeRetiredCloudSettings() {
+  const records = await getAll('settings');
+  const retired = records.filter((record) => /^cloud(?:[A-Z:]|$)/.test(String(record.key ?? '')));
+  if (!retired.length) return;
+  await enqueueWrite(async () => {
+    const db = await openDatabase();
+    const tx = db.transaction('settings', 'readwrite');
+    const completion = transactionPromise(tx);
+    const store = tx.objectStore('settings');
+    for (const record of retired) store.delete(record.key);
+    await completion;
+  });
+}
+
+async function migrateUiStateSettings() {
+  const version = Number(await getSetting('uiStateVersion', 0));
+  if (version >= UI_STATE_VERSION) return;
+  const records = await getAll('settings');
+  await enqueueWrite(async () => {
+    const db = await openDatabase();
+    const tx = db.transaction('settings', 'readwrite');
+    const completion = transactionPromise(tx);
+    const store = tx.objectStore('settings');
+    for (const record of records) {
+      if (/^expandedGroups:/.test(record.key)) store.delete(record.key);
+    }
+    store.put({ key: 'uiStateVersion', value: UI_STATE_VERSION });
+    await completion;
+  });
 }
 
 export async function initializeDatabase() {
   await openDatabase();
   const initialized = await getSetting('initialized', false);
   if (!initialized) await seedDatabase();
+  await purgeRetiredCloudSettings();
+  await repairLegacyManualWordSources();
+  await migrateUiStateSettings();
   await setSetting('appVersion', APP_VERSION);
+  if (await getSetting('dataRevision', null) == null) await setSetting('dataRevision', 0);
 }
 
 function applyEntityChange(transaction, change, direction = 'after') {
-  if (!ENTITY_STORES.includes(change.store)) throw new Error(`不支持的变更存储：${change.store}`);
+  if (!ALL_MUTABLE_STORES.includes(change.store)) throw new Error(`不支持的变更存储：${change.store}`);
   const store = transaction.objectStore(change.store);
   const value = change[direction];
   if (value == null) store.delete(change.key);
   else store.put(value);
 }
 
-async function pruneHistory() {
+function applyChangesBatch(transaction, changes, direction = 'after') {
+  const entryChanges = changes.filter((item) => item.store === 'entries');
+  if (entryChanges.length) {
+    const store = transaction.objectStore('entries');
+    // 先删除所有受影响 key，避免两个 normalizedWord 在同一事务中互换时触发瞬时唯一索引冲突。
+    for (const item of entryChanges) store.delete(item.key);
+    for (const item of entryChanges) {
+      const value = item[direction];
+      if (value != null) store.put(value);
+    }
+  }
+  for (const item of changes) {
+    if (item.store !== 'entries') applyEntityChange(transaction, item, direction);
+  }
+}
+
+function schedulePreconditionReads(transaction, changes) {
+  return changes.map((change) => ({
+    change,
+    promise: requestPromise(transaction.objectStore(change.store).get(change.key)),
+  }));
+}
+
+async function verifyPreconditions(reads, expectedDirection) {
+  const values = await Promise.all(reads.map((item) => item.promise));
+  for (let index = 0; index < reads.length; index += 1) {
+    const expected = reads[index].change[expectedDirection] ?? null;
+    const actual = values[index] ?? null;
+    if (!jsonEqual(actual, expected)) {
+      throw new Error('数据已在另一个标签页或主屏幕实例中更新，本次操作已安全取消。页面将重新载入最新本地数据。');
+    }
+  }
+}
+
+async function pruneHistoryRaw() {
   const [records, pointer] = await Promise.all([getAll('history'), getSetting('historyPointer', 0)]);
   const ordered = records.sort((a, b) => a.sequence - b.sequence);
   let total = ordered.reduce((sum, record) => sum + (record.approximateSize || approximateJsonSize(record)), 0);
   const deletions = [];
-  while (ordered.length > HISTORY_LIMIT || total > HISTORY_SIZE_LIMIT) {
+  // 始终保留最新事务，使一次大型恢复即使超过软容量上限也仍可撤销。
+  while (ordered.length > 1 && (ordered.length > HISTORY_LIMIT || total > HISTORY_SIZE_LIMIT)) {
     const record = ordered.shift();
     if (!record || record.sequence > pointer) break;
     deletions.push(record.sequence);
@@ -144,88 +312,137 @@ async function pruneHistory() {
   if (!deletions.length) return;
   const db = await openDatabase();
   const tx = db.transaction('history', 'readwrite');
+  const completion = transactionPromise(tx);
   for (const sequence of deletions) tx.objectStore('history').delete(sequence);
-  await transactionPromise(tx);
+  await completion;
 }
 
-export async function commitChanges(label, changes) {
-  if (!changes.length) return { sequence: await getSetting('historyPointer', 0), changed: false };
-  const pointer = await getSetting('historyPointer', 0);
-  const records = await getAll('history');
-  const maxExisting = records.reduce((max, record) => Math.max(max, record.sequence), 0);
-  const sequence = pointer + 1;
-  const stores = [...new Set([...changes.map((change) => change.store), 'history', 'settings'])];
-  const db = await openDatabase();
-  const tx = db.transaction(stores, 'readwrite');
-
-  for (const record of records) {
-    if (record.sequence > pointer) tx.objectStore('history').delete(record.sequence);
-  }
-  for (const change of changes) applyEntityChange(tx, change, 'after');
-  const historyRecord = {
-    sequence, label, createdAt: new Date().toISOString(), changes,
-    approximateSize: approximateJsonSize(changes),
-  };
-  tx.objectStore('history').put(historyRecord);
-  tx.objectStore('settings').put({ key: 'historyPointer', value: sequence });
-  tx.objectStore('settings').put({ key: 'historyMaxSequence', value: Math.max(sequence, maxExisting) });
-  await transactionPromise(tx);
-  await pruneHistory();
-  return { sequence, changed: true };
+export function commitChanges(label, changes, expectedRevision = null) {
+  if (!changes.length) return Promise.resolve({ sequence: 0, changed: false, revision: null });
+  return enqueueWrite(async () => {
+    const stores = [...new Set([...changes.map((change) => change.store), 'history', 'settings'])];
+    const db = await openDatabase();
+    const tx = db.transaction(stores, 'readwrite');
+    const completion = transactionPromise(tx);
+    const pointerPromise = requestPromise(tx.objectStore('settings').get('historyPointer'));
+    const revisionPromise = requestPromise(tx.objectStore('settings').get('dataRevision'));
+    const recordsPromise = requestPromise(tx.objectStore('history').getAll());
+    const preconditionReads = schedulePreconditionReads(tx, changes);
+    try {
+      const [pointerRecord, revisionRecord, records] = await Promise.all([pointerPromise, revisionPromise, recordsPromise]);
+      const currentRevision = Number(revisionRecord?.value ?? 0);
+      if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
+        throw new Error('数据已在另一个标签页或主屏幕实例中更新，本次操作已安全取消。页面将重新载入最新本地数据。');
+      }
+      await verifyPreconditions(preconditionReads, 'before');
+      const pointer = Number(pointerRecord?.value ?? 0);
+      const sequence = pointer + 1;
+      for (const record of records) {
+        if (record.sequence > pointer) tx.objectStore('history').delete(record.sequence);
+      }
+      applyChangesBatch(tx, changes, 'after');
+      const historyRecord = {
+        sequence, label, createdAt: new Date().toISOString(), changes,
+        approximateSize: approximateJsonSize(changes),
+      };
+      tx.objectStore('history').put(historyRecord);
+      tx.objectStore('settings').put({ key: 'historyPointer', value: sequence });
+      tx.objectStore('settings').put({ key: 'dataRevision', value: currentRevision + 1 });
+      await completion;
+      await pruneHistoryRaw().catch((error) => console.warn('历史清理失败，不影响已完成的数据事务。', error));
+      return { sequence, changed: true, revision: currentRevision + 1 };
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be inactive */ }
+      await completion.catch(() => undefined);
+      throw error;
+    }
+  });
 }
 
 export async function historyStatus() {
-  const pointer = await getSetting('historyPointer', 0);
+  const pointer = Number(await getSetting('historyPointer', 0));
   const records = await getAll('history');
   const sequences = new Set(records.map((record) => record.sequence));
   return { canUndo: pointer > 0 && sequences.has(pointer), canRedo: sequences.has(pointer + 1), pointer };
 }
 
-async function applyHistoryRecord(record, direction, nextPointer) {
-  const stores = [...new Set([...record.changes.map((change) => change.store), 'settings'])];
+async function applyHistoryRecordRaw(record, direction, expectedPointer, nextPointer, expectedRevision = null) {
+  const stores = [...new Set([...ALL_MUTABLE_STORES, 'history'])];
   const db = await openDatabase();
   const tx = db.transaction(stores, 'readwrite');
-  for (const change of record.changes) applyEntityChange(tx, change, direction);
-  tx.objectStore('settings').put({ key: 'historyPointer', value: nextPointer });
-  await transactionPromise(tx);
+  const completion = transactionPromise(tx);
+  const pointerPromise = requestPromise(tx.objectStore('settings').get('historyPointer'));
+  const revisionPromise = requestPromise(tx.objectStore('settings').get('dataRevision'));
+  const preconditionReads = schedulePreconditionReads(tx, record.changes);
+  const expectedDirection = direction === 'before' ? 'after' : 'before';
+  try {
+    const [pointerRecord, revisionRecord] = await Promise.all([pointerPromise, revisionPromise]);
+    const currentRevision = Number(revisionRecord?.value ?? 0);
+    if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
+      throw new Error('数据已在另一个标签页或主屏幕实例中更新，本次撤销或重做已安全取消。');
+    }
+    if (Number(pointerRecord?.value ?? 0) !== expectedPointer) {
+      throw new Error('撤销历史已被另一个实例更新，本次操作已安全取消。');
+    }
+    await verifyPreconditions(preconditionReads, expectedDirection);
+    applyChangesBatch(tx, record.changes, direction);
+    tx.objectStore('settings').put({ key: 'historyPointer', value: nextPointer });
+    tx.objectStore('settings').put({ key: 'dataRevision', value: currentRevision + 1 });
+    await completion;
+  } catch (error) {
+    try { tx.abort(); } catch { /* no-op */ }
+    await completion.catch(() => undefined);
+    throw error;
+  }
 }
 
-export async function undoHistory() {
-  const pointer = await getSetting('historyPointer', 0);
-  if (pointer <= 0) return null;
-  const record = await getValue('history', pointer);
-  if (!record) return null;
-  await applyHistoryRecord(record, 'before', pointer - 1);
-  return record;
+/** @returns {Promise<any|null>} */
+export function undoHistory(expectedRevision = null) {
+  return enqueueWrite(async () => {
+    const pointer = Number(await getSetting('historyPointer', 0));
+    if (pointer <= 0) return null;
+    const record = await getValue('history', pointer);
+    if (!record) return null;
+    await applyHistoryRecordRaw(record, 'before', pointer, pointer - 1, expectedRevision);
+    return record;
+  });
 }
 
-export async function redoHistory() {
-  const pointer = await getSetting('historyPointer', 0);
-  const record = await getValue('history', pointer + 1);
-  if (!record) return null;
-  await applyHistoryRecord(record, 'after', pointer + 1);
-  return record;
+/** @returns {Promise<any|null>} */
+export function redoHistory(expectedRevision = null) {
+  return enqueueWrite(async () => {
+    const pointer = Number(await getSetting('historyPointer', 0));
+    const record = await getValue('history', pointer + 1);
+    if (!record) return null;
+    await applyHistoryRecordRaw(record, 'after', pointer, pointer + 1, expectedRevision);
+    return record;
+  });
 }
 
-export async function replaceWithoutHistory(snapshot) {
-  const db = await openDatabase();
-  const tx = db.transaction([...ENTITY_STORES, 'history', 'settings'], 'readwrite');
-  for (const storeName of ENTITY_STORES) tx.objectStore(storeName).clear();
-  tx.objectStore('history').clear();
-  for (const category of snapshot.categories ?? []) tx.objectStore('categories').put(category);
-  for (const entry of snapshot.entries ?? []) tx.objectStore('entries').put(entry);
-  for (const pin of snapshot.pins ?? []) tx.objectStore('pins').put(pin);
-  for (const annotation of snapshot.annotations ?? []) tx.objectStore('annotations').put(annotation);
-  tx.objectStore('settings').put({ key: 'historyPointer', value: 0 });
-  tx.objectStore('settings').put({ key: 'historyMaxSequence', value: 0 });
-  await transactionPromise(tx);
-}
-
-export async function writeChangesWithoutHistory(changes) {
-  if (!changes.length) return;
-  const stores = [...new Set(changes.map((change) => change.store))];
-  const db = await openDatabase();
-  const tx = db.transaction(stores, 'readwrite');
-  for (const change of changes) applyEntityChange(tx, change, 'after');
-  await transactionPromise(tx);
+export function writeChangesWithoutHistory(changes, expectedRevision = null) {
+  if (!changes.length) return Promise.resolve({ changed: false, revision: null });
+  return enqueueWrite(async () => {
+    const stores = [...new Set([...changes.map((change) => change.store), 'settings'])];
+    const db = await openDatabase();
+    const tx = db.transaction(stores, 'readwrite');
+    const completion = transactionPromise(tx);
+    const revisionPromise = requestPromise(tx.objectStore('settings').get('dataRevision'));
+    const preconditionReads = schedulePreconditionReads(tx, changes);
+    try {
+      const revisionRecord = await revisionPromise;
+      const currentRevision = Number(revisionRecord?.value ?? 0);
+      if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
+        throw new Error('数据已在另一个标签页或主屏幕实例中更新，本次操作已安全取消。页面将重新载入最新本地数据。');
+      }
+      await verifyPreconditions(preconditionReads, 'before');
+      applyChangesBatch(tx, changes, 'after');
+      tx.objectStore('settings').put({ key: 'dataRevision', value: currentRevision + 1 });
+      await completion;
+      return { revision: currentRevision + 1 };
+    } catch (error) {
+      try { tx.abort(); } catch { /* no-op */ }
+      await completion.catch(() => undefined);
+      throw error;
+    }
+  });
 }

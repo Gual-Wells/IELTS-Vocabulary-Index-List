@@ -9,7 +9,7 @@ body {
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 button, [role="button"] { touch-action: manipulation; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .letter-summary:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--focus) 38%, transparent); outline-offset: 2px;
 }
 h1, h2, h3, p { margin-top: 0; }

@@ -3,24 +3,38 @@ import {
 } from './constants.js';
 import { normalizeWord, parsePos } from './utils.js';
 
+
+function readLocalStorage(key, fallback = '') {
+  try { return localStorage.getItem(key) ?? fallback; }
+  catch { return fallback; }
+}
+
+function writeLocalStorage(key, value) {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch (error) {
+    throw new Error(`无法保存浏览器设置：${error?.message || error}`);
+  }
+}
+
 export function getGroqConfig() {
   return {
-    key: localStorage.getItem(GROQ_KEY_STORAGE) ?? '',
-    model: localStorage.getItem(GROQ_MODEL_STORAGE) || DEFAULT_GROQ_MODEL,
+    key: readLocalStorage(GROQ_KEY_STORAGE, ''),
+    model: readLocalStorage(GROQ_MODEL_STORAGE, DEFAULT_GROQ_MODEL) || DEFAULT_GROQ_MODEL,
   };
 }
 
 export function saveGroqConfig({ key, model }) {
   const cleanKey = String(key ?? '').trim();
   const cleanModel = String(model ?? '').trim() || DEFAULT_GROQ_MODEL;
-  if (cleanKey) localStorage.setItem(GROQ_KEY_STORAGE, cleanKey);
-  else localStorage.removeItem(GROQ_KEY_STORAGE);
-  localStorage.setItem(GROQ_MODEL_STORAGE, cleanModel);
+  writeLocalStorage(GROQ_KEY_STORAGE, cleanKey);
+  writeLocalStorage(GROQ_MODEL_STORAGE, cleanModel);
   return { key: cleanKey, model: cleanModel };
 }
 
 export function clearGroqKey() {
-  localStorage.removeItem(GROQ_KEY_STORAGE);
+  writeLocalStorage(GROQ_KEY_STORAGE, '');
 }
 
 function requireConfig() {
@@ -46,6 +60,11 @@ function linkedAbortController(externalSignal, timeoutMs) {
   };
 }
 
+/**
+ * @param {string} path
+ * @param {RequestInit} options
+ * @param {{signal?: AbortSignal, timeoutMs?: number}} config
+ */
 async function groqFetch(path, options = {}, { signal, timeoutMs = 30000 } = {}) {
   const { key } = requireConfig();
   const linked = linkedAbortController(signal, timeoutMs);
@@ -109,7 +128,7 @@ export async function getChineseSearchCandidates(query, signal) {
     user: String(query).slice(0, 500),
   });
   const values = Array.isArray(data?.candidates) ? data.candidates : [];
-  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))].slice(0, 30);
+  return [...new Set(values.map((item) => String(item).trim().slice(0, 160)).filter(Boolean))].slice(0, 30);
 }
 
 export async function suggestVocabulary(query, signal) {
@@ -127,7 +146,7 @@ export async function suggestVocabulary(query, signal) {
   const items = [];
   const seen = new Set();
   for (const raw of Array.isArray(data?.items) ? data.items : []) {
-    const word = String(raw?.word ?? '').trim();
+    const word = String(raw?.word ?? '').trim().slice(0, 160);
     const key = normalizeWord(word);
     if (!word || seen.has(key)) continue;
     try {
@@ -159,20 +178,24 @@ export async function checkVocabularyBatch(entries, signal) {
   });
   const allowedIds = new Set(compact.map((item) => item.id));
   const issues = [];
+  const seenIssueIds = new Set();
   for (const raw of Array.isArray(data?.issues) ? data.issues : []) {
     const entryId = String(raw?.entryId ?? '');
-    if (!allowedIds.has(entryId)) continue;
+    if (!allowedIds.has(entryId) || seenIssueIds.has(entryId)) continue;
     const spellingIncorrect = Boolean(raw?.spelling?.incorrect);
-    const posIncorrect = Boolean(raw?.pos?.incorrect);
+    let posIncorrect = Boolean(raw?.pos?.incorrect);
     if (!spellingIncorrect && !posIncorrect) continue;
     let suggestedPos = [];
     if (posIncorrect) {
       try { suggestedPos = parsePos(Array.isArray(raw.pos?.suggestion) ? raw.pos.suggestion.join(', ') : raw.pos?.suggestion); }
       catch { suggestedPos = []; }
+      if (!suggestedPos.length) posIncorrect = false;
     }
+    if (!spellingIncorrect && !posIncorrect) continue;
+    seenIssueIds.add(entryId);
     issues.push({
       entryId,
-      spelling: spellingIncorrect ? { incorrect: true, suggestion: String(raw.spelling?.suggestion ?? '').trim() } : { incorrect: false, suggestion: '' },
+      spelling: spellingIncorrect ? { incorrect: true, suggestion: String(raw.spelling?.suggestion ?? '').trim().slice(0, 160) } : { incorrect: false, suggestion: '' },
       pos: posIncorrect ? { incorrect: true, suggestion: suggestedPos } : { incorrect: false, suggestion: [] },
       reason: String(raw?.reason ?? '').trim().slice(0, 500),
     });

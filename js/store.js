@@ -2,8 +2,10 @@ import {
   commitChanges, getAll, getSetting, historyStatus, redoHistory, setSetting,
   undoHistory, writeChangesWithoutHistory,
 } from './db.js';
-import { APP_VERSION, HISTORY_LIMIT } from './constants.js';
-import { deepClone, formatPos, mergePos, normalizeWord, parsePos, sortPos, uuid } from './utils.js';
+import { APP_VERSION, HISTORY_LIMIT, INSTANCE_CHANNEL_NAME, MAX_CATEGORY_NAME_LENGTH, MAX_WORD_LENGTH } from './constants.js';
+import { deepClone, formatPos, mergePos, normalizeCategoryName, normalizeWord, parsePos, sortPos, uuid } from './utils.js';
+import { applyManualEntryEdit, mergeEntrySource, recalculateEntry } from './entry-model.js';
+import { canonicalizeBackup, validateBackup } from './import-export.js';
 
 const state = {
   categories: [],
@@ -14,36 +16,20 @@ const state = {
   history: { canUndo: false, canRedo: false, pointer: 0 },
 };
 const listeners = new Set();
+let mutationTail = Promise.resolve();
 let wordIndex = new Map();
 let categoryIndex = new Map();
+let coordinationChannel = null;
+let coordinationStarted = false;
+const instanceId = uuid('instance');
+
+function broadcastDataChange(label = 'change') {
+  try { coordinationChannel?.postMessage({ type: 'data-changed', instanceId, label, at: Date.now() }); }
+  catch (error) { console.warn('跨实例通知失败', error); }
+}
 
 function orderedCategories(categories = state.categories) {
   return [...categories].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-}
-
-function categoryOrderMap(categories = state.categories) {
-  return new Map(orderedCategories(categories).map((category, index) => [category.id, index]));
-}
-
-function recalculateEntry(record, categories = state.categories) {
-  const entry = deepClone(record);
-  const order = categoryOrderMap(categories);
-  const sourceIds = Object.keys(entry.sources ?? {}).filter((id) => order.has(id));
-  sourceIds.sort((a, b) => order.get(a) - order.get(b));
-  if (!sourceIds.length) return null;
-  const owner = sourceIds[0];
-  const source = entry.sources[owner] ?? {};
-  const word = String(entry.manualWord || source.word || entry.word || '').trim();
-  const sourcePos = sourceIds.flatMap((id) => entry.sources[id]?.pos ?? []);
-  const pos = entry.manualPos?.length ? sortPos(entry.manualPos) : sortPos(sourcePos);
-  return {
-    ...entry,
-    word,
-    normalizedWord: normalizeWord(word),
-    pos,
-    categoryId: owner,
-    updatedAt: new Date().toISOString(),
-  };
 }
 
 function rebuildIndexes() {
@@ -58,7 +44,14 @@ function rebuildIndexes() {
 }
 
 function notify(type = 'change', detail = {}) {
-  for (const listener of listeners) listener({ type, detail, state });
+  for (const listener of listeners) {
+    try {
+      const result = listener({ type, detail, state });
+      if (result && typeof result.catch === 'function') result.catch((error) => console.error('状态订阅器执行失败', error));
+    } catch (error) {
+      console.error('状态订阅器执行失败', error);
+    }
+  }
 }
 
 function entityMap(store) {
@@ -69,6 +62,11 @@ function entityMap(store) {
 }
 
 function applyLocalChange(change) {
+  if (change.store === 'settings') {
+    if (change.after == null) delete state.settings[change.key];
+    else state.settings[change.key] = deepClone(change.after.value);
+    return;
+  }
   if (change.store === 'categories') {
     const index = state.categories.findIndex((category) => category.id === change.key);
     if (change.after == null && index >= 0) state.categories.splice(index, 1);
@@ -99,15 +97,118 @@ async function refreshHistoryStatus() {
   state.history = await historyStatus();
 }
 
-async function commit(label, changes, detail = {}) {
-  const filtered = changes.filter(Boolean);
+function currentEntityValue(store, key) {
+  if (store === 'settings') {
+    return Object.hasOwn(state.settings, key) ? { key, value: deepClone(state.settings[key]) } : null;
+  }
+  if (store === 'categories') return state.categories.find((item) => item.id === key) ?? null;
+  return entityMap(store)?.get(key) ?? null;
+}
+
+function coalesceChanges(changes) {
+  const merged = new Map();
+  for (const item of changes.filter(Boolean)) {
+    const compoundKey = `${item.store}::${item.key}`;
+    const existing = merged.get(compoundKey);
+    if (!existing) merged.set(compoundKey, deepClone(item));
+    else existing.after = item.after == null ? null : deepClone(item.after);
+  }
+  return [...merged.values()].filter((item) => JSON.stringify(item.before) !== JSON.stringify(item.after));
+}
+
+
+function normalizePinOrderChanges(changes) {
+  const workingPins = new Map([...state.pins].map(([id, pin]) => [id, deepClone(pin)]));
+  for (const item of changes.filter((changeItem) => changeItem?.store === 'pins')) {
+    if (item.after == null) workingPins.delete(item.key);
+    else workingPins.set(item.key, deepClone(item.after));
+  }
+  const groups = new Map();
+  for (const pin of workingPins.values()) {
+    if (!groups.has(pin.categoryId)) groups.set(pin.categoryId, []);
+    groups.get(pin.categoryId).push(pin);
+  }
+  for (const pins of groups.values()) {
+    pins.sort((a, b) => Number(a.order) - Number(b.order)
+      || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))
+      || String(a.id).localeCompare(String(b.id)));
+    pins.forEach((pin, order) => {
+      if (Number(pin.order) === order) return;
+      const priorPlanned = changes.findLast?.((item) => item?.store === 'pins' && item.key === pin.id);
+      const before = priorPlanned?.after ?? state.pins.get(pin.id) ?? null;
+      pushChange(changes, 'pins', pin.id, before, { ...pin, order });
+      pin.order = order;
+    });
+  }
+}
+
+function assertChangesAreFresh(changes) {
+  for (const item of changes) {
+    const current = currentEntityValue(item.store, item.key);
+    if (JSON.stringify(current) !== JSON.stringify(item.before)) {
+      throw new Error('数据已被另一个操作更新，本次操作已安全取消。请重试。');
+    }
+  }
+}
+
+/**
+ * @template T
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ */
+function enqueueMutation(task) {
+  const run = mutationTail.then(task, task);
+  mutationTail = run.catch(() => undefined);
+  return run;
+}
+
+async function commitWithinQueue(label, changes, detail = {}) {
+  normalizePinOrderChanges(changes);
+  const filtered = coalesceChanges(changes);
   if (!filtered.length) return false;
-  await commitChanges(label, filtered);
-  filtered.forEach(applyLocalChange);
-  rebuildIndexes();
-  await refreshHistoryStatus();
+  assertChangesAreFresh(filtered);
+  const result = await commitChanges(label, filtered, state.settings.dataRevision);
+  if (!result || result.revision == null) throw new Error('数据库事务未返回有效修订号');
+  try {
+    filtered.forEach(applyLocalChange);
+    state.settings.dataRevision = Number(result.revision);
+    rebuildIndexes();
+    await refreshHistoryStatus();
+  } catch (error) {
+    await loadStateFromDatabase();
+    throw new Error(`数据库已提交，但内存状态刷新失败并已重新载入：${error?.message || error}`);
+  }
   notify('change', { label, ...detail });
+  broadcastDataChange(label);
   return true;
+}
+
+async function commit(label, changes, detail = {}) {
+  return enqueueMutation(() => commitWithinQueue(label, changes, detail));
+}
+
+async function applyWithoutHistoryWithinQueue(changes, notificationType, detail = {}) {
+  normalizePinOrderChanges(changes);
+  const filtered = coalesceChanges(changes);
+  if (!filtered.length) return false;
+  assertChangesAreFresh(filtered);
+  const result = await writeChangesWithoutHistory(filtered, state.settings.dataRevision);
+  if (!result || result.revision == null) throw new Error('数据库事务未返回有效修订号');
+  try {
+    filtered.forEach(applyLocalChange);
+    state.settings.dataRevision = Number(result.revision);
+    rebuildIndexes();
+  } catch (error) {
+    await loadStateFromDatabase();
+    throw new Error(`数据库已提交，但内存状态刷新失败并已重新载入：${error?.message || error}`);
+  }
+  notify(notificationType, detail);
+  broadcastDataChange(notificationType);
+  return true;
+}
+
+async function applyWithoutHistory(changes, notificationType, detail = {}) {
+  return enqueueMutation(() => applyWithoutHistoryWithinQueue(changes, notificationType, detail));
 }
 
 function pinsForEntry(entryId) {
@@ -126,6 +227,12 @@ function addDependentEntryChanges(changes, before, after) {
     if (after == null) pushChange(changes, 'pins', pin.id, pin, null);
     else if (pin.categoryId !== after.categoryId) pushChange(changes, 'pins', pin.id, pin, { ...pin, categoryId: after.categoryId });
   }
+  for (const [key, value] of Object.entries(state.settings)) {
+    if (!key.startsWith('lastPosition:') || value !== beforeId) continue;
+    const categoryId = key.slice('lastPosition:'.length);
+    if (after?.categoryId === categoryId) continue;
+    pushChange(changes, 'settings', key, { key, value }, null);
+  }
   const annotation = annotationForEntry(beforeId);
   if (annotation) {
     if (after == null || wordOrPosChanged) pushChange(changes, 'annotations', beforeId, annotation, null);
@@ -134,8 +241,8 @@ function addDependentEntryChanges(changes, before, after) {
 }
 
 function uniqueCategoryName(name, exceptId = null) {
-  const normalized = String(name).trim().toLocaleLowerCase('en-US');
-  return !state.categories.some((category) => category.id !== exceptId && category.name.trim().toLocaleLowerCase('en-US') === normalized);
+  const normalized = normalizeCategoryName(name);
+  return !state.categories.some((category) => category.id !== exceptId && normalizeCategoryName(category.name) === normalized);
 }
 
 function createEntry(categoryId, word, pos) {
@@ -146,7 +253,7 @@ function createEntry(categoryId, word, pos) {
     sources: { [categoryId]: { word: String(word).trim(), pos: sortPos(pos) } },
     manualWord: null, manualPos: null, categoryId, pos: sortPos(pos), createdAt: now, updatedAt: now,
   };
-  return recalculateEntry(entry);
+  return recalculateEntry(entry, state.categories);
 }
 
 function cloneEntriesMap() {
@@ -162,19 +269,76 @@ function syncAffectedEntriesToChanges(workingEntries, affectedIds, changes) {
   }
 }
 
-export async function initializeStore() {
-  const [categories, entries, pins, annotations, numberMode, historyLimit] = await Promise.all([
-    getAll('categories'), getAll('entries'), getAll('pins'), getAll('annotations'),
-    getSetting('numberMode', 'none'), getSetting('historyLimit', HISTORY_LIMIT),
+async function loadStateFromDatabase({ validateIntegrity = true } = {}) {
+  const [categories, entries, pins, annotations, settingRecords] = await Promise.all([
+    getAll('categories'), getAll('entries'), getAll('pins'), getAll('annotations'), getAll('settings'),
   ]);
+  const loadedSettings = Object.fromEntries(settingRecords.map((record) => [record.key, deepClone(record.value)]));
+  if (validateIntegrity) validateBackup({
+    schemaVersion: 1,
+    categories,
+    entries,
+    pins,
+    annotations,
+    settings: { numberMode: loadedSettings.numberMode ?? 'none', historyLimit: loadedSettings.historyLimit ?? HISTORY_LIMIT },
+  });
   state.categories = orderedCategories(categories);
   state.entries = new Map(entries.map((entry) => [entry.id, entry]));
   state.pins = new Map(pins.map((pin) => [pin.id, pin]));
   state.annotations = new Map(annotations.map((annotation) => [annotation.entryId, annotation]));
-  state.settings = { numberMode, historyLimit, appVersion: APP_VERSION };
+  state.settings = loadedSettings;
+  state.settings.numberMode = state.settings.numberMode ?? 'none';
+  state.settings.historyLimit = state.settings.historyLimit ?? HISTORY_LIMIT;
+  state.settings.appVersion = APP_VERSION;
+  state.settings.dataRevision = Number(state.settings.dataRevision ?? 0);
   rebuildIndexes();
   await refreshHistoryStatus();
+}
+
+export async function initializeStore() {
+  await loadStateFromDatabase();
   notify('initialized');
+}
+
+export function reloadStoreFromDatabase(reason = 'external') {
+  return enqueueMutation(async () => {
+    if (reason === 'visibility' || reason === 'pageshow') {
+      const [latestRevision, latestNumberMode] = await Promise.all([
+        getSetting('dataRevision', 0),
+        getSetting('numberMode', 'none'),
+      ]);
+      if (Number(latestRevision) === Number(state.settings.dataRevision)
+          && latestNumberMode === state.settings.numberMode) return false;
+    }
+    await loadStateFromDatabase();
+    notify('external-change', { reason });
+    return true;
+  });
+}
+
+export function initializeInstanceCoordination() {
+  if (coordinationStarted) return;
+  coordinationStarted = true;
+  if (typeof BroadcastChannel === 'function') {
+    coordinationChannel = new BroadcastChannel(INSTANCE_CHANNEL_NAME);
+    coordinationChannel.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || message.instanceId === instanceId || message.type !== 'data-changed') return;
+      reloadStoreFromDatabase('broadcast').catch((error) => console.error('重新载入其他实例的修改失败', error));
+    });
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        reloadStoreFromDatabase('visibility').catch((error) => console.error('回到前台时重新载入失败', error));
+      }
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) reloadStoreFromDatabase('pageshow').catch((error) => console.error('页面恢复时重新载入失败', error));
+    });
+  }
 }
 
 export function subscribe(listener) {
@@ -195,15 +359,17 @@ export function getAnnotations(categoryId = null) { return [...state.annotations
 export function getPins(categoryId) {
   return [...state.pins.values()]
     .filter((pin) => pin.categoryId === categoryId && state.entries.has(pin.entryId))
-    .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => a.order - b.order || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
 }
 
 export async function addCategory(name) {
   const clean = String(name ?? '').trim();
   if (!clean) throw new Error('词表名称不能为空');
+  if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
   if (!uniqueCategoryName(clean)) throw new Error('词表名称已存在');
   const now = new Date().toISOString();
-  const category = { id: uuid('cat'), name: clean, label: clean, order: state.categories.length, createdAt: now, updatedAt: now };
+  const nextOrder = state.categories.reduce((max, category) => Math.max(max, Number(category.order) || 0), -1) + 1;
+  const category = { id: uuid('cat'), name: clean, label: clean, order: nextOrder, createdAt: now, updatedAt: now };
   await commit(`新增词表 ${clean}`, [change('categories', category.id, null, category)]);
   return category;
 }
@@ -213,12 +379,14 @@ export async function renameCategory(categoryId, name) {
   if (!before) throw new Error('词表不存在');
   const clean = String(name ?? '').trim();
   if (!clean) throw new Error('词表名称不能为空');
+  if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
   if (!uniqueCategoryName(clean, categoryId)) throw new Error('词表名称已存在');
   const after = { ...before, name: clean, label: clean, updatedAt: new Date().toISOString() };
   await commit(`重命名词表 ${before.name}`, [change('categories', categoryId, before, after)]);
 }
 
 export async function moveCategory(categoryId, direction) {
+  if (![ -1, 1 ].includes(direction)) throw new Error('无效的词表移动方向');
   const categories = orderedCategories();
   const index = categories.findIndex((category) => category.id === categoryId);
   const targetIndex = index + direction;
@@ -242,10 +410,15 @@ export async function moveCategory(categoryId, direction) {
 }
 
 export async function deleteCategory(categoryId) {
+  if (state.categories.length <= 1) throw new Error('至少需要保留一个词表');
   const category = getCategory(categoryId);
   if (!category) throw new Error('词表不存在');
   const remainingCategories = orderedCategories().filter((item) => item.id !== categoryId).map((item, order) => ({ ...item, order }));
   const changes = [change('categories', categoryId, category, null)];
+  const lastPositionKey = `lastPosition:${categoryId}`;
+  if (Object.hasOwn(state.settings, lastPositionKey)) {
+    pushChange(changes, 'settings', lastPositionKey, { key: lastPositionKey, value: state.settings[lastPositionKey] }, null);
+  }
   for (const updated of remainingCategories) pushChange(changes, 'categories', updated.id, getCategory(updated.id), updated);
   const working = cloneEntriesMap();
   const affected = new Set();
@@ -267,8 +440,9 @@ export async function addWord(categoryId, word, posValue) {
   if (!getCategory(categoryId)) throw new Error('目标词表不存在');
   const cleanWord = String(word ?? '').trim();
   const normalized = normalizeWord(cleanWord);
-  const pos = Array.isArray(posValue) ? sortPos(posValue) : parsePos(posValue);
+  const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
   if (!normalized) throw new Error('词汇不能为空');
+  if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
   if (!pos.length) throw new Error('词性不能为空');
   const existingId = wordIndex.get(normalized);
   const changes = [];
@@ -278,26 +452,24 @@ export async function addWord(categoryId, word, posValue) {
     return { entry, created: true, merged: false };
   }
   const before = state.entries.get(existingId);
-  const after = deepClone(before);
-  const source = after.sources[categoryId] ?? { word: cleanWord, pos: [] };
-  source.pos = mergePos(source.pos, pos);
-  if (!source.word) source.word = cleanWord;
-  after.sources[categoryId] = source;
-  if (after.manualPos?.length) after.manualPos = mergePos(after.manualPos, pos);
-  const recalculated = recalculateEntry(after);
+  const recalculated = mergeEntrySource(before, categoryId, { word: cleanWord, pos }, state.categories);
   pushChange(changes, 'entries', before.id, before, recalculated);
   addDependentEntryChanges(changes, before, recalculated);
   await commit(`合并重复词 ${cleanWord}`, changes);
   return { entry: recalculated, created: false, merged: true, moved: before.categoryId !== recalculated.categoryId };
 }
 
-export async function editEntry(entryId, word, posValue) {
+export async function editEntry(entryId, word, posValue, { expectedUpdatedAt = null } = {}) {
   const before = getEntry(entryId);
   if (!before) throw new Error('词汇不存在');
+  if (expectedUpdatedAt && before.updatedAt !== expectedUpdatedAt) {
+    throw new Error('该词汇已在另一个页面中更新，请重新打开编辑窗口。');
+  }
   const cleanWord = String(word ?? '').trim();
   const normalized = normalizeWord(cleanWord);
-  const pos = Array.isArray(posValue) ? sortPos(posValue) : parsePos(posValue);
+  const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
   if (!normalized || !pos.length) throw new Error('词汇和词性不能为空');
+  if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
   const duplicateId = wordIndex.get(normalized);
   if (duplicateId && duplicateId !== entryId) {
     const targetBefore = getEntry(duplicateId);
@@ -309,7 +481,7 @@ export async function editEntry(entryId, word, posValue) {
     }
     targetAfter.manualWord = cleanWord;
     targetAfter.manualPos = mergePos(targetBefore.pos, before.pos, pos);
-    const merged = recalculateEntry(targetAfter);
+    const merged = recalculateEntry(targetAfter, state.categories);
     const changes = [];
     pushChange(changes, 'entries', targetBefore.id, targetBefore, merged);
     pushChange(changes, 'entries', before.id, before, null);
@@ -323,10 +495,17 @@ export async function editEntry(entryId, word, posValue) {
     if (sourceAnnotation) pushChange(changes, 'annotations', before.id, sourceAnnotation, null);
     const targetAnnotation = annotationForEntry(targetBefore.id);
     if (targetAnnotation) pushChange(changes, 'annotations', targetBefore.id, targetAnnotation, null);
+    for (const [key, value] of Object.entries(state.settings)) {
+      if (!key.startsWith('lastPosition:') || value !== before.id) continue;
+      const categoryId = key.slice('lastPosition:'.length);
+      const beforeSetting = { key, value };
+      const afterSetting = merged.categoryId === categoryId ? { key, value: targetBefore.id } : null;
+      pushChange(changes, 'settings', key, beforeSetting, afterSetting);
+    }
     await commit(`合并词汇 ${cleanWord}`, changes);
     return { entry: merged, merged: true };
   }
-  const after = recalculateEntry({ ...deepClone(before), manualWord: cleanWord, manualPos: pos });
+  const after = applyManualEntryEdit(before, cleanWord, pos, state.categories);
   const changes = [];
   pushChange(changes, 'entries', entryId, before, after);
   addDependentEntryChanges(changes, before, after);
@@ -340,7 +519,7 @@ export async function removeEntryFromCategory(entryId, categoryId) {
   if (!before.sources?.[categoryId]) throw new Error('该词汇不属于当前词表来源');
   const working = deepClone(before);
   delete working.sources[categoryId];
-  const after = recalculateEntry(working);
+  const after = recalculateEntry(working, state.categories);
   const changes = [];
   pushChange(changes, 'entries', entryId, before, after);
   addDependentEntryChanges(changes, before, after);
@@ -356,22 +535,24 @@ export async function deleteEntryGlobally(entryId) {
   await commit(`全局删除 ${before.word}`, changes);
 }
 
-export async function togglePin(entryId) {
-  const entry = getEntry(entryId);
-  if (!entry) throw new Error('词汇不存在');
-  const existing = pinsForEntry(entryId)[0];
-  if (existing) {
-    await commit(`取消书签 ${entry.word}`, [change('pins', existing.id, existing, null)]);
-    return false;
-  }
-  const categoryPins = getPins(entry.categoryId);
-  const pin = {
-    id: uuid('pin'), entryId, categoryId: entry.categoryId,
-    order: categoryPins.reduce((max, item) => Math.max(max, item.order), -1) + 1,
-    createdAt: new Date().toISOString(),
-  };
-  await commit(`固定书签 ${entry.word}`, [change('pins', pin.id, null, pin)]);
-  return true;
+export function togglePin(entryId) {
+  return enqueueMutation(async () => {
+    const entry = getEntry(entryId);
+    if (!entry) throw new Error('词汇不存在');
+    const existing = pinsForEntry(entryId)[0];
+    if (existing) {
+      await commitWithinQueue(`取消书签 ${entry.word}`, [change('pins', existing.id, existing, null)]);
+      return false;
+    }
+    const categoryPins = getPins(entry.categoryId);
+    const pin = {
+      id: uuid('pin'), entryId, categoryId: entry.categoryId,
+      order: categoryPins.reduce((max, item) => Math.max(max, Number(item.order) || 0), -1) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    await commitWithinQueue(`固定书签 ${entry.word}`, [change('pins', pin.id, null, pin)]);
+    return true;
+  });
 }
 
 function simulateImport(categoryId, importedEntries, mode) {
@@ -379,9 +560,21 @@ function simulateImport(categoryId, importedEntries, mode) {
   const working = cloneEntriesMap();
   const affected = new Set();
   const workingWordIndex = new Map([...working.values()].map((entry) => [entry.normalizedWord, entry.id]));
-  const importedByWord = new Map(importedEntries.map((item) => [normalizeWord(item.word), item]));
+  const importedByWord = new Map();
+  for (const item of importedEntries) {
+    const rawWord = String(item?.word ?? '').trim();
+    const normalized = normalizeWord(rawWord);
+    if (!normalized) continue;
+    if (rawWord.length > MAX_WORD_LENGTH) throw new Error(`导入词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
+    const importedPos = parsePos(Array.isArray(item?.pos) ? item.pos.join(', ') : item?.pos);
+    if (!importedPos.length) throw new Error(`导入词汇 ${rawWord} 缺少有效词性`);
+    const before = importedByWord.get(normalized);
+    if (!before) importedByWord.set(normalized, { word: rawWord, pos: importedPos });
+    else before.pos = mergePos(before.pos, importedPos);
+  }
+  const canonicalImported = [...importedByWord.values()];
   const consumed = new Set();
-  const stats = { input: importedEntries.length, created: 0, merged: 0, retained: 0, movedToCurrent: 0, removedSources: 0, deleted: 0 };
+  const stats = { input: canonicalImported.length, created: 0, merged: 0, retained: 0, movedToCurrent: 0, removedSources: 0, deleted: 0 };
 
   if (mode === 'replace') {
     for (const [id, entry] of working) {
@@ -390,7 +583,8 @@ function simulateImport(categoryId, importedEntries, mode) {
       if (replacement) {
         const beforeOwner = entry.categoryId;
         entry.sources[categoryId] = { word: replacement.word, pos: sortPos(replacement.pos) };
-        const recalculated = recalculateEntry(entry);
+        if (entry.manualPos?.length) entry.manualPos = mergePos(entry.manualPos, replacement.pos);
+        const recalculated = recalculateEntry(entry, state.categories);
         working.set(id, recalculated);
         affected.add(id);
         consumed.add(entry.normalizedWord);
@@ -401,14 +595,14 @@ function simulateImport(categoryId, importedEntries, mode) {
       }
       delete entry.sources[categoryId];
       stats.removedSources += 1;
-      const recalculated = recalculateEntry(entry);
+      const recalculated = recalculateEntry(entry, state.categories);
       if (recalculated) working.set(id, recalculated);
       else { working.delete(id); workingWordIndex.delete(entry.normalizedWord); stats.deleted += 1; }
       affected.add(id);
     }
   }
 
-  for (const item of importedEntries) {
+  for (const item of canonicalImported) {
     const normalized = normalizeWord(item.word);
     if (!normalized || consumed.has(normalized)) continue;
     const existingId = workingWordIndex.get(normalized);
@@ -421,12 +615,7 @@ function simulateImport(categoryId, importedEntries, mode) {
       continue;
     }
     const beforeMerge = working.get(existingId);
-    const merged = deepClone(beforeMerge);
-    const source = merged.sources[categoryId] ?? { word: item.word, pos: [] };
-    source.pos = mergePos(source.pos, item.pos);
-    if (!source.word) source.word = item.word;
-    merged.sources[categoryId] = source;
-    const recalculated = recalculateEntry(merged);
+    const recalculated = mergeEntrySource(beforeMerge, categoryId, item, state.categories);
     working.set(existingId, recalculated);
     affected.add(existingId);
     stats.merged += 1;
@@ -451,7 +640,7 @@ export async function importIntoCategory(categoryId, importedEntries, mode) {
 }
 
 export function createBackup() {
-  return {
+  return canonicalizeBackup({
     schemaVersion: 1,
     appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
@@ -460,92 +649,150 @@ export function createBackup() {
     pins: [...state.pins.values()].map(deepClone),
     annotations: [...state.annotations.values()].map(deepClone),
     settings: { numberMode: state.settings.numberMode, historyLimit: state.settings.historyLimit },
-  };
+  });
 }
 
-export async function restoreBackup(backup) {
-  const nextCategories = new Map((backup.categories ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextEntries = new Map((backup.entries ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextPins = new Map((backup.pins ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextAnnotations = new Map((backup.annotations ?? []).map((item) => [item.entryId, deepClone(item)]));
+export async function restoreBackup(backup, { label = '恢复完整备份' } = {}) {
+  validateBackup(backup);
+  const canonical = canonicalizeBackup(backup);
+  const nextCategories = new Map((canonical.categories ?? []).map((item) => [item.id, deepClone(item)]));
+  const nextEntries = new Map((canonical.entries ?? []).map((item) => [item.id, deepClone(item)]));
+  const nextPins = new Map((canonical.pins ?? []).map((item) => [item.id, deepClone(item)]));
+  const nextAnnotations = new Map((canonical.annotations ?? []).map((item) => [item.entryId, deepClone(item)]));
   const changes = [];
   const mapSpecs = [
-    ['categories', new Map(state.categories.map((item) => [item.id, item])), nextCategories],
-    ['entries', state.entries, nextEntries], ['pins', state.pins, nextPins], ['annotations', state.annotations, nextAnnotations],
+    { store: 'categories', beforeMap: new Map(state.categories.map((item) => [item.id, item])), afterMap: nextCategories },
+    { store: 'entries', beforeMap: state.entries, afterMap: nextEntries },
+    { store: 'pins', beforeMap: state.pins, afterMap: nextPins },
+    { store: 'annotations', beforeMap: state.annotations, afterMap: nextAnnotations },
   ];
-  for (const [store, beforeMap, afterMap] of mapSpecs) {
+  for (const { store, beforeMap, afterMap } of mapSpecs) {
     const keys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
     for (const key of keys) pushChange(changes, store, key, beforeMap.get(key) ?? null, afterMap.get(key) ?? null);
   }
-  await commit('恢复完整备份', changes);
-  if (backup.settings?.numberMode) await setNumberMode(backup.settings.numberMode);
+  for (const [key, value] of Object.entries(state.settings)) {
+    if (key.startsWith('lastPosition:')) pushChange(changes, 'settings', key, { key, value }, null);
+  }
+  const backupNumberMode = canonical.settings?.numberMode;
+  if (backupNumberMode != null) {
+    if (!['none', 'group', 'global'].includes(backupNumberMode)) throw new Error('备份包含无效序号模式');
+    pushChange(
+      changes,
+      'settings',
+      'numberMode',
+      { key: 'numberMode', value: state.settings.numberMode },
+      { key: 'numberMode', value: backupNumberMode },
+    );
+  }
+  return commit(label, changes);
 }
 
 export async function setNumberMode(mode) {
   if (!['none', 'group', 'global'].includes(mode)) throw new Error('无效序号模式');
-  state.settings.numberMode = mode;
-  await setSetting('numberMode', mode);
-  notify('settings', { numberMode: mode });
+  return enqueueMutation(async () => {
+    await setSetting('numberMode', mode);
+    state.settings.numberMode = mode;
+    notify('settings', { numberMode: mode });
+    broadcastDataChange('序号设置');
+  });
 }
 
 export async function saveLastPosition(categoryId, entryId) {
-  if (!categoryId || !entryId) return;
-  await setSetting(`lastPosition:${categoryId}`, entryId);
+  const entry = getEntry(entryId);
+  if (!categoryId || !entry || entry.categoryId !== categoryId) return false;
+  const key = `lastPosition:${categoryId}`;
+  await setSetting(key, entryId);
+  state.settings[key] = entryId;
+  return true;
 }
 
 export function getLastPosition(categoryId) { return getSetting(`lastPosition:${categoryId}`, null); }
-export async function saveExpandedGroups(categoryId, groups) { await setSetting(`expandedGroups:${categoryId}`, [...groups]); }
-export function getExpandedGroups(categoryId) { return getSetting(`expandedGroups:${categoryId}`, []); }
-
-export async function applyAnnotations(items) {
-  const changes = [];
-  for (const item of items) {
-    const entry = getEntry(item.entryId);
-    if (!entry) continue;
-    const before = state.annotations.get(entry.id) ?? null;
-    const after = {
-      entryId: entry.id, categoryId: entry.categoryId, createdAt: new Date().toISOString(),
-      spelling: item.spelling ?? null, pos: item.pos ?? null, reason: String(item.reason ?? '').slice(0, 500),
-    };
-    pushChange(changes, 'annotations', entry.id, before, after);
-  }
-  await writeChangesWithoutHistory(changes);
-  changes.forEach(applyLocalChange);
-  notify('annotations', { count: changes.length });
-}
-
 export async function dismissAnnotation(entryId) {
   const before = state.annotations.get(entryId);
   if (!before) return;
   const item = change('annotations', entryId, before, null);
-  await writeChangesWithoutHistory([item]);
-  applyLocalChange(item);
-  notify('annotations', { count: -1 });
+  await applyWithoutHistory([item], 'annotations', { count: -1 });
 }
 
 export async function clearAnnotations(categoryId = null) {
   const targets = getAnnotations(categoryId);
   const changes = targets.map((item) => change('annotations', item.entryId, item, null));
-  await writeChangesWithoutHistory(changes);
-  changes.forEach(applyLocalChange);
-  notify('annotations', { cleared: targets.length });
+  await applyWithoutHistory(changes, 'annotations', { cleared: targets.length });
   return targets.length;
 }
 
+
+function assertCurrentStateIntegrity() {
+  validateBackup({
+    schemaVersion: 1,
+    categories: state.categories,
+    entries: [...state.entries.values()],
+    pins: [...state.pins.values()],
+    annotations: [...state.annotations.values()],
+    settings: { numberMode: state.settings.numberMode, historyLimit: state.settings.historyLimit },
+  });
+}
+
+function postHistoryCleanupChanges(record) {
+  const changes = [];
+  for (const annotation of state.annotations.values()) {
+    const entry = state.entries.get(annotation.entryId);
+    if (!entry) {
+      pushChange(changes, 'annotations', annotation.entryId, annotation, null);
+      continue;
+    }
+    // 语义变更产生的标注删除必须由原始事务显式记录，以保证撤销/重做完全对称。
+    // 此处只修复结构性失效关系，不擅自改变备份中明确保存的标注。
+    if (annotation.categoryId !== entry.categoryId) {
+      pushChange(changes, 'annotations', entry.id, annotation, { ...annotation, categoryId: entry.categoryId });
+    }
+  }
+
+  for (const pin of state.pins.values()) {
+    const entry = state.entries.get(pin.entryId);
+    if (!entry) pushChange(changes, 'pins', pin.id, pin, null);
+    else if (pin.categoryId !== entry.categoryId) {
+      pushChange(changes, 'pins', pin.id, pin, { ...pin, categoryId: entry.categoryId });
+    }
+  }
+
+  for (const [key, value] of Object.entries(state.settings)) {
+    if (!key.startsWith('lastPosition:')) continue;
+    const categoryId = key.slice('lastPosition:'.length);
+    const entry = state.entries.get(value);
+    if (!entry || entry.categoryId !== categoryId) {
+      pushChange(changes, 'settings', key, { key, value }, null);
+    }
+  }
+  return changes;
+}
+
 export async function undo() {
-  const record = await undoHistory();
-  if (!record) return null;
-  await initializeStore();
-  notify('history', { direction: 'undo', label: record.label });
-  return record;
+  return enqueueMutation(async () => {
+    const record = await undoHistory(state.settings.dataRevision);
+    if (!record) return null;
+    await loadStateFromDatabase({ validateIntegrity: false });
+    const cleanup = postHistoryCleanupChanges(record);
+    if (cleanup.length) await applyWithoutHistoryWithinQueue(cleanup, 'integrity-cleanup', { after: 'undo' });
+    assertCurrentStateIntegrity();
+    notify('history', { direction: 'undo', label: record.label });
+    broadcastDataChange(`撤销：${record.label}`);
+    return record;
+  });
 }
 
 export async function redo() {
-  const record = await redoHistory();
-  if (!record) return null;
-  await initializeStore();
-  notify('history', { direction: 'redo', label: record.label });
-  return record;
+  return enqueueMutation(async () => {
+    const record = await redoHistory(state.settings.dataRevision);
+    if (!record) return null;
+    await loadStateFromDatabase({ validateIntegrity: false });
+    const cleanup = postHistoryCleanupChanges(record);
+    if (cleanup.length) await applyWithoutHistoryWithinQueue(cleanup, 'integrity-cleanup', { after: 'redo' });
+    assertCurrentStateIntegrity();
+    notify('history', { direction: 'redo', label: record.label });
+    broadcastDataChange(`重做：${record.label}`);
+    return record;
+  });
 }
 
 export async function replaceAnnotationsForEntries(entryIds, items) {
@@ -563,7 +810,5 @@ export async function replaceAnnotationsForEntries(entryIds, items) {
     } : null;
     pushChange(changes, 'annotations', entryId, before, after);
   }
-  await writeChangesWithoutHistory(changes);
-  changes.forEach(applyLocalChange);
-  notify('annotations', { replaced: targetIds.size, issues: incoming.size });
+  await applyWithoutHistory(changes, 'annotations', { replaced: targetIds.size, issues: incoming.size });
 }

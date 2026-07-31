@@ -9,6 +9,15 @@ export function normalizeWord(value) {
     .replace(/\s+/g, ' ');
 }
 
+
+export function normalizeCategoryName(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ');
+}
+
 export function groupForWord(word) {
   const normalized = String(word ?? '').normalize('NFKC').trim();
   const match = normalized.match(/[A-Za-z]/);
@@ -120,21 +129,6 @@ export function debounce(fn, delay = 180) {
   };
 }
 
-export function throttle(fn, delay = 180) {
-  let waiting = false;
-  let latestArgs = null;
-  return (...args) => {
-    latestArgs = args;
-    if (waiting) return;
-    waiting = true;
-    setTimeout(() => {
-      waiting = false;
-      fn(...latestArgs);
-      latestArgs = null;
-    }, delay);
-  };
-}
-
 export function deepClone(value) {
   return globalThis.structuredClone ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 }
@@ -148,7 +142,8 @@ export function downloadText(filename, content, type = 'text/plain;charset=utf-8
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 500);
+  // iOS 主屏幕 PWA 可能在 click 之后异步接管下载，过早撤销会产生空文件或失败。
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 export function formatDateForFilename(date = new Date()) {
@@ -159,18 +154,27 @@ export function formatDateForFilename(date = new Date()) {
 export async function copyText(text) {
   const value = String(text ?? '');
   if (navigator.clipboard && globalThis.isSecureContext) {
-    await navigator.clipboard.writeText(value);
-    return;
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch (error) {
+      console.warn('Clipboard API 失败，改用兼容复制路径。', error);
+    }
   }
   const area = document.createElement('textarea');
   area.value = value;
   area.setAttribute('readonly', '');
-  area.style.position = 'fixed';
-  area.style.opacity = '0';
+  area.className = 'clipboard-fallback';
   document.body.append(area);
-  area.select();
-  const success = document.execCommand('copy');
-  area.remove();
+  let success = false;
+  try {
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    success = document.execCommand('copy');
+  } finally {
+    area.remove();
+  }
   if (!success) throw new Error('复制失败');
 }
 

@@ -1,22 +1,22 @@
-# Vocabulary Index 2.2.1 file manifest
-
-Total files (excluding this manifest and SHA list): 42
+# Vocabulary Index 2.4.0 file manifest
+# Paths are relative to repository root.
 
 .nojekyll	0 bytes
-BUG_FIX_REPORT_2.2.1.md	6107 bytes
-CHANGELOG.md	2933 bytes
-DATA_FORMATS.md	2181 bytes
+CHANGELOG.md	5461 bytes
+CHANGE_REPORT_2.4.0.md	4199 bytes
+DATA_FORMATS.md	2407 bytes
 DATA_REPORT.md	990 bytes
-DEPLOY.md	2393 bytes
-README.md	2175 bytes
-SECURITY.md	1962 bytes
-TEST_REPORT_2.2.1.md	2338 bytes
+DEPLOY.md	2712 bytes
+LOCAL_ARCHITECTURE.md	2587 bytes
+README.md	3297 bytes
+SECURITY.md	2502 bytes
+TEST_REPORT_2.4.0.md	3223 bytes
 assets/icons/apple-touch-icon.png	33779 bytes
 assets/icons/icon-192.png	36899 bytes
 assets/icons/icon-512.png	151357 bytes
 css/base.css	3112 bytes
-css/components.css	12164 bytes
-css/responsive.css	1583 bytes
+css/components.css	16153 bytes
+css/responsive.css	3390 bytes
 css/tokens.css	1423 bytes
 data/seed-report.json	661 bytes
 data/seed.json	1461154 bytes
@@ -27,20 +27,21 @@ data/source/AWL.txt	7486 bytes
 data/source/B1.txt	10551 bytes
 data/source/B2.txt	18993 bytes
 data/source/C1.txt	17857 bytes
-index.html	18887 bytes
-js/ai.js	8236 bytes
-js/app.js	5021 bytes
-js/category-view-model.js	2065 bytes
-js/constants.js	953 bytes
-js/db.js	19109 bytes
+index.html	21146 bytes
+js/ai.js	14717 bytes
+js/app.js	5762 bytes
+js/category-view-model.js	2060 bytes
+js/constants.js	1299 bytes
+js/db.js	20606 bytes
 js/entry-model.js	2343 bytes
-js/import-export.js	20750 bytes
+js/import-export.js	22038 bytes
 js/search.js	2989 bytes
-js/store.js	36667 bytes
-js/ui.js	56519 bytes
-js/utils.js	6348 bytes
+js/store.js	40048 bytes
+js/ui.js	75197 bytes
+js/utils.js	6734 bytes
 manifest.webmanifest	568 bytes
 package.json	158 bytes
-sw.js	2595 bytes
-tests/MANUAL_CHECKLIST.md	2771 bytes
-tests/run-tests.mjs	21798 bytes
+sw.js	2555 bytes
+tests/MANUAL_CHECKLIST.md	3996 bytes
+tests/fake-db.mjs	5116 bytes
+tests/run-tests.mjs	34500 bytes

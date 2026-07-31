@@ -1,9 +1,9 @@
 import {
-  commitChanges, getAll, getSetting, historyStatus, redoHistory, setSetting,
+  commitChanges, getSetting, historyStatus, readDatabaseSnapshot, redoHistory, setSetting,
   undoHistory, writeChangesWithoutHistory,
 } from './db.js';
 import { APP_VERSION, HISTORY_LIMIT, INSTANCE_CHANNEL_NAME, MAX_CATEGORY_NAME_LENGTH, MAX_WORD_LENGTH } from './constants.js';
-import { deepClone, formatPos, mergePos, normalizeCategoryName, normalizeWord, parsePos, sortPos, uuid } from './utils.js';
+import { containsControlCharacters, deepClone, formatPos, mergePos, normalizeCategoryName, normalizeWord, parsePos, sortPos, uuid } from './utils.js';
 import { applyManualEntryEdit, mergeEntrySource, recalculateEntry } from './entry-model.js';
 import { canonicalizeBackup, validateBackup } from './import-export.js';
 
@@ -183,10 +183,6 @@ async function commitWithinQueue(label, changes, detail = {}) {
   return true;
 }
 
-async function commit(label, changes, detail = {}) {
-  return enqueueMutation(() => commitWithinQueue(label, changes, detail));
-}
-
 async function applyWithoutHistoryWithinQueue(changes, notificationType, detail = {}) {
   normalizePinOrderChanges(changes);
   const filtered = coalesceChanges(changes);
@@ -205,10 +201,6 @@ async function applyWithoutHistoryWithinQueue(changes, notificationType, detail 
   notify(notificationType, detail);
   broadcastDataChange(notificationType);
   return true;
-}
-
-async function applyWithoutHistory(changes, notificationType, detail = {}) {
-  return enqueueMutation(() => applyWithoutHistoryWithinQueue(changes, notificationType, detail));
 }
 
 function pinsForEntry(entryId) {
@@ -238,6 +230,14 @@ function addDependentEntryChanges(changes, before, after) {
     if (after == null || wordOrPosChanged) pushChange(changes, 'annotations', beforeId, annotation, null);
     else if (annotation.categoryId !== after.categoryId) pushChange(changes, 'annotations', beforeId, annotation, { ...annotation, categoryId: after.categoryId });
   }
+}
+
+
+function preserveTimestampForNoop(before, after) {
+  if (!before || !after) return after;
+  const comparableBefore = { ...deepClone(before), updatedAt: null };
+  const comparableAfter = { ...deepClone(after), updatedAt: null };
+  return JSON.stringify(comparableBefore) === JSON.stringify(comparableAfter) ? deepClone(before) : after;
 }
 
 function uniqueCategoryName(name, exceptId = null) {
@@ -270,10 +270,9 @@ function syncAffectedEntriesToChanges(workingEntries, affectedIds, changes) {
 }
 
 async function loadStateFromDatabase({ validateIntegrity = true } = {}) {
-  const [categories, entries, pins, annotations, settingRecords] = await Promise.all([
-    getAll('categories'), getAll('entries'), getAll('pins'), getAll('annotations'), getAll('settings'),
-  ]);
-  const loadedSettings = Object.fromEntries(settingRecords.map((record) => [record.key, deepClone(record.value)]));
+  const snapshot = await readDatabaseSnapshot();
+  const { categories, entries, pins, annotations } = snapshot;
+  const loadedSettings = Object.fromEntries(snapshot.settings.map((record) => [record.key, deepClone(record.value)]));
   if (validateIntegrity) validateBackup({
     schemaVersion: 1,
     categories,
@@ -291,8 +290,14 @@ async function loadStateFromDatabase({ validateIntegrity = true } = {}) {
   state.settings.historyLimit = state.settings.historyLimit ?? HISTORY_LIMIT;
   state.settings.appVersion = APP_VERSION;
   state.settings.dataRevision = Number(state.settings.dataRevision ?? 0);
+  const historyPointer = Number(state.settings.historyPointer ?? 0);
+  const historySequences = new Set(snapshot.history.map((record) => Number(record.sequence)));
+  state.history = {
+    canUndo: historyPointer > 0 && historySequences.has(historyPointer),
+    canRedo: historySequences.has(historyPointer + 1),
+    pointer: historyPointer,
+  };
   rebuildIndexes();
-  await refreshHistoryStatus();
 }
 
 export async function initializeStore() {
@@ -302,7 +307,7 @@ export async function initializeStore() {
 
 export function reloadStoreFromDatabase(reason = 'external') {
   return enqueueMutation(async () => {
-    if (reason === 'visibility' || reason === 'pageshow') {
+    if (reason !== 'force') {
       const [latestRevision, latestNumberMode] = await Promise.all([
         getSetting('dataRevision', 0),
         getSetting('numberMode', 'none'),
@@ -362,177 +367,207 @@ export function getPins(categoryId) {
     .sort((a, b) => a.order - b.order || String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
 }
 
-export async function addCategory(name) {
-  const clean = String(name ?? '').trim();
-  if (!clean) throw new Error('词表名称不能为空');
-  if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
-  if (!uniqueCategoryName(clean)) throw new Error('词表名称已存在');
-  const now = new Date().toISOString();
-  const nextOrder = state.categories.reduce((max, category) => Math.max(max, Number(category.order) || 0), -1) + 1;
-  const category = { id: uuid('cat'), name: clean, label: clean, order: nextOrder, createdAt: now, updatedAt: now };
-  await commit(`新增词表 ${clean}`, [change('categories', category.id, null, category)]);
-  return category;
+export function addCategory(name) {
+  return enqueueMutation(async () => {
+    const clean = String(name ?? '').trim();
+    if (!clean || !normalizeCategoryName(clean)) throw new Error('词表名称不能为空或仅包含不可见字符');
+    if (containsControlCharacters(clean)) throw new Error('词表名称不能包含换行或控制字符');
+    if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
+    if (!uniqueCategoryName(clean)) throw new Error('词表名称已存在');
+    const now = new Date().toISOString();
+    const nextOrder = state.categories.reduce((max, category) => Math.max(max, Number(category.order) || 0), -1) + 1;
+    const category = { id: uuid('cat'), name: clean, label: clean, order: nextOrder, createdAt: now, updatedAt: now };
+    await commitWithinQueue(`新增词表 ${clean}`, [change('categories', category.id, null, category)]);
+    return category;
+  });
 }
 
-export async function renameCategory(categoryId, name) {
-  const before = getCategory(categoryId);
-  if (!before) throw new Error('词表不存在');
-  const clean = String(name ?? '').trim();
-  if (!clean) throw new Error('词表名称不能为空');
-  if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
-  if (!uniqueCategoryName(clean, categoryId)) throw new Error('词表名称已存在');
-  const after = { ...before, name: clean, label: clean, updatedAt: new Date().toISOString() };
-  await commit(`重命名词表 ${before.name}`, [change('categories', categoryId, before, after)]);
+export function renameCategory(categoryId, name) {
+  return enqueueMutation(async () => {
+    const before = getCategory(categoryId);
+    if (!before) throw new Error('词表不存在');
+    const clean = String(name ?? '').trim();
+    if (!clean || !normalizeCategoryName(clean)) throw new Error('词表名称不能为空或仅包含不可见字符');
+    if (containsControlCharacters(clean)) throw new Error('词表名称不能包含换行或控制字符');
+    if (clean.length > MAX_CATEGORY_NAME_LENGTH) throw new Error(`词表名称不能超过 ${MAX_CATEGORY_NAME_LENGTH} 个字符`);
+    if (!uniqueCategoryName(clean, categoryId)) throw new Error('词表名称已存在');
+    if (clean === before.name && clean === before.label) return false;
+    const after = { ...before, name: clean, label: clean, updatedAt: new Date().toISOString() };
+    await commitWithinQueue(`重命名词表 ${before.name}`, [change('categories', categoryId, before, after)]);
+  });
 }
 
-export async function moveCategory(categoryId, direction) {
-  if (![ -1, 1 ].includes(direction)) throw new Error('无效的词表移动方向');
-  const categories = orderedCategories();
-  const index = categories.findIndex((category) => category.id === categoryId);
-  const targetIndex = index + direction;
-  if (index < 0 || targetIndex < 0 || targetIndex >= categories.length) return false;
-  [categories[index], categories[targetIndex]] = [categories[targetIndex], categories[index]];
-  const updatedCategories = categories.map((category, order) => ({ ...category, order, updatedAt: new Date().toISOString() }));
-  const changes = [];
-  for (const updated of updatedCategories) pushChange(changes, 'categories', updated.id, getCategory(updated.id), updated);
-  const working = cloneEntriesMap();
-  const affected = new Set();
-  for (const [id, entry] of working) {
-    const recalculated = recalculateEntry(entry, updatedCategories);
-    if (recalculated && recalculated.categoryId !== entry.categoryId) {
-      working.set(id, recalculated);
+export function moveCategory(categoryId, direction) {
+  return enqueueMutation(async () => {
+    if (![-1, 1].includes(direction)) throw new Error('无效的词表移动方向');
+    const categories = orderedCategories();
+    const index = categories.findIndex((category) => category.id === categoryId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= categories.length) return false;
+    [categories[index], categories[targetIndex]] = [categories[targetIndex], categories[index]];
+    const now = new Date().toISOString();
+    const updatedCategories = categories.map((category, order) => Number(category.order) === order
+      ? category
+      : { ...category, order, updatedAt: now });
+    const changes = [];
+    for (const updated of updatedCategories) pushChange(changes, 'categories', updated.id, getCategory(updated.id), updated);
+    const working = cloneEntriesMap();
+    const affected = new Set();
+    for (const [id, entry] of working) {
+      const recalculated = recalculateEntry(entry, updatedCategories);
+      if (recalculated && (recalculated.categoryId !== entry.categoryId || recalculated.word !== entry.word)) {
+        working.set(id, recalculated);
+        affected.add(id);
+      }
+    }
+    syncAffectedEntriesToChanges(working, affected, changes);
+    await commitWithinQueue('调整词表优先级', changes);
+    return true;
+  });
+}
+
+export function deleteCategory(categoryId) {
+  return enqueueMutation(async () => {
+    if (state.categories.length <= 1) throw new Error('至少需要保留一个词表');
+    const category = getCategory(categoryId);
+    if (!category) throw new Error('词表不存在');
+    const remainingCategories = orderedCategories()
+      .filter((item) => item.id !== categoryId)
+      .map((item, order) => ({ ...item, order, updatedAt: new Date().toISOString() }));
+    const changes = [change('categories', categoryId, category, null)];
+    const lastPositionKey = `lastPosition:${categoryId}`;
+    if (Object.hasOwn(state.settings, lastPositionKey)) {
+      pushChange(changes, 'settings', lastPositionKey, { key: lastPositionKey, value: state.settings[lastPositionKey] }, null);
+    }
+    for (const updated of remainingCategories) pushChange(changes, 'categories', updated.id, getCategory(updated.id), updated);
+    const working = cloneEntriesMap();
+    const affected = new Set();
+    for (const [id, entry] of working) {
+      if (!entry.sources?.[categoryId]) continue;
+      delete entry.sources[categoryId];
+      const recalculated = recalculateEntry(entry, remainingCategories);
+      if (recalculated) working.set(id, recalculated); else working.delete(id);
       affected.add(id);
     }
-  }
-  syncAffectedEntriesToChanges(working, affected, changes);
-  await commit('调整词表优先级', changes);
-  return true;
-}
-
-export async function deleteCategory(categoryId) {
-  if (state.categories.length <= 1) throw new Error('至少需要保留一个词表');
-  const category = getCategory(categoryId);
-  if (!category) throw new Error('词表不存在');
-  const remainingCategories = orderedCategories().filter((item) => item.id !== categoryId).map((item, order) => ({ ...item, order }));
-  const changes = [change('categories', categoryId, category, null)];
-  const lastPositionKey = `lastPosition:${categoryId}`;
-  if (Object.hasOwn(state.settings, lastPositionKey)) {
-    pushChange(changes, 'settings', lastPositionKey, { key: lastPositionKey, value: state.settings[lastPositionKey] }, null);
-  }
-  for (const updated of remainingCategories) pushChange(changes, 'categories', updated.id, getCategory(updated.id), updated);
-  const working = cloneEntriesMap();
-  const affected = new Set();
-  for (const [id, entry] of working) {
-    if (!entry.sources?.[categoryId]) continue;
-    delete entry.sources[categoryId];
-    const recalculated = recalculateEntry(entry, remainingCategories);
-    if (recalculated) working.set(id, recalculated); else working.delete(id);
-    affected.add(id);
-  }
-  syncAffectedEntriesToChanges(working, affected, changes);
-  for (const pin of state.pins.values()) {
-    if (pin.categoryId === categoryId && !affected.has(pin.entryId)) pushChange(changes, 'pins', pin.id, pin, null);
-  }
-  await commit(`删除词表 ${category.name}`, changes);
-}
-
-export async function addWord(categoryId, word, posValue) {
-  if (!getCategory(categoryId)) throw new Error('目标词表不存在');
-  const cleanWord = String(word ?? '').trim();
-  const normalized = normalizeWord(cleanWord);
-  const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
-  if (!normalized) throw new Error('词汇不能为空');
-  if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
-  if (!pos.length) throw new Error('词性不能为空');
-  const existingId = wordIndex.get(normalized);
-  const changes = [];
-  if (!existingId) {
-    const entry = createEntry(categoryId, cleanWord, pos);
-    await commit(`新增词汇 ${cleanWord}`, [change('entries', entry.id, null, entry)]);
-    return { entry, created: true, merged: false };
-  }
-  const before = state.entries.get(existingId);
-  const recalculated = mergeEntrySource(before, categoryId, { word: cleanWord, pos }, state.categories);
-  pushChange(changes, 'entries', before.id, before, recalculated);
-  addDependentEntryChanges(changes, before, recalculated);
-  await commit(`合并重复词 ${cleanWord}`, changes);
-  return { entry: recalculated, created: false, merged: true, moved: before.categoryId !== recalculated.categoryId };
-}
-
-export async function editEntry(entryId, word, posValue, { expectedUpdatedAt = null } = {}) {
-  const before = getEntry(entryId);
-  if (!before) throw new Error('词汇不存在');
-  if (expectedUpdatedAt && before.updatedAt !== expectedUpdatedAt) {
-    throw new Error('该词汇已在另一个页面中更新，请重新打开编辑窗口。');
-  }
-  const cleanWord = String(word ?? '').trim();
-  const normalized = normalizeWord(cleanWord);
-  const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
-  if (!normalized || !pos.length) throw new Error('词汇和词性不能为空');
-  if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
-  const duplicateId = wordIndex.get(normalized);
-  if (duplicateId && duplicateId !== entryId) {
-    const targetBefore = getEntry(duplicateId);
-    const targetAfter = deepClone(targetBefore);
-    for (const [categoryId, source] of Object.entries(before.sources ?? {})) {
-      const existingSource = targetAfter.sources[categoryId] ?? { word: cleanWord, pos: [] };
-      existingSource.pos = mergePos(existingSource.pos, source.pos ?? []);
-      targetAfter.sources[categoryId] = existingSource;
+    syncAffectedEntriesToChanges(working, affected, changes);
+    for (const pin of state.pins.values()) {
+      if (pin.categoryId === categoryId && !affected.has(pin.entryId)) pushChange(changes, 'pins', pin.id, pin, null);
     }
-    targetAfter.manualWord = cleanWord;
-    targetAfter.manualPos = mergePos(targetBefore.pos, before.pos, pos);
-    const merged = recalculateEntry(targetAfter, state.categories);
+    await commitWithinQueue(`删除词表 ${category.name}`, changes);
+  });
+}
+
+export function addWord(categoryId, word, posValue) {
+  return enqueueMutation(async () => {
+    if (!getCategory(categoryId)) throw new Error('目标词表不存在');
+    const cleanWord = String(word ?? '').trim();
+    const normalized = normalizeWord(cleanWord);
+    const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
+    if (!normalized) throw new Error('词汇不能为空');
+    if (containsControlCharacters(cleanWord)) throw new Error('词汇不能包含换行或控制字符');
+    if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
+    if (!pos.length) throw new Error('词性不能为空');
+    const existingId = wordIndex.get(normalized);
     const changes = [];
-    pushChange(changes, 'entries', targetBefore.id, targetBefore, merged);
-    pushChange(changes, 'entries', before.id, before, null);
-    addDependentEntryChanges(changes, targetBefore, merged);
-    const targetPin = pinsForEntry(targetBefore.id)[0] ?? null;
-    for (const pin of pinsForEntry(before.id)) {
-      if (targetPin) pushChange(changes, 'pins', pin.id, pin, null);
-      else pushChange(changes, 'pins', pin.id, pin, { ...pin, entryId: targetBefore.id, categoryId: merged.categoryId });
+    if (!existingId) {
+      const entry = createEntry(categoryId, cleanWord, pos);
+      await commitWithinQueue(`新增词汇 ${cleanWord}`, [change('entries', entry.id, null, entry)]);
+      return { entry, created: true, merged: false };
     }
-    const sourceAnnotation = annotationForEntry(before.id);
-    if (sourceAnnotation) pushChange(changes, 'annotations', before.id, sourceAnnotation, null);
-    const targetAnnotation = annotationForEntry(targetBefore.id);
-    if (targetAnnotation) pushChange(changes, 'annotations', targetBefore.id, targetAnnotation, null);
-    for (const [key, value] of Object.entries(state.settings)) {
-      if (!key.startsWith('lastPosition:') || value !== before.id) continue;
-      const categoryId = key.slice('lastPosition:'.length);
-      const beforeSetting = { key, value };
-      const afterSetting = merged.categoryId === categoryId ? { key, value: targetBefore.id } : null;
-      pushChange(changes, 'settings', key, beforeSetting, afterSetting);
-    }
-    await commit(`合并词汇 ${cleanWord}`, changes);
-    return { entry: merged, merged: true };
-  }
-  const after = applyManualEntryEdit(before, cleanWord, pos, state.categories);
-  const changes = [];
-  pushChange(changes, 'entries', entryId, before, after);
-  addDependentEntryChanges(changes, before, after);
-  await commit(`编辑词汇 ${before.word}`, changes);
-  return { entry: after, merged: false };
+    const before = state.entries.get(existingId);
+    const recalculated = preserveTimestampForNoop(
+      before,
+      mergeEntrySource(before, categoryId, { word: cleanWord, pos }, state.categories),
+    );
+    pushChange(changes, 'entries', before.id, before, recalculated);
+    addDependentEntryChanges(changes, before, recalculated);
+    await commitWithinQueue(`合并重复词 ${cleanWord}`, changes);
+    return { entry: recalculated, created: false, merged: true, moved: before.categoryId !== recalculated.categoryId };
+  });
 }
 
-export async function removeEntryFromCategory(entryId, categoryId) {
-  const before = getEntry(entryId);
-  if (!before) throw new Error('词汇不存在');
-  if (!before.sources?.[categoryId]) throw new Error('该词汇不属于当前词表来源');
-  const working = deepClone(before);
-  delete working.sources[categoryId];
-  const after = recalculateEntry(working, state.categories);
-  const changes = [];
-  pushChange(changes, 'entries', entryId, before, after);
-  addDependentEntryChanges(changes, before, after);
-  await commit(`从词表移除 ${before.word}`, changes);
-  return after;
+export function editEntry(entryId, word, posValue, { expectedUpdatedAt = null } = {}) {
+  return enqueueMutation(async () => {
+    const before = getEntry(entryId);
+    if (!before) throw new Error('词汇不存在');
+    if (expectedUpdatedAt && before.updatedAt !== expectedUpdatedAt) {
+      throw new Error('该词汇已在另一个页面中更新，请重新打开编辑窗口。');
+    }
+    const cleanWord = String(word ?? '').trim();
+    const normalized = normalizeWord(cleanWord);
+    const pos = Array.isArray(posValue) ? parsePos(posValue.join(', ')) : parsePos(posValue);
+    if (!normalized || !pos.length) throw new Error('词汇和词性不能为空');
+    if (containsControlCharacters(cleanWord)) throw new Error('词汇不能包含换行或控制字符');
+    if (cleanWord.length > MAX_WORD_LENGTH) throw new Error(`词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
+    const duplicateId = wordIndex.get(normalized);
+    if (duplicateId && duplicateId !== entryId) {
+      const targetBefore = getEntry(duplicateId);
+      const targetAfter = deepClone(targetBefore);
+      for (const [sourceCategoryId, source] of Object.entries(before.sources ?? {})) {
+        const existingSource = targetAfter.sources[sourceCategoryId] ?? { word: cleanWord, pos: [] };
+        existingSource.pos = mergePos(existingSource.pos, source.pos ?? []);
+        targetAfter.sources[sourceCategoryId] = existingSource;
+      }
+      targetAfter.manualWord = cleanWord;
+      targetAfter.manualPos = mergePos(targetBefore.pos, before.pos, pos);
+      const merged = recalculateEntry(targetAfter, state.categories);
+      const changes = [];
+      pushChange(changes, 'entries', targetBefore.id, targetBefore, merged);
+      pushChange(changes, 'entries', before.id, before, null);
+      addDependentEntryChanges(changes, targetBefore, merged);
+      const targetPin = pinsForEntry(targetBefore.id)[0] ?? null;
+      for (const pin of pinsForEntry(before.id)) {
+        if (targetPin) pushChange(changes, 'pins', pin.id, pin, null);
+        else pushChange(changes, 'pins', pin.id, pin, { ...pin, entryId: targetBefore.id, categoryId: merged.categoryId });
+      }
+      const sourceAnnotation = annotationForEntry(before.id);
+      if (sourceAnnotation) pushChange(changes, 'annotations', before.id, sourceAnnotation, null);
+      const targetAnnotation = annotationForEntry(targetBefore.id);
+      if (targetAnnotation) pushChange(changes, 'annotations', targetBefore.id, targetAnnotation, null);
+      for (const [key, value] of Object.entries(state.settings)) {
+        if (!key.startsWith('lastPosition:') || value !== before.id) continue;
+        const settingCategoryId = key.slice('lastPosition:'.length);
+        const beforeSetting = { key, value };
+        const afterSetting = merged.categoryId === settingCategoryId ? { key, value: targetBefore.id } : null;
+        pushChange(changes, 'settings', key, beforeSetting, afterSetting);
+      }
+      await commitWithinQueue(`合并词汇 ${cleanWord}`, changes);
+      return { entry: merged, merged: true };
+    }
+    const after = applyManualEntryEdit(before, cleanWord, pos, state.categories);
+    const changes = [];
+    pushChange(changes, 'entries', entryId, before, after);
+    addDependentEntryChanges(changes, before, after);
+    await commitWithinQueue(`编辑词汇 ${before.word}`, changes);
+    return { entry: after, merged: false };
+  });
 }
 
-export async function deleteEntryGlobally(entryId) {
-  const before = getEntry(entryId);
-  if (!before) return;
-  const changes = [change('entries', entryId, before, null)];
-  addDependentEntryChanges(changes, before, null);
-  await commit(`全局删除 ${before.word}`, changes);
+export function removeEntryFromCategory(entryId, categoryId) {
+  return enqueueMutation(async () => {
+    const before = getEntry(entryId);
+    if (!before) throw new Error('词汇不存在');
+    if (!before.sources?.[categoryId]) throw new Error('该词汇不属于当前词表来源');
+    const working = deepClone(before);
+    delete working.sources[categoryId];
+    const after = recalculateEntry(working, state.categories);
+    const changes = [];
+    pushChange(changes, 'entries', entryId, before, after);
+    addDependentEntryChanges(changes, before, after);
+    await commitWithinQueue(`从词表移除 ${before.word}`, changes);
+    return after;
+  });
+}
+
+export function deleteEntryGlobally(entryId) {
+  return enqueueMutation(async () => {
+    const before = getEntry(entryId);
+    if (!before) return false;
+    const changes = [change('entries', entryId, before, null)];
+    addDependentEntryChanges(changes, before, null);
+    await commitWithinQueue(`全局删除 ${before.word}`, changes);
+    return true;
+  });
 }
 
 export function togglePin(entryId) {
@@ -565,6 +600,7 @@ function simulateImport(categoryId, importedEntries, mode) {
     const rawWord = String(item?.word ?? '').trim();
     const normalized = normalizeWord(rawWord);
     if (!normalized) continue;
+    if (containsControlCharacters(rawWord)) throw new Error(`导入词汇 ${rawWord} 包含换行或控制字符`);
     if (rawWord.length > MAX_WORD_LENGTH) throw new Error(`导入词汇不能超过 ${MAX_WORD_LENGTH} 个字符`);
     const importedPos = parsePos(Array.isArray(item?.pos) ? item.pos.join(', ') : item?.pos);
     if (!importedPos.length) throw new Error(`导入词汇 ${rawWord} 缺少有效词性`);
@@ -584,7 +620,10 @@ function simulateImport(categoryId, importedEntries, mode) {
         const beforeOwner = entry.categoryId;
         entry.sources[categoryId] = { word: replacement.word, pos: sortPos(replacement.pos) };
         if (entry.manualPos?.length) entry.manualPos = mergePos(entry.manualPos, replacement.pos);
-        const recalculated = recalculateEntry(entry, state.categories);
+        const recalculated = preserveTimestampForNoop(
+          state.entries.get(id),
+          recalculateEntry(entry, state.categories),
+        );
         working.set(id, recalculated);
         affected.add(id);
         consumed.add(entry.normalizedWord);
@@ -615,7 +654,10 @@ function simulateImport(categoryId, importedEntries, mode) {
       continue;
     }
     const beforeMerge = working.get(existingId);
-    const recalculated = mergeEntrySource(beforeMerge, categoryId, item, state.categories);
+    const recalculated = preserveTimestampForNoop(
+      beforeMerge,
+      mergeEntrySource(beforeMerge, categoryId, item, state.categories),
+    );
     working.set(existingId, recalculated);
     affected.add(existingId);
     stats.merged += 1;
@@ -632,11 +674,13 @@ export function previewImport(categoryId, importedEntries, mode) {
   return simulateImport(categoryId, importedEntries, mode).stats;
 }
 
-export async function importIntoCategory(categoryId, importedEntries, mode) {
-  if (!['merge', 'replace'].includes(mode)) throw new Error('无效导入方式');
-  const plan = simulateImport(categoryId, importedEntries, mode);
-  await commit(mode === 'replace' ? '替换当前词表' : '合并导入当前词表', plan.changes, { importStats: plan.stats });
-  return plan.stats;
+export function importIntoCategory(categoryId, importedEntries, mode) {
+  return enqueueMutation(async () => {
+    if (!['merge', 'replace'].includes(mode)) throw new Error('无效导入方式');
+    const plan = simulateImport(categoryId, importedEntries, mode);
+    await commitWithinQueue(mode === 'replace' ? '替换当前词表' : '合并导入当前词表', plan.changes, { importStats: plan.stats });
+    return plan.stats;
+  });
 }
 
 export function createBackup() {
@@ -652,44 +696,47 @@ export function createBackup() {
   });
 }
 
-export async function restoreBackup(backup, { label = '恢复完整备份' } = {}) {
+export function restoreBackup(backup, { label = '恢复完整备份' } = {}) {
   validateBackup(backup);
   const canonical = canonicalizeBackup(backup);
-  const nextCategories = new Map((canonical.categories ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextEntries = new Map((canonical.entries ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextPins = new Map((canonical.pins ?? []).map((item) => [item.id, deepClone(item)]));
-  const nextAnnotations = new Map((canonical.annotations ?? []).map((item) => [item.entryId, deepClone(item)]));
-  const changes = [];
-  const mapSpecs = [
-    { store: 'categories', beforeMap: new Map(state.categories.map((item) => [item.id, item])), afterMap: nextCategories },
-    { store: 'entries', beforeMap: state.entries, afterMap: nextEntries },
-    { store: 'pins', beforeMap: state.pins, afterMap: nextPins },
-    { store: 'annotations', beforeMap: state.annotations, afterMap: nextAnnotations },
-  ];
-  for (const { store, beforeMap, afterMap } of mapSpecs) {
-    const keys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
-    for (const key of keys) pushChange(changes, store, key, beforeMap.get(key) ?? null, afterMap.get(key) ?? null);
-  }
-  for (const [key, value] of Object.entries(state.settings)) {
-    if (key.startsWith('lastPosition:')) pushChange(changes, 'settings', key, { key, value }, null);
-  }
-  const backupNumberMode = canonical.settings?.numberMode;
-  if (backupNumberMode != null) {
-    if (!['none', 'group', 'global'].includes(backupNumberMode)) throw new Error('备份包含无效序号模式');
-    pushChange(
-      changes,
-      'settings',
-      'numberMode',
-      { key: 'numberMode', value: state.settings.numberMode },
-      { key: 'numberMode', value: backupNumberMode },
-    );
-  }
-  return commit(label, changes);
+  return enqueueMutation(async () => {
+    const nextCategories = new Map((canonical.categories ?? []).map((item) => [item.id, deepClone(item)]));
+    const nextEntries = new Map((canonical.entries ?? []).map((item) => [item.id, deepClone(item)]));
+    const nextPins = new Map((canonical.pins ?? []).map((item) => [item.id, deepClone(item)]));
+    const nextAnnotations = new Map((canonical.annotations ?? []).map((item) => [item.entryId, deepClone(item)]));
+    const changes = [];
+    const mapSpecs = [
+      { store: 'categories', beforeMap: new Map(state.categories.map((item) => [item.id, item])), afterMap: nextCategories },
+      { store: 'entries', beforeMap: state.entries, afterMap: nextEntries },
+      { store: 'pins', beforeMap: state.pins, afterMap: nextPins },
+      { store: 'annotations', beforeMap: state.annotations, afterMap: nextAnnotations },
+    ];
+    for (const { store, beforeMap, afterMap } of mapSpecs) {
+      const keys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+      for (const key of keys) pushChange(changes, store, key, beforeMap.get(key) ?? null, afterMap.get(key) ?? null);
+    }
+    for (const [key, value] of Object.entries(state.settings)) {
+      if (key.startsWith('lastPosition:')) pushChange(changes, 'settings', key, { key, value }, null);
+    }
+    const backupNumberMode = canonical.settings?.numberMode;
+    if (backupNumberMode != null) {
+      if (!['none', 'group', 'global'].includes(backupNumberMode)) throw new Error('备份包含无效序号模式');
+      pushChange(
+        changes,
+        'settings',
+        'numberMode',
+        { key: 'numberMode', value: state.settings.numberMode },
+        { key: 'numberMode', value: backupNumberMode },
+      );
+    }
+    return commitWithinQueue(label, changes);
+  });
 }
 
 export async function setNumberMode(mode) {
   if (!['none', 'group', 'global'].includes(mode)) throw new Error('无效序号模式');
   return enqueueMutation(async () => {
+    if (state.settings.numberMode === mode) return false;
     await setSetting('numberMode', mode);
     state.settings.numberMode = mode;
     notify('settings', { numberMode: mode });
@@ -697,29 +744,48 @@ export async function setNumberMode(mode) {
   });
 }
 
-export async function saveLastPosition(categoryId, entryId) {
-  const entry = getEntry(entryId);
-  if (!categoryId || !entry || entry.categoryId !== categoryId) return false;
-  const key = `lastPosition:${categoryId}`;
-  await setSetting(key, entryId);
-  state.settings[key] = entryId;
-  return true;
+export function saveLastPosition(categoryId, entryId) {
+  return enqueueMutation(async () => {
+    const entry = getEntry(entryId);
+    if (!categoryId || !entry || entry.categoryId !== categoryId) return false;
+    const key = `lastPosition:${categoryId}`;
+    await setSetting(key, entryId);
+    state.settings[key] = entryId;
+    return true;
+  });
+}
+
+export function createFreshBackup() {
+  return enqueueMutation(async () => {
+    const previousRevision = Number(state.settings.dataRevision ?? 0);
+    await loadStateFromDatabase();
+    if (Number(state.settings.dataRevision ?? 0) !== previousRevision) {
+      notify('external-change', { reason: 'export' });
+    }
+    return createBackup();
+  });
 }
 
 export function getLastPosition(categoryId) { return getSetting(`lastPosition:${categoryId}`, null); }
-export async function dismissAnnotation(entryId) {
-  const before = state.annotations.get(entryId);
-  if (!before) return;
-  const item = change('annotations', entryId, before, null);
-  await applyWithoutHistory([item], 'annotations', { count: -1 });
+export function dismissAnnotation(entryId) {
+  return enqueueMutation(async () => {
+    const before = state.annotations.get(entryId);
+    if (!before) return false;
+    const item = change('annotations', entryId, before, null);
+    await applyWithoutHistoryWithinQueue([item], 'annotations', { count: -1 });
+    return true;
+  });
 }
 
-export async function clearAnnotations(categoryId = null) {
-  const targets = getAnnotations(categoryId);
-  const changes = targets.map((item) => change('annotations', item.entryId, item, null));
-  await applyWithoutHistory(changes, 'annotations', { cleared: targets.length });
-  return targets.length;
+export function clearAnnotations(categoryId = null) {
+  return enqueueMutation(async () => {
+    const targets = getAnnotations(categoryId);
+    const changes = targets.map((item) => change('annotations', item.entryId, item, null));
+    await applyWithoutHistoryWithinQueue(changes, 'annotations', { cleared: targets.length });
+    return targets.length;
+  });
 }
+
 
 
 function assertCurrentStateIntegrity() {
@@ -735,14 +801,20 @@ function assertCurrentStateIntegrity() {
 
 function postHistoryCleanupChanges(record) {
   const changes = [];
+  const semanticEntryChanges = new Set((record?.changes ?? [])
+    .filter((item) => item.store === 'entries' && (
+      item.before == null || item.after == null
+      || item.before.word !== item.after.word
+      || formatPos(item.before.pos) !== formatPos(item.after.pos)
+    ))
+    .map((item) => item.key));
   for (const annotation of state.annotations.values()) {
     const entry = state.entries.get(annotation.entryId);
-    if (!entry) {
+    if (!entry || semanticEntryChanges.has(annotation.entryId)) {
+      // AI 标注只对应生成时的词形和词性；撤销/重做改变语义后必须丢弃，避免陈旧标注误导。
       pushChange(changes, 'annotations', annotation.entryId, annotation, null);
       continue;
     }
-    // 语义变更产生的标注删除必须由原始事务显式记录，以保证撤销/重做完全对称。
-    // 此处只修复结构性失效关系，不擅自改变备份中明确保存的标注。
     if (annotation.categoryId !== entry.categoryId) {
       pushChange(changes, 'annotations', entry.id, annotation, { ...annotation, categoryId: entry.categoryId });
     }
@@ -795,20 +867,25 @@ export async function redo() {
   });
 }
 
-export async function replaceAnnotationsForEntries(entryIds, items) {
-  const targetIds = new Set(entryIds);
-  const incoming = new Map(items.map((item) => [item.entryId, item]));
-  const changes = [];
-  for (const entryId of targetIds) {
-    const entry = getEntry(entryId);
-    if (!entry) continue;
-    const before = state.annotations.get(entryId) ?? null;
-    const item = incoming.get(entryId);
-    const after = item ? {
-      entryId, categoryId: entry.categoryId, createdAt: new Date().toISOString(),
-      spelling: item.spelling ?? null, pos: item.pos ?? null, reason: String(item.reason ?? '').slice(0, 500),
-    } : null;
-    pushChange(changes, 'annotations', entryId, before, after);
-  }
-  await applyWithoutHistory(changes, 'annotations', { replaced: targetIds.size, issues: incoming.size });
+export function replaceAnnotationsForEntries(entryIds, items) {
+  const requestedIds = [...new Set(entryIds.map(String))];
+  const incomingItems = deepClone(items);
+  return enqueueMutation(async () => {
+    const targetIds = new Set(requestedIds);
+    const incoming = new Map(incomingItems.map((item) => [item.entryId, item]));
+    const changes = [];
+    for (const entryId of targetIds) {
+      const entry = getEntry(entryId);
+      if (!entry) continue;
+      const before = state.annotations.get(entryId) ?? null;
+      const item = incoming.get(entryId);
+      const after = item ? {
+        entryId, categoryId: entry.categoryId, createdAt: new Date().toISOString(),
+        spelling: item.spelling ?? null, pos: item.pos ?? null, reason: String(item.reason ?? '').slice(0, 500),
+      } : null;
+      pushChange(changes, 'annotations', entryId, before, after);
+    }
+    await applyWithoutHistoryWithinQueue(changes, 'annotations', { replaced: targetIds.size, issues: incoming.size });
+  });
 }
+

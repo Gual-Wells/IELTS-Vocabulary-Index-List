@@ -97,6 +97,20 @@ export async function getAll(storeName) {
   return result;
 }
 
+export async function readDatabaseSnapshot() {
+  const storeNames = [...ENTITY_STORES, 'settings', 'history'];
+  const db = await openDatabase();
+  const tx = db.transaction(storeNames, 'readonly');
+  const completion = transactionPromise(tx);
+  const requests = Object.fromEntries(storeNames.map((storeName) => [
+    storeName,
+    requestPromise(tx.objectStore(storeName).getAll()),
+  ]));
+  const values = await Promise.all(storeNames.map((storeName) => requests[storeName]));
+  await completion;
+  return Object.fromEntries(storeNames.map((storeName, index) => [storeName, values[index]]));
+}
+
 export async function getValue(storeName, key) {
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readonly');
@@ -162,7 +176,7 @@ async function replaceDatabaseContents(backup) {
     for (const annotation of canonical.annotations ?? []) tx.objectStore('annotations').put(annotation);
     const settings = {
       ...(canonical.settings ?? {}), initialized: true, appVersion: APP_VERSION,
-      uiStateVersion: UI_STATE_VERSION, historyPointer: 0, dataRevision: 0,
+      uiStateVersion: UI_STATE_VERSION, historyPointer: 0, dataRevision: Date.now(),
     };
     for (const [key, value] of Object.entries(settings)) tx.objectStore('settings').put({ key, value });
     await completion;
@@ -297,6 +311,28 @@ async function verifyPreconditions(reads, expectedDirection) {
   }
 }
 
+
+function isSoftHistoryChange(change) {
+  return change.store === 'annotations'
+    || (change.store === 'settings' && (
+      String(change.key).startsWith('lastPosition:') || change.key === 'numberMode'
+    ));
+}
+
+async function resolveApplicableHistoryChanges(reads, expectedDirection) {
+  const values = await Promise.all(reads.map((item) => item.promise));
+  const applicable = [];
+  for (let index = 0; index < reads.length; index += 1) {
+    const expected = reads[index].change[expectedDirection] ?? null;
+    const actual = values[index] ?? null;
+    if (jsonEqual(actual, expected)) applicable.push(reads[index].change);
+    else if (!isSoftHistoryChange(reads[index].change)) {
+      throw new Error('数据已在另一个标签页或主屏幕实例中更新，本次撤销或重做已安全取消。');
+    }
+  }
+  return applicable;
+}
+
 async function pruneHistoryRaw() {
   const [records, pointer] = await Promise.all([getAll('history'), getSetting('historyPointer', 0)]);
   const ordered = records.sort((a, b) => a.sequence - b.sequence);
@@ -384,8 +420,8 @@ async function applyHistoryRecordRaw(record, direction, expectedPointer, nextPoi
     if (Number(pointerRecord?.value ?? 0) !== expectedPointer) {
       throw new Error('撤销历史已被另一个实例更新，本次操作已安全取消。');
     }
-    await verifyPreconditions(preconditionReads, expectedDirection);
-    applyChangesBatch(tx, record.changes, direction);
+    const applicableChanges = await resolveApplicableHistoryChanges(preconditionReads, expectedDirection);
+    applyChangesBatch(tx, applicableChanges, direction);
     tx.objectStore('settings').put({ key: 'historyPointer', value: nextPointer });
     tx.objectStore('settings').put({ key: 'dataRevision', value: currentRevision + 1 });
     await completion;

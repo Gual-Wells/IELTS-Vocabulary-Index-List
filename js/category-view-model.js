@@ -40,7 +40,7 @@ export function resolveExpandedLetters({
   const available = new Set(availableLetters);
 
   // Entering a category from home/search is deterministic: restore exactly the
-  // target/last-position group, not an arbitrary mixture of old open groups.
+  // explicit target group, not an arbitrary mixture of old open groups.
   if (focusNavigation && navigationEntry) {
     const letter = groupForWord(navigationEntry.word);
     if (available.has(letter)) return new Set([letter]);

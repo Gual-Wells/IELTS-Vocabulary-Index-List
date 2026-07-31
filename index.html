@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="词汇索引">
   <meta name="description" content="本地优先、全局去重的英语词汇索引工具">
+  <meta name="application-version" content="2.4.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Vocabulary Index</title>
   <link rel="manifest" href="./manifest.webmanifest">
@@ -40,12 +41,18 @@
 
     <main id="main-content" class="main-content">
       <section id="home-view" class="view" aria-labelledby="home-heading">
-        <div class="view-heading-row">
-          <div>
-            <h2 id="home-heading">词表</h2>
+        <div class="home-hero">
+          <div class="home-hero-copy">
+            <p class="home-eyebrow">VOCABULARY INDEX</p>
+            <h2 id="home-heading">我的词表</h2>
             <p id="home-summary" class="muted"></p>
           </div>
-          <button id="manage-categories-button" class="secondary-button" type="button">管理词表</button>
+          <div class="home-heading-actions">
+            <button id="home-review-annotations-button" class="annotation-review-launch hidden" type="button">
+              <span>AI 标注</span><strong id="home-annotation-count">0</strong>
+            </button>
+            <button id="manage-categories-button" class="secondary-button compact-button" type="button">管理</button>
+          </div>
         </div>
 
         <div class="search-panel home-search-panel">
@@ -58,23 +65,22 @@
         <div id="global-search-status" class="search-status muted" aria-live="polite"></div>
         <div id="global-search-results" class="search-results hidden"></div>
 
+        <div id="category-grid" class="category-grid"></div>
+
         <section class="data-safety-panel" aria-labelledby="data-safety-title">
           <div class="data-safety-heading">
             <div>
-              <h3 id="data-safety-title">本地数据</h3>
-              <p class="muted">词库保存在当前浏览器的 IndexedDB。清理网站数据前请导出 JSON。</p>
+              <h3 id="data-safety-title">数据与维护</h3>
+              <p class="muted">本地保存。清理浏览器网站数据前导出 JSON。</p>
             </div>
-            <span class="status-badge is-good">本地</span>
+            <span class="status-badge is-good">IndexedDB</span>
           </div>
-          <div class="inline-actions data-safety-actions">
-            <button id="home-export-backup-button" class="primary-button" type="button">导出完整 JSON</button>
-            <button id="home-restore-backup-button" class="secondary-button" type="button">恢复 JSON 备份</button>
-            <button id="home-initialize-seed-button" class="danger-button" type="button">初始化内置词库</button>
+          <div class="data-safety-actions">
+            <button id="home-export-backup-button" class="utility-action" type="button"><span aria-hidden="true">↓</span><span>导出备份</span></button>
+            <button id="home-restore-backup-button" class="utility-action" type="button"><span aria-hidden="true">↑</span><span>恢复备份</span></button>
+            <button id="home-initialize-seed-button" class="utility-action danger-utility" type="button"><span aria-hidden="true">↺</span><span>初始化</span></button>
           </div>
-          <p class="data-safety-detail muted">恢复和初始化都会写入撤销历史；Groq Key 不包含在备份中。</p>
         </section>
-
-        <div id="category-grid" class="category-grid"></div>
       </section>
 
       <section id="category-view" class="view hidden" aria-labelledby="category-title">
@@ -82,6 +88,9 @@
           <div class="category-heading">
             <h2 id="category-title"></h2>
             <p id="category-count" class="muted"></p>
+            <button id="annotation-review-button" class="annotation-review-launch hidden" type="button">
+              <span>审阅 AI 标注</span><strong id="category-annotation-count">0</strong>
+            </button>
           </div>
           <div class="toolbar-actions desktop-actions">
             <button data-action="search" class="secondary-button" type="button">搜索</button>
@@ -98,6 +107,21 @@
           <button id="pin-current-button" class="pin-current" type="button"></button>
           <span id="pin-counter" class="pin-counter"></span>
           <button id="pin-next-button" class="icon-button compact" type="button" aria-label="下一个书签">›</button>
+        </section>
+
+        <section id="annotation-review-bar" class="annotation-review-bar hidden" aria-live="polite">
+          <div class="annotation-review-copy">
+            <span id="annotation-review-counter" class="annotation-review-counter"></span>
+            <strong id="annotation-review-word"></strong>
+            <span id="annotation-review-detail" class="muted"></span>
+          </div>
+          <div class="annotation-review-actions">
+            <button id="annotation-review-prev" class="icon-button compact" type="button" aria-label="上一个 AI 标注">‹</button>
+            <button id="annotation-review-next" class="icon-button compact" type="button" aria-label="下一个 AI 标注">›</button>
+            <button id="annotation-review-edit" class="secondary-button compact-button" type="button">编辑</button>
+            <button id="annotation-review-dismiss" class="secondary-button compact-button" type="button">取消标注</button>
+            <button id="annotation-review-close" class="icon-button compact" type="button" aria-label="退出标注审阅">×</button>
+          </div>
         </section>
 
         <nav id="alphabet-nav" class="alphabet-nav" aria-label="字母导航"></nav>
@@ -277,10 +301,17 @@
         </label>
         <p id="ai-check-estimate" class="muted"></p>
         <progress id="ai-check-progress" class="progress-track" max="100" value="0" aria-label="AI 核查进度"></progress>
+        <div class="ai-check-metrics">
+          <span id="ai-check-batch-metric">尚未开始</span>
+          <span id="ai-check-issue-metric">0 条标注</span>
+        </div>
         <div id="ai-check-status" class="search-status muted" aria-live="polite"></div>
       </div>
-      <footer class="dialog-footer">
-        <button id="ai-check-cancel-button" class="secondary-button" type="button" disabled>取消请求</button>
+      <footer class="dialog-footer ai-check-footer">
+        <button id="ai-check-review-button" class="secondary-button hidden" type="button">审阅标注</button>
+        <span class="dialog-footer-spacer"></span>
+        <button id="ai-check-pause-button" class="secondary-button" type="button" disabled>暂停</button>
+        <button id="ai-check-cancel-button" class="secondary-button" type="button" disabled>取消</button>
         <button id="ai-check-start-button" class="primary-button" type="button">开始核查</button>
       </footer>
     </form>
@@ -304,8 +335,9 @@
           <label class="field-label">模型
             <select id="groq-model-select"></select>
           </label>
+          <p id="groq-model-catalog-meta" class="field-help"></p>
           <div class="inline-actions">
-            <button id="load-models-button" class="secondary-button" type="button">读取可用模型</button>
+            <button id="load-models-button" class="secondary-button" type="button">刷新模型列表</button>
             <button id="save-groq-button" class="primary-button" type="button">保存设置</button>
             <button id="clear-groq-button" class="danger-button" type="button">删除 Key</button>
           </div>

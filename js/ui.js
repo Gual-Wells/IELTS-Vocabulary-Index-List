@@ -1,8 +1,9 @@
-import { AI_CHECK_BATCH_SIZE, APP_VERSION, DEFAULT_GROQ_MODEL, LETTERS, MAX_IMPORT_BYTES } from './constants.js';
+import { AI_CHECK_MAX_RETRIES, APP_VERSION, DEFAULT_GROQ_MODEL, LETTERS, MAX_IMPORT_BYTES } from './constants.js';
 import { loadSeedBackup } from './db.js';
 import {
-  checkVocabularyBatch, clearGroqKey, fetchAvailableModels, getChineseSearchCandidates,
-  getGroqConfig, saveGroqConfig, suggestVocabulary,
+  checkVocabularyBatch, clearGroqKey, createAiCheckBatches, estimateAiCheckTokens, fetchAvailableModels,
+  getCachedModels, getChineseSearchCandidates, getGroqConfig, getModelCatalogState, GroqRequestError,
+  recommendedDelayMs, saveGroqConfig, suggestVocabulary,
 } from './ai.js';
 import {
   exportAllMarkdown, exportCategoryCsv, exportCategoryMarkdown, parseImportContent, validateBackup,
@@ -10,7 +11,7 @@ import {
 import { fuzzySearch, searchByCandidates } from './search.js';
 import { buildCategoryViewModel, resolveExpandedLetters } from './category-view-model.js';
 import {
-  addCategory, addWord, clearAnnotations, createBackup, deleteCategory, deleteEntryGlobally,
+  addCategory, addWord, clearAnnotations, createFreshBackup, deleteCategory, deleteEntryGlobally,
   dismissAnnotation, editEntry, getAllEntries, getAnnotation, getAnnotations, getCategories, getCategory,
   getCategoryEntries, getEntriesForScope, getEntry, getLastPosition, getPins, getState, importIntoCategory,
   moveCategory, previewImport, redo, reloadStoreFromDatabase, removeEntryFromCategory, renameCategory, restoreBackup,
@@ -29,18 +30,24 @@ const uiState = {
   importParsed: null,
   aiAddCandidates: [],
   aiCheckController: null,
+  aiCheckTask: null,
+  lastAiCheckIssueIds: [],
+  annotationReview: { active: false, entryIds: [], index: 0 },
   aiAddController: null,
   searchController: null,
   currentRender: null,
   renderId: 0,
   navigationId: 0,
-  restoreFrame: 0,
   scrollTimer: 0,
   scrollReleaseTimer: 0,
   suppressScrollPersistence: false,
   wordEditUpdatedAt: null,
+  importSessionId: 0,
+  importTargetCategoryId: null,
 };
 let toastTimer;
+let activeConfirmation = null;
+let confirmationSequence = 0;
 
 function cacheElements() {
   document.querySelectorAll('[id]').forEach((element) => { elements[element.id] = element; });
@@ -58,13 +65,160 @@ function announce(message) {
   requestAnimationFrame(() => { elements['live-region'].textContent = message; });
 }
 
+function friendlyErrorMessage(error) {
+  if (error instanceof GroqRequestError) {
+    if (error.status === 429) {
+      const seconds = Math.ceil((error.retryAfterMs || error.rateLimit?.resetTokensMs || 0) / 1000);
+      return seconds > 0 ? `Groq 速率额度暂时不足，请等待约 ${seconds} 秒后重试。` : 'Groq 速率额度暂时不足，请稍后重试。';
+    }
+    if (error.status === 401) return 'Groq API Key 无效或已失效，请在设置中更新。';
+    if (error.status === 403) return '当前 Groq Key 无权使用所选模型，请刷新模型列表或更换模型。';
+    if (Number(error.status) >= 500) return 'Groq 服务暂时不可用，请稍后重试。';
+  }
+  return error?.message || String(error);
+}
+
 function displayError(error) {
   console.error(error);
-  const message = error?.message || String(error);
+  const message = friendlyErrorMessage(error);
   showToast(message, 3200);
   if (/另一个标签页|另一个实例|重新载入最新本地数据/.test(message)) {
     reloadStoreFromDatabase('stale-write').catch((reloadError) => console.error('冲突后重新载入失败', reloadError));
   }
+}
+
+function abortableDelay(ms, signal, onTick = null) {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    let interval = 0;
+    const cleanup = () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? new DOMException('请求已取消', 'AbortError'));
+    };
+    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+    if (onTick) {
+      onTick(ms);
+      interval = setInterval(() => onTick(Math.max(0, ms - (Date.now() - startedAt))), 500);
+    }
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+function annotationEntryIds(categoryId = null, preferredIds = null) {
+  const allowed = preferredIds ? new Set(preferredIds.map(String)) : null;
+  const categoryOrder = new Map(getCategories().map((category, index) => [category.id, index]));
+  return getAnnotations(categoryId)
+    .filter((annotation) => !allowed || allowed.has(annotation.entryId))
+    .map((annotation) => getEntry(annotation.entryId))
+    .filter(Boolean)
+    .sort((a, b) => (categoryOrder.get(a.categoryId) ?? 9999) - (categoryOrder.get(b.categoryId) ?? 9999)
+      || a.word.localeCompare(b.word, 'en', { sensitivity: 'base' }))
+    .map((entry) => entry.id);
+}
+
+function annotationDetail(annotation) {
+  if (!annotation) return '';
+  const details = [];
+  if (annotation.spelling?.incorrect) details.push(`拼写建议：${annotation.spelling.suggestion || '请人工核对'}`);
+  if (annotation.pos?.incorrect) details.push(`词性建议：${annotation.pos.suggestion?.length ? formatPos(annotation.pos.suggestion) : '请人工核对'}`);
+  if (annotation.reason) details.push(annotation.reason);
+  return details.join(' · ');
+}
+
+function refreshAnnotationLaunchers() {
+  if (!elements['home-review-annotations-button']) return;
+  const allCount = getAnnotations().length;
+  elements['home-annotation-count'].textContent = String(allCount);
+  elements['home-review-annotations-button'].classList.toggle('hidden', allCount === 0);
+  const categoryCount = uiState.currentCategoryId ? getAnnotations(uiState.currentCategoryId).length : 0;
+  elements['category-annotation-count'].textContent = String(categoryCount);
+  elements['annotation-review-button'].classList.toggle('hidden', categoryCount === 0);
+}
+
+function clearAnnotationTargetHighlight() {
+  document.querySelectorAll('.annotation-review-target').forEach((row) => row.classList.remove('annotation-review-target'));
+}
+
+function closeAnnotationReview() {
+  uiState.annotationReview = { active: false, entryIds: [], index: 0 };
+  clearAnnotationTargetHighlight();
+  elements['annotation-review-bar']?.classList.add('hidden');
+  elements['pin-bar']?.classList.remove('review-suppressed');
+  if (uiState.currentCategoryId) renderPins();
+}
+
+function syncAnnotationReviewList() {
+  if (!uiState.annotationReview.active) return false;
+  const currentId = uiState.annotationReview.entryIds[uiState.annotationReview.index] ?? null;
+  const remaining = uiState.annotationReview.entryIds.filter((id) => getAnnotation(id) && getEntry(id));
+  if (!remaining.length) {
+    closeAnnotationReview();
+    return false;
+  }
+  uiState.annotationReview.entryIds = remaining;
+  const currentIndex = currentId ? remaining.indexOf(currentId) : -1;
+  uiState.annotationReview.index = currentIndex >= 0 ? currentIndex : Math.min(uiState.annotationReview.index, remaining.length - 1);
+  return true;
+}
+
+function renderAnnotationReviewBar() {
+  if (!syncAnnotationReviewList()) return;
+  const review = uiState.annotationReview;
+  const entryId = review.entryIds[review.index];
+  const entry = getEntry(entryId);
+  const annotation = getAnnotation(entryId);
+  if (!entry || !annotation || entry.categoryId !== uiState.currentCategoryId) {
+    elements['annotation-review-bar'].classList.add('hidden');
+    return;
+  }
+  elements['annotation-review-counter'].textContent = `${review.index + 1} / ${review.entryIds.length}`;
+  elements['annotation-review-word'].textContent = `${entry.word} · ${formatPos(entry.pos)}`;
+  elements['annotation-review-detail'].textContent = annotationDetail(annotation);
+  elements['annotation-review-prev'].disabled = review.index === 0;
+  elements['annotation-review-next'].disabled = review.index >= review.entryIds.length - 1;
+  elements['pin-bar'].classList.add('review-suppressed');
+  elements['annotation-review-bar'].classList.remove('hidden');
+}
+
+async function navigateAnnotationReview(index) {
+  if (!syncAnnotationReviewList()) return false;
+  const review = uiState.annotationReview;
+  review.index = Math.max(0, Math.min(index, review.entryIds.length - 1));
+  const entryId = review.entryIds[review.index];
+  const entry = getEntry(entryId);
+  if (!entry) return false;
+  if (entry.categoryId !== uiState.currentCategoryId) await openCategory(entry.categoryId, entry.id);
+  else await jumpToEntry(entry.id, false, { persist: false });
+  clearAnnotationTargetHighlight();
+  document.getElementById(`entry-${entry.id}`)?.classList.add('annotation-review-target');
+  renderAnnotationReviewBar();
+  return true;
+}
+
+async function startAnnotationReview(preferredIds = null) {
+  const entryIds = annotationEntryIds(null, preferredIds);
+  if (!entryIds.length) {
+    showToast('没有可审阅的 AI 标注');
+    return false;
+  }
+  uiState.annotationReview = { active: true, entryIds, index: 0 };
+  return navigateAnnotationReview(0);
+}
+
+
+function showModalOnce(dialog) {
+  if (!dialog || dialog.open) return false;
+  dialog.showModal();
+  return true;
 }
 
 function currentCategory() {
@@ -108,21 +262,31 @@ function renderHome() {
     button.className = 'category-card';
     button.dataset.categoryId = category.id;
 
-    const text = document.createElement('span');
+    const header = document.createElement('span');
+    header.className = 'category-card-header';
     const name = document.createElement('span');
     name.className = 'category-card-name';
     name.textContent = category.name;
+    const arrow = document.createElement('span');
+    arrow.className = 'category-card-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '›';
+    header.append(name, arrow);
+
+    const meta = document.createElement('span');
+    meta.className = 'category-card-meta';
+    const count = document.createElement('strong');
+    count.className = 'category-card-count';
+    count.textContent = (counts.get(category.id) ?? 0).toLocaleString();
     const label = document.createElement('span');
     label.className = 'category-card-label';
-    label.textContent = category.label && category.label !== category.name ? category.label : '词汇索引';
-    text.append(name, label);
+    label.textContent = category.label && category.label !== category.name ? category.label : '词汇';
+    meta.append(count, label);
 
-    const count = document.createElement('span');
-    count.className = 'category-card-count';
-    count.textContent = `${(counts.get(category.id) ?? 0).toLocaleString()} 词`;
-    button.append(text, count);
+    button.append(header, meta);
     elements['category-grid'].append(button);
   }
+  refreshAnnotationLaunchers();
 }
 
 function refreshHome() {
@@ -239,11 +403,6 @@ function openLetterSection(letter) {
   return setLetterSectionOpen(section, true, context) ? section : null;
 }
 
-function cancelPendingRestore() {
-  if (uiState.restoreFrame) cancelAnimationFrame(uiState.restoreFrame);
-  uiState.restoreFrame = 0;
-}
-
 function suppressScrollPersistence(duration = 420) {
   uiState.suppressScrollPersistence = true;
   clearTimeout(uiState.scrollReleaseTimer);
@@ -253,7 +412,7 @@ function suppressScrollPersistence(duration = 420) {
   }, duration);
 }
 
-async function renderCategory({ restorePosition = false, targetEntryId = null } = {}) {
+async function renderCategory({ targetEntryId = null } = {}) {
   const categoryId = uiState.currentCategoryId;
   const category = categoryId ? getCategory(categoryId) : null;
   if (!category) {
@@ -264,18 +423,12 @@ async function renderCategory({ restorePosition = false, targetEntryId = null } 
   const hasLivePreviousRender = uiState.currentRender?.categoryId === categoryId;
   const previousExpanded = hasLivePreviousRender ? [...uiState.currentRender.expandedGroups] : [];
   const renderId = ++uiState.renderId;
-  cancelPendingRestore();
   const entries = getCategoryEntries(categoryId);
   const model = buildCategoryViewModel(entries);
-  const lastPositionId = restorePosition ? await getLastPosition(categoryId) : null;
   if (renderId !== uiState.renderId || categoryId !== uiState.currentCategoryId) return false;
-
   const requestedEntry = targetEntryId ? getEntry(targetEntryId) : null;
-  const lastEntry = lastPositionId ? getEntry(lastPositionId) : null;
-  const navigationEntry = requestedEntry?.categoryId === categoryId
-    ? requestedEntry
-    : lastEntry?.categoryId === categoryId ? lastEntry : null;
-  const focusNavigation = Boolean(targetEntryId || (restorePosition && navigationEntry));
+  const navigationEntry = requestedEntry?.categoryId === categoryId ? requestedEntry : null;
+  const focusNavigation = Boolean(navigationEntry);
   const expandedGroups = resolveExpandedLetters({
     previous: focusNavigation ? [] : previousExpanded,
     availableLetters: model.availableLetters,
@@ -366,16 +519,8 @@ async function renderCategory({ restorePosition = false, targetEntryId = null } 
   }
 
   renderPins();
-  if (restorePosition && navigationEntry && isCurrentRender(context)) {
-    suppressScrollPersistence();
-    uiState.restoreFrame = requestAnimationFrame(() => {
-      uiState.restoreFrame = 0;
-      if (!isCurrentRender(context)) return;
-      jumpToEntry(navigationEntry.id, false, { persist: false })
-        .then((restored) => { if (restored) showToast(`已恢复上次位置：${navigationEntry.word}`, 1400); })
-        .catch(displayError);
-    });
-  }
+  refreshAnnotationLaunchers();
+  renderAnnotationReviewBar();
   return true;
 }
 
@@ -401,7 +546,6 @@ async function openCategory(categoryId, targetEntryId = null) {
   if (!getCategory(categoryId)) return false;
   const navigationId = ++uiState.navigationId;
   ++uiState.renderId;
-  cancelPendingRestore();
   cancelScrollPersistence();
   uiState.searchController?.abort();
   uiState.currentCategoryId = categoryId;
@@ -412,16 +556,16 @@ async function openCategory(categoryId, targetEntryId = null) {
   setView('category');
   window.scrollTo({ top: 0, behavior: 'auto' });
 
-  const rendered = await renderCategory({ restorePosition: false, targetEntryId });
+  const rendered = await renderCategory({ targetEntryId });
   if (!rendered || navigationId !== uiState.navigationId || categoryId !== uiState.currentCategoryId) return false;
   if (targetEntryId) await jumpToEntry(targetEntryId, true);
   return true;
 }
 
 function goHome() {
+  closeAnnotationReview();
   ++uiState.navigationId;
   ++uiState.renderId;
-  cancelPendingRestore();
   cancelScrollPersistence();
   uiState.searchController?.abort();
   uiState.currentCategoryId = null;
@@ -457,7 +601,7 @@ async function jumpToEntry(entryId, smooth = true, { persist = true } = {}) {
   row.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
   row.classList.add('copy-flash');
   setTimeout(() => row.classList.remove('copy-flash'), 650);
-  if (persist) await saveLastPosition(entry.categoryId, entry.id);
+  if (persist) saveLastPosition(entry.categoryId, entry.id).catch((error) => console.warn('浏览位置保存失败，不影响跳转结果。', error));
   return true;
 }
 
@@ -559,16 +703,18 @@ function performDialogSearch() {
 }
 
 function openSearchDialog() {
+  if (elements['search-dialog'].open) return;
   elements['dialog-search-input'].value = '';
   elements['dialog-search-results'].replaceChildren();
   elements['dialog-search-status'].textContent = '';
   const currentRadio = document.querySelector('input[name="search-scope"][value="current"]');
   if (currentRadio) /** @type {HTMLInputElement} */ (currentRadio).checked = Boolean(uiState.currentCategoryId);
-  elements['search-dialog'].showModal();
+  showModalOnce(elements['search-dialog']);
   setTimeout(() => elements['dialog-search-input'].focus(), 80);
 }
 
 function openWordDialog(entryId = null) {
+  if (elements['word-dialog'].open) return;
   const entry = entryId ? getEntry(entryId) : null;
   elements['word-dialog-title'].textContent = entry ? '编辑词汇' : '新增词汇';
   elements['word-entry-id'].value = entry?.id ?? '';
@@ -576,11 +722,12 @@ function openWordDialog(entryId = null) {
   elements['word-input'].value = entry?.word ?? '';
   elements['pos-input'].value = entry ? formatPos(entry.pos) : '';
   elements['word-form-error'].textContent = '';
-  elements['word-dialog'].showModal();
+  showModalOnce(elements['word-dialog']);
   setTimeout(() => elements['word-input'].focus(), 60);
 }
 
 function openEntryMenu(entryId) {
+  if (elements['entry-menu-dialog'].open) return;
   const entry = getEntry(entryId);
   if (!entry) return;
   uiState.currentEntryId = entryId;
@@ -604,24 +751,58 @@ function openEntryMenu(entryId) {
       elements['annotation-content'].append(p);
     }
   }
-  elements['entry-menu-dialog'].showModal();
+  showModalOnce(elements['entry-menu-dialog']);
+}
+
+function cancelActiveConfirmation() {
+  confirmationSequence += 1;
+  const dialog = elements['confirm-dialog'];
+  if (activeConfirmation) {
+    dialog?.removeEventListener('close', activeConfirmation.onClose);
+    activeConfirmation.resolve(false);
+    activeConfirmation = null;
+  }
+  if (dialog?.open) dialog.close('cancel');
 }
 
 function confirmAction(title, message, { danger = true, confirmText = '确认' } = {}) {
+  const dialog = elements['confirm-dialog'];
+  const sequence = ++confirmationSequence;
+  if (activeConfirmation) {
+    dialog.removeEventListener('close', activeConfirmation.onClose);
+    activeConfirmation.resolve(false);
+    activeConfirmation = null;
+  }
+
   return new Promise((resolve) => {
-    elements['confirm-title'].textContent = title;
-    elements['confirm-message'].textContent = message;
-    elements['confirm-ok-button'].textContent = confirmText;
-    elements['confirm-ok-button'].className = danger ? 'danger-button' : 'primary-button';
-    const dialog = elements['confirm-dialog'];
-    if (dialog.open) dialog.close('cancel');
-    dialog.returnValue = '';
-    const onClose = () => {
-      dialog.removeEventListener('close', onClose);
-      resolve(dialog.returnValue === 'default');
+    const open = () => {
+      if (sequence !== confirmationSequence) return resolve(false);
+      elements['confirm-title'].textContent = title;
+      elements['confirm-message'].textContent = message;
+      elements['confirm-ok-button'].textContent = confirmText;
+      elements['confirm-ok-button'].className = danger ? 'danger-button' : 'primary-button';
+      dialog.returnValue = '';
+      const onClose = () => {
+        if (activeConfirmation?.sequence !== sequence) return;
+        dialog.removeEventListener('close', onClose);
+        activeConfirmation = null;
+        resolve(dialog.returnValue === 'default');
+      };
+      activeConfirmation = { sequence, resolve, onClose };
+      dialog.addEventListener('close', onClose);
+      try { dialog.showModal(); }
+      catch (error) {
+        dialog.removeEventListener('close', onClose);
+        activeConfirmation = null;
+        console.error('确认对话框打开失败', error);
+        resolve(false);
+      }
     };
-    dialog.addEventListener('close', onClose);
-    dialog.showModal();
+
+    if (dialog.open) {
+      dialog.addEventListener('close', open, { once: true });
+      dialog.close('cancel');
+    } else queueMicrotask(open);
   });
 }
 
@@ -649,8 +830,9 @@ function renderCategoryManager() {
 }
 
 function openCategoriesDialog() {
+  if (elements['categories-dialog'].open) return;
   renderCategoryManager();
-  elements['categories-dialog'].showModal();
+  showModalOnce(elements['categories-dialog']);
 }
 
 function formatImportPreview(parsed, mode) {
@@ -660,7 +842,7 @@ function formatImportPreview(parsed, mode) {
     validateBackup(parsed.backup);
     return `完整备份\n词表：${parsed.backup.categories?.length ?? 0}\n词汇：${parsed.backup.entries?.length ?? 0}`;
   }
-  const stats = previewImport(uiState.currentCategoryId, parsed.entries, mode);
+  const stats = previewImport(uiState.importTargetCategoryId, parsed.entries, mode);
   const lines = [
     `格式：${parsed.format}`,
     `解析后的文件内唯一词汇：${stats.input}`,
@@ -693,7 +875,10 @@ function refreshImportPreview() {
 }
 
 function openImportDialog({ restoreOnly = false } = {}) {
+  if (elements['import-dialog'].open) return;
   if (!restoreOnly && !uiState.currentCategoryId) return showToast('请先打开目标词表');
+  uiState.importSessionId += 1;
+  uiState.importTargetCategoryId = restoreOnly ? null : uiState.currentCategoryId;
   uiState.importParsed = null;
   elements['import-file'].value = '';
   elements['import-mode'].value = restoreOnly ? 'restore' : 'merge';
@@ -701,10 +886,11 @@ function openImportDialog({ restoreOnly = false } = {}) {
   elements['import-preview'].textContent = restoreOnly ? '请选择本工具导出的完整 JSON 备份。' : '尚未选择文件。';
   elements['import-error'].textContent = '';
   elements['import-confirm-button'].disabled = true;
-  elements['import-dialog'].showModal();
+  showModalOnce(elements['import-dialog']);
 }
 
 function openAiAddDialog() {
+  if (elements['ai-add-dialog'].open) return;
   if (!uiState.currentCategoryId) return;
   uiState.aiAddController?.abort();
   uiState.aiAddCandidates = [];
@@ -712,7 +898,7 @@ function openAiAddDialog() {
   elements['ai-add-results'].replaceChildren();
   elements['ai-add-status'].textContent = '';
   elements['ai-add-confirm-button'].disabled = true;
-  elements['ai-add-dialog'].showModal();
+  showModalOnce(elements['ai-add-dialog']);
 }
 
 function renderAiAddCandidates(items) {
@@ -738,86 +924,220 @@ function renderAiAddCandidates(items) {
 }
 
 function openAiCheckDialog() {
+  if (elements['ai-check-dialog'].open) return;
   if (!uiState.currentCategoryId) return;
   elements['ai-check-scope'].value = 'current';
   elements['ai-check-progress'].value = 0;
   elements['ai-check-status'].textContent = '';
+  elements['ai-check-batch-metric'].textContent = '尚未开始';
+  elements['ai-check-issue-metric'].textContent = '0 条标注';
+  elements['ai-check-review-button'].classList.add('hidden');
+  elements['ai-check-pause-button'].textContent = '暂停';
   updateAiCheckEstimate();
-  elements['ai-check-dialog'].showModal();
+  showModalOnce(elements['ai-check-dialog']);
 }
 
 function updateAiCheckEstimate() {
   const scope = elements['ai-check-scope'].value;
-  const count = getEntriesForScope(scope, uiState.currentCategoryId).length;
-  const batches = Math.ceil(count / AI_CHECK_BATCH_SIZE);
-  elements['ai-check-estimate'].textContent = `${count.toLocaleString()} 个词汇，约 ${batches} 个请求批次。已存在标注会被更新，未报错词条不会新增标注。`;
+  const entries = getEntriesForScope(scope, uiState.currentCategoryId);
+  const batches = createAiCheckBatches(entries);
+  const estimatedTokens = batches.reduce((sum, batch) => sum + estimateAiCheckTokens(batch), 0);
+  elements['ai-check-estimate'].textContent = `${entries.length.toLocaleString()} 个词汇，将拆分为 ${batches.length} 个串行批次（预计输入约 ${estimatedTokens.toLocaleString()} tokens）。系统会读取 Groq 速率响应头并主动等待。`;
 }
 
-async function runAiCheck() {
-  const scope = elements['ai-check-scope'].value;
-  const categoryId = uiState.currentCategoryId;
-  const entries = getEntriesForScope(scope, categoryId);
-  if (!entries.length) return showToast('没有可核查词汇');
-  uiState.aiCheckController?.abort();
-  const controller = new AbortController();
-  uiState.aiCheckController = controller;
-  elements['ai-check-start-button'].disabled = true;
-  elements['ai-check-cancel-button'].disabled = false;
-  elements['ai-check-scope'].disabled = true;
-  let issueCount = 0;
-  try {
-    for (let offset = 0; offset < entries.length; offset += AI_CHECK_BATCH_SIZE) {
-      if (controller.signal.aborted) throw controller.signal.reason ?? new DOMException('请求已取消', 'AbortError');
-      const batch = entries.slice(offset, offset + AI_CHECK_BATCH_SIZE);
-      elements['ai-check-status'].textContent = `核查 ${offset + 1}–${Math.min(offset + batch.length, entries.length)} / ${entries.length}`;
-      const issues = await checkVocabularyBatch(batch, controller.signal);
-      if (controller.signal.aborted) throw controller.signal.reason ?? new DOMException('请求已取消', 'AbortError');
-      const stableIds = new Set(batch.filter((snapshot) => {
-        const current = getEntry(snapshot.id);
-        return current && current.word === snapshot.word && formatPos(current.pos) === formatPos(snapshot.pos);
-      }).map((entry) => entry.id));
-      const stableIssues = issues.filter((item) => stableIds.has(item.entryId));
-      await replaceAnnotationsForEntries([...stableIds], stableIssues);
-      issueCount += stableIssues.length;
-      const progress = Math.round(Math.min(100, ((offset + batch.length) / entries.length) * 100));
-      elements['ai-check-progress'].value = progress;
-    }
-    elements['ai-check-status'].textContent = `完成：生成或更新 ${issueCount} 条可疑标注。未修改任何词汇。`;
-    showToast(`AI 核查完成：${issueCount} 条标注`);
-    if (categoryId === uiState.currentCategoryId) await renderCategory();
-  } catch (error) {
-    if (error.name === 'AbortError') elements['ai-check-status'].textContent = '请求已取消；此前完成的标注仍保留。';
-    else { elements['ai-check-status'].textContent = '核查失败'; displayError(error); }
-  } finally {
-    if (uiState.aiCheckController === controller) {
-      uiState.aiCheckController = null;
-      elements['ai-check-start-button'].disabled = false;
-      elements['ai-check-cancel-button'].disabled = true;
-      elements['ai-check-scope'].disabled = false;
+function setAiCheckRunning(running) {
+  elements['ai-check-start-button'].disabled = running;
+  elements['ai-check-cancel-button'].disabled = !running;
+  elements['ai-check-pause-button'].disabled = !running;
+  elements['ai-check-scope'].disabled = running;
+}
+
+function resumeAiCheckTask(task) {
+  task.paused = false;
+  elements['ai-check-pause-button'].textContent = '暂停';
+  for (const resolve of task.resumeResolvers.splice(0)) resolve();
+}
+
+function waitForAiCheckResume(task) {
+  if (!task.paused) return Promise.resolve();
+  elements['ai-check-status'].textContent = '已暂停；已完成批次和标注均已保留。';
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(task.controller.signal.reason ?? new DOMException('请求已取消', 'AbortError'));
+    task.resumeResolvers.push(() => {
+      task.controller.signal.removeEventListener('abort', onAbort);
+      resolve();
+    });
+    task.controller.signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function retryDelayFor(error, attempt) {
+  if (error instanceof GroqRequestError) {
+    if (error.retryAfterMs > 0) return error.retryAfterMs + 250;
+    if (Number(error.rateLimit?.resetTokensMs) > 0) return Number(error.rateLimit.resetTokensMs) + 300;
+    const messageDelay = String(error.message ?? '').match(/(?:try again in|等待)\s*(\d+(?:\.\d+)?)\s*s/i);
+    if (messageDelay) return Math.ceil(Number(messageDelay[1]) * 1000) + 250;
+  }
+  return Math.min(15000, 1200 * (2 ** attempt));
+}
+
+async function checkBatchWithRetries(batch, task, batchNumber, batchCount) {
+  for (let attempt = 0; ; attempt += 1) {
+    await waitForAiCheckResume(task);
+    try {
+      return await checkVocabularyBatch(batch, task.controller.signal);
+    } catch (error) {
+      const retryable = (error instanceof GroqRequestError
+        && (error.status === 429 || (Number(error.status) >= 500 && Number(error.status) <= 599)))
+        || error?.name === 'TimeoutError'
+        || error instanceof TypeError;
+      if (!retryable || attempt >= AI_CHECK_MAX_RETRIES) throw error;
+      const delay = retryDelayFor(error, attempt);
+      await abortableDelay(delay, task.controller.signal, (remaining) => {
+        const seconds = Math.max(1, Math.ceil(remaining / 1000));
+        const reason = error.status === 429 ? '等待速率额度恢复' : '服务暂时不可用，准备重试';
+        elements['ai-check-status'].textContent = `第 ${batchNumber}/${batchCount} 批：${reason}，${seconds} 秒后重试（${attempt + 1}/${AI_CHECK_MAX_RETRIES}）`;
+      });
     }
   }
 }
 
-function fillModelSelect(models, selected) {
-  const values = [...new Set([selected || DEFAULT_GROQ_MODEL, DEFAULT_GROQ_MODEL, ...models])];
+async function runAiCheck() {
+  if (uiState.aiCheckTask) return;
+  const scope = elements['ai-check-scope'].value;
+  const categoryId = uiState.currentCategoryId;
+  const entries = getEntriesForScope(scope, categoryId);
+  if (!entries.length) return showToast('没有可核查词汇');
+  const batches = createAiCheckBatches(entries);
+  const controller = new AbortController();
+  const task = {
+    controller,
+    paused: false,
+    resumeResolvers: [],
+    scope,
+    categoryId,
+    entries,
+    batches,
+    issueIds: new Set(),
+    checkedIds: new Set(),
+  };
+  uiState.aiCheckTask = task;
+  uiState.aiCheckController = controller;
+  uiState.lastAiCheckIssueIds = [];
+  setAiCheckRunning(true);
+  elements['ai-check-progress'].value = 0;
+  elements['ai-check-review-button'].classList.add('hidden');
+  elements['ai-check-batch-metric'].textContent = `0 / ${batches.length} 批`;
+  elements['ai-check-issue-metric'].textContent = '0 条标注';
+  try {
+    let previousRateLimit = null;
+    for (let index = 0; index < batches.length; index += 1) {
+      await waitForAiCheckResume(task);
+      const batch = batches[index];
+      if (index > 0) {
+        const nextCost = estimateAiCheckTokens(batch) + Math.max(700, 420 + batch.length * 28);
+        const delay = recommendedDelayMs(previousRateLimit, nextCost);
+        await abortableDelay(delay, controller.signal, delay > 1500 ? (remaining) => {
+          elements['ai-check-status'].textContent = `第 ${index + 1}/${batches.length} 批将在 ${Math.max(1, Math.ceil(remaining / 1000))} 秒后开始，以避免触发 TPM 限制。`;
+        } : null);
+      }
+      elements['ai-check-status'].textContent = `正在核查第 ${index + 1}/${batches.length} 批（${batch.length} 个词）…`;
+      const result = await checkBatchWithRetries(batch, task, index + 1, batches.length);
+      previousRateLimit = result.telemetry.rateLimit;
+      if (controller.signal.aborted) throw controller.signal.reason ?? new DOMException('请求已取消', 'AbortError');
+
+      const stableIds = new Set(batch.filter((snapshot) => {
+        const current = getEntry(snapshot.id);
+        return current && current.word === snapshot.word && formatPos(current.pos) === formatPos(snapshot.pos);
+      }).map((entry) => entry.id));
+      const stableIssues = result.issues.filter((item) => stableIds.has(item.entryId));
+      await replaceAnnotationsForEntries([...stableIds], stableIssues);
+      for (const id of stableIds) {
+        task.checkedIds.add(id);
+        task.issueIds.delete(id);
+      }
+      for (const issue of stableIssues) task.issueIds.add(issue.entryId);
+
+      const completedEntries = batches.slice(0, index + 1).reduce((sum, item) => sum + item.length, 0);
+      elements['ai-check-progress'].value = Math.round((completedEntries / entries.length) * 100);
+      elements['ai-check-batch-metric'].textContent = `${index + 1} / ${batches.length} 批`;
+      elements['ai-check-issue-metric'].textContent = `${task.issueIds.size} 条标注`;
+      const remainingRaw = result.telemetry.rateLimit?.remainingTokens;
+      const remainingTokens = remainingRaw == null ? Number.NaN : Number(remainingRaw);
+      elements['ai-check-status'].textContent = Number.isFinite(remainingTokens)
+        ? `第 ${index + 1} 批完成；Groq 本分钟剩余约 ${remainingTokens.toLocaleString()} tokens。`
+        : `第 ${index + 1} 批完成；正在按保守间隔继续。`;
+    }
+
+    uiState.lastAiCheckIssueIds = annotationEntryIds(null, [...task.checkedIds]);
+    elements['ai-check-status'].textContent = `完成：核查 ${entries.length.toLocaleString()} 个词，当前有 ${uiState.lastAiCheckIssueIds.length} 条待审阅标注。未修改任何词汇。`;
+    elements['ai-check-review-button'].classList.toggle('hidden', uiState.lastAiCheckIssueIds.length === 0);
+    showToast(`AI 核查完成：${uiState.lastAiCheckIssueIds.length} 条待审阅标注`);
+    refreshAnnotationLaunchers();
+    if (categoryId === uiState.currentCategoryId) await renderCategory();
+  } catch (error) {
+    uiState.lastAiCheckIssueIds = annotationEntryIds(null, [...task.checkedIds]);
+    elements['ai-check-review-button'].classList.toggle('hidden', uiState.lastAiCheckIssueIds.length === 0);
+    elements['ai-check-issue-metric'].textContent = `${uiState.lastAiCheckIssueIds.length} 条标注`;
+    refreshAnnotationLaunchers();
+    if (error.name === 'AbortError') elements['ai-check-status'].textContent = '核查已取消；此前完成的标注仍保留，可直接审阅。';
+    else {
+      elements['ai-check-status'].textContent = error instanceof GroqRequestError && error.status === 429
+        ? '当前模型的 Groq 速率额度仍不足。已保留完成批次，可稍后重新开始或先审阅已有标注。'
+        : '核查失败；此前完成的标注仍保留，可直接审阅。';
+      displayError(error);
+    }
+  } finally {
+    resumeAiCheckTask(task);
+    if (uiState.aiCheckTask === task) uiState.aiCheckTask = null;
+    if (uiState.aiCheckController === controller) uiState.aiCheckController = null;
+    setAiCheckRunning(false);
+  }
+}
+
+function toggleAiCheckPause() {
+  const task = uiState.aiCheckTask;
+  if (!task) return;
+  if (task.paused) resumeAiCheckTask(task);
+  else {
+    task.paused = true;
+    elements['ai-check-pause-button'].textContent = '继续';
+  }
+}
+
+function fillModelSelect(models, selected, activeModels = null) {
+  const catalog = [...new Set([...(models ?? []), selected || DEFAULT_GROQ_MODEL])]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+  const active = Array.isArray(activeModels) ? new Set(activeModels) : null;
   elements['groq-model-select'].replaceChildren();
-  for (const model of values) {
+  for (const model of catalog) {
     const option = document.createElement('option');
     option.value = model;
-    option.textContent = model;
+    option.textContent = active && !active.has(model) ? `${model}（未在最近刷新中）` : model;
     option.selected = model === selected;
     elements['groq-model-select'].append(option);
   }
 }
 
+function formatCatalogUpdatedAt(value) {
+  if (!value) return '尚未刷新模型列表；当前选择仍可直接使用。';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '模型列表已缓存。';
+  return `已缓存 ${getCachedModels().length} 个模型 · 上次刷新 ${date.toLocaleString()}`;
+}
+
 function openSettingsDialog() {
+  if (elements['settings-dialog'].open) return;
   const config = getGroqConfig();
+  const catalog = getModelCatalogState();
   elements['groq-key-input'].value = config.key;
-  fillModelSelect([], config.model);
+  fillModelSelect(catalog.models, config.model, catalog.updatedAt ? catalog.activeModels : null);
+  elements['groq-model-catalog-meta'].textContent = formatCatalogUpdatedAt(catalog.updatedAt);
   elements['number-mode-select'].value = getState().settings.numberMode;
   elements['groq-settings-status'].textContent = '';
   elements['app-version-text'].textContent = `Vocabulary Index ${APP_VERSION} · IndexedDB · PWA`;
-  elements['settings-dialog'].showModal();
+  showModalOnce(elements['settings-dialog']);
 }
 
 async function copyEntry(entryId, button) {
@@ -825,12 +1145,15 @@ async function copyEntry(entryId, button) {
   if (!entry) return;
   try {
     await copyText(entry.word);
-    button.closest('.word-row')?.classList.add('copy-flash');
-    setTimeout(() => button.closest('.word-row')?.classList.remove('copy-flash'), 550);
-    showToast(`已复制：${entry.word}`);
-    announce(`${entry.word} 已复制到剪贴板`);
-    await saveLastPosition(entry.categoryId, entry.id);
-  } catch (error) { displayError(error); }
+  } catch (error) {
+    displayError(error);
+    return;
+  }
+  button.closest('.word-row')?.classList.add('copy-flash');
+  setTimeout(() => button.closest('.word-row')?.classList.remove('copy-flash'), 550);
+  showToast(`已复制：${entry.word}`);
+  announce(`${entry.word} 已复制到剪贴板`);
+  saveLastPosition(entry.categoryId, entry.id).catch((error) => console.warn('浏览位置保存失败，不影响复制结果。', error));
 }
 
 async function initializeToSeed() {
@@ -853,9 +1176,13 @@ async function initializeToSeed() {
   finally { elements['home-initialize-seed-button'].disabled = false; }
 }
 
-function exportFullBackup() {
-  const filename = `vocabulary-backup-${formatDateForFilename()}.json`;
-  downloadText(filename, JSON.stringify(createBackup(), null, 2), 'application/json;charset=utf-8');
+async function exportFullBackup() {
+  try {
+    const backup = await createFreshBackup();
+    const filename = `vocabulary-backup-${formatDateForFilename()}.json`;
+    downloadText(filename, JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
+    showToast('完整 JSON 备份已生成');
+  } catch (error) { displayError(error); }
 }
 
 function handleAction(action) {
@@ -864,7 +1191,7 @@ function handleAction(action) {
   else if (action === 'ai-add') openAiAddDialog();
   else if (action === 'ai-check') openAiCheckDialog();
   else if (action === 'import') openImportDialog();
-  else if (action === 'category-menu') elements['category-menu-dialog'].showModal();
+  else if (action === 'category-menu') showModalOnce(elements['category-menu-dialog']);
 }
 
 function firstVisibleEntryId(context = uiState.currentRender) {
@@ -893,6 +1220,7 @@ function persistScrollPosition() {
 }
 
 function closeDataMutationDialogs() {
+  cancelActiveConfirmation();
   for (const id of ['word-dialog', 'entry-menu-dialog', 'categories-dialog', 'import-dialog', 'ai-add-dialog', 'ai-check-dialog', 'search-dialog']) {
     const dialog = elements[id];
     if (dialog?.open) dialog.close();
@@ -906,6 +1234,26 @@ function bindEvents() {
   elements['back-button'].addEventListener('click', goHome);
   elements['settings-button'].addEventListener('click', openSettingsDialog);
   elements['manage-categories-button'].addEventListener('click', openCategoriesDialog);
+  elements['home-review-annotations-button'].addEventListener('click', () => startAnnotationReview().catch(displayError));
+  elements['annotation-review-button'].addEventListener('click', () => startAnnotationReview(annotationEntryIds(uiState.currentCategoryId)).catch(displayError));
+  elements['annotation-review-prev'].addEventListener('click', () => navigateAnnotationReview(uiState.annotationReview.index - 1).catch(displayError));
+  elements['annotation-review-next'].addEventListener('click', () => navigateAnnotationReview(uiState.annotationReview.index + 1).catch(displayError));
+  elements['annotation-review-close'].addEventListener('click', closeAnnotationReview);
+  elements['annotation-review-edit'].addEventListener('click', () => {
+    const entryId = uiState.annotationReview.entryIds[uiState.annotationReview.index];
+    if (entryId) openWordDialog(entryId);
+  });
+  elements['annotation-review-dismiss'].addEventListener('click', async () => {
+    const entryId = uiState.annotationReview.entryIds[uiState.annotationReview.index];
+    if (!entryId) return;
+    try {
+      await dismissAnnotation(entryId);
+      const nextIndex = Math.min(uiState.annotationReview.index, uiState.annotationReview.entryIds.length - 2);
+      if (!syncAnnotationReviewList()) showToast('所有标注均已处理');
+      else await navigateAnnotationReview(Math.max(0, nextIndex));
+      refreshAnnotationLaunchers();
+    } catch (error) { displayError(error); }
+  });
   elements['home-export-backup-button'].addEventListener('click', exportFullBackup);
   elements['home-restore-backup-button'].addEventListener('click', () => openImportDialog({ restoreOnly: true }));
   elements['home-initialize-seed-button'].addEventListener('click', initializeToSeed);
@@ -1014,6 +1362,10 @@ function bindEvents() {
         await renderCategory({ targetEntryId: result.entry.id });
         await jumpToEntry(result.entry.id, false);
       }
+      refreshAnnotationLaunchers();
+      if (uiState.annotationReview.active && syncAnnotationReviewList()) {
+        await navigateAnnotationReview(uiState.annotationReview.index);
+      }
     } catch (error) { elements['word-form-error'].textContent = error.message; }
     finally { elements['word-save-button'].disabled = false; }
   });
@@ -1033,14 +1385,15 @@ function bindEvents() {
   });
   elements['entry-remove-source-button'].addEventListener('click', async () => {
     const entry = getEntry(uiState.currentEntryId);
-    if (!entry) return;
+    const category = currentCategory();
+    if (!entry || !category) return;
     const sourceCount = Object.keys(entry.sources ?? {}).length;
     const message = sourceCount > 1
-      ? `移除 ${entry.word} 在 ${currentCategory().name} 中的来源后，它会自动归入下一个优先词表。`
+      ? `移除 ${entry.word} 在 ${category.name} 中的来源后，它会自动归入下一个优先词表。`
       : `移除 ${entry.word} 后，它将因没有其他来源而被删除。`;
     elements['entry-menu-dialog'].close();
     if (!await confirmAction('从当前词表移除', message)) return;
-    try { await removeEntryFromCategory(entry.id, uiState.currentCategoryId); await renderCategory(); showToast('已移除，可撤销'); }
+    try { await removeEntryFromCategory(entry.id, category.id); await renderCategory(); showToast('已移除，可撤销'); }
     catch (error) { displayError(error); }
   });
   elements['entry-delete-global-button'].addEventListener('click', async () => {
@@ -1052,10 +1405,12 @@ function bindEvents() {
     catch (error) { displayError(error); }
   });
   elements['annotation-dismiss-button'].addEventListener('click', async () => {
-    await dismissAnnotation(uiState.currentEntryId);
-    elements['entry-menu-dialog'].close();
-    await renderCategory();
-    showToast('标注已取消');
+    try {
+      await dismissAnnotation(uiState.currentEntryId);
+      elements['entry-menu-dialog'].close();
+      await renderCategory();
+      showToast('标注已取消');
+    } catch (error) { displayError(error); }
   });
 
   elements['category-menu-dialog'].addEventListener('click', async (event) => {
@@ -1063,26 +1418,34 @@ function bindEvents() {
     if (!button) return;
     const action = button.dataset.menuAction;
     elements['category-menu-dialog'].close();
-    if (action === 'import') openImportDialog();
-    else if (action === 'export-current-md' || action === 'export-current-csv') {
-      const category = currentCategory();
-      if (!category) return;
-      const entries = getCategoryEntries(category.id);
-      if (action === 'export-current-md') {
-        downloadText(`${category.name}.md`, exportCategoryMarkdown(category, entries), 'text/markdown;charset=utf-8');
-      } else {
-        downloadText(`${category.name}.csv`, exportCategoryCsv(entries), 'text/csv;charset=utf-8');
-      }
-    } else if (action === 'clear-annotations') {
-      const count = getAnnotations(uiState.currentCategoryId).length;
-      if (!count) return showToast('当前词表没有 AI 标注');
-      if (await confirmAction('清除 AI 标注', `清除当前词表的 ${count} 条标注？此操作不影响词汇。`)) {
-        await clearAnnotations(uiState.currentCategoryId); await renderCategory(); showToast('标注已清除');
-      }
-    } else if (action === 'jump-last') {
-      const id = await getLastPosition(uiState.currentCategoryId);
-      if (id) await jumpToEntry(id); else showToast('尚无浏览位置');
-    } else if (action === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      if (action === 'import') openImportDialog();
+      else if (action === 'export-current-md' || action === 'export-current-csv') {
+        const category = currentCategory();
+        if (!category) return;
+        const entries = getCategoryEntries(category.id);
+        if (action === 'export-current-md') {
+          downloadText(`${category.name}.md`, exportCategoryMarkdown(category, entries), 'text/markdown;charset=utf-8');
+        } else {
+          downloadText(`${category.name}.csv`, exportCategoryCsv(entries), 'text/csv;charset=utf-8');
+        }
+      } else if (action === 'clear-annotations') {
+        const categoryId = uiState.currentCategoryId;
+        const count = getAnnotations(categoryId).length;
+        if (!count) return showToast('当前词表没有 AI 标注');
+        if (await confirmAction('清除 AI 标注', `清除当前词表的 ${count} 条标注？此操作不影响词汇。`)) {
+          await clearAnnotations(categoryId);
+          if (categoryId === uiState.currentCategoryId) await renderCategory();
+          showToast('标注已清除');
+        }
+      } else if (action === 'jump-last') {
+        const categoryId = uiState.currentCategoryId;
+        const id = await getLastPosition(categoryId);
+        const entry = id ? getEntry(id) : null;
+        if (entry?.categoryId === categoryId) await jumpToEntry(id);
+        else showToast('尚无有效浏览位置');
+      } else if (action === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error) { displayError(error); }
   });
 
   elements['categories-dialog'].addEventListener('change', async (event) => {
@@ -1116,16 +1479,28 @@ function bindEvents() {
   });
 
   elements['import-dialog'].addEventListener('close', () => {
+    uiState.importSessionId += 1;
+    uiState.importParsed = null;
+    uiState.importTargetCategoryId = null;
     elements['import-mode'].disabled = false;
   });
   elements['import-file'].addEventListener('change', async () => {
     const file = elements['import-file'].files?.[0];
+    const sessionId = ++uiState.importSessionId;
+    uiState.importParsed = null;
+    elements['import-confirm-button'].disabled = true;
     if (!file) return;
     try {
       if (file.size > MAX_IMPORT_BYTES) throw new Error('导入文件超过 64 MB，已拒绝在移动端加载');
-      uiState.importParsed = parseImportContent(file.name, await file.text());
+      const text = await file.text();
+      if (sessionId !== uiState.importSessionId || !elements['import-dialog'].open) return;
+      uiState.importParsed = parseImportContent(file.name, text);
       refreshImportPreview();
-    } catch (error) { elements['import-error'].textContent = error.message; }
+    } catch (error) {
+      if (sessionId === uiState.importSessionId && elements['import-dialog'].open) {
+        elements['import-error'].textContent = error.message;
+      }
+    }
   });
   elements['import-mode'].addEventListener('change', refreshImportPreview);
   elements['import-confirm-button'].addEventListener('click', async () => {
@@ -1138,7 +1513,11 @@ function bindEvents() {
         validateBackup(parsed.backup);
         if (!await confirmAction('恢复完整备份', '这会用备份内容替换当前全部词表和词汇。操作会写入撤销历史。')) return;
         await restoreBackup(parsed.backup, { label: '恢复完整 JSON 备份' });
-      } else await importIntoCategory(uiState.currentCategoryId, parsed.entries, mode);
+      } else {
+        const targetCategoryId = uiState.importTargetCategoryId;
+        if (!targetCategoryId || !getCategory(targetCategoryId)) throw new Error('导入目标词表已不存在，请重新选择文件');
+        await importIntoCategory(targetCategoryId, parsed.entries, mode);
+      }
       elements['import-dialog'].close();
       renderHome();
       if (uiState.currentCategoryId) await renderCategory();
@@ -1198,7 +1577,12 @@ function bindEvents() {
 
   elements['ai-check-scope'].addEventListener('change', updateAiCheckEstimate);
   elements['ai-check-start-button'].addEventListener('click', runAiCheck);
+  elements['ai-check-pause-button'].addEventListener('click', toggleAiCheckPause);
   elements['ai-check-cancel-button'].addEventListener('click', () => uiState.aiCheckController?.abort());
+  elements['ai-check-review-button'].addEventListener('click', () => {
+    elements['ai-check-dialog'].close();
+    startAnnotationReview(uiState.lastAiCheckIssueIds).catch(displayError);
+  });
   elements['ai-add-dialog'].addEventListener('close', () => uiState.aiAddController?.abort());
   elements['ai-check-dialog'].addEventListener('close', () => uiState.aiCheckController?.abort());
   elements['search-dialog'].addEventListener('close', () => uiState.searchController?.abort());
@@ -1209,17 +1593,26 @@ function bindEvents() {
     try {
       saveGroqConfig({ key: elements['groq-key-input'].value, model: elements['groq-model-select'].value });
       const models = await fetchAvailableModels();
-      fillModelSelect(models, getGroqConfig().model);
-      elements['groq-settings-status'].textContent = `读取到 ${models.length} 个文本模型`;
+      const catalog = getModelCatalogState();
+      fillModelSelect(catalog.models, getGroqConfig().model, catalog.activeModels);
+      elements['groq-model-catalog-meta'].textContent = formatCatalogUpdatedAt(catalog.updatedAt);
+      elements['groq-settings-status'].textContent = `已刷新并保存 ${models.length} 个文本模型；下次打开设置无需重新读取。`;
     } catch (error) { elements['groq-settings-status'].textContent = error.message; }
     finally { elements['load-models-button'].disabled = false; }
   });
   elements['save-groq-button'].addEventListener('click', () => {
-    saveGroqConfig({ key: elements['groq-key-input'].value, model: elements['groq-model-select'].value });
-    elements['groq-settings-status'].textContent = 'Groq 设置已保存在当前浏览器';
+    try {
+      saveGroqConfig({ key: elements['groq-key-input'].value, model: elements['groq-model-select'].value });
+      const catalog = getModelCatalogState();
+      fillModelSelect(catalog.models, getGroqConfig().model, catalog.updatedAt ? catalog.activeModels : null);
+      elements['groq-model-catalog-meta'].textContent = formatCatalogUpdatedAt(catalog.updatedAt);
+      elements['groq-settings-status'].textContent = 'Groq 设置和当前模型已保存在当前浏览器';
+    } catch (error) { elements['groq-settings-status'].textContent = error.message; }
   });
   elements['clear-groq-button'].addEventListener('click', () => {
-    clearGroqKey(); elements['groq-key-input'].value = ''; elements['groq-settings-status'].textContent = 'API Key 已删除';
+    try {
+      clearGroqKey(); elements['groq-key-input'].value = ''; elements['groq-settings-status'].textContent = 'API Key 已删除';
+    } catch (error) { elements['groq-settings-status'].textContent = error.message; }
   });
   elements['number-mode-select'].addEventListener('change', async () => {
     const requestedMode = elements['number-mode-select'].value;
@@ -1247,6 +1640,8 @@ export async function initializeUI() {
   bindEvents();
   subscribe(({ type, detail }) => {
     updateHistoryButtons();
+    refreshAnnotationLaunchers();
+    if (uiState.annotationReview.active && type !== 'external-change') renderAnnotationReviewBar();
     if (type === 'external-change') {
       closeDataMutationDialogs();
       refreshHome();

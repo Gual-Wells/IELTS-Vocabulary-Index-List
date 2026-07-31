@@ -2,7 +2,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v2.2.1`;
+const CACHE_NAME = `${CACHE_PREFIX}v2.4.0`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest',
@@ -14,8 +14,18 @@ const PRECACHE = [
   './assets/icons/apple-touch-icon.png',
 ];
 
+async function precacheCurrentVersion() {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(PRECACHE.map(async (relativeUrl) => {
+    const request = new Request(new URL(relativeUrl, sw.location.href).href, { cache: 'reload' });
+    const response = await fetch(request);
+    if (!response.ok) throw new Error(`预缓存失败：${relativeUrl}（HTTP ${response.status}）`);
+    await cache.put(request, response);
+  }));
+}
+
 sw.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)));
+  event.waitUntil(precacheCurrentVersion());
   sw.skipWaiting();
 });
 
@@ -29,7 +39,7 @@ sw.addEventListener('activate', (event) => {
   );
 });
 
-async function fetchFresh(request) {
+async function fetchAndCache(request) {
   const freshRequest = new Request(request, { cache: 'no-store' });
   const response = await fetch(freshRequest);
   if (response.ok) {
@@ -39,27 +49,11 @@ async function fetchFresh(request) {
   return response;
 }
 
-async function networkFirst(request, fallback = null) {
+async function cacheFirst(request, fallback = null) {
   const cache = await caches.open(CACHE_NAME);
-  try {
-    const response = await fetchFresh(request);
-    if (response.ok) return response;
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    if (fallback) {
-      const fallbackResponse = await cache.match(fallback);
-      if (fallbackResponse) return fallbackResponse;
-    }
-    return response;
-  } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    if (fallback) {
-      const fallbackResponse = await cache.match(fallback);
-      if (fallbackResponse) return fallbackResponse;
-    }
-    throw error;
-  }
+  const cached = await cache.match(request) || (fallback ? await cache.match(fallback) : null);
+  if (cached) return cached;
+  return fetchAndCache(request);
 }
 
 sw.addEventListener('fetch', (event) => {
@@ -69,9 +63,9 @@ sw.addEventListener('fetch', (event) => {
   if (url.origin !== sw.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request, APP_SHELL));
+    event.respondWith(cacheFirst(APP_SHELL));
     return;
   }
 
-  event.respondWith(networkFirst(request));
+  event.respondWith(cacheFirst(request));
 });

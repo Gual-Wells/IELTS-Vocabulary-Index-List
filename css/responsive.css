@@ -33,3 +33,38 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
 }
+
+@media (max-width: 760px) {
+  .home-hero { align-items: center; padding-top: 2px; }
+  .home-hero-copy h2 { font-size: 1.48rem; }
+  .home-eyebrow { display: none; }
+  .home-heading-actions { gap: 6px; }
+  .category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
+  .category-card { min-height: 92px; padding: 13px; gap: 12px; border-radius: 15px; }
+  .category-card-name { font-size: 1.02rem; }
+  .category-card-count { font-size: 1.1rem; }
+  .category-card-label { font-size: .7rem; }
+  .data-safety-panel { margin-top: 20px; padding-top: 14px; }
+  .data-safety-heading .status-badge { display: none; }
+  .data-safety-actions { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .utility-action { min-width: 0; padding: 7px 5px; justify-content: center; font-size: .75rem; }
+  .annotation-review-bar {
+    top: calc(68px + var(--safe-top)); grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px;
+  }
+  .annotation-review-copy { grid-template-columns: auto minmax(0, 1fr); }
+  .annotation-review-detail { grid-column: 1 / -1; white-space: normal; line-height: 1.35; }
+  .annotation-review-actions { justify-content: space-between; }
+  .annotation-review-actions .secondary-button { flex: 1; }
+  .ai-check-footer { flex-wrap: wrap; }
+  .ai-check-footer .dialog-footer-spacer { display: none; }
+  .ai-check-footer > button { flex: 1 1 88px; }
+  .ai-check-footer #ai-check-review-button { flex-basis: 100%; }
+}
+
+@media (max-width: 360px) {
+  .category-grid { grid-template-columns: 1fr; }
+  .category-card { min-height: 78px; flex-direction: row; align-items: center; }
+  .category-card-meta { margin-left: auto; }
+  .category-card-arrow, .category-card-label { display: none; }
+  .home-heading-actions .annotation-review-launch span { display: none; }
+}

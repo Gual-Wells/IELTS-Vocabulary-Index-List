@@ -1,5 +1,5 @@
 import { initializeDatabase, recoverDatabaseFromBackup, resetDatabaseToSeed } from './db.js';
-import { MAX_IMPORT_BYTES } from './constants.js';
+import { APP_VERSION, MAX_IMPORT_BYTES } from './constants.js';
 import { initializeInstanceCoordination, initializeStore } from './store.js';
 import { initializeUI } from './ui.js';
 
@@ -20,6 +20,24 @@ function purgeRetiredCloudStorage() {
   } catch {
     // Safari 隐私模式或禁用网站存储时，应用仍继续尝试启动。
   }
+}
+
+
+function verifyDocumentVersion() {
+  const documentVersion = document.querySelector('meta[name="application-version"]')?.getAttribute('content');
+  if (!documentVersion || documentVersion === APP_VERSION) return true;
+  const key = 'gualVocabulary.versionReload';
+  try {
+    if (sessionStorage.getItem(key) === APP_VERSION) {
+      console.warn(`HTML/JavaScript 版本仍不一致：HTML ${documentVersion}, JS ${APP_VERSION}`);
+      return true;
+    }
+    sessionStorage.setItem(key, APP_VERSION);
+  } catch { /* storage may be unavailable */ }
+  const url = new URL(location.href);
+  url.searchParams.set('app-version', APP_VERSION);
+  location.replace(url.href);
+  return false;
 }
 
 async function registerServiceWorker() {
@@ -46,6 +64,7 @@ async function registerServiceWorker() {
 }
 
 async function start() {
+  if (!verifyDocumentVersion()) return;
   purgeRetiredCloudStorage();
   await initializeDatabase();
   await initializeStore();

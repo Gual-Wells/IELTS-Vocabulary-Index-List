@@ -1,28 +1,38 @@
 import { POS_ORDER } from './constants.js';
 
+
+const INVISIBLE_FORMAT = /[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/gu;
+const UNSAFE_FORMAT = /[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
+
+export function containsControlCharacters(value) {
+  const text = String(value ?? '');
+  return /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(text) || UNSAFE_FORMAT.test(text);
+}
+
 export function normalizeWord(value) {
   return String(value ?? '')
     .normalize('NFKC')
-    .trim()
-    .toLocaleLowerCase('en-US')
+    .replace(INVISIBLE_FORMAT, '')
     .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, ' ');
+    .replace(/[\u2010-\u2015\u2212]/gu, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('en-US');
 }
 
 
 export function normalizeCategoryName(value) {
   return String(value ?? '')
     .normalize('NFKC')
+    .replace(INVISIBLE_FORMAT, '')
+    .replace(/\s+/g, ' ')
     .trim()
-    .toLocaleLowerCase('en-US')
-    .replace(/\s+/g, ' ');
+    .toLocaleLowerCase('en-US');
 }
 
 export function groupForWord(word) {
-  const normalized = String(word ?? '').normalize('NFKC').trim();
-  const match = normalized.match(/[A-Za-z]/);
-  if (!match || match.index !== 0) return '#';
-  return match[0].toUpperCase();
+  const normalized = normalizeWord(word);
+  return /^[a-z]/.test(normalized) ? normalized[0].toUpperCase() : '#';
 }
 
 export function parsePos(value) {

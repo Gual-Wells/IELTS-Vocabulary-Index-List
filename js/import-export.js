@@ -1,5 +1,5 @@
 import { MAX_CATEGORY_NAME_LENGTH, MAX_WORD_LENGTH } from './constants.js';
-import { deepClone, fileExtension, formatPos, groupForWord, mergePos, normalizeCategoryName, normalizeWord, parsePos, sortPos } from './utils.js';
+import { containsControlCharacters, deepClone, fileExtension, formatPos, groupForWord, mergePos, normalizeCategoryName, normalizeWord, parsePos, sortPos } from './utils.js';
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/;
 const MAX_CATEGORIES = 1000;
@@ -24,6 +24,7 @@ function parseVocabularyLine(line, lineNumber) {
   const word = source.slice(0, match.index).trim();
   const rawPos = source.slice(match.index).trim();
   if (!word) return { error: `第 ${lineNumber} 行缺少词汇` };
+  if (containsControlCharacters(word)) return { error: `第 ${lineNumber} 行词汇包含控制字符` };
   if (word.length > MAX_WORD_LENGTH) return { error: `第 ${lineNumber} 行词汇超过 ${MAX_WORD_LENGTH} 个字符` };
   try {
     return { word, pos: parsePos(rawPos), line: lineNumber };
@@ -107,6 +108,7 @@ export function parseCsv(text) {
     const rawPos = String(row[posIndex] ?? '').trim();
     if (!word && !rawPos) return;
     if (!word || !rawPos) { errors.push(`第 ${line} 行缺少词汇或词性`); return; }
+    if (containsControlCharacters(word)) { errors.push(`第 ${line} 行词汇包含控制字符`); return; }
     if (word.length > MAX_WORD_LENGTH) { errors.push(`第 ${line} 行词汇超过 ${MAX_WORD_LENGTH} 个字符`); return; }
     try { items.push({ word, pos: parsePos(rawPos), line }); }
     catch (error) { errors.push(`第 ${line} 行：${error.message}`); }
@@ -122,6 +124,7 @@ function parseJsonVocabulary(value) {
       const word = typeof item === 'string' ? '' : String(item?.word ?? item?.w ?? '').trim();
       const rawPos = typeof item === 'string' ? '' : item?.pos ?? item?.d ?? '';
       if (!word) { errors.push(`JSON 第 ${index + 1} 项缺少 word`); return; }
+      if (containsControlCharacters(word)) { errors.push(`JSON 第 ${index + 1} 项词汇包含控制字符`); return; }
       if (word.length > MAX_WORD_LENGTH) { errors.push(`JSON 第 ${index + 1} 项词汇超过 ${MAX_WORD_LENGTH} 个字符`); return; }
       try {
         const pos = Array.isArray(rawPos) ? parsePos(rawPos.join(', ')) : parsePos(rawPos);
@@ -166,7 +169,8 @@ export function validateBackup(backup) {
     const name = String(category?.name ?? '').trim();
     const label = String(category?.label ?? name).trim();
     const order = Number(category?.order);
-    if (!name || name.length > MAX_CATEGORY_NAME_LENGTH || !label || label.length > MAX_LABEL_LENGTH
+    if (!name || containsControlCharacters(name) || name.length > MAX_CATEGORY_NAME_LENGTH
+        || !label || containsControlCharacters(label) || label.length > MAX_LABEL_LENGTH
         || !Number.isInteger(order) || order < 0) throw new Error('备份包含无效词表');
     const normalizedName = normalizeCategoryName(name);
     if (categoryIds.has(id) || categoryNames.has(normalizedName) || categoryOrders.has(order)) {
@@ -188,7 +192,7 @@ export function validateBackup(backup) {
     const id = assertSafeId(entry?.id, '词条');
     const word = String(entry?.word ?? '').trim();
     const normalized = normalizeWord(word);
-    if (!normalized || word.length > MAX_WORD_LENGTH || entryIds.has(id) || words.has(normalized)) {
+    if (!normalized || containsControlCharacters(word) || word.length > MAX_WORD_LENGTH || entryIds.has(id) || words.has(normalized)) {
       throw new Error(`备份包含无效或重复词汇：${word}`);
     }
     const pos = parsePos(Array.isArray(entry.pos) ? entry.pos.join(', ') : entry.pos);
@@ -206,7 +210,7 @@ export function validateBackup(backup) {
       const sourceWord = String(source?.word ?? '').trim();
       const sourcePos = parsePos(Array.isArray(source?.pos) ? source.pos.join(', ') : source?.pos);
       const sourceNormalized = normalizeWord(sourceWord);
-      if (!sourceNormalized || sourceWord.length > MAX_WORD_LENGTH || !sourcePos.length) throw new Error(`词汇 ${word} 的来源数据无效`);
+      if (!sourceNormalized || containsControlCharacters(sourceWord) || sourceWord.length > MAX_WORD_LENGTH || !sourcePos.length) throw new Error(`词汇 ${word} 的来源数据无效`);
       if (commonSourceNormalized == null) commonSourceNormalized = sourceNormalized;
       else if (sourceNormalized !== commonSourceNormalized) throw new Error(`词汇 ${word} 的多个来源词形不一致`);
     }
@@ -214,10 +218,10 @@ export function validateBackup(backup) {
     if (entry.categoryId !== expectedOwner) throw new Error(`词汇 ${word} 的当前归属与词表优先级不一致`);
 
     const manualWord = entry.manualWord == null ? null : String(entry.manualWord).trim();
-    if (entry.manualWord != null && (!manualWord || manualWord.length > MAX_WORD_LENGTH)) throw new Error(`词汇 ${word} 包含无效人工词形`);
+    if (entry.manualWord != null && (!manualWord || containsControlCharacters(manualWord) || manualWord.length > MAX_WORD_LENGTH)) throw new Error(`词汇 ${word} 包含无效人工词形`);
     const expectedWord = manualWord || String(entry.sources[expectedOwner].word).trim();
     if (word !== expectedWord) throw new Error(`词汇 ${word} 的显示词形与来源数据不一致`);
-    if (!manualWord && commonSourceNormalized !== normalized) {
+    if (commonSourceNormalized !== normalized) {
       throw new Error(`词汇 ${word} 的来源词形与规范词形不一致`);
     }
 
@@ -271,6 +275,15 @@ export function validateBackup(backup) {
     if (annotation.pos != null && (typeof annotation.pos !== 'object' || Array.isArray(annotation.pos))) {
       throw new Error('备份中的 AI 词性标注无效');
     }
+    if (annotation.spelling?.incorrect != null && typeof annotation.spelling.incorrect !== 'boolean') {
+      throw new Error('备份中的 AI 拼写标注状态无效');
+    }
+    if (annotation.pos?.incorrect != null && typeof annotation.pos.incorrect !== 'boolean') {
+      throw new Error('备份中的 AI 词性标注状态无效');
+    }
+    const spellingIncorrect = annotation.spelling?.incorrect === true;
+    const posIncorrect = annotation.pos?.incorrect === true;
+    if (!spellingIncorrect && !posIncorrect) throw new Error('备份包含没有实际问题的 AI 标注');
     if (annotation.spelling?.suggestion != null && String(annotation.spelling.suggestion).length > MAX_WORD_LENGTH) {
       throw new Error('备份中的 AI 拼写建议过长');
     }
@@ -356,7 +369,7 @@ export function canonicalizeBackup(backup) {
   }
   const annotations = [...(backup.annotations ?? [])].map((annotation) => {
     let suggestion = [];
-    if (annotation.pos?.suggestion != null) {
+    if (annotation.pos?.incorrect === true && annotation.pos?.suggestion != null) {
       suggestion = sortPos(parsePos(Array.isArray(annotation.pos.suggestion)
         ? annotation.pos.suggestion.join(', ')
         : annotation.pos.suggestion));
@@ -366,12 +379,14 @@ export function canonicalizeBackup(backup) {
       categoryId: String(annotation.categoryId).trim(),
       createdAt: timestamp(annotation.createdAt),
       spelling: {
-        incorrect: Boolean(annotation.spelling?.incorrect),
-        suggestion: String(annotation.spelling?.suggestion ?? '').trim().slice(0, MAX_WORD_LENGTH),
+        incorrect: annotation.spelling?.incorrect === true,
+        suggestion: annotation.spelling?.incorrect === true
+          ? String(annotation.spelling?.suggestion ?? '').trim().slice(0, MAX_WORD_LENGTH)
+          : '',
       },
       pos: {
-        incorrect: Boolean(annotation.pos?.incorrect),
-        suggestion,
+        incorrect: annotation.pos?.incorrect === true,
+        suggestion: annotation.pos?.incorrect === true ? suggestion : [],
       },
       reason: String(annotation.reason ?? '').trim().slice(0, MAX_REASON_LENGTH),
     };

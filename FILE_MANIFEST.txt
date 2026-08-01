@@ -1,23 +1,22 @@
-# Vocabulary Index 2.4.0 file manifest
+# Vocabulary Index 3.0.0 RC full-source file manifest
 # Paths are relative to repository root.
+# FILE_MANIFEST.txt and SHA256SUMS.txt are generated metadata.
 
 .nojekyll	0 bytes
-CHANGELOG.md	5461 bytes
-CHANGE_REPORT_2.4.0.md	4199 bytes
-DATA_FORMATS.md	2407 bytes
-DATA_REPORT.md	990 bytes
-DEPLOY.md	2712 bytes
-LOCAL_ARCHITECTURE.md	2587 bytes
-README.md	3297 bytes
-SECURITY.md	2502 bytes
-TEST_REPORT_2.4.0.md	3223 bytes
+CHANGELOG.md	912 bytes
+CHANGE_REPORT_3.0.0.md	1848 bytes
+DATA_FORMATS.md	3407 bytes
+DATA_REPORT.md	586 bytes
+DEPLOY.md	1415 bytes
+LOCAL_ARCHITECTURE.md	2129 bytes
+MIGRATION_3.0.0.md	1447 bytes
+README.md	1989 bytes
+SECURITY.md	734 bytes
+TEST_REPORT_3.0.0.md	2009 bytes
 assets/icons/apple-touch-icon.png	33779 bytes
 assets/icons/icon-192.png	36899 bytes
 assets/icons/icon-512.png	151357 bytes
-css/base.css	3112 bytes
-css/components.css	16153 bytes
-css/responsive.css	3390 bytes
-css/tokens.css	1423 bytes
+css/v3.css	13444 bytes
 data/seed-report.json	661 bytes
 data/seed.json	1461154 bytes
 data/source/A1.txt	11267 bytes
@@ -27,21 +26,18 @@ data/source/AWL.txt	7486 bytes
 data/source/B1.txt	10551 bytes
 data/source/B2.txt	18993 bytes
 data/source/C1.txt	17857 bytes
-index.html	21146 bytes
-js/ai.js	14717 bytes
-js/app.js	5762 bytes
-js/category-view-model.js	2060 bytes
-js/constants.js	1299 bytes
-js/db.js	20606 bytes
-js/entry-model.js	2343 bytes
-js/import-export.js	22038 bytes
-js/search.js	2989 bytes
-js/store.js	40048 bytes
-js/ui.js	75197 bytes
-js/utils.js	6734 bytes
-manifest.webmanifest	568 bytes
-package.json	158 bytes
-sw.js	2555 bytes
-tests/MANUAL_CHECKLIST.md	3996 bytes
-tests/fake-db.mjs	5116 bytes
-tests/run-tests.mjs	34500 bytes
+index.html	3146 bytes
+js/v3-ai.js	10527 bytes
+js/v3-app.js	1061 bytes
+js/v3-db.js	21344 bytes
+js/v3-import.js	6437 bytes
+js/v3-model.js	35892 bytes
+js/v3-store.js	27971 bytes
+js/v3-ui.js	46898 bytes
+manifest.webmanifest	521 bytes
+package.json	332 bytes
+sw.js	2121 bytes
+tests/MANUAL_CHECKLIST.md	3014 bytes
+tests/run-tests.mjs	8029 bytes
+tests/static-tests.mjs	3457 bytes
+tests/stress-tests.mjs	5403 bytes

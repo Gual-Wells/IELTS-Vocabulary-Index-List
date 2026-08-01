@@ -1,70 +1,69 @@
-# 2.4.0 本地架构
+# 3.0 本地架构
 
-## 存储边界
-
-| 层 | 内容 | 清除后结果 |
-|---|---|---|
-| IndexedDB | 词表、词汇、来源、PIN、AI 标注、撤销历史、应用设置 | 人工修改丢失，重新进入会载入 seed |
-| localStorage | Groq API Key、当前模型、历史模型目录、最近活跃模型和刷新时间 | AI 配置与模型目录需要重新建立 |
-| Cache Storage | HTML、JS、CSS、图标、seed 的离线副本 | 联网后重新下载 |
-| 外部 JSON 文件 | 用户手工导出的完整业务备份 | 不受浏览器网站数据清理影响 |
-
-## 正常业务写入
+## 数据关系
 
 ```text
-UI 操作
-  ↓
-单页面 mutation 队列
-  ↓
-基于当前状态规划 before/after
-  ↓
-IndexedDB 事务检查 dataRevision + 实体前置条件
-  ↓
-写业务数据 + 历史 + 新 revision
-  ↓
-更新内存索引、页面和其他实例通知
+Domain
+├── Collection (normal)
+├── Collection (system-phrases, exactly one)
+├── Entry (word | phrase)
+│   ├── Membership -> normal Collection
+│   ├── PhraseToken[] (phrase only, rebuildable)
+│   ├── Pin? (at most one)
+│   └── Annotation? (at most one)
+└── Settings.lastPositions
 ```
 
-## AI 核查任务
+### Entry
+
+词项身份为：
 
 ```text
-核查范围快照
-  ↓
-按数量与估算输入 token 动态分批
-  ↓
-串行请求 Groq
-  ↓
-读取 token/request 速率响应头
-  ↓
-必要时等待或有限重试
-  ↓
-核对词条仍与请求快照一致
-  ↓
-每批立即替换该批 AI 标注
+domainId + normalizedText
 ```
 
-AI 任务状态保存在当前页面内存中；暂停、继续和取消适用于当前页面会话。已完成批次的标注已进入 IndexedDB，因此页面关闭、取消或后续批次失败不会删除它们。任务本身不会在浏览器进程被系统终止后自动续跑。
+词性不参与身份。英文文本仅保存在 Entry。
 
-## 标注审阅
+### Membership
 
-标注审阅列表由 IndexedDB 中当前有效标注派生，不复制业务数据。导航时根据词条的当前归属动态打开词表和字母分组。编辑、删除或取消标注后，列表会重新过滤失效项。
-
-## 模型目录
-
-设置页默认读取 localStorage 中的模型目录，不进行网络请求。用户手动刷新时请求 Groq `/models`，将本次活跃列表与历史目录合并；历史模型不会因一次刷新缺失而直接删除。AI 调用只使用当前选择的模型，不根据模型名称切换业务算法。
-
-## 外部实例写入
+来源关系只保存：
 
 ```text
-Safari/PWA 实例 B 完成写入
-  ↓
-BroadcastChannel / 回到前台检查
-  ↓
-实例 A 从一个 IndexedDB 只读事务重载全部状态
+id, entryId, collectionId, sourceLabel, sourceOrder, createdAt, updatedAt
 ```
 
-通知丢失时，A 的下一次陈旧写入仍会因 revision 或实体前置条件不符而被拒绝。
+**不保存 `sourceText`。** 修改 Entry 文本时无需同步多份英文镜像，因此不会再次出现旧版“核心词形与来源词形不一致”的耦合缺陷。
 
-## 备份与恢复
+### PhraseToken
 
-完整 JSON 保存业务数据，不保存 Groq Key、模型目录、撤销历史、上次位置和缓存。恢复会记录为本地历史事务，因此页面刷新后仍可撤销；浏览器网站数据被清除后，外部 JSON 才是最终灾难恢复介质。
+从短语 Entry 文本确定性重建。反向关联使用精确 `normalizedToken`，不使用字符串包含。
+
+## IndexedDB
+
+数据库名称沿用 `gual-vocabulary-index`，版本提升为 3。3.0 新对象仓库统一使用 `v3` 前缀，旧对象仓库只在首次迁移时读取：
+
+- `v3Domains`
+- `v3Collections`
+- `v3Entries`
+- `v3Memberships`
+- `v3PhraseTokens`
+- `v3Pins`
+- `v3Annotations`
+- `v3Settings`
+- `v3History`
+
+首次迁移在一个 readwrite 事务中整体写入新仓库。普通写入、撤销和重做均在 IndexedDB 原生回调中直接排队，避免 Safari 在 Promise 间隙自动提交事务。
+
+## 多实例
+
+- `BroadcastChannel('gual-vocabulary-index-v3')` 广播修订号。
+- 每次业务修改、完整恢复、撤销和重做均带 `expectedRevision`。
+- 修订号不一致时安全中止，不静默覆盖。
+- 上次位置使用单独的原子“读取—合并—写回”事务，不进入撤销历史，也不会用陈旧对象覆盖其他词表位置。
+- IndexedDB `versionchange` 时主动关闭旧连接。
+
+## PWA
+
+- Service Worker 缓存命名空间：`gual-vocabulary-index-v3.0.0`。
+- 导航使用 network-first，离线回退应用壳。
+- HTML meta 版本与入口模块版本不一致时阻止启动，避免旧 HTML / 新 JS 混用。

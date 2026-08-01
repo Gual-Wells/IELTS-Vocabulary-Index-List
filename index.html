@@ -2,403 +2,67 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0b1418" media="(prefers-color-scheme: dark)">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f1e8">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="词汇索引">
-  <meta name="description" content="本地优先、全局去重的英语词汇索引工具">
-  <meta name="application-version" content="2.4.0">
+  <meta name="application-version" content="3.0.0">
+  <meta name="description" content="本地优先、按词域组织的英语词汇与短语索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Vocabulary Index</title>
+  <title>Vocabulary Index 3.0</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
-  <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
-  <link rel="stylesheet" href="./css/tokens.css">
-  <link rel="stylesheet" href="./css/base.css">
-  <link rel="stylesheet" href="./css/components.css">
-  <link rel="stylesheet" href="./css/responsive.css">
+  <link rel="stylesheet" href="./css/v3.css">
 </head>
 <body>
-  <noscript>此工具需要 JavaScript 才能运行。</noscript>
+  <div id="boot-screen" class="boot-screen" role="status">
+    <div class="boot-mark">V</div>
+    <p>正在打开本地词汇索引…</p>
+  </div>
 
-  <div id="app" class="app-shell" aria-busy="true">
-    <header id="app-header" class="app-header">
+  <div id="app" class="app hidden">
+    <header class="topbar">
+      <button id="back-button" class="icon-button hidden" type="button" aria-label="返回首页">←</button>
       <div class="brand-block">
-        <button id="back-button" class="icon-button hidden" type="button" aria-label="返回词表首页">‹</button>
-        <div>
-          <h1 id="app-title">Vocabulary Index</h1>
-          <p id="app-subtitle" class="muted">本地词汇索引</p>
-        </div>
+        <h1 id="page-title">词汇索引</h1>
+        <p id="page-subtitle">Vocabulary Index 3.0</p>
       </div>
-      <div class="header-actions">
-        <button id="undo-button" class="icon-button" type="button" aria-label="撤销" title="撤销" disabled>↶</button>
-        <button id="redo-button" class="icon-button" type="button" aria-label="重做" title="重做" disabled>↷</button>
-        <button id="settings-button" class="icon-button" type="button" aria-label="设置" title="设置">⚙</button>
+      <div class="topbar-actions">
+        <button id="search-button" class="icon-button" type="button" aria-label="搜索">⌕</button>
+        <button id="settings-button" class="icon-button" type="button" aria-label="设置">⚙</button>
       </div>
     </header>
 
-    <main id="main-content" class="main-content">
-      <section id="home-view" class="view" aria-labelledby="home-heading">
-        <div class="home-hero">
-          <div class="home-hero-copy">
-            <p class="home-eyebrow">VOCABULARY INDEX</p>
-            <h2 id="home-heading">我的词表</h2>
-            <p id="home-summary" class="muted"></p>
-          </div>
-          <div class="home-heading-actions">
-            <button id="home-review-annotations-button" class="annotation-review-launch hidden" type="button">
-              <span>AI 标注</span><strong id="home-annotation-count">0</strong>
-            </button>
-            <button id="manage-categories-button" class="secondary-button compact-button" type="button">管理</button>
-          </div>
-        </div>
-
-        <div class="search-panel home-search-panel">
-          <label class="search-field">
-            <span class="visually-hidden">全局搜索英语词汇</span>
-            <input id="global-search-input" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="全局模糊搜索英语词汇">
-          </label>
-          <button id="global-ai-search-button" class="secondary-button hidden" type="button">AI 中文联想</button>
-        </div>
-        <div id="global-search-status" class="search-status muted" aria-live="polite"></div>
-        <div id="global-search-results" class="search-results hidden"></div>
-
-        <div id="category-grid" class="category-grid"></div>
-
-        <section class="data-safety-panel" aria-labelledby="data-safety-title">
-          <div class="data-safety-heading">
-            <div>
-              <h3 id="data-safety-title">数据与维护</h3>
-              <p class="muted">本地保存。清理浏览器网站数据前导出 JSON。</p>
-            </div>
-            <span class="status-badge is-good">IndexedDB</span>
-          </div>
-          <div class="data-safety-actions">
-            <button id="home-export-backup-button" class="utility-action" type="button"><span aria-hidden="true">↓</span><span>导出备份</span></button>
-            <button id="home-restore-backup-button" class="utility-action" type="button"><span aria-hidden="true">↑</span><span>恢复备份</span></button>
-            <button id="home-initialize-seed-button" class="utility-action danger-utility" type="button"><span aria-hidden="true">↺</span><span>初始化</span></button>
-          </div>
-        </section>
-      </section>
-
-      <section id="category-view" class="view hidden" aria-labelledby="category-title">
-        <div class="category-toolbar">
-          <div class="category-heading">
-            <h2 id="category-title"></h2>
-            <p id="category-count" class="muted"></p>
-            <button id="annotation-review-button" class="annotation-review-launch hidden" type="button">
-              <span>审阅 AI 标注</span><strong id="category-annotation-count">0</strong>
-            </button>
-          </div>
-          <div class="toolbar-actions desktop-actions">
-            <button data-action="search" class="secondary-button" type="button">搜索</button>
-            <button data-action="add" class="secondary-button" type="button">新增</button>
-            <button data-action="ai-add" class="secondary-button" type="button">AI 新增</button>
-            <button data-action="ai-check" class="secondary-button" type="button">AI 核查</button>
-            <button data-action="import" class="secondary-button" type="button">导入</button>
-            <button data-action="category-menu" class="icon-button" type="button" aria-label="更多操作">•••</button>
-          </div>
-        </div>
-
-        <section id="pin-bar" class="pin-bar hidden" aria-label="固定书签">
-          <button id="pin-prev-button" class="icon-button compact" type="button" aria-label="上一个书签">‹</button>
-          <button id="pin-current-button" class="pin-current" type="button"></button>
-          <span id="pin-counter" class="pin-counter"></span>
-          <button id="pin-next-button" class="icon-button compact" type="button" aria-label="下一个书签">›</button>
-        </section>
-
-        <section id="annotation-review-bar" class="annotation-review-bar hidden" aria-live="polite">
-          <div class="annotation-review-copy">
-            <span id="annotation-review-counter" class="annotation-review-counter"></span>
-            <strong id="annotation-review-word"></strong>
-            <span id="annotation-review-detail" class="muted"></span>
-          </div>
-          <div class="annotation-review-actions">
-            <button id="annotation-review-prev" class="icon-button compact" type="button" aria-label="上一个 AI 标注">‹</button>
-            <button id="annotation-review-next" class="icon-button compact" type="button" aria-label="下一个 AI 标注">›</button>
-            <button id="annotation-review-edit" class="secondary-button compact-button" type="button">编辑</button>
-            <button id="annotation-review-dismiss" class="secondary-button compact-button" type="button">取消标注</button>
-            <button id="annotation-review-close" class="icon-button compact" type="button" aria-label="退出标注审阅">×</button>
-          </div>
-        </section>
-
-        <nav id="alphabet-nav" class="alphabet-nav" aria-label="字母导航"></nav>
-        <div id="category-list" class="category-list"></div>
+    <main id="main-content" tabindex="-1">
+      <section id="home-view" class="view"></section>
+      <section id="collection-view" class="view hidden">
+        <div id="collection-toolbar" class="collection-toolbar"></div>
+        <nav id="letter-nav" class="letter-nav hidden" aria-label="字母索引"></nav>
+        <div id="entry-list" class="entry-list"></div>
       </section>
     </main>
 
-    <nav id="mobile-action-bar" class="mobile-action-bar hidden" aria-label="词表操作">
-      <button data-action="search" type="button"><span aria-hidden="true">⌕</span><span>搜索</span></button>
-      <button data-action="add" type="button"><span aria-hidden="true">＋</span><span>新增</span></button>
-      <button data-action="ai-add" type="button"><span aria-hidden="true">✦</span><span>AI新增</span></button>
-      <button data-action="ai-check" type="button"><span aria-hidden="true">✓</span><span>核查</span></button>
-      <button data-action="category-menu" type="button"><span aria-hidden="true">•••</span><span>更多</span></button>
-    </nav>
+    <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>
+    <div id="annotation-review-bar" class="review-bar hidden"></div>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   </div>
 
-  <dialog id="search-dialog" class="sheet-dialog">
-    <form method="dialog" class="dialog-card search-dialog-card">
+  <dialog id="app-dialog" class="app-dialog">
+    <form id="dialog-form" method="dialog">
       <header class="dialog-header">
         <div>
-          <h2>搜索词汇</h2>
-          <p class="muted">英文模糊匹配；中文通过 Groq 联想后匹配本地词表。</p>
+          <h2 id="dialog-title"></h2>
+          <p id="dialog-description" class="muted"></p>
         </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
+        <button id="dialog-close" class="icon-button" type="button" aria-label="关闭">×</button>
       </header>
-      <div class="dialog-body">
-        <div class="segmented-control" role="radiogroup" aria-label="搜索范围">
-          <label><input type="radio" name="search-scope" value="current" checked><span>当前词表</span></label>
-          <label><input type="radio" name="search-scope" value="all"><span>全部词表</span></label>
-        </div>
-        <div class="search-panel">
-          <label class="search-field">
-            <span class="visually-hidden">搜索内容</span>
-            <input id="dialog-search-input" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="输入英语词汇或中文概念">
-          </label>
-          <button id="dialog-ai-search-button" class="primary-button hidden" type="button">AI 联想</button>
-        </div>
-        <div id="dialog-search-status" class="search-status muted" aria-live="polite"></div>
-        <div id="dialog-search-results" class="search-results"></div>
-      </div>
+      <div id="dialog-body" class="dialog-body"></div>
+      <footer id="dialog-actions" class="dialog-actions"></footer>
     </form>
   </dialog>
 
-  <dialog id="word-dialog" class="modal-dialog">
-    <form id="word-form" method="dialog" class="dialog-card">
-      <header class="dialog-header">
-        <h2 id="word-dialog-title">新增词汇</h2>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body form-stack">
-        <input id="word-entry-id" type="hidden">
-        <label class="field-label">词汇或短语
-          <input id="word-input" type="text" autocomplete="off" spellcheck="false" required maxlength="160">
-        </label>
-        <label class="field-label">词性
-          <input id="pos-input" type="text" autocomplete="off" spellcheck="false" placeholder="例如 n., v." required maxlength="120">
-        </label>
-        <p class="field-help">支持：n.、v.、adj.、adv.、prep.、pron.、conj.、det.、art.、num.、exclam.、modal v.、auxiliary v.、infinitive marker。</p>
-        <div id="word-form-error" class="form-error" role="alert"></div>
-      </div>
-      <footer class="dialog-footer">
-        <button class="secondary-button" value="cancel">取消</button>
-        <button id="word-save-button" class="primary-button" value="default">保存</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <dialog id="entry-menu-dialog" class="action-dialog">
-    <form method="dialog" class="dialog-card action-card">
-      <header class="dialog-header">
-        <div>
-          <h2 id="entry-menu-word"></h2>
-          <p id="entry-menu-pos" class="muted"></p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="action-list">
-        <button id="entry-edit-button" type="button">编辑词汇与词性</button>
-        <button id="entry-pin-button" type="button">固定为书签</button>
-        <button id="entry-remove-source-button" type="button">从当前词表移除</button>
-        <button id="entry-delete-global-button" class="danger-action" type="button">全局删除词汇</button>
-      </div>
-      <section id="annotation-panel" class="annotation-panel hidden">
-        <h3>AI 核查标注</h3>
-        <div id="annotation-content"></div>
-        <button id="annotation-dismiss-button" class="secondary-button" type="button">取消此标注</button>
-      </section>
-    </form>
-  </dialog>
-
-  <dialog id="category-menu-dialog" class="action-dialog">
-    <form method="dialog" class="dialog-card action-card">
-      <header class="dialog-header">
-        <h2>词表操作</h2>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="action-list">
-        <button data-menu-action="import" type="button">导入到当前词表</button>
-        <button data-menu-action="export-current-md" type="button">导出当前词表 Markdown</button>
-        <button data-menu-action="export-current-csv" type="button">导出当前词表 CSV</button>
-        <button data-menu-action="clear-annotations" type="button">清除当前 AI 标注</button>
-        <button data-menu-action="jump-last" type="button">跳到上次浏览位置</button>
-        <button data-menu-action="top" type="button">返回词表顶部</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="import-dialog" class="modal-dialog">
-    <form id="import-form" method="dialog" class="dialog-card wide-card">
-      <header class="dialog-header">
-        <div>
-          <h2>导入词表</h2>
-          <p class="muted">支持 JSON、Markdown、CSV、TXT。解析成功后才会修改数据。</p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body form-stack">
-        <label class="field-label">导入方式
-          <select id="import-mode">
-            <option value="merge">合并到当前词表</option>
-            <option value="replace">替换当前词表</option>
-            <option value="restore">恢复完整 JSON 备份</option>
-          </select>
-        </label>
-        <label class="file-picker">选择文件
-          <input id="import-file" type="file" accept=".json,.md,.markdown,.csv,.txt,text/plain,text/csv,application/json">
-        </label>
-        <div id="import-preview" class="import-preview muted">尚未选择文件。</div>
-        <div id="import-error" class="form-error" role="alert"></div>
-      </div>
-      <footer class="dialog-footer">
-        <button class="secondary-button" value="cancel">取消</button>
-        <button id="import-confirm-button" class="primary-button" type="button" disabled>执行导入</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <dialog id="ai-add-dialog" class="modal-dialog">
-    <form method="dialog" class="dialog-card wide-card">
-      <header class="dialog-header">
-        <div>
-          <h2>AI 新增词汇</h2>
-          <p class="muted">Groq 只生成候选词汇与词性，保存前由你选择。</p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body form-stack">
-        <label class="field-label">查询内容
-          <textarea id="ai-add-query" rows="3" placeholder="输入中文概念、主题或英语词汇"></textarea>
-        </label>
-        <button id="ai-add-query-button" class="primary-button" type="button">生成候选</button>
-        <div id="ai-add-status" class="search-status muted" aria-live="polite"></div>
-        <div id="ai-add-results" class="candidate-list"></div>
-      </div>
-      <footer class="dialog-footer">
-        <button class="secondary-button" value="cancel">关闭</button>
-        <button id="ai-add-confirm-button" class="primary-button" type="button" disabled>添加已选词汇</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <dialog id="ai-check-dialog" class="modal-dialog">
-    <form method="dialog" class="dialog-card wide-card">
-      <header class="dialog-header">
-        <div>
-          <h2>AI 核查</h2>
-          <p class="muted">只检查英文拼写与词性。结果只生成可取消标注，不修改词条。</p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body form-stack">
-        <label class="field-label">核查范围
-          <select id="ai-check-scope">
-            <option value="current">当前词表</option>
-            <option value="all">全部词表</option>
-          </select>
-        </label>
-        <p id="ai-check-estimate" class="muted"></p>
-        <progress id="ai-check-progress" class="progress-track" max="100" value="0" aria-label="AI 核查进度"></progress>
-        <div class="ai-check-metrics">
-          <span id="ai-check-batch-metric">尚未开始</span>
-          <span id="ai-check-issue-metric">0 条标注</span>
-        </div>
-        <div id="ai-check-status" class="search-status muted" aria-live="polite"></div>
-      </div>
-      <footer class="dialog-footer ai-check-footer">
-        <button id="ai-check-review-button" class="secondary-button hidden" type="button">审阅标注</button>
-        <span class="dialog-footer-spacer"></span>
-        <button id="ai-check-pause-button" class="secondary-button" type="button" disabled>暂停</button>
-        <button id="ai-check-cancel-button" class="secondary-button" type="button" disabled>取消</button>
-        <button id="ai-check-start-button" class="primary-button" type="button">开始核查</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <dialog id="settings-dialog" class="modal-dialog">
-    <form method="dialog" class="dialog-card wide-card">
-      <header class="dialog-header">
-        <div>
-          <h2>设置与数据</h2>
-          <p class="muted">API Key 仅保存在当前浏览器，不包含在导出文件中。</p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body settings-sections">
-        <section>
-          <h3>Groq</h3>
-          <label class="field-label">API Key
-            <input id="groq-key-input" type="password" autocomplete="off" placeholder="gsk_…">
-          </label>
-          <label class="field-label">模型
-            <select id="groq-model-select"></select>
-          </label>
-          <p id="groq-model-catalog-meta" class="field-help"></p>
-          <div class="inline-actions">
-            <button id="load-models-button" class="secondary-button" type="button">刷新模型列表</button>
-            <button id="save-groq-button" class="primary-button" type="button">保存设置</button>
-            <button id="clear-groq-button" class="danger-button" type="button">删除 Key</button>
-          </div>
-          <p id="groq-settings-status" class="muted"></p>
-        </section>
-        <section>
-          <h3>显示</h3>
-          <label class="field-label">序号模式
-            <select id="number-mode-select">
-              <option value="none">不显示</option>
-              <option value="group">字母分组内序号</option>
-              <option value="global">当前词表全局序号</option>
-            </select>
-          </label>
-        </section>
-        <section>
-          <h3>备份</h3>
-          <div class="inline-actions">
-            <button id="export-backup-button" class="secondary-button" type="button">导出完整 JSON</button>
-            <button id="export-all-md-button" class="secondary-button" type="button">导出全部 Markdown</button>
-          </div>
-        </section>
-        <section>
-          <h3>应用</h3>
-          <p id="app-version-text" class="muted"></p>
-          <button id="reload-app-button" class="secondary-button" type="button">重新载入</button>
-        </section>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="categories-dialog" class="modal-dialog">
-    <form method="dialog" class="dialog-card wide-card">
-      <header class="dialog-header">
-        <div>
-          <h2>管理词表</h2>
-          <p class="muted">词表顺序决定全局重复词的归属优先级。</p>
-        </div>
-        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
-      </header>
-      <div class="dialog-body">
-        <div id="category-manager-list" class="category-manager-list"></div>
-        <button id="add-category-button" class="secondary-button full-width" type="button">新增词表</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="confirm-dialog" class="modal-dialog small-dialog">
-    <form method="dialog" class="dialog-card">
-      <header class="dialog-header"><h2 id="confirm-title">确认操作</h2></header>
-      <div class="dialog-body"><p id="confirm-message"></p></div>
-      <footer class="dialog-footer">
-        <button id="confirm-cancel-button" class="secondary-button" value="cancel">取消</button>
-        <button id="confirm-ok-button" class="danger-button" value="default">确认</button>
-      </footer>
-    </form>
-  </dialog>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <div id="live-region" class="visually-hidden" aria-live="assertive"></div>
-
-  <script type="module" src="./js/app.js"></script>
+  <input id="hidden-file-input" class="hidden" type="file" accept=".json,.csv,.txt,.md,text/plain,application/json,text/csv">
+  <script type="module" src="./js/v3-app.js"></script>
 </body>
 </html>

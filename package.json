@@ -1,9 +1,12 @@
 {
   "name": "gual-vocabulary-index",
   "private": true,
-  "version": "2.4.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
-    "test": "node tests/run-tests.mjs"
+    "test": "node tests/run-tests.mjs",
+    "test:static": "node tests/static-tests.mjs",
+    "test:stress": "node tests/stress-tests.mjs",
+    "test:all": "npm test && npm run test:static && npm run test:stress"
   }
 }

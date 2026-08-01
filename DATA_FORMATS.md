@@ -1,103 +1,152 @@
-# 数据与导入格式
+# 3.0 数据与导入格式
 
-## 规范化与全局重复
+## 规范化
 
-词汇重复判断执行：
+英文词项执行：Unicode NFKC、忽略大小写、合并空白、弯引号转直引号、Unicode 连字符/减号转 ASCII 连字符、删除零宽/BOM/双向控制字符。单个词项上限 160 个 JavaScript 字符单元。
 
-- Unicode NFKC 规范化；
-- 忽略大小写；
-- 合并连续空格；
-- 弯引号统一为直引号；
-- Unicode 连字符和减号统一为 ASCII 连字符；
-- 清除零宽、BOM 和双向格式控制字符后重新执行首尾空格清理；
-- 保留逗号及其他有语义的标点。
+## 完整 JSON
 
-词表名称也执行 NFKC、忽略大小写和合并空格后检查重复。
-
-重复词不会在多个词表重复显示。来源关系在内部保留，显示词表由词表优先顺序决定。
-
-## 词性
-
-允许标签：
-
-```text
-n., v., adj., adv., prep., pron., conj., det., art., num., exclam.,
-modal v., auxiliary v., infinitive marker
+```json
+{
+  "schemaVersion": 3,
+  "appVersion": "3.0.0",
+  "exportedAt": "2026-08-01T00:00:00.000Z",
+  "domains": [],
+  "collections": [],
+  "entries": [],
+  "memberships": [],
+  "phraseTokens": [],
+  "pins": [],
+  "annotations": [],
+  "settings": {}
+}
 ```
 
-导入时支持 `/` 或 `,` 组合，例如：
+### Domain
 
-```text
-adj./adv.
-n., v.
+```json
+{
+  "id": "domain_computer_science_xxx",
+  "name": "计算机科学",
+  "order": 1,
+  "glossEnabled": true,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
 ```
 
-## Markdown / TXT
+### Collection
 
-```text
-# Oxford A1
-## A
-access n., v.
-according to prep.
+`type` 只能为 `normal` 或 `system-phrases`。每个词域必须恰有一个系统短语表，其 ID 固定为 `<domainId>__phrases`。
+
+### Entry
+
+```json
+{
+  "id": "entry_xxx",
+  "domainId": "domain_xxx",
+  "kind": "word",
+  "text": "thread",
+  "normalizedText": "thread",
+  "glossHant": "線程",
+  "glossSource": "manual",
+  "createdAt": "...",
+  "updatedAt": "..."
+}
 ```
 
-标题只用于兼容解析；导入目标始终由当前打开的词表决定。
+约束：同一词域内 `normalizedText` 唯一；普通 word 至少有一个普通词表来源；phrase 可以没有普通来源。`glossHant` 最大 120 字符，只保存通用繁体。
 
-普通 TXT 可直接逐行：
+### Membership
 
-```text
-access n., v.
-according to prep.
+```json
+{
+  "id": "membership_xxx",
+  "entryId": "entry_xxx",
+  "collectionId": "collection_xxx",
+  "sourceLabel": "n.",
+  "sourceOrder": 12,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
 ```
 
-只有 `# `、`## ` 等井号后带空格的行才视为标题，因此 `#hashtag n.` 会被当作正常词汇。
+Membership 只能指向普通词表。`sourceLabel` 只归档旧词性/来源标签，不参与身份、搜索、排序或 AI 核查。
 
-## CSV
+**3.0 不存在 `sourceText` 字段。英文文本只从 Entry 读取。**
+
+### PhraseToken
+
+```json
+{
+  "id": "entry_xxx:0",
+  "phraseId": "entry_xxx",
+  "domainId": "domain_xxx",
+  "token": "thread",
+  "normalizedToken": "thread",
+  "tokenIndex": 0
+}
+```
+
+完整备份恢复时忽略外部提供的索引并根据短语文本重建，然后执行一致性验证。
+
+### Pin
+
+```json
+{
+  "id": "pin_xxx",
+  "entryId": "entry_xxx",
+  "domainId": "domain_xxx",
+  "contextCollectionId": "collection_xxx",
+  "order": 0,
+  "createdAt": "..."
+}
+```
+
+同一词项最多一个 PIN。`order` 保留 2.4.1 的 PIN 切换顺序；上下文词表必须能实际显示该词项。
+
+### Settings
+
+`numberMode` 只能为 `none`、`group` 或 `global`。`lastPositions` 以 `lastPosition:<domainId>:<collectionId>` 为键；恢复时必须指向该词表当前可见词项。
+
+## 词项导入
+
+### TXT / Markdown
+
+```text
+# 标题
+thread n.
+thread pool
+```
+
+只有井号后带空格的行视为标题；`#hashtag n.` 是正常词项。
+
+### CSV
 
 ```csv
-word,pos
-"access","n., v."
-"according to","prep."
+text,sourceLabel,gloss
+thread,n.,线程
+thread pool,,线程池
 ```
 
-支持无表头两列 CSV。未闭合双引号、缺少词汇或缺少词性的行会在预览中报告。
+无表头时按 `text,sourceLabel,gloss` 解析。未启用释义的词域不会写入 gloss。
 
-## JSON 词汇数组
+### JSON 数组
 
 ```json
 [
-  { "word": "access", "pos": ["n.", "v."] },
-  { "word": "according to", "pos": "prep." }
+  { "text": "thread", "sourceLabel": "n.", "gloss": "线程" },
+  { "text": "thread pool", "glossHant": "線程池" }
 ]
 ```
 
-兼容旧式 `{ "w": "access", "d": "n., v." }`，其中 `d` 只按词性解析。
+兼容旧 `{ "word": "access", "pos": "n., v." }` 和 `{ "w": "access", "d": "n." }`。
 
-## 完整 JSON 备份
+## 安全边界
 
-包含：
-
-- 词表及顺序；
-- 词汇、词性、来源和当前归属；
-- PIN；
-- AI 核查标注；
-- 序号模式。
-
-不包含：
-
-- Groq API Key；
-- 撤销历史；
-- 上次浏览位置；
-- 页面展开状态；
-- 浏览器缓存。
-
-恢复时会执行完整 schema 和关联一致性校验。来源词形必须与全局规范身份一致；AI 标注必须至少包含一个实际问题。未知字段不会进入数据库。
-
-## 限制与提交
-
-- 单个导入文件上限：64 MB。
-- 完整备份词条上限：50,000。
-- 单个词汇或短语上限：160 个 JavaScript 字符单元。
-- 文件内部重复词先合并词性，再参与全局重复处理。
-- “替换当前词表”只替换当前来源集合；有其他来源的词会自动回落。
-- 解析、验证和预览完成前不会修改 IndexedDB。
+- 单文件上限 64 MB。
+- 解析和预览完成前不修改 IndexedDB。
+- 完整恢复执行 schema、ID、唯一性、关联、PIN、上次位置和短语索引校验。
+- 未知实体字段不会进入数据库。
+- Groq API Key 不进入备份。
+- 撤销历史不进入备份。

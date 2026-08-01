@@ -1,64 +1,44 @@
-# Vocabulary Index 2.4.0 — UI & AI Workflow
+# Vocabulary Index 3.0
 
-无需构建、可直接部署到 GitHub Pages 的本地优先英语词汇索引工具。主要使用场景是在 iPhone Safari 中添加到主屏幕，点按词汇复制词形，再交给牛津英汉辞书快捷指令处理。
+一个面向 iPhone Safari / 主屏幕 PWA 的本地优先英语词汇索引。3.0 将旧版单一全局词库升级为“词域—词表—词项—来源关系—短语词元索引”模型。
 
-## 2.4.0 重点
+## 3.0 核心能力
 
-### 首页与交互
+- **词域隔离**：同一英文词形可以分别存在于通用英语、计算机科学等不同词域。
+- **域内唯一**：同一词域内只保存一个规范词项；多个普通词表通过 Membership 关联。
+- **无重复来源文本**：Membership 不保存 `sourceText`，英文文本只存在于 Entry。
+- **系统短语表**：每个词域自动拥有一个不可删除、不可重命名的短语总览。
+- **双向短语索引**：普通词可查看相关短语，短语可跳转到已经收录的组成词。
+- **可选繁体释义**：词域可独立启用；简体输入在本地转换为通用繁体。
+- **本地优先**：业务数据存入 IndexedDB；Groq API Key 只存 localStorage。
+- **可恢复**：完整 JSON、CSV/TXT/Markdown/JSON 词项导入、撤销与重做。
+- **旧体验保留**：PIN 有序跳转、上次位置、三种序号模式和全局 AI 标注审阅。
+- **动态 Groq 模型目录**：不对具体模型名称写硬编码兼容分支。
 
-- 重新组织 iPhone 与桌面首页：词表成为主内容，维护操作降为次级入口。
-- iPhone 使用紧凑双列词表卡片，小屏自动退化为单列；桌面端按可用宽度形成稳定栅格。
-- 保留原有深色视觉语言，但统一卡片密度、按钮层级、留白和触控尺寸。
-- 首页和词表页均提供 AI 标注审阅入口；普通功能不再被维护信息抢占视觉层级。
-
-### Groq 模型目录
-
-- `/models` 返回的可用模型列表缓存在 localStorage。
-- 打开设置时直接使用缓存，不再自动联网刷新。
-- 手动刷新后保留全部历史发现模型；最近一次未返回的模型标为“未在最近刷新中”，不会立即从选择器消失。
-- 模型策略不按 Qwen、Llama、OSS 等品牌或 ID 写特殊分支。2.4.0 不处理特定 Qwen JSON 失败问题。
-
-### 大规模 AI 核查
-
-- 按词条数量和估算输入 token 动态拆分为串行批次。
-- 读取 Groq 的 token/request 速率响应头，在额度不足前主动等待。
-- 429、暂时性 5xx、网络错误和超时采用有限重试；优先遵循服务端等待时间。
-- 支持暂停、继续和取消；已完成批次的 AI 标注即时写入 IndexedDB，不因后续失败而丢失。
-- 核查只写可取消标注，不自动修改词汇。
-
-### AI 标注审阅
-
-- 核查结束后可直接进入“审阅标注”。
-- 支持上一条、下一条、编辑、取消标注和退出审阅。
-- 跨字母、跨词表时自动打开目标词表与字母分组，并滚动、高亮目标词条。
-- 首页显示全局待审阅数量，词表页显示当前词表数量。
-
-## 核心数据规则
-
-- IndexedDB 保存词表、词汇、来源、PIN、AI 标注、撤销历史和应用设置。
-- localStorage 保存 Groq API Key、当前模型以及缓存的模型目录。
-- 默认优先级：A1 → A2 → B1 → B2 → C1 → AWL → AVL。
-- 同一规范化词汇全局只显示一次；不同来源的词性自动合并。
-- 普通进入词表时 A–Z/# 全部收起；搜索、PIN、上次位置跳转或标注审阅才展开目标字母。
-- 点击词汇只复制词形，不复制词性。
-- 真实灾难恢复依赖手动导出的完整 JSON；项目不包含云同步、GitHub PAT 或远端数据库。
-
-## 本地多实例保护
-
-Safari 标签页与主屏幕 PWA 共享同一 IndexedDB。应用使用全局 `dataRevision`、提交前快照校验、BroadcastChannel、前台修订检查和单页面 mutation 队列，阻止陈旧实例静默覆盖较新数据。仍不建议在两个实例中持续并行编辑。
-
-## 运行与测试
-
-必须通过 HTTP(S) 访问，不能直接双击 `index.html`：
-
-```bash
-python -m http.server 8000
-```
-
-运行自动化检查：
+## 开发与检查
 
 ```bash
 npm test
+npm run test:static
+npm run test:stress
+npm run test:all
 ```
 
-部署见 [DEPLOY.md](DEPLOY.md)，架构见 [LOCAL_ARCHITECTURE.md](LOCAL_ARCHITECTURE.md)，本次变更见 [CHANGE_REPORT_2.4.0.md](CHANGE_REPORT_2.4.0.md)，测试边界见 [TEST_REPORT_2.4.0.md](TEST_REPORT_2.4.0.md)。
+静态类型检查：
+
+```bash
+npx tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
+  --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable js/*.js
+npx tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
+  --moduleResolution Bundler --lib ES2022,WebWorker sw.js
+```
+
+## 部署前硬要求
+
+1. 在当前 2.4.1 中导出完整 JSON。
+2. 保留该文件，不要只依赖浏览器内数据。
+3. 关闭同站点其他 Safari 标签页和主屏幕 PWA。
+4. 严格镜像部署 3.0 文件。
+5. 按 `tests/MANUAL_CHECKLIST.md` 完成 iPhone 真机验收。
+
+详见 `MIGRATION_3.0.0.md`、`DATA_FORMATS.md`、`DEPLOY.md`。

@@ -32,7 +32,7 @@ export function parseTextList(text) {
     const trimmed = line.trim();
     if (!trimmed || /^#{1,6}\s/.test(trimmed)) return;
     const parsed = parseLegacySourceLine(trimmed);
-    if (!parsed?.text) errors.push({ line: index + 1, message: '缺少英文词项' });
+    if (!parsed?.text) errors.push({ line: index + 1, message: '缺少英文内容' });
     else rows.push(parsed);
   });
   return { entries: mergeRows(rows), errors };
@@ -77,7 +77,7 @@ export function parseCsv(text) {
     const line = index + (hasHeader ? 2 : 1);
     const textValue = normalizeDisplayText(columns[indexes.text] || '');
     if (!textValue) {
-      if (columns.some((item) => normalizeDisplayText(item))) errors.push({ line, message: '缺少英文词项' });
+      if (columns.some((item) => normalizeDisplayText(item))) errors.push({ line, message: '缺少英文内容' });
       return;
     }
     entries.push({
@@ -108,7 +108,7 @@ export function parseJsonContent(text) {
       return { kind: 'backup', backup: migrateLegacyBackup(parsed), errors: [] };
     }
   }
-  throw new Error('JSON 既不是词项数组，也不是受支持的完整备份');
+  throw new Error('JSON 既不是内容数组，也不是受支持的完整备份');
 }
 
 export function parseImportContent(content, filename = '') {

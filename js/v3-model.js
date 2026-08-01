@@ -102,9 +102,9 @@ export function createCollection({ id = null, domainId, name, label = '', type =
 export function createEntry({ id = null, domainId, text, glossHant = '', glossSource = '', timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
   const cleanText = normalizeDisplayText(text);
   const normalizedText = normalizeEnglish(cleanText);
-  if (!domainId) throw new Error('词项缺少词域');
-  if (!normalizedText) throw new Error('词项不能为空');
-  if (cleanText.length > MAX_ENTRY_TEXT) throw new Error(`词项不能超过 ${MAX_ENTRY_TEXT} 个字符`);
+  if (!domainId) throw new Error('内容缺少词域');
+  if (!normalizedText) throw new Error('内容不能为空');
+  if (cleanText.length > MAX_ENTRY_TEXT) throw new Error(`内容不能超过 ${MAX_ENTRY_TEXT} 个字符`);
   const normalizedGloss = normalizeGlossHant(glossHant);
   return {
     id: id || safeId('entry', `${domainId}:${normalizedText}`),
@@ -371,7 +371,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.0',
+    appVersion: '3.0.1',
     exportedAt: timestamp,
     domains,
     collections,
@@ -396,7 +396,7 @@ export function canonicalizeBackup(input) {
   const entries = array(input?.entries).map((item) => createEntry({ ...item, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
   const memberships = array(input?.memberships).map((item) => createMembership({ ...item, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
   domains.sort((a, b) => a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
-  collections.sort((a, b) => a.domainId.localeCompare(b.domainId) || (a.type === b.type ? 0 : a.type === 'normal' ? -1 : 1) || a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
+  collections.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
   entries.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'));
   memberships.sort((a, b) => a.collectionId.localeCompare(b.collectionId) || a.sourceOrder - b.sourceOrder || a.entryId.localeCompare(b.entryId));
   const rebuiltTokens = entries.flatMap(buildPhraseTokens);
@@ -434,7 +434,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.0.0'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.0.1'),
     exportedAt: timestamp,
     domains,
     collections,
@@ -472,12 +472,12 @@ export function validateBackup(backup) {
   const validTokenId = (value) => typeof value === 'string' && /^[\p{L}\p{N}][\p{L}\p{N}._:-]{0,220}$/u.test(value);
   unique(domains, (item) => item.id, '词域 ID 为空或重复');
   unique(collections, (item) => item.id, '词表 ID 为空或重复');
-  unique(entries, (item) => item.id, '词项 ID 为空或重复');
-  unique(entries, (item) => `${item.domainId}\u0000${item.normalizedText}`, '同一词域内词项重复');
+  unique(entries, (item) => item.id, '内容 ID 为空或重复');
+  unique(entries, (item) => `${item.domainId}\u0000${item.normalizedText}`, '同一词域内内容重复');
   unique(memberships, (item) => `${item.entryId}\u0000${item.collectionId}`, '来源关系重复');
   unique(tokens, (item) => item.id, '短语词元 ID 重复');
-  unique(pins, (item) => item.entryId, '同一词项存在多个 PIN');
-  unique(annotations, (item) => item.entryId, '同一词项存在多个 AI 标注');
+  unique(pins, (item) => item.entryId, '同一内容存在多个 PIN');
+  unique(annotations, (item) => item.entryId, '同一内容存在多个 AI 标注');
   for (const item of [...domains, ...collections, ...entries, ...memberships, ...pins]) {
     if (!validId(item.id)) throw new Error('数据包含无效或危险 ID');
   }
@@ -490,7 +490,7 @@ export function validateBackup(backup) {
   const entryById = new Map(entries.map((item) => [item.id, item]));
   const membershipByEntry = new Map();
   memberships.forEach((item) => {
-    if (!entryById.has(item.entryId)) throw new Error('来源关系指向不存在词项');
+    if (!entryById.has(item.entryId)) throw new Error('来源关系指向不存在内容');
     const collection = collectionById.get(item.collectionId);
     if (!collection) throw new Error('来源关系指向不存在词表');
     if (collection.type !== 'normal') throw new Error('来源关系只能指向普通词表');
@@ -512,9 +512,9 @@ export function validateBackup(backup) {
   }
 
   for (const entry of entries) {
-    if (!domainIds.has(entry.domainId)) throw new Error('词项指向不存在词域');
-    if (entry.normalizedText !== normalizeEnglish(entry.text)) throw new Error('词项规范文本不一致');
-    if (entry.kind !== (isPhraseText(entry.text) ? 'phrase' : 'word')) throw new Error('词项 kind 与文本不一致');
+    if (!domainIds.has(entry.domainId)) throw new Error('内容指向不存在词域');
+    if (entry.normalizedText !== normalizeEnglish(entry.text)) throw new Error('内容规范文本不一致');
+    if (entry.kind !== (isPhraseText(entry.text) ? 'phrase' : 'word')) throw new Error('内容 kind 与文本不一致');
     if (entry.glossHant !== normalizeGlossHant(entry.glossHant)) throw new Error('释义不是规范繁体');
     if (entry.kind === 'word') {
       const hasNormalMembership = (membershipByEntry.get(entry.id) || [])
@@ -524,7 +524,7 @@ export function validateBackup(backup) {
   }
 
   const expectedTokens = entries.flatMap(buildPhraseTokens);
-  if (JSON.stringify(tokens) !== JSON.stringify(expectedTokens)) throw new Error('短语词元索引与词项不一致');
+  if (JSON.stringify(tokens) !== JSON.stringify(expectedTokens)) throw new Error('短语词元索引与内容不一致');
 
   const visible = buildProjection(backup);
   for (const pin of pins) {
@@ -534,13 +534,13 @@ export function validateBackup(backup) {
       throw new Error('PIN 关联无效');
     }
     if (!Number.isFinite(pin.order) || pin.order < 0) throw new Error('PIN 顺序无效');
-    if (!(visible.get(pin.contextCollectionId) || []).some((item) => item.id === entry.id)) throw new Error('PIN 指向不可见词项');
+    if (!(visible.get(pin.contextCollectionId) || []).some((item) => item.id === entry.id)) throw new Error('PIN 指向不可见内容');
   }
   for (const [key, entryId] of Object.entries(object(backup.settings?.lastPositions))) {
     const parts = key.split(':');
     const collectionId = parts.slice(2).join(':');
     if (!collectionById.has(collectionId) || !(visible.get(collectionId) || []).some((item) => item.id === entryId)) {
-      throw new Error('上次位置指向不可见词项');
+      throw new Error('上次位置指向不可见内容');
     }
   }
   for (const annotation of annotations) {
@@ -567,6 +567,7 @@ export function buildProjection(backup) {
     if (entry.kind === 'phrase') {
       const phraseCollectionId = systemPhraseCollectionId(entry.domainId);
       projection.get(phraseCollectionId)?.push(entry);
+      continue;
     }
     const candidates = (membershipsByEntry.get(entry.id) || [])
       .map((membership) => collectionById.get(membership.collectionId))

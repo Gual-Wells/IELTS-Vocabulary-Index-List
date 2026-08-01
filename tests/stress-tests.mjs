@@ -18,7 +18,7 @@ const collections = [
   createCollection({ domainId: domains[0].id, name: 'AWL', order: 1, timestamp }),
   createCollection({ domainId: domains[0].id, name: '短语', type: 'system-phrases', timestamp }),
 ];
-let backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.0', exportedAt: timestamp, domains, collections, entries: [], memberships: [], pins: [], annotations: [], settings: {} });
+let backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.1', exportedAt: timestamp, domains, collections, entries: [], memberships: [], pins: [], annotations: [], settings: {} });
 
 function addWord(text, collection) {
   const normalized = normalizeEnglish(text);

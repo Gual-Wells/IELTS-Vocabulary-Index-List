@@ -77,8 +77,12 @@ assert.deepEqual(relatedPhrases(backup, thread.id).map((item) => item.id), [phra
 assert.equal(relatedPhrases(backup, access.id).length, 0);
 assert.deepEqual(phraseComponents(backup, phrase.id).map((item) => item.entry?.text || null), ['thread', null]);
 const projection = buildProjection(backup);
-assert.ok(projection.get(backup.collections.find((item) => item.name === 'A1').id).some((item) => item.id === access.id));
-assert.ok(projection.get(systemPhraseCollectionId(backup.domains[0].id)).some((item) => item.id === phrase.id));
+const a1Projection = projection.get(backup.collections.find((item) => item.name === 'A1').id);
+assert.ok(a1Projection.some((item) => item.id === access.id));
+assert.ok(a1Projection.every((item) => item.kind === 'word'), '普通词表投影只能包含词汇');
+const phraseProjection = projection.get(systemPhraseCollectionId(backup.domains[0].id));
+assert.ok(phraseProjection.some((item) => item.id === phrase.id));
+assert.ok(phraseProjection.every((item) => item.kind === 'phrase'), '短语表投影只能包含短语');
 assert.equal(searchBackup(backup, 'thr').length, 2);
 assert.equal(searchBackup(backup, 'thred').some((item) => item.text === 'thread'), true, '轻微拼写错误应命中');
 
@@ -125,6 +129,12 @@ if (fs.existsSync(seedPath)) {
   assert.equal(migrated.collections.filter((item) => item.type === 'normal').length, 7);
   assert.equal(migrated.memberships.length, 6407);
   assert.equal(migrated.phraseTokens.length, 20);
+  const fullProjection = buildProjection(migrated);
+  for (const collection of migrated.collections) {
+    const visible = fullProjection.get(collection.id) || [];
+    if (collection.type === 'normal') assert.ok(visible.every((entry) => entry.kind === 'word'));
+    else assert.ok(visible.every((entry) => entry.kind === 'phrase'));
+  }
   assert.ok(migrated.memberships.every((item) => !Object.hasOwn(item, 'sourceText')));
 }
 

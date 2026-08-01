@@ -7,13 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="词汇索引">
-  <meta name="application-version" content="3.0.0">
+  <meta name="application-version" content="3.0.1">
   <meta name="description" content="本地优先、按词域组织的英语词汇与短语索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Vocabulary Index 3.0</title>
+  <title>Vocabulary Index 3.0.1</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
+  <script src="./js/v3-upgrade.js"></script>
   <link rel="stylesheet" href="./css/v3.css">
 </head>
 <body>
@@ -86,25 +87,11 @@
     </div>
   </dialog>
 
-  <dialog id="detail-dialog" class="sheet-dialog detail-dialog">
-    <div class="dialog-card">
-      <header class="dialog-header">
-        <div>
-          <h2 id="detail-title">词项详情</h2>
-          <p id="detail-description" class="muted"></p>
-        </div>
-        <button id="detail-close" class="icon-button" type="button" aria-label="关闭">×</button>
-      </header>
-      <div id="detail-body" class="dialog-body"></div>
-    </div>
-  </dialog>
-
   <dialog id="search-dialog" class="sheet-dialog search-dialog">
     <div class="dialog-card">
       <header class="dialog-header">
         <div>
           <h2>搜索词汇</h2>
-          <p class="muted">英文即时匹配；中文可按需使用 AI 联想。</p>
         </div>
         <button id="search-close" class="icon-button" type="button" aria-label="关闭">×</button>
       </header>

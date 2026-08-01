@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.0',
+    appVersion: '3.0.1',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,11 +36,10 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.1', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
-    if (a.type !== b.type) return a.type === 'normal' ? -1 : 1;
     return a.order - b.order || a.name.localeCompare(b.name);
   });
   const projection = buildProjection(backup);
@@ -268,7 +267,7 @@ export async function addCollection(domainId, name, label = '') {
     const normalized = normalizeEnglish(name);
     const siblings = draft.collections.filter((item) => item.domainId === domainId);
     if (siblings.some((item) => normalizeEnglish(item.name) === normalized)) throw new Error('该词域已有同名词表');
-    draft.collections.push(createCollection({ domainId, name, label, order: nextOrder(siblings.filter((item) => item.type === 'normal')) }));
+    draft.collections.push(createCollection({ domainId, name, label, order: nextOrder(siblings) }));
   });
 }
 
@@ -300,6 +299,38 @@ export async function moveCollection(collectionId, direction) {
     collection.order = target.order;
     target.order = oldOrder;
     collection.updatedAt = target.updatedAt = new Date().toISOString();
+  });
+}
+
+
+export async function reorderCollections(domainId, orderedIds) {
+  return mutate('调整词表顺序', (draft) => {
+    const siblings = draft.collections.filter((item) => item.domainId === domainId);
+    const expected = new Set(siblings.map((item) => item.id));
+    const order = [...orderedIds].filter((id) => expected.has(id));
+    for (const item of siblings) if (!order.includes(item.id)) order.push(item.id);
+    const now = new Date().toISOString();
+    order.forEach((id, index) => {
+      const collection = siblings.find((item) => item.id === id);
+      if (!collection) return;
+      collection.order = index;
+      collection.updatedAt = now;
+    });
+  });
+}
+
+export async function reorderDomains(orderedIds) {
+  return mutate('调整词域顺序', (draft) => {
+    const expected = new Set(draft.domains.map((item) => item.id));
+    const order = [...orderedIds].filter((id) => expected.has(id));
+    for (const item of draft.domains) if (!order.includes(item.id)) order.push(item.id);
+    const now = new Date().toISOString();
+    order.forEach((id, index) => {
+      const domain = draft.domains.find((item) => item.id === id);
+      if (!domain) return;
+      domain.order = index;
+      domain.updatedAt = now;
+    });
   });
 }
 
@@ -362,7 +393,7 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
     entry.glossSource = normalizeDisplayText(item?.glossSource || 'import');
     entry.updatedAt = new Date().toISOString();
   }
-  if (collection.type === 'normal') {
+  if (collection.type === 'normal' && entry.kind === 'word') {
     let membership = draft.memberships.find((candidate) => candidate.entryId === entry.id && candidate.collectionId === collection.id);
     if (!membership) {
       membership = createMembership({
@@ -387,7 +418,7 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
 }
 
 export async function importEntries(collectionId, items, { mode = 'merge' } = {}) {
-  if (!Array.isArray(items) || !items.length) throw new Error('没有可导入词项');
+  if (!Array.isArray(items) || !items.length) throw new Error('没有可导入内容');
   return mutate(mode === 'replace' ? '替换词表导入' : '合并词表导入', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
@@ -432,14 +463,17 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
 
 export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '', glossSource = 'manual' } = {}) {
   let resultingId = null;
-  await mutate('新增词项', (draft) => {
+  await mutate('新增内容', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
     const domain = draft.domains.find((item) => item.id === collection.domainId);
     const normalized = normalizeEnglish(text);
-    if (!normalized) throw new Error('词项不能为空');
+    if (!normalized) throw new Error('内容不能为空');
     if (collection.type === 'system-phrases' && !isPhraseText(text)) {
-      throw new Error('系统短语表只能新增包含至少两个英文词元的短语');
+      throw new Error('短语表只能新增短语');
+    }
+    if (collection.type === 'normal' && isPhraseText(text)) {
+      throw new Error('普通词表只新增词汇；请在短语表新增短语');
     }
     let entry = draft.entries.find((item) => item.domainId === collection.domainId && item.normalizedText === normalized);
     if (!entry) {
@@ -456,7 +490,7 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
       entry.updatedAt = new Date().toISOString();
     }
     resultingId = entry.id;
-    if (collection.type === 'normal') {
+    if (collection.type === 'normal' && entry.kind === 'word') {
       const existing = draft.memberships.find((item) => item.entryId === entry.id && item.collectionId === collection.id);
       if (!existing) {
         const sourceOrder = nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id));
@@ -480,10 +514,10 @@ export async function addPhraseForWord(entryId, phraseText, options = {}) {
 }
 
 export async function editEntry(entryId, updates, expectedUpdatedAt) {
-  return mutate('编辑词项', (draft) => {
+  return mutate('编辑内容', (draft) => {
     const entry = draft.entries.find((item) => item.id === entryId);
-    if (!entry) throw new Error('词项不存在');
-    if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('词项已在其他实例更新，请重新打开后再编辑');
+    if (!entry) throw new Error('内容不存在');
+    if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('内容已在其他实例更新，请重新打开后再编辑');
     const domain = draft.domains.find((item) => item.id === entry.domainId);
     const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.glossHant) : entry.glossHant;
     const candidate = createEntry({
@@ -494,7 +528,7 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
       updatedAt: new Date().toISOString(),
     });
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
-    if (collision) throw new Error('同一词域内已有该词项');
+    if (collision) throw new Error('同一词域内已有该内容');
     const textChanged = candidate.normalizedText !== entry.normalizedText;
     if (candidate.kind === 'word' && !draft.memberships.some((item) => item.entryId === entry.id)) {
       throw new Error('系统短语不能直接改成普通词；请先在普通词表中新增该词。');
@@ -506,12 +540,12 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
 }
 
 export async function editEntryInCollection(entryId, collectionId, updates, expectedUpdatedAt) {
-  return mutate('编辑词项与词性', (draft) => {
+  return mutate('编辑内容与词性', (draft) => {
     const entry = draft.entries.find((item) => item.id === entryId);
     const collection = draft.collections.find((item) => item.id === collectionId);
-    if (!entry || !collection) throw new Error('词项或词表不存在');
-    if (entry.domainId !== collection.domainId) throw new Error('词项与词表不属于同一词域');
-    if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('词项已在其他实例更新，请重新打开后再编辑');
+    if (!entry || !collection) throw new Error('内容或词表不存在');
+    if (entry.domainId !== collection.domainId) throw new Error('内容与词表不属于同一词域');
+    if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('内容已在其他实例更新，请重新打开后再编辑');
     const domain = draft.domains.find((item) => item.id === entry.domainId);
     const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.glossHant) : entry.glossHant;
     const candidate = createEntry({
@@ -521,14 +555,15 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
       glossSource: nextGloss ? normalizeDisplayText(updates.glossSource || entry.glossSource || 'manual') : '',
       updatedAt: new Date().toISOString(),
     });
+    if (collection.type === 'normal' && candidate.kind !== 'word') throw new Error('普通词表只包含词汇');
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
-    if (collision) throw new Error('同一词域内已有该词项');
+    if (collision) throw new Error('同一词域内已有该内容');
     const textChanged = candidate.normalizedText !== entry.normalizedText;
     Object.assign(entry, candidate);
     if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
     if (collection.type === 'normal') {
       const membership = draft.memberships.find((item) => item.entryId === entryId && item.collectionId === collectionId);
-      if (!membership) throw new Error('当前词表没有该词项的来源关系');
+      if (!membership) throw new Error('当前词表没有该内容的来源关系');
       membership.sourceLabel = normalizeDisplayText(updates.sourceLabel ?? membership.sourceLabel);
       membership.updatedAt = new Date().toISOString();
     }
@@ -546,7 +581,7 @@ export async function removeEntryFromCollection(entryId, collectionId) {
 }
 
 export async function deleteEntry(entryId) {
-  return mutate('删除词项', (draft) => {
+  return mutate('删除内容', (draft) => {
     draft.entries = draft.entries.filter((item) => item.id !== entryId);
     draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
     draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
@@ -562,7 +597,7 @@ export async function togglePin(entryId, contextCollectionId) {
       return;
     }
     const entry = draft.entries.find((item) => item.id === entryId);
-    if (!entry) throw new Error('词项不存在');
+    if (!entry) throw new Error('内容不存在');
     const projection = buildProjection(draft);
     if (!(projection.get(contextCollectionId) || []).some((item) => item.id === entryId)) throw new Error('PIN 上下文不可见');
     const siblingPins = draft.pins.filter((item) => item.contextCollectionId === contextCollectionId);
@@ -584,7 +619,9 @@ export async function setLastPosition(domainId, collectionId, entryId) {
 }
 
 export function getLastPosition(domainId, collectionId) {
-  return state.settings.lastPositions?.[`lastPosition:${domainId}:${collectionId}`] || null;
+  const entryId = state.settings.lastPositions?.[`lastPosition:${domainId}:${collectionId}`] || null;
+  if (!entryId) return null;
+  return (state.projection.get(collectionId) || []).some((item) => item.id === entryId) ? entryId : null;
 }
 
 export function getPinsForCollection(collectionId) {

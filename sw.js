@@ -1,11 +1,11 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v3.0.0-final`;
+const CACHE_NAME = `${CACHE_PREFIX}v3.0.1-ui-refine-20260801-2`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest', './css/v3.css',
-  './js/v3-app.js', './js/v3-ui.js', './js/v3-store.js', './js/v3-db.js',
+  './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-store.js', './js/v3-db.js',
   './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js',
   './data/seed.json', './data/seed-report.json',
   './assets/icons/apple-touch-icon.png', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
@@ -31,15 +31,13 @@ sw.addEventListener('activate', (event) => {
   })());
 });
 
-async function networkFirst(request) {
+async function appShellFirst(request) {
   const cache = await caches.open(CACHE_NAME);
-  try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) await cache.put(request, response.clone());
-    return response;
-  } catch {
-    return (await cache.match(request)) || (await cache.match(APP_SHELL)) || Response.error();
-  }
+  const cached = (await cache.match(request)) || (await cache.match(APP_SHELL)) || (await cache.match('./'));
+  if (cached) return cached;
+  const response = await fetch(request, { cache: 'no-store' });
+  if (response.ok) await cache.put(APP_SHELL, response.clone());
+  return response;
 }
 
 async function cacheFirst(request) {
@@ -57,7 +55,7 @@ sw.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== sw.location.origin) return;
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request));
+    event.respondWith(appShellFirst(request));
     return;
   }
   event.respondWith(cacheFirst(request));

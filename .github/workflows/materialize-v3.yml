@@ -1,0 +1,64 @@
+name: Materialize Vocabulary Index 3.0 RC
+
+on:
+  push:
+    branches:
+      - agent/vocabulary-index-3.0.0-rc
+    paths:
+      - '.github/workflows/materialize-v3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out RC branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reassemble verified overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .delivery3 -maxdepth 1 -name 'v3-part-*' | wc -l)" -eq 13
+          cat .delivery3/v3-part-* | base64 --decode > /tmp/v3-overlay.zip
+          echo "09e99a5690da7695e57c67b4c096b52312642056fcc7492db2b476d06beb9d2b  /tmp/v3-overlay.zip" | sha256sum -c -
+          rm -rf /tmp/v3-overlay
+          mkdir -p /tmp/v3-overlay
+          unzip -q /tmp/v3-overlay.zip -d /tmp/v3-overlay
+
+      - name: Replace application tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            css/base.css css/components.css css/responsive.css css/tokens.css \
+            js/ai.js js/app.js js/category-view-model.js js/constants.js js/db.js \
+            js/entry-model.js js/import-export.js js/search.js js/store.js js/ui.js js/utils.js \
+            tests/fake-db.mjs CHANGE_REPORT_2.4.0.md TEST_REPORT_2.4.0.md HOTFIX_REPORT_2.4.1.md
+          cp -a /tmp/v3-overlay/. .
+          rm -rf .delivery .delivery3
+          test -f data/seed.json
+          test -f data/seed-report.json
+          test -f data/source/A1.txt
+          test -f assets/icons/icon-512.png
+
+      - name: Validate RC
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run test:all
+          for file in js/*.js sw.js tests/*.mjs; do node --check "$file"; done
+
+      - name: Commit materialized RC
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Vocabulary Index RC Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: materialize Vocabulary Index 3.0.0 RC"
+          git push

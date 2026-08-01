@@ -4,6 +4,7 @@ export const DEFAULT_DOMAIN_NAME = '通用英语';
 export const SYSTEM_PHRASE_SUFFIX = '__phrases';
 export const SYSTEM_DOMAIN_WORDS_SUFFIX = '__all_words';
 export const SYSTEM_GLOBAL_WORDS_ID = '__global_all_words';
+export const SYSTEM_GLOBAL_PHRASES_ID = '__global_all_phrases';
 export const MAX_ENTRY_TEXT = 160;
 export const MAX_GLOSS_TEXT = 120;
 export const MAX_DOMAIN_NAME = 40;
@@ -387,7 +388,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.3',
+    appVersion: '3.0.4',
     exportedAt: timestamp,
     domains,
     collections,
@@ -450,7 +451,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.0.3'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.0.4'),
     exportedAt: timestamp,
     domains,
     collections,
@@ -547,7 +548,7 @@ export function validateBackup(backup) {
     const entry = entryById.get(pin.entryId);
     const collection = collectionById.get(pin.contextCollectionId);
     const domainTotalId = entry ? systemDomainWordsCollectionId(entry.domainId) : '';
-    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === domainTotalId;
+    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === domainTotalId;
     if (!entry || pin.domainId !== entry.domainId || (!virtualValid && (!collection || collection.domainId !== entry.domainId))) {
       throw new Error('PIN 关联无效');
     }
@@ -583,12 +584,18 @@ export function buildProjection(backup) {
   });
   const projection = new Map(collections.map((item) => [item.id, []]));
   projection.set(SYSTEM_GLOBAL_WORDS_ID, []);
+  projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
   for (const domain of domains) projection.set(systemDomainWordsCollectionId(domain.id), []);
 
   const globalByText = new Map();
+  const globalPhrasesByText = new Map();
   for (const entry of entries) {
     if (entry.kind === 'phrase') {
       projection.get(systemPhraseCollectionId(entry.domainId))?.push(entry);
+      const currentPhrase = globalPhrasesByText.get(entry.normalizedText);
+      if (!currentPhrase || (domainOrder.get(entry.domainId) ?? Number.MAX_SAFE_INTEGER) < (domainOrder.get(currentPhrase.domainId) ?? Number.MAX_SAFE_INTEGER)) {
+        globalPhrasesByText.set(entry.normalizedText, entry);
+      }
       continue;
     }
     projection.get(systemDomainWordsCollectionId(entry.domainId))?.push(entry);
@@ -603,6 +610,7 @@ export function buildProjection(backup) {
     if (candidates[0]) projection.get(candidates[0].id)?.push(entry);
   }
   projection.set(SYSTEM_GLOBAL_WORDS_ID, [...globalByText.values()]);
+  projection.set(SYSTEM_GLOBAL_PHRASES_ID, [...globalPhrasesByText.values()]);
   for (const list of projection.values()) list.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   return projection;
 }

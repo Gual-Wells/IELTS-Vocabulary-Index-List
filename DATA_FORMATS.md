@@ -9,7 +9,7 @@
 ```json
 {
   "schemaVersion": 3,
-  "appVersion": "3.0.3",
+  "appVersion": "3.0.4",
   "exportedAt": "2026-08-01T00:00:00.000Z",
   "domains": [],
   "collections": [],
@@ -150,3 +150,13 @@ thread pool,,线程池
 - 未知实体字段不会进入数据库。
 - Groq API Key 不进入备份。
 - 撤销历史不进入备份。
+
+## 3.0.4 派生投影
+
+以下列表只在运行时生成，不写入 `collections`，也不复制 Entry：
+
+- `__global_all_words`：跨词域普通词全局去重；
+- `__global_all_phrases`：跨词域短语全局去重；
+- `<domainId>__all_words`：指定词域全部普通词。
+
+词域短语表仍是每个词域唯一的系统 Collection。普通词表顺序只决定普通词的优先投影，不影响三类派生总表。

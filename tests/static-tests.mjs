@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = (relative) => fs.existsSync(path.join(root, relative));
 
 const html = read('index.html');
-assert.ok(html.includes('name="application-version" content="3.0.3"'));
+assert.ok(html.includes('name="application-version" content="3.0.4"'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.includes('./js/v3-upgrade.js'));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'), '升级引导必须先于样式和应用模块加载');
@@ -43,10 +43,13 @@ const ai = read('js/v3-ai.js');
 // 词汇与短语同构；主列表不显示词性，不出现独立详情。
 assert.ok(ui.includes("function relationItemsForEntry"));
 assert.ok(ui.includes("getRelatedPhrases(word.id)"));
-assert.ok(ui.includes("getPhraseComponents(entry.id)"));
+assert.ok(ui.includes("getPhraseComponents(phrase.id)"));
 assert.ok(ui.includes("className: 'relation-panel'"));
+assert.ok(ui.includes('SYSTEM_GLOBAL_PHRASES_ID'), '必须提供全局短语表');
+assert.ok(model.includes('SYSTEM_GLOBAL_PHRASES_ID'));
+assert.ok(store.includes("name: '全局短语表'"));
 assert.ok(ui.includes("className: `entry-pin${pinned ? ' active' : ''}`"), 'PIN 必须直接位于表项');
-assert.ok(ui.includes("button('⋯', 'entry-more'"));
+assert.ok(ui.includes("iconButton('more', 'entry-more'"));
 assert.ok(!ui.includes('openEntryDetails'));
 assert.ok(!ui.includes("className: 'entry-pos'"), '主列表不得显示词性');
 assert.ok(!ui.includes('词项'), '用户界面不得出现“词项”注释');
@@ -56,10 +59,14 @@ assert.ok(model.includes('continue;'), '短语投影到短语表后必须停止�
 assert.ok(store.includes("collection.type === 'normal' && entry.kind === 'word'"));
 assert.ok(model.includes('SYSTEM_GLOBAL_WORDS_ID'));
 assert.ok(model.includes('systemDomainWordsCollectionId'));
-assert.ok(ui.includes("collection.type === 'system-phrases'"));
+assert.ok(ui.includes("collection.type === 'system-phrases' || collection.type === 'system-global-phrases'"));
 assert.ok(ui.includes("className: 'letter-section flat-section'"), '短语词表不得生成首字母标题');
 assert.ok(ui.includes('if (relationPanel) row.append(relationPanel)'), '空关系面板不得被 append 为 null 文本');
 assert.ok(ui.includes('jumpToRelation'));
+assert.ok(ui.includes('preferredNormalDestination'), '短语组成词必须跳到优先普通词表');
+assert.ok(ui.includes("className: 'relation-copy'"), '关联子项文字必须保留复制');
+assert.ok(ui.includes("iconButton('jump', 'relation-jump'"), '关联跳转必须使用独立控件');
+assert.ok(ui.includes("className: 'entry-gloss'"), '启用释义后必须行内显示');
 
 
 // 性能硬约束：高频读取不得复制整库；PIN 不得走全量 mutate。
@@ -87,7 +94,8 @@ assert.ok(ui.includes("button('›', '', () => navigateReview(1)"));
 
 // 上次位置严格限定当前词表，菜单中不得重复。
 const toolbarBody = ui.match(/function renderCollectionToolbar[\s\S]*?function syncPinIndexForEntry/)?.[0] || '';
-assert.ok(toolbarBody.includes("collectionId: collection.id"));
+assert.ok(ui.includes("iconButton('target', 'last-position-button'"));
+assert.ok(ui.includes("reason: 'last'"));
 const collectionActionsBody = ui.match(/function openCollectionActions[\s\S]*?function openCollectionMenu/)?.[0] || '';
 assert.ok(!collectionActionsBody.includes('上次'), '更多菜单不得重复上次位置');
 assert.ok(store.includes("(state.projection.get(collectionId) || []).some"), '读取上次位置时必须验证当前词表可见性');
@@ -119,14 +127,15 @@ assert.ok(css.includes('.drag-handle'));
 // 卡片不得保留大面积绝对定位“宽额头”。
 assert.ok(css.includes('.collection-card-title'));
 assert.match(css, /\.collection-card\s*\{[^}]*display:\s*grid/s);
-const refineCss = css.slice(css.indexOf('/* 3.0.3 interaction refinement */'));
+const refineCss = css.slice(css.indexOf('/* 3.0.4 navigation, relation and derived-list refinement */'));
 assert.ok(!/\.collection-card \.count\s*\{[^}]*position:\s*absolute/s.test(refineCss));
 assert.ok(!ui.includes('count-label'));
 
 // 统一定位必须局部展开，不得重建整个词表。
 const jumpBody = ui.match(/function jumpToEntry\([\s\S]*?\n}\n\nfunction jumpPinned/)?.[0] || '';
 assert.ok(jumpBody.includes('ensureEntryRendered'));
-assert.ok(jumpBody.includes('scrollIntoView'));
+assert.ok(ui.includes('positionElementAtReadingAnchor'));
+assert.ok(ui.includes('0.38'), '长距离跳转应使用阅读锚点');
 assert.ok(!jumpBody.includes('renderCollection()'));
 assert.ok(ui.includes("window.addEventListener('scroll', persistScrollPosition"));
 
@@ -138,9 +147,9 @@ assert.ok(!/qwen|llama|gpt-oss|openai\/gpt/i.test(ai), 'AI 策略不得按模型
 assert.ok(store.includes('expectedRevision'));
 assert.ok(read('js/v3-db.js').includes('setLastPositionSetting'));
 assert.ok(store.includes('BroadcastChannel'));
-assert.ok(app.includes("const MODULE_VERSION = '3.0.3'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.0.4'"));
 assert.ok(app.includes('registration.waiting'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.3'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.4'));
 assert.ok(upgrade.includes('caches.delete'));
 assert.ok(!upgrade.includes('indexedDB'), '升级引导不得触碰业务数据库');
 
@@ -154,7 +163,7 @@ for (const name of jsFiles) {
 }
 
 const sw = read('sw.js');
-assert.ok(sw.includes('v3.0.3-performance-20260801-1'));
+assert.ok(sw.includes('v3.0.4-navigation-20260801-1'));
 const installBody = sw.match(/sw\.addEventListener\('install',[\s\S]*?\n}\);/)?.[0] || '';
 assert.ok(!installBody.includes('skipWaiting'));
 assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));

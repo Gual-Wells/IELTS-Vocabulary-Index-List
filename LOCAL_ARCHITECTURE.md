@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.3 本地架构
+# Vocabulary Index 3.0.4 本地架构
 
 ## 1. 运行模块
 
@@ -78,3 +78,7 @@ Entry 英文在词域内唯一。Membership 只保存关联、当前词表词性
 ## 7. PWA 更新
 
 活动 Service Worker 始终从当前缓存提供同代 App Shell，避免新 HTML 与旧 JS 混装。新 Worker 安装完成后保持 waiting；只有用户点击“立即更新”才发送 `SKIP_WAITING`，随后在 `controllerchange` 时重新载入一次。
+
+## 3.0.4 导航与派生列表
+
+Store 在初始化时同时建立全局词汇、全局短语和词域总词表投影，并建立全局短语代表项索引。UI 的搜索、关系、PIN 与上次位置统一调用阅读锚点定位。关系面板的文字点击只复制，跳转由独立 SVG 控件触发。

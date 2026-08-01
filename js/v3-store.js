@@ -1,7 +1,7 @@
 import {
   buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
   createMembership, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
-  safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish,
+  safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, tokenizeEnglish,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, redo as dbRedo,
@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.3',
+    appVersion: '3.0.4',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,7 +36,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.3', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.4', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -44,10 +44,17 @@ function buildState(snapshot) {
   });
   const projection = buildProjection(backup);
   const entryById = new Map(backup.entries.map((item) => [item.id, item]));
+  const globalPhraseByNormalizedText = new Map((projection.get(SYSTEM_GLOBAL_PHRASES_ID) || []).map((item) => [item.normalizedText, item]));
   const wordsByDomainText = new Map();
   const wordsByNormalizedText = new Map();
+  const phrasesByNormalizedText = new Map();
   for (const entry of backup.entries) {
-    if (entry.kind !== 'word') continue;
+    if (entry.kind === 'phrase') {
+      const phrases = phrasesByNormalizedText.get(entry.normalizedText) || [];
+      phrases.push(entry);
+      phrasesByNormalizedText.set(entry.normalizedText, phrases);
+      continue;
+    }
     wordsByDomainText.set(`${entry.domainId}:${entry.normalizedText}`, entry);
     const list = wordsByNormalizedText.get(entry.normalizedText) || [];
     list.push(entry);
@@ -81,6 +88,7 @@ function buildState(snapshot) {
   }
   const collectionById = new Map(collections.map((item) => [item.id, item]));
   collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语表', label: '', type: 'system-global-phrases', order: -1, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
     collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '总词表', label: '', type: 'system-domain-words', order: -1, virtual: true, createdAt: '', updatedAt: '' });
   }
@@ -94,6 +102,8 @@ function buildState(snapshot) {
     collectionById,
     entryById,
     wordsByNormalizedText,
+    phrasesByNormalizedText,
+    globalPhraseByNormalizedText,
     relatedPhrasesByEntry,
     phraseComponentsByEntry,
     membershipsByEntry: groupBy(backup.memberships, (item) => item.entryId),

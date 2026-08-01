@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.0 RC 测试报告
+# Vocabulary Index 3.0.0 RC2 测试报告
 
 测试日期：2026-08-01
 
@@ -14,13 +14,22 @@ npm test
 
 结果：通过。
 
-### 静态应用契约
+### 静态应用与 UX 契约
 
 ```bash
 npm run test:static
 ```
 
-覆盖 HTML ID、CSP、模块依赖、Service Worker 预缓存声明、Manifest 相对路径、无内联事件、无 GitHub 云同步运行时代码、修订号冲突保护、浏览位置原子写入和 3.0 版本一致性。
+除原有 HTML ID、CSP、模块依赖、Service Worker、Manifest、跨实例修订号和无云同步契约外，本轮新增断言：
+
+- PIN 存在独立 sticky 导航条；
+- PIN 不再位于会滚出视口的顶部按钮矩阵；
+- 字母导航按 PIN 条高度避让；
+- iPhone 操作栏固定在安全区上方；
+- 词条详情进入 Sheet，不使用 `expandedEntries` 整表重绘状态；
+- AI 审阅同时具备上一条与下一条；
+- 高频触控目标达到 44px 级别；
+- 自定义控件具备 `:focus-visible`。
 
 结果：通过。
 
@@ -30,17 +39,23 @@ npm run test:static
 npm run test:stress
 ```
 
-执行 600 步确定性新增、复用、短语、来源增加/移除、删除和 PIN 操作；每步重新规范化并验证完整数据不变量。固定随机种子的当前最终状态：115 个词项、114 条来源关系。
+执行 600 步确定性新增、复用、短语、来源增加/移除、删除和 PIN 操作；每步重新规范化并验证完整数据不变量。固定随机种子的最终状态：115 个词项、114 条来源关系。
 
 结果：通过。
 
 ### JavaScript 静态类型
 
-`js/*.js` 使用 TypeScript `checkJs`：零错误。`sw.js` 使用 WebWorker lib：零错误。全部 JS/MJS 通过 `node --check`。
+```bash
+tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
+  --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable js/*.js
 
-## 实际 Seed 合同
+tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
+  --moduleResolution Bundler --lib ES2022,WebWorker sw.js
+```
 
-本完整源码包直接包含并保留 2.4.1 的 `data/seed.json`、`data/source/` 和图标原文件。测试脚本额外断言：
+结果：零错误。全部 JS/MJS 另通过 `node --check`。
+
+### 完整 Seed 合同
 
 - 5,005 个词项；
 - 7 个普通词表；
@@ -48,18 +63,24 @@ npm run test:stress
 - 20 条 PhraseToken（10 个双词短语）；
 - Membership 全部不存在 `sourceText`。
 
+### 代表性静态渲染
+
+使用交付 CSS 与真实界面结构，在以下视口生成静态渲染用于布局检查：
+
+- 390×844：单词域首页；
+- 390×844：滚动到长词表中部，确认顶栏、PIN、字母导航和底部工具栏的堆叠；
+- 1280×900：桌面首页。
+
+该步骤验证 CSS 布局，不等同于真实浏览器业务端到端测试。
+
 ## 未自动完成
 
-受当前受管 Chromium 策略限制，本地 HTTP 地址返回：
+受受管 Chromium 策略限制，本地 HTTP 和 `file:` 页面均被组织策略阻止，因此未声称完成真实应用 URL 的浏览器 E2E。仍需按人工清单验证：
 
-```text
-net::ERR_BLOCKED_BY_ADMINISTRATOR
-```
-
-因此未声称完成真实浏览器端到端自动化。仍需按人工清单验证：
-
-- iPhone Safari / 主屏幕 PWA 首次原地迁移；
-- 离线冷启动；
+- iPhone Safari / 主屏幕 PWA 首次迁移；
+- PIN 在真实惯性滚动与安全区中的持续可达性；
+- 输入法、键盘弹出和 Sheet 高度；
+- 离线冷启动与 Service Worker 更新；
 - Safari 与 PWA 双实例；
 - 真实 Groq API、限流和暂停/取消；
-- 真实 5,005 词 UI 性能与触控行为。
+- 真实 5,005 词 UI 性能。

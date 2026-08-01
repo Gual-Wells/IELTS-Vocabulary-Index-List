@@ -18,16 +18,17 @@ import { normalizeEnglish, systemPhraseCollectionId } from './v3-model.js';
 const APP_VERSION = '3.0.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
-  'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
-  'home-view', 'collection-view', 'collection-toolbar', 'letter-nav', 'entry-list', 'task-panel',
+  'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'undo-button', 'redo-button', 'search-button', 'settings-button',
+  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'letter-nav', 'entry-list', 'mobile-action-bar', 'task-panel',
   'annotation-review-bar', 'toast-region', 'app-dialog', 'dialog-form', 'dialog-title',
   'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions', 'hidden-file-input',
 ].map((id) => [id, document.getElementById(id)]));
 
 let currentCollectionId = '';
 let expandedLetters = new Set();
-let expandedEntries = new Set();
 let pendingJumpEntryId = '';
+let pinIndex = 0;
+let pinCollectionId = '';
 let activeTask = null;
 let review = { ids: [], index: 0, collectionId: '' };
 let dialogSubmitHandler = null;
@@ -73,16 +74,22 @@ function field(label, control, help = '') {
 
 function closeDialog() {
   if (elements['app-dialog'].open) elements['app-dialog'].close();
+  elements['app-dialog'].dataset.mode = 'modal';
   dialogSubmitHandler = null;
 }
 
-function openDialog({ title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false, onSubmit = null }) {
+function openDialog({
+  title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false,
+  onSubmit = null, mode = 'modal', showCancel = null,
+}) {
+  elements['app-dialog'].dataset.mode = mode;
   elements['dialog-title'].textContent = title;
   elements['dialog-description'].textContent = description;
   elements['dialog-description'].classList.toggle('hidden', !description);
   elements['dialog-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
   elements['dialog-actions'].replaceChildren();
-  elements['dialog-actions'].append(button(cancelText, 'secondary-button', closeDialog));
+  const includeCancel = showCancel == null ? Boolean(onSubmit) : Boolean(showCancel);
+  if (includeCancel) elements['dialog-actions'].append(button(cancelText, 'secondary-button', closeDialog));
   if (onSubmit) {
     const submit = el('button', { type: 'submit', className: destructive ? 'danger-button' : 'primary-button', text: submitText });
     elements['dialog-actions'].append(submit);
@@ -114,6 +121,7 @@ function navigateCollection(collectionId, entryId = '') {
 }
 
 function goHome() {
+  closeReview();
   if (location.hash) location.hash = '';
   else { currentCollectionId = ''; renderApp(); }
 }
@@ -134,57 +142,158 @@ function annotationCountForCollection(collectionId) {
   return getVisibleEntries(collectionId).filter((entry) => state.annotationByEntry.has(entry.id)).length;
 }
 
+
+function collectionCard(collection) {
+  const count = getVisibleEntries(collection.id).length;
+  const isPhrases = collection.type === 'system-phrases';
+  return el('button', {
+    type: 'button',
+    className: `collection-card${isPhrases ? ' system' : ''}`,
+    on: { click: () => navigateCollection(collection.id) },
+  }, [
+    el('span', { className: 'arrow', text: '↗' }),
+    el('h4', { text: isPhrases ? '短语' : collection.name }),
+    el('div', { className: 'label', text: collection.label || (isPhrases ? '域内短语与组成词索引' : '词汇集合') }),
+    el('div', { className: 'count', text: count.toLocaleString() }),
+    isPhrases ? el('span', { className: 'type-tag', text: '短语索引' }) : null,
+  ]);
+}
+
+function searchResultButton(entry, onSelect) {
+  const state = getState();
+  const collectionId = projectionCollectionForEntry(entry.id);
+  const collection = state.collectionById.get(collectionId);
+  const domain = state.domainById.get(entry.domainId);
+  return el('button', { type: 'button', className: 'search-result', on: { click: () => onSelect(entry, collectionId) } }, [
+    el('strong', { text: entry.text }),
+    el('span', { text: `${domain?.name || ''} · ${collection?.name || ''}${entry.glossHant ? ` · ${entry.glossHant}` : ''}` }),
+  ]);
+}
+
+function openLibraryManager() {
+  const state = getState();
+  const sections = state.domains.map((domain) => {
+    const collections = state.collections.filter((item) => item.domainId === domain.id && item.type === 'normal');
+    const actions = el('div', { className: 'action-list' }, [
+      button('新建词表', '', () => { closeDialog(); openAddCollectionDialog(domain.id); }),
+      button('管理词域', '', () => { closeDialog(); openDomainMenu(domain.id); }),
+      ...collections.map((collection) => button(`管理词表 · ${collection.name}`, '', () => { closeDialog(); openCollectionMenu(collection.id); })),
+    ]);
+    return el('section', { className: 'detail-section' }, [
+      el('div', {}, [el('h3', { text: domain.name }), el('p', { className: 'help-text', text: `${collections.length} 个普通词表 · ${state.entries.filter((entry) => entry.domainId === domain.id).length.toLocaleString()} 个词项` })]),
+      actions,
+    ]);
+  });
+  sections.push(el('section', { className: 'detail-section' }, [
+    el('div', { className: 'action-list' }, [button('新建词域', '', () => { closeDialog(); openAddDomainDialog(); })]),
+  ]));
+  openDialog({ title: '管理词库', description: '词域与词表属于低频结构操作，不占用日常浏览界面。', body: sections, mode: 'sheet' });
+}
+
+async function exportBackupNow() {
+  const backup = await exportFullBackup();
+  downloadText(`vocabulary-index-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.json`, `${JSON.stringify(backup, null, 2)}\n`);
+  showToast('完整备份已导出');
+}
+
+async function performUndo() {
+  try { if (!(await undo())) showToast('没有可撤销操作'); }
+  catch (error) { displayError(error); }
+}
+
+async function performRedo() {
+  try { if (!(await redo())) showToast('没有可重做操作'); }
+  catch (error) { displayError(error); }
+}
+
 function renderHome() {
   const state = getState();
   currentCollectionId = '';
+  elements.app.classList.remove('is-collection', 'has-pin-bar');
   elements['home-view'].classList.remove('hidden');
   elements['collection-view'].classList.add('hidden');
   elements['back-button'].classList.add('hidden');
+  elements['undo-button'].classList.add('hidden');
+  elements['redo-button'].classList.add('hidden');
+  elements['mobile-action-bar'].classList.add('hidden');
+  elements['pin-bar'].classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
   elements['page-subtitle'].textContent = `${state.domains.length} 个词域 · ${state.entries.length.toLocaleString()} 个词项`;
 
   const annotationTotal = state.annotations.length;
-  const summaryActions = [button('新建词域', 'primary-button', openAddDomainDialog)];
-  if (annotationTotal) summaryActions.unshift(button(`审阅待核查 ${annotationTotal}`, 'secondary-button', () => startAnnotationReview('')));
+  const summaryActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
+  if (annotationTotal) summaryActions.unshift(button(`待核查 ${annotationTotal}`, 'secondary-button compact-button', () => startAnnotationReview('')));
   const summary = el('div', { className: 'home-summary' }, [
-    el('div', {}, [el('h2', { text: 'Vocabulary Index' }), el('p', { text: '本地优先 · 词域隔离 · 短语双向索引' })]),
+    el('div', {}, [
+      el('p', { className: 'eyebrow', text: 'Vocabulary Index' }),
+      el('h2', { text: '我的词汇索引' }),
+      el('p', { text: '本地优先 · 词域隔离 · 短语双向索引' }),
+    ]),
     el('div', { className: 'home-summary-actions' }, summaryActions),
   ]);
 
-  const sections = state.domains.map((domain) => {
-    const domainCollections = state.collections.filter((item) => item.domainId === domain.id);
-    const normalCount = domainCollections.filter((item) => item.type === 'normal').length;
-    const domainEntryCount = state.entries.filter((item) => item.domainId === domain.id).length;
-    const header = el('div', { className: 'domain-header' }, [
-      el('div', { className: 'domain-header-text' }, [
-        el('h3', { text: domain.name }),
-        el('p', { text: `${normalCount} 个词表 · ${domainEntryCount.toLocaleString()} 个词项${domain.glossEnabled ? ' · 繁体释义已启用' : ''}` }),
-      ]),
-      el('div', { className: 'domain-actions' }, [
-        button('＋', 'icon-button', () => openAddCollectionDialog(domain.id), { title: '新建词表' }),
-        button('⋯', 'icon-button', () => openDomainMenu(domain.id), { title: '管理词域' }),
-      ]),
-    ]);
+  const searchInput = el('input', { type: 'search', inputMode: 'search', autocomplete: 'off', spellcheck: false, placeholder: '搜索英文、简体或繁体释义' });
+  const searchButton = button('搜索', 'secondary-button', () => searchInput.dispatchEvent(new Event('input')));
+  const searchPanel = el('div', { className: 'home-search-panel' }, [searchInput, searchButton]);
+  const searchStatus = el('div', { className: 'home-search-status muted' });
+  const searchResults = el('div', { className: 'home-search-results hidden' });
+  const renderSearch = () => {
+    const query = searchInput.value.trim();
+    if (!query) {
+      searchStatus.textContent = '';
+      searchResults.classList.add('hidden');
+      searchResults.replaceChildren();
+      return;
+    }
+    const found = search(query, { limit: 60 });
+    searchStatus.textContent = found.length ? `${found.length} 个匹配结果` : '没有匹配结果';
+    searchResults.classList.toggle('hidden', !found.length);
+    searchResults.replaceChildren(...found.map((entry) => searchResultButton(entry, (_item, collectionId) => navigateCollection(collectionId, entry.id))));
+  };
+  searchInput.addEventListener('input', renderSearch);
 
-    const cards = domainCollections.map((collection) => {
-      const count = getVisibleEntries(collection.id).length;
-      const card = el('button', {
-        type: 'button',
-        className: `collection-card${collection.type === 'system-phrases' ? ' system' : ''}`,
-        on: { click: () => navigateCollection(collection.id) },
-      }, [
-        el('span', { className: 'arrow', text: '↗' }),
-        el('h4', { text: collection.name }),
-        el('div', { className: 'label', text: collection.label || (collection.type === 'system-phrases' ? '域内短语总览' : '普通词表') }),
-        el('div', { className: 'count', text: count.toLocaleString() }),
-        collection.type === 'system-phrases' ? el('span', { className: 'type-tag', text: '系统' }) : null,
+  const content = [];
+  if (state.domains.length === 1) {
+    const domain = state.domains[0];
+    const collections = state.collections.filter((item) => item.domainId === domain.id);
+    const normal = collections.filter((item) => item.type === 'normal');
+    const phrases = collections.filter((item) => item.type === 'system-phrases');
+    content.push(el('div', { className: 'library-heading' }, [
+      el('div', {}, [el('h3', { text: '词表' }), el('p', { text: `${domain.name} · ${normal.length} 个词表${domain.glossEnabled ? ' · 繁体释义' : ''}` })]),
+    ]));
+    const cards = [...normal.map(collectionCard), ...phrases.map(collectionCard)];
+    content.push(cards.length ? el('div', { className: 'collection-grid' }, cards) : el('div', { className: 'empty-state', text: '尚未创建词表。请从“管理”中新建词表。' }));
+  } else {
+    for (const domain of state.domains) {
+      const collections = state.collections.filter((item) => item.domainId === domain.id);
+      const normalCount = collections.filter((item) => item.type === 'normal').length;
+      const domainEntryCount = state.entries.filter((item) => item.domainId === domain.id).length;
+      const header = el('div', { className: 'domain-header' }, [
+        el('div', { className: 'domain-header-text' }, [
+          el('h3', { text: domain.name }),
+          el('p', { text: `${normalCount} 个词表 · ${domainEntryCount.toLocaleString()} 个词项${domain.glossEnabled ? ' · 繁体释义' : ''}` }),
+        ]),
+        el('div', { className: 'domain-actions' }, [
+          button('＋', 'icon-button', () => openAddCollectionDialog(domain.id), { title: '新建词表' }),
+          button('⋯', 'icon-button', () => openDomainMenu(domain.id), { title: '管理词域' }),
+        ]),
       ]);
-      return card;
-    });
-    cards.push(el('button', { type: 'button', className: 'collection-card add-card', text: '＋ 新建词表', on: { click: () => openAddCollectionDialog(domain.id) } }));
-    return el('section', { className: 'domain-section' }, [header, el('div', { className: 'collection-grid' }, cards)]);
-  });
-  elements['home-view'].replaceChildren(summary, ...sections);
+      content.push(el('section', { className: 'domain-section' }, [header, el('div', { className: 'collection-grid' }, collections.map(collectionCard))]));
+    }
+  }
+
+  const safety = el('section', { className: 'data-safety-panel' }, [
+    el('div', { className: 'data-safety-heading' }, [
+      el('div', {}, [el('h3', { text: '数据与维护' }), el('p', { text: '数据保存在当前浏览器。清理网站数据前请导出完整 JSON。' })]),
+      el('span', { className: 'status-badge', text: 'IndexedDB' }),
+    ]),
+    el('div', { className: 'data-safety-actions' }, [
+      button('导出完整备份', 'secondary-button compact-button', () => exportBackupNow().catch(displayError)),
+      button('恢复备份', 'secondary-button compact-button', openRestoreDialog),
+    ]),
+  ]);
+
+  elements['home-view'].replaceChildren(summary, searchPanel, searchStatus, searchResults, ...content, safety);
 }
 
 function renderCollection() {
@@ -193,39 +302,84 @@ function renderCollection() {
   if (!collection) { goHome(); return; }
   const domain = state.domainById.get(collection.domainId);
   const entries = getVisibleEntries(collection.id);
+  elements.app.classList.add('is-collection');
   elements['home-view'].classList.add('hidden');
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
-  elements['page-title'].textContent = collection.name;
+  elements['undo-button'].classList.remove('hidden');
+  elements['redo-button'].classList.remove('hidden');
+  elements['mobile-action-bar'].classList.remove('hidden');
+  elements['page-title'].textContent = collection.type === 'system-phrases' ? '短语' : collection.name;
   elements['page-subtitle'].textContent = `${domain?.name || ''} · ${entries.length.toLocaleString()} 个词项`;
   renderCollectionToolbar(collection, domain, entries);
+  renderPinBar(collection);
   renderEntryList(collection, domain, entries);
   if (pendingJumpEntryId) queueMicrotask(() => jumpToEntry(pendingJumpEntryId));
 }
 
 function renderCollectionToolbar(collection, domain, entries) {
-  const state = getState();
-  const pinCount = getPinsForCollection(collection.id).length;
   const annotationCount = annotationCountForCollection(collection.id);
+  const metaText = `${entries.length.toLocaleString()} 项${collection.label ? ` · ${collection.label}` : ''}`;
+  const statuses = [];
+  if (annotationCount) statuses.push(button(`待核查 ${annotationCount}`, 'status-action', () => startAnnotationReview(collection.id)));
   const meta = el('div', { className: 'collection-meta' }, [
     el('div', { className: 'collection-meta-text' }, [
-      el('h2', { text: collection.name }),
-      el('p', { text: `${entries.length.toLocaleString()} 项 · ${pinCount} 个 PIN · ${annotationCount} 个待核查${collection.label ? ` · ${collection.label}` : ''}` }),
+      el('h2', { text: collection.type === 'system-phrases' ? '短语索引' : collection.name }),
+      el('p', { text: `${domain?.name || ''} · ${metaText}` }),
+      statuses.length ? el('div', { className: 'collection-statuses' }, statuses) : null,
     ]),
   ]);
   const actions = el('div', { className: 'toolbar-buttons' }, [
+    button('搜索', 'secondary-button compact-button', openSearchDialog),
     button(collection.type === 'system-phrases' ? '新增短语' : '新增词项', 'primary-button compact-button', () => openAddEntryDialog(collection.id)),
-    button('导入', 'secondary-button compact-button', () => openImportDialog(collection.id)),
     button('AI 新增', 'secondary-button compact-button', () => openAiAddDialog(collection.id)),
     button('AI 核查', 'secondary-button compact-button', () => startAiCheck(collection.id), { disabled: activeTask != null || entries.length === 0 }),
-    button(`待核查 ${annotationCount}`, 'secondary-button compact-button', () => startAnnotationReview(collection.id), { disabled: annotationCount === 0 }),
-    button('PIN ←', 'secondary-button compact-button', () => jumpPinned(collection.id, -1), { disabled: pinCount === 0 }),
-    button(`PIN ${pinCount} →`, 'secondary-button compact-button', () => jumpPinned(collection.id, 1), { disabled: pinCount === 0 }),
-    button('撤销', 'secondary-button compact-button', async () => { try { if (!(await undo())) showToast('没有可撤销操作'); } catch (error) { displayError(error); } }),
-    button('重做', 'secondary-button compact-button', async () => { try { if (!(await redo())) showToast('没有可重做操作'); } catch (error) { displayError(error); } }),
-    button('更多', 'secondary-button compact-button', () => openCollectionMenu(collection.id)),
+    button('更多', 'secondary-button compact-button', () => openCollectionActions(collection.id)),
   ]);
   elements['collection-toolbar'].replaceChildren(meta, actions);
+}
+
+function syncPinIndexForEntry(collectionId, entryId) {
+  const pins = getPinsForCollection(collectionId);
+  if (pinCollectionId !== collectionId) {
+    pinCollectionId = collectionId;
+    pinIndex = 0;
+  }
+  const index = pins.findIndex((pin) => pin.entryId === entryId);
+  if (index >= 0) pinIndex = index;
+  else pinIndex = Math.max(0, Math.min(pinIndex, Math.max(0, pins.length - 1)));
+}
+
+function renderPinBar(collection) {
+  const state = getState();
+  const pins = getPinsForCollection(collection.id);
+  const collectionChanged = pinCollectionId !== collection.id;
+  if (collectionChanged) {
+    pinCollectionId = collection.id;
+    pinIndex = 0;
+  }
+  if (!pins.length) {
+    elements['pin-bar'].classList.add('hidden');
+    elements.app.classList.remove('has-pin-bar');
+    pinIndex = 0;
+    return;
+  }
+  const preferred = pendingJumpEntryId || (collectionChanged ? getLastPosition(collection.domainId, collection.id) || '' : '');
+  if (preferred) syncPinIndexForEntry(collection.id, preferred);
+  pinIndex = Math.max(0, Math.min(pinIndex, pins.length - 1));
+  const pin = pins[pinIndex];
+  const entry = state.entryById.get(pin.entryId);
+  elements['pin-bar'].classList.remove('hidden');
+  elements.app.classList.add('has-pin-bar');
+  elements['pin-bar'].replaceChildren(
+    button('‹', 'pin-nav-button', () => jumpPinned(collection.id, -1), { title: '上一个 PIN' }),
+    el('button', { type: 'button', className: 'pin-current', on: { click: () => entry && jumpToEntry(entry.id) } }, [
+      el('strong', { text: entry ? `PIN · ${entry.text}` : 'PIN 已失效' }),
+      el('span', { text: '点击重新定位当前 PIN' }),
+    ]),
+    el('span', { className: 'pin-counter', text: `${pinIndex + 1}/${pins.length}` }),
+    button('›', 'pin-nav-button', () => jumpPinned(collection.id, 1), { title: '下一个 PIN' }),
+  );
 }
 
 function letterForEntry(entry) {
@@ -280,7 +434,6 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const state = getState();
   const pinned = state.pinByEntry.has(entry.id);
   const annotation = state.annotationByEntry.get(entry.id);
-  const expanded = expandedEntries.has(entry.id);
   const row = el('article', { className: 'entry-row', id: `entry-${entry.id}`, dataset: { entryId: entry.id } });
   const numberMode = state.settings.numberMode || 'global';
   const indexText = numberMode === 'group' ? `${indexes.groupIndex}.` : numberMode === 'global' ? `${indexes.globalIndex}.` : '';
@@ -289,55 +442,87 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     el('span', { className: 'entry-text', text: entry.text }),
     domain?.glossEnabled && entry.glossHant ? el('span', { className: 'entry-gloss', text: entry.glossHant }) : null,
   ]);
-  const pin = button(pinned ? '★' : '☆', `row-action${pinned ? ' active' : ''}`, async () => {
-    try { await togglePin(entry.id, collection.id); showToast(pinned ? '已取消 PIN' : '已设置 PIN'); } catch (error) { displayError(error); }
-  }, { title: pinned ? '取消 PIN' : '设置 PIN' });
-  const flag = button(annotation ? '!' : '', `row-action${annotation ? ' flagged' : ''}`, () => annotation && startAnnotationReview(collection.id, entry.id), { title: annotation ? '审阅 AI 标注' : '' });
-  if (!annotation) flag.disabled = true;
-  const detail = button(expanded ? '⌃' : '⌄', 'row-action', () => {
-    if (expanded) expandedEntries.delete(entry.id); else expandedEntries.add(entry.id);
-    renderCollection();
-  }, { title: '详情' });
-  row.append(el('div', { className: 'entry-main' }, [copy, pin, flag, detail]));
-  if (expanded) row.append(renderEntryDetail(entry, collection, domain));
+  const states = el('div', { className: 'entry-state' }, [
+    pinned ? el('span', { className: 'entry-badge pin', text: 'PIN', title: '已固定' }) : null,
+    annotation ? button('待核查', 'entry-badge annotation', () => startAnnotationReview(collection.id, entry.id), { title: '审阅 AI 标注' }) : null,
+  ]);
+  const more = button('•••', 'entry-more', () => openEntryDetailSheet(entry.id, collection.id), { title: '词项详情与操作' });
+  row.append(el('div', { className: 'entry-main' }, [copy, states, more]));
   return row;
 }
 
-function renderEntryDetail(entry, collection, domain) {
+function openEntryDetailSheet(entryId, collectionId) {
   const state = getState();
-  const detail = el('div', { className: 'entry-detail' });
+  const entry = state.entryById.get(entryId);
+  const collection = state.collectionById.get(collectionId);
+  const domain = state.domainById.get(entry?.domainId);
+  if (!entry || !collection) return;
   const memberships = state.membershipsByEntry.get(entry.id) || [];
+  const pinned = state.pinByEntry.has(entry.id);
+  const annotation = state.annotationByEntry.get(entry.id);
+  const body = [el('div', { className: 'entry-sheet-head' }, [
+    el('h3', { className: 'entry-sheet-word', text: entry.text }),
+    domain?.glossEnabled && entry.glossHant ? el('p', { className: 'entry-sheet-gloss', text: entry.glossHant }) : null,
+  ])];
+
+  if (annotation) {
+    body.push(el('section', { className: 'detail-section' }, [
+      el('h4', { className: 'detail-heading', text: 'AI 待核查' }),
+      el('div', { className: 'warning-box', text: `${annotation.spelling?.suggestion ? `建议：${annotation.spelling.suggestion}。` : ''}${annotation.reason || '需要人工检查。'}` }),
+      button('进入标注审阅', 'secondary-button', () => { closeDialog(); startAnnotationReview(collection.id, entry.id); }),
+    ]));
+  }
+
   if (memberships.length) {
-    detail.append(el('div', { className: 'detail-heading', text: '词表来源' }));
     const list = el('ul', { className: 'source-list' });
     for (const membership of memberships) {
       const source = state.collectionById.get(membership.collectionId);
       list.append(el('li', { text: `${source?.name || membership.collectionId}${membership.sourceLabel ? ` · ${membership.sourceLabel}` : ''}` }));
     }
-    detail.append(list);
+    body.push(el('section', { className: 'detail-section' }, [el('h4', { className: 'detail-heading', text: '词表来源' }), list]));
   }
+
   if (entry.kind === 'word') {
     const phrases = getRelatedPhrases(entry.id);
-    detail.append(el('div', { className: 'detail-heading', text: '相关短语' }));
-    const chips = phrases.map((phrase) => button(phrase.text, 'chip', () => navigateCollection(systemPhraseCollectionId(entry.domainId), phrase.id)));
-    chips.push(button('＋ 添加相关短语', 'chip', () => openAddRelatedPhraseDialog(entry.id)));
-    detail.append(el('div', { className: 'chip-list' }, chips));
+    const chips = phrases.map((phrase) => button(phrase.text, 'chip', () => { closeDialog(); navigateCollection(systemPhraseCollectionId(entry.domainId), phrase.id); }));
+    chips.push(button('＋ 添加相关短语', 'chip', () => { closeDialog(); openAddRelatedPhraseDialog(entry.id); }));
+    body.push(el('section', { className: 'detail-section' }, [
+      el('h4', { className: 'detail-heading', text: '相关短语' }),
+      el('div', { className: 'chip-list' }, chips),
+    ]));
   } else {
     const components = getPhraseComponents(entry.id);
-    detail.append(el('div', { className: 'detail-heading', text: '组成词' }));
-    detail.append(el('div', { className: 'chip-list' }, components.map((component) => component.entry
-      ? button(component.token, 'chip', () => navigateCollection(projectionCollectionForEntry(component.entry.id), component.entry.id))
-      : el('span', { className: 'chip missing', text: `${component.token} · 未收录` }))));
+    body.push(el('section', { className: 'detail-section' }, [
+      el('h4', { className: 'detail-heading', text: '组成词' }),
+      el('div', { className: 'chip-list' }, components.map((component) => component.entry
+        ? button(component.token, 'chip', () => { closeDialog(); navigateCollection(projectionCollectionForEntry(component.entry.id), component.entry.id); })
+        : el('span', { className: 'chip missing', text: `${component.token} · 未收录` }))),
+    ]));
   }
-  const actions = el('div', { className: 'chip-list' }, [
-    button('编辑', 'chip', () => openEditEntryDialog(entry.id)),
-    memberships.some((item) => item.collectionId === collection.id)
-      ? button('从本词表移除', 'chip danger', () => confirmRemoveSource(entry.id, collection.id))
-      : null,
-    button('彻底删除', 'chip danger', () => confirmDeleteEntry(entry.id)),
-  ]);
-  detail.append(el('div', { className: 'detail-heading', text: '操作' }), actions);
-  return detail;
+
+  const actionButtons = [
+    button('复制英文', '', () => copyEntry(entry, collection)),
+    button(pinned ? '取消 PIN' : '设置 PIN', '', async () => {
+      try {
+        await togglePin(entry.id, collection.id);
+        syncPinIndexForEntry(collection.id, entry.id);
+        closeDialog();
+        renderApp();
+        showToast(pinned ? '已取消 PIN' : '已设置 PIN');
+      } catch (error) { displayError(error); }
+    }),
+    button('编辑词项', '', () => { closeDialog(); openEditEntryDialog(entry.id); }),
+  ];
+  if (memberships.some((item) => item.collectionId === collection.id)) {
+    actionButtons.push(button('从当前词表移除', 'danger', () => { closeDialog(); confirmRemoveSource(entry.id, collection.id); }));
+  }
+  actionButtons.push(button('彻底删除词项', 'danger', () => { closeDialog(); confirmDeleteEntry(entry.id); }));
+  body.push(el('section', { className: 'detail-section' }, [
+    el('h4', { className: 'detail-heading', text: '操作' }),
+    el('div', { className: 'action-list' }, actionButtons),
+  ]));
+
+  openDialog({ title: entry.kind === 'phrase' ? '短语详情' : '词项详情', body, mode: 'sheet' });
 }
 
 async function copyEntry(entry, collection) {
@@ -367,6 +552,7 @@ function jumpToEntry(entryId) {
     navigateCollection(targetCollectionId, entryId);
     return;
   }
+  syncPinIndexForEntry(currentCollectionId, entryId);
   const collection = state.collectionById.get(currentCollectionId);
   if (collection?.type === 'normal') expandedLetters.add(letterForEntry(entry));
   pendingJumpEntryId = '';
@@ -382,14 +568,17 @@ function jumpToEntry(entryId) {
 
 function jumpPinned(collectionId, direction = 1) {
   const state = getState();
-  const ids = getPinsForCollection(collectionId).map((pin) => pin.entryId);
-  if (!ids.length) return;
-  const currentVisible = /** @type {HTMLElement | null} */ (document.elementFromPoint(innerWidth / 2, Math.min(innerHeight / 2, 400))?.closest?.('[data-entry-id]'))?.dataset.entryId;
-  const fallback = getLastPosition(state.collectionById.get(collectionId)?.domainId, collectionId);
-  const current = currentVisible || fallback || '';
-  const index = ids.indexOf(current);
-  const next = index < 0 ? (direction < 0 ? ids.length - 1 : 0) : (index + direction + ids.length) % ids.length;
-  jumpToEntry(ids[next]);
+  const collection = state.collectionById.get(collectionId);
+  const pins = getPinsForCollection(collectionId);
+  if (!collection || !pins.length) return;
+  if (pinCollectionId !== collectionId) {
+    pinCollectionId = collectionId;
+    pinIndex = 0;
+  }
+  pinIndex = (pinIndex + direction + pins.length) % pins.length;
+  const entryId = pins[pinIndex].entryId;
+  renderPinBar(collection);
+  jumpToEntry(entryId);
 }
 
 function openAddDomainDialog() {
@@ -469,6 +658,37 @@ function openEditEntryDialog(entryId) {
   });
 }
 
+function handleCollectionAction(action) {
+  if (!currentCollectionId) return;
+  const collection = getState().collectionById.get(currentCollectionId);
+  if (!collection) return;
+  if (action === 'search') openSearchDialog();
+  else if (action === 'add') openAddEntryDialog(collection.id);
+  else if (action === 'ai-add') openAiAddDialog(collection.id);
+  else if (action === 'ai-check') startAiCheck(collection.id);
+  else if (action === 'more') openCollectionActions(collection.id);
+}
+
+function openCollectionActions(collectionId) {
+  const state = getState();
+  const collection = state.collectionById.get(collectionId);
+  if (!collection) return;
+  const annotationCount = annotationCountForCollection(collectionId);
+  const lastPosition = getLastPosition(collection.domainId, collection.id);
+  const actions = [
+    button('导入词项', '', () => { closeDialog(); openImportDialog(collection.id); }),
+    button('导出当前词表 CSV', '', () => { exportCollectionCsv(collection.id); closeDialog(); }),
+    annotationCount ? button(`审阅待核查标注 · ${annotationCount}`, '', () => { closeDialog(); startAnnotationReview(collection.id); }) : null,
+    lastPosition ? button('跳到上次位置', '', () => { closeDialog(); jumpToEntry(lastPosition); }) : null,
+    button(collection.type === 'normal' ? '管理词表' : '短语表信息', '', () => { closeDialog(); openCollectionMenu(collection.id); }),
+  ].filter(Boolean);
+  openDialog({
+    title: collection.type === 'system-phrases' ? '短语表操作' : `${collection.name} · 更多`,
+    body: el('div', { className: 'action-list' }, actions),
+    mode: 'sheet',
+  });
+}
+
 function openCollectionMenu(collectionId) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
@@ -485,11 +705,11 @@ function openCollectionMenu(collectionId) {
     if (entries.length) body.push(button('导出当前词表 CSV', 'secondary-button', () => exportCollectionCsv(collectionId)));
     if (annotationCountForCollection(collectionId)) body.push(button('清空当前词表标注', 'secondary-button', async () => { await clearAnnotationsForCollection(collectionId); closeDialog(); }));
     body.push(button('删除词表', 'danger-button', () => confirmDeleteCollection(collectionId)));
-    openDialog({ title: '管理词表', body, onSubmit: async () => { await renameCollection(collectionId, name.value, label.value); } });
+    openDialog({ title: '管理词表', body, mode: 'sheet', onSubmit: async () => { await renameCollection(collectionId, name.value, label.value); } });
   } else {
     body.push(el('p', { className: 'help-text', text: '系统短语表由词域自动维护，不能重命名或删除。' }));
     body.push(button('导出当前短语 CSV', 'secondary-button', () => exportCollectionCsv(collectionId)));
-    openDialog({ title: '短语表信息', body, onSubmit: null, cancelText: '关闭' });
+    openDialog({ title: '短语表信息', body, mode: 'sheet' });
   }
 }
 
@@ -652,48 +872,90 @@ function syncReview() {
 }
 
 function renderReviewBar() {
-  if (!review.ids.length) { elements['annotation-review-bar'].classList.add('hidden'); return; }
+  if (!review.ids.length) {
+    elements['annotation-review-bar'].classList.add('hidden');
+    elements.app.classList.remove('has-review');
+    return;
+  }
   const state = getState();
   const entryId = review.ids[review.index];
   const entry = state.entryById.get(entryId);
   const annotation = state.annotationByEntry.get(entryId);
   if (!entry || !annotation) { if (syncReview()) renderReviewBar(); return; }
+  const move = (delta) => {
+    review.index = (review.index + delta + review.ids.length) % review.ids.length;
+    renderReviewBar();
+    jumpToEntry(review.ids[review.index]);
+  };
   elements['annotation-review-bar'].classList.remove('hidden');
+  elements.app.classList.add('has-review');
   elements['annotation-review-bar'].replaceChildren(
-    button('←', '', () => { review.index = (review.index - 1 + review.ids.length) % review.ids.length; renderReviewBar(); jumpToEntry(review.ids[review.index]); }),
-    el('div', { className: 'review-text', text: `${review.index + 1}/${review.ids.length} ${entry.text} → ${annotation.spelling.suggestion || '需检查'} · ${annotation.reason || ''}` }),
-    button('编辑', '', () => openEditEntryDialog(entryId)),
-    button('取消标注', '', async () => { try { const oldIndex = review.index; await dismissAnnotation(entryId); review.index = oldIndex; if (syncReview()) { renderReviewBar(); jumpToEntry(review.ids[review.index]); } } catch (error) { displayError(error); } }),
-    button('×', '', closeReview),
+    el('div', { className: 'review-text' }, [
+      el('strong', { text: `${review.index + 1}/${review.ids.length} · ${entry.text}${annotation.spelling?.suggestion ? ` → ${annotation.spelling.suggestion}` : ''}` }),
+      el('span', { text: annotation.reason || '需要人工检查' }),
+    ]),
+    el('div', { className: 'review-actions' }, [
+      button('‹', '', () => move(-1), { title: '上一个标注' }),
+      button('›', '', () => move(1), { title: '下一个标注' }),
+      button('编辑', '', () => openEditEntryDialog(entryId)),
+      button('取消标注', '', async () => {
+        try {
+          const oldIndex = review.index;
+          await dismissAnnotation(entryId);
+          review.index = oldIndex;
+          if (syncReview()) { renderReviewBar(); jumpToEntry(review.ids[review.index]); }
+        } catch (error) { displayError(error); }
+      }),
+      button('×', '', closeReview, { title: '退出审阅' }),
+    ]),
   );
 }
 
 function closeReview() {
   review = { ids: [], index: 0, collectionId: '' };
   elements['annotation-review-bar'].classList.add('hidden');
+  elements.app.classList.remove('has-review');
 }
 
 function openSearchDialog() {
-  const input = el('input', { type: 'search', placeholder: '搜索英文或中文释义', autocomplete: 'off' });
+  const state = getState();
+  const input = el('input', { type: 'search', placeholder: '搜索英文或中文释义', autocomplete: 'off', inputMode: 'search' });
+  const scope = el('select');
+  if (currentCollectionId) {
+    const collection = state.collectionById.get(currentCollectionId);
+    scope.append(
+      el('option', { value: 'collection', text: '当前词表' }),
+      el('option', { value: 'domain', text: '当前词域' }),
+      el('option', { value: 'all', text: '全部词域' }),
+    );
+    if (collection?.type === 'system-phrases') scope.value = 'domain';
+  } else scope.append(el('option', { value: 'all', text: '全部词域' }));
   const results = el('div', { className: 'search-results' });
   const render = () => {
-    const found = search(input.value, { limit: 80 });
-    if (!input.value.trim()) { results.replaceChildren(el('p', { className: 'help-text', text: '输入英文、简体或繁体中文。简体查询会匹配规范繁体释义。' })); return; }
-    if (!found.length) { results.replaceChildren(el('p', { className: 'help-text', text: '没有匹配结果。' })); return; }
-    const state = getState();
-    results.replaceChildren(...found.map((entry) => {
-      const collectionId = projectionCollectionForEntry(entry.id);
-      const collection = state.collectionById.get(collectionId);
-      const domain = state.domainById.get(entry.domainId);
-      return el('button', { type: 'button', className: 'search-result', on: { click: () => { closeDialog(); navigateCollection(collectionId, entry.id); } } }, [
-        el('strong', { text: entry.text }),
-        el('span', { text: `${domain?.name || ''} · ${collection?.name || ''}${entry.glossHant ? ` · ${entry.glossHant}` : ''}` }),
-      ]);
-    }));
+    const query = input.value.trim();
+    if (!query) {
+      results.replaceChildren(el('p', { className: 'help-text', text: '输入英文、简体或繁体中文。搜索不会修改数据。' }));
+      return;
+    }
+    const current = getState().collectionById.get(currentCollectionId);
+    let found = search(query, { domainId: scope.value === 'all' ? null : current?.domainId || null, limit: 100 });
+    if (scope.value === 'collection' && currentCollectionId) {
+      const visible = new Set(getVisibleEntries(currentCollectionId).map((entry) => entry.id));
+      found = found.filter((entry) => visible.has(entry.id));
+    }
+    if (!found.length) {
+      results.replaceChildren(el('p', { className: 'help-text', text: '没有匹配结果。' }));
+      return;
+    }
+    results.replaceChildren(...found.slice(0, 80).map((entry) => searchResultButton(entry, (_item, collectionId) => {
+      closeDialog();
+      navigateCollection(collectionId, entry.id);
+    })));
   };
   input.addEventListener('input', render);
+  scope.addEventListener('change', render);
   render();
-  openDialog({ title: '搜索', body: [el('div', { className: 'search-box' }, input), results], onSubmit: null, cancelText: '关闭' });
+  openDialog({ title: '搜索', body: [el('div', { className: 'search-controls' }, [input, scope]), results], mode: 'sheet' });
 }
 
 function openSettingsDialog() {
@@ -717,10 +979,7 @@ function openSettingsDialog() {
     catch (error) { displayError(error); }
     finally { refresh.disabled = false; refresh.textContent = '刷新模型目录'; }
   });
-  const exportButton = button('导出完整 JSON', 'secondary-button', async () => {
-    try { const backup = await exportFullBackup(); downloadText(`vocabulary-index-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.json`, `${JSON.stringify(backup, null, 2)}\n`); showToast('完整备份已导出'); }
-    catch (error) { displayError(error); }
-  });
+  const exportButton = button('导出完整 JSON', 'secondary-button', () => exportBackupNow().catch(displayError));
   const restoreButton = button('恢复完整备份', 'secondary-button', openRestoreDialog);
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('API Key', key, '仅保存在当前浏览器 localStorage，不进入 JSON 备份。'), field('模型', model), updated, refresh]),
@@ -792,8 +1051,15 @@ export async function initializeUI() {
   elements['dialog-form'].addEventListener('submit', handleDialogSubmit);
   elements['dialog-close'].addEventListener('click', closeDialog);
   elements['back-button'].addEventListener('click', goHome);
+  elements['undo-button'].addEventListener('click', performUndo);
+  elements['redo-button'].addEventListener('click', performRedo);
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', openSettingsDialog);
+  elements['mobile-action-bar'].addEventListener('click', (event) => {
+    const origin = event.target instanceof Element ? event.target : null;
+    const target = /** @type {HTMLElement | null} */ (origin?.closest('[data-collection-action]') || null);
+    if (target?.dataset.collectionAction) handleCollectionAction(target.dataset.collectionAction);
+  });
   window.addEventListener('hashchange', renderApp);
   subscribe(({ type }) => {
     if (type === 'external-change') showToast('检测到另一实例的数据更新，已重新载入');
@@ -805,3 +1071,4 @@ export async function initializeUI() {
   renderApp();
   setTimeout(showMigrationNotice, 60);
 }
+

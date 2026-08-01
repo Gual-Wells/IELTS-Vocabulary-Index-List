@@ -29,6 +29,8 @@
         <p id="page-subtitle">Vocabulary Index 3.0</p>
       </div>
       <div class="topbar-actions">
+        <button id="undo-button" class="icon-button history-button hidden" type="button" aria-label="撤销" title="撤销">↶</button>
+        <button id="redo-button" class="icon-button history-button hidden" type="button" aria-label="重做" title="重做">↷</button>
         <button id="search-button" class="icon-button" type="button" aria-label="搜索">⌕</button>
         <button id="settings-button" class="icon-button" type="button" aria-label="设置">⚙</button>
       </div>
@@ -36,19 +38,28 @@
 
     <main id="main-content" tabindex="-1">
       <section id="home-view" class="view"></section>
-      <section id="collection-view" class="view hidden">
+      <section id="collection-view" class="view hidden" aria-labelledby="page-title">
         <div id="collection-toolbar" class="collection-toolbar"></div>
+        <section id="pin-bar" class="pin-bar hidden" aria-label="PIN 导航"></section>
         <nav id="letter-nav" class="letter-nav hidden" aria-label="字母索引"></nav>
         <div id="entry-list" class="entry-list"></div>
       </section>
     </main>
 
+    <nav id="mobile-action-bar" class="mobile-action-bar hidden" aria-label="当前词表操作">
+      <button type="button" data-collection-action="search"><span aria-hidden="true">⌕</span><span>搜索</span></button>
+      <button type="button" data-collection-action="add"><span aria-hidden="true">＋</span><span>新增</span></button>
+      <button type="button" data-collection-action="ai-add"><span aria-hidden="true">✦</span><span>AI 新增</span></button>
+      <button type="button" data-collection-action="ai-check"><span aria-hidden="true">✓</span><span>AI 核查</span></button>
+      <button type="button" data-collection-action="more"><span aria-hidden="true">•••</span><span>更多</span></button>
+    </nav>
+
     <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>
-    <div id="annotation-review-bar" class="review-bar hidden"></div>
+    <div id="annotation-review-bar" class="review-bar hidden" aria-live="polite"></div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   </div>
 
-  <dialog id="app-dialog" class="app-dialog">
+  <dialog id="app-dialog" class="app-dialog" data-mode="modal">
     <form id="dialog-form" method="dialog">
       <header class="dialog-header">
         <div>

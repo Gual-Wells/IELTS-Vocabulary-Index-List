@@ -1,22 +1,24 @@
-# Vocabulary Index 3.0.0 RC full-source file manifest
+# Vocabulary Index 3.0.0 RC2 full-source file manifest
 # Paths are relative to repository root.
 # FILE_MANIFEST.txt and SHA256SUMS.txt are generated metadata.
 
 .nojekyll	0 bytes
-CHANGELOG.md	912 bytes
+CHANGELOG.md	1585 bytes
+CHANGE_REPORT_3.0.0-UX.md	1079 bytes
 CHANGE_REPORT_3.0.0.md	1848 bytes
 DATA_FORMATS.md	3407 bytes
 DATA_REPORT.md	586 bytes
-DEPLOY.md	1415 bytes
-LOCAL_ARCHITECTURE.md	2129 bytes
+DEPLOY.md	1570 bytes
+LOCAL_ARCHITECTURE.md	2133 bytes
 MIGRATION_3.0.0.md	1447 bytes
-README.md	1989 bytes
+README.md	2355 bytes
 SECURITY.md	734 bytes
-TEST_REPORT_3.0.0.md	2009 bytes
+TEST_REPORT_3.0.0.md	2850 bytes
+UX_REDESIGN_3.0.0.md	7112 bytes
 assets/icons/apple-touch-icon.png	33779 bytes
 assets/icons/icon-192.png	36899 bytes
 assets/icons/icon-512.png	151357 bytes
-css/v3.css	13444 bytes
+css/v3.css	24233 bytes
 data/seed-report.json	661 bytes
 data/seed.json	1461154 bytes
 data/source/A1.txt	11267 bytes
@@ -26,18 +28,18 @@ data/source/AWL.txt	7486 bytes
 data/source/B1.txt	10551 bytes
 data/source/B2.txt	18993 bytes
 data/source/C1.txt	17857 bytes
-index.html	3146 bytes
+index.html	4313 bytes
 js/v3-ai.js	10527 bytes
 js/v3-app.js	1061 bytes
 js/v3-db.js	21344 bytes
 js/v3-import.js	6437 bytes
 js/v3-model.js	35892 bytes
 js/v3-store.js	27971 bytes
-js/v3-ui.js	46898 bytes
+js/v3-ui.js	58383 bytes
 manifest.webmanifest	521 bytes
 package.json	332 bytes
-sw.js	2121 bytes
-tests/MANUAL_CHECKLIST.md	3014 bytes
+sw.js	2125 bytes
+tests/MANUAL_CHECKLIST.md	5537 bytes
 tests/run-tests.mjs	8029 bytes
-tests/static-tests.mjs	3457 bytes
+tests/static-tests.mjs	5155 bytes
 tests/stress-tests.mjs	5403 bytes

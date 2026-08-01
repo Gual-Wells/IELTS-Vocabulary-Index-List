@@ -64,6 +64,6 @@ id, entryId, collectionId, sourceLabel, sourceOrder, createdAt, updatedAt
 
 ## PWA
 
-- Service Worker 缓存命名空间：`gual-vocabulary-index-v3.0.0`。
+- Service Worker 缓存命名空间：`gual-vocabulary-index-v3.0.0-rc2`。
 - 导航使用 network-first，离线回退应用壳。
 - HTML meta 版本与入口模块版本不一致时阻止启动，避免旧 HTML / 新 JS 混用。

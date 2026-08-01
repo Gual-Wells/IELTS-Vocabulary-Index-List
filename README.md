@@ -14,6 +14,9 @@
 - **可恢复**：完整 JSON、CSV/TXT/Markdown/JSON 词项导入、撤销与重做。
 - **旧体验保留**：PIN 有序跳转、上次位置、三种序号模式和全局 AI 标注审阅。
 - **动态 Groq 模型目录**：不对具体模型名称写硬编码兼容分支。
+- **3.0 视觉、可靠交互**：保留米色纸张感、墨绿与 Georgia；单词域首页自动扁平化。
+- **持续可达操作**：iPhone 固定底部工具栏，撤销/重做位于顶栏，PIN 独立 sticky 导航。
+- **渐进披露**：词条关系与低频管理操作进入详情 Sheet，主列表不再被按钮矩阵占据。
 
 ## 开发与检查
 
@@ -41,4 +44,4 @@ npx tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
 4. 严格镜像部署 3.0 文件。
 5. 按 `tests/MANUAL_CHECKLIST.md` 完成 iPhone 真机验收。
 
-详见 `MIGRATION_3.0.0.md`、`DATA_FORMATS.md`、`DEPLOY.md`。
+详见 `UX_REDESIGN_3.0.0.md`、`MIGRATION_3.0.0.md`、`DATA_FORMATS.md`、`DEPLOY.md`。

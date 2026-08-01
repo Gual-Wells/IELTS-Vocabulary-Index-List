@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.2 UX 规范
+# Vocabulary Index 3.0.3 UX 规范
 
 1. 不显示 `null`、`undefined`、内部 ID 或数据库术语。
 2. 主列表不显示词性、来源或解释型标题。

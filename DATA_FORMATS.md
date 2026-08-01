@@ -9,7 +9,7 @@
 ```json
 {
   "schemaVersion": 3,
-  "appVersion": "3.0.2",
+  "appVersion": "3.0.3",
   "exportedAt": "2026-08-01T00:00:00.000Z",
   "domains": [],
   "collections": [],

@@ -1,6 +1,6 @@
-# Vocabulary Index 3.0.2 数据报告
+# Vocabulary Index 3.0.3 数据报告
 
-3.0.2 没有修改原始 Seed、七份源词表或图标。
+3.0.3 没有修改原始 Seed、七份源词表或图标。
 
 底层数据：
 

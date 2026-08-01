@@ -15,7 +15,7 @@ import {
 } from './v3-import.js';
 import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
 
-const APP_VERSION = '3.0.2';
+const APP_VERSION = '3.0.3';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -678,7 +678,7 @@ function relationItemsForEntry(entry) {
   if (entry.kind === 'word') {
     const state = getState();
     const sourceWords = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID
-      ? state.entries.filter((candidate) => candidate.kind === 'word' && candidate.normalizedText === entry.normalizedText)
+      ? (state.wordsByNormalizedText.get(entry.normalizedText) || [entry])
       : [entry];
     const phrases = new Map();
     for (const word of sourceWords) {
@@ -1425,18 +1425,22 @@ function openSearchDialog() {
   const status = el('p', { className: 'search-status help-text' });
   const results = el('div', { className: 'search-results' });
   let requestSequence = 0;
+  let searchTimer = 0;
+  let allowedScopeValue = '';
+  let allowedIds = new Set();
 
   const visibleIds = () => {
     const value = scope.value;
-    if (value === 'all') return new Set(state.entries.map((entry) => entry.id));
-    if (value.startsWith('domain:')) {
+    if (value === allowedScopeValue) return allowedIds;
+    allowedScopeValue = value;
+    if (value === 'all') allowedIds = new Set(state.entries.map((entry) => entry.id));
+    else if (value.startsWith('domain:')) {
       const domainId = value.slice('domain:'.length);
-      return new Set(state.entries.filter((entry) => entry.domainId === domainId).map((entry) => entry.id));
-    }
-    if (value.startsWith('collection:')) {
-      return new Set(getVisibleEntries(value.slice('collection:'.length)).map((entry) => entry.id));
-    }
-    return new Set();
+      allowedIds = new Set(state.entries.filter((entry) => entry.domainId === domainId).map((entry) => entry.id));
+    } else if (value.startsWith('collection:')) {
+      allowedIds = new Set(getVisibleEntries(value.slice('collection:'.length)).map((entry) => entry.id));
+    } else allowedIds = new Set();
+    return allowedIds;
   };
   const selectResult = (entry, collectionId) => {
     closeSearchDialog();
@@ -1470,8 +1474,15 @@ function openSearchDialog() {
     const found = search(query, { limit: 180 }).filter((entry) => allowed.has(entry.id)).slice(0, 80);
     showEntries(found);
   };
-  input.addEventListener('input', renderLocal);
-  scope.addEventListener('change', renderLocal);
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(renderLocal, 140);
+  });
+  scope.addEventListener('change', () => {
+    allowedScopeValue = '';
+    clearTimeout(searchTimer);
+    renderLocal();
+  });
   aiButton.addEventListener('click', async () => {
     const query = input.value.trim();
     if (!query) return;

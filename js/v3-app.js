@@ -1,7 +1,7 @@
 import { initializeUI, notifyServiceWorkerUpdate } from './v3-ui.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
-const MODULE_VERSION = '3.0.2';
+const MODULE_VERSION = '3.0.3';
 let reloadingForServiceWorker = false;
 
 function watchServiceWorkerRegistration(registration) {

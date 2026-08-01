@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = (relative) => fs.existsSync(path.join(root, relative));
 
 const html = read('index.html');
-assert.ok(html.includes('name="application-version" content="3.0.2"'));
+assert.ok(html.includes('name="application-version" content="3.0.3"'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.includes('./js/v3-upgrade.js'));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'), '升级引导必须先于样式和应用模块加载');
@@ -61,6 +61,21 @@ assert.ok(ui.includes("className: 'letter-section flat-section'"), '短语词表
 assert.ok(ui.includes('if (relationPanel) row.append(relationPanel)'), '空关系面板不得被 append 为 null 文本');
 assert.ok(ui.includes('jumpToRelation'));
 
+
+// 性能硬约束：高频读取不得复制整库；PIN 不得走全量 mutate。
+const relatedGetterBody = store.match(/export function getRelatedPhrases[\s\S]*?\n}/)?.[0] || '';
+const componentsGetterBody = store.match(/export function getPhraseComponents[\s\S]*?\n}/)?.[0] || '';
+const searchGetterBody = store.match(/export function search\([\s\S]*?\n}/)?.[0] || '';
+const pinBody = store.match(/export async function togglePin[\s\S]*?\n}/)?.[0] || '';
+assert.ok(!relatedGetterBody.includes('backupFromState'), '关系读取不得 structuredClone 整库');
+assert.ok(!componentsGetterBody.includes('backupFromState'), '短语组成词读取不得 structuredClone 整库');
+assert.ok(!searchGetterBody.includes('backupFromState'), '搜索不得在每次输入时 structuredClone 整库');
+assert.ok(!pinBody.includes("mutate('切换 PIN'"), 'PIN 不得走全量数据重建');
+assert.ok(!pinBody.includes('buildProjection('), 'PIN 不得重建全部投影');
+assert.ok(store.includes('relatedPhrasesByEntry'));
+assert.ok(store.includes('phraseComponentsByEntry'));
+assert.ok(ui.includes('window.setTimeout(renderLocal, 140)'), '搜索输入必须合并连续键入');
+
 // PIN 与审阅控制器持续可达。
 assert.ok(css.includes('.app.has-pin'));
 assert.ok(css.includes('.app.has-review'));
@@ -104,7 +119,7 @@ assert.ok(css.includes('.drag-handle'));
 // 卡片不得保留大面积绝对定位“宽额头”。
 assert.ok(css.includes('.collection-card-title'));
 assert.match(css, /\.collection-card\s*\{[^}]*display:\s*grid/s);
-const refineCss = css.slice(css.indexOf('/* 3.0.2 interaction refinement */'));
+const refineCss = css.slice(css.indexOf('/* 3.0.3 interaction refinement */'));
 assert.ok(!/\.collection-card \.count\s*\{[^}]*position:\s*absolute/s.test(refineCss));
 assert.ok(!ui.includes('count-label'));
 
@@ -123,9 +138,9 @@ assert.ok(!/qwen|llama|gpt-oss|openai\/gpt/i.test(ai), 'AI 策略不得按模型
 assert.ok(store.includes('expectedRevision'));
 assert.ok(read('js/v3-db.js').includes('setLastPositionSetting'));
 assert.ok(store.includes('BroadcastChannel'));
-assert.ok(app.includes("const MODULE_VERSION = '3.0.2'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.0.3'"));
 assert.ok(app.includes('registration.waiting'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.2'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.3'));
 assert.ok(upgrade.includes('caches.delete'));
 assert.ok(!upgrade.includes('indexedDB'), '升级引导不得触碰业务数据库');
 
@@ -139,7 +154,7 @@ for (const name of jsFiles) {
 }
 
 const sw = read('sw.js');
-assert.ok(sw.includes('v3.0.2-relationship-totals-20260801-1'));
+assert.ok(sw.includes('v3.0.3-performance-20260801-1'));
 const installBody = sw.match(/sw\.addEventListener\('install',[\s\S]*?\n}\);/)?.[0] || '';
 assert.ok(!installBody.includes('skipWaiting'));
 assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));

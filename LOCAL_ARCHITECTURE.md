@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.2 本地架构
+# Vocabulary Index 3.0.3 本地架构
 
 ## 1. 运行模块
 

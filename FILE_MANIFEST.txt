@@ -1,19 +1,19 @@
-Vocabulary Index 3.0.2 complete source manifest
+Vocabulary Index 3.0.3 complete source manifest
 Generated: 2026-08-01
 
 0	.nojekyll
-1246	CHANGELOG.md
-1854	CHANGE_REPORT_3.0.2.md
+1709	CHANGELOG.md
+1101	CHANGE_REPORT_3.0.3.md
 3407	DATA_FORMATS.md
 614	DATA_REPORT.md
 2201	DEPLOY.md
 3141	LOCAL_ARCHITECTURE.md
 1447	MIGRATION_3.0.0.md
-2837	PRODUCT_MANUAL_3.0.2.md
+3242	PRODUCT_MANUAL_3.0.3.md
 2456	README.md
 734	SECURITY.md
-1024	TEST_REPORT_3.0.2.md
-1024	UX_SPEC_3.0.2.md
+521	TEST_REPORT_3.0.3.md
+1024	UX_SPEC_3.0.3.md
 33779	assets/icons/apple-touch-icon.png
 36899	assets/icons/icon-192.png
 151357	assets/icons/icon-512.png
@@ -33,13 +33,14 @@ Generated: 2026-08-01
 21344	js/v3-db.js
 6437	js/v3-import.js
 37180	js/v3-model.js
-33577	js/v3-store.js
-80149	js/v3-ui.js
-925	js/v3-upgrade.js
+35997	js/v3-store.js
+80488	js/v3-ui.js
+917	js/v3-upgrade.js
 523	manifest.webmanifest
-332	package.json
-2275	sw.js
+420	package.json
+2267	sw.js
 1133	tests/MANUAL_CHECKLIST.md
+1202	tests/performance-tests.mjs
 10126	tests/run-tests.mjs
-9369	tests/static-tests.mjs
+10536	tests/static-tests.mjs
 5403	tests/stress-tests.mjs

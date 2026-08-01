@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.2 部署与回滚
+# Vocabulary Index 3.0.3 部署与回滚
 
 ## 1. 部署前
 
@@ -16,7 +16,7 @@
 4. 保留隐藏的 `.git`，删除其余旧项目文件；
 5. 将完整 ZIP 根目录中的全部内容复制到仓库根目录；
 6. GitHub Desktop 中检查 Added / Modified / Deleted；
-7. 提交：`Replace repository with Vocabulary Index 3.0.2 full source`；
+7. 提交：`Replace repository with Vocabulary Index 3.0.3 full source`；
 8. Push origin。
 
 不要合并旧的 `agent/vocabulary-index-3.0.0-rc` 或其他覆盖分支。
@@ -24,13 +24,13 @@
 ## 3. 发布后
 
 1. 等待 GitHub Pages 部署完成；
-2. 首次打开时，3.0.2 升级引导可能自动刷新一次，以清除旧应用壳缓存；该过程不删除 IndexedDB；
+2. 首次打开时，3.0.3 升级引导可能自动刷新一次，以清除旧应用壳缓存；该过程不删除 IndexedDB；
 3. Safari 打开 Pages 地址；
 4. 看到更新提示后点击“立即更新”；
 5. 完全关闭并重新打开主屏幕 PWA；
-6. 检查设置中的版本为 `3.0.2`；
+6. 检查设置中的版本为 `3.0.3`；
 7. 按 `tests/MANUAL_CHECKLIST.md` 验收；
-8. 验收通过后导出新的 3.0.2 完整 JSON。
+8. 验收通过后导出新的 3.0.3 完整 JSON。
 
 ## 4. 从 2.4.1 迁移
 

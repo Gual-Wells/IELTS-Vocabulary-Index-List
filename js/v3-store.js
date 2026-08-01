@@ -1,7 +1,7 @@
 import {
   buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
-  createMembership, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant, relatedPhrases,
-  phraseComponents, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish,
+  createMembership, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
+  safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, redo as dbRedo,
@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.2',
+    appVersion: '3.0.3',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,13 +36,49 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.2', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.3', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
     return a.order - b.order || a.name.localeCompare(b.name);
   });
   const projection = buildProjection(backup);
+  const entryById = new Map(backup.entries.map((item) => [item.id, item]));
+  const wordsByDomainText = new Map();
+  const wordsByNormalizedText = new Map();
+  for (const entry of backup.entries) {
+    if (entry.kind !== 'word') continue;
+    wordsByDomainText.set(`${entry.domainId}:${entry.normalizedText}`, entry);
+    const list = wordsByNormalizedText.get(entry.normalizedText) || [];
+    list.push(entry);
+    wordsByNormalizedText.set(entry.normalizedText, list);
+  }
+  const phraseTokensByPhrase = groupBy(backup.phraseTokens, (item) => item.phraseId);
+  const phrasesByDomainToken = new Map();
+  for (const token of backup.phraseTokens) {
+    const phrase = entryById.get(token.phraseId);
+    if (!phrase) continue;
+    const key = `${token.domainId}:${token.normalizedToken}`;
+    const list = phrasesByDomainToken.get(key) || [];
+    if (!list.some((item) => item.id === phrase.id)) list.push(phrase);
+    phrasesByDomainToken.set(key, list);
+  }
+  const relatedPhrasesByEntry = new Map();
+  for (const entry of backup.entries) {
+    if (entry.kind !== 'word') continue;
+    const list = [...(phrasesByDomainToken.get(`${entry.domainId}:${entry.normalizedText}`) || [])]
+      .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+    relatedPhrasesByEntry.set(entry.id, list);
+  }
+  const phraseComponentsByEntry = new Map();
+  for (const entry of backup.entries) {
+    if (entry.kind !== 'phrase') continue;
+    const tokens = [...(phraseTokensByPhrase.get(entry.id) || [])].sort((a, b) => a.tokenIndex - b.tokenIndex);
+    phraseComponentsByEntry.set(entry.id, tokens.map((token) => ({
+      ...token,
+      entry: wordsByDomainText.get(`${entry.domainId}:${token.normalizedToken}`) || null,
+    })));
+  }
   const collectionById = new Map(collections.map((item) => [item.id, item]));
   collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
@@ -56,7 +92,10 @@ function buildState(snapshot) {
     revision: Number(snapshot.settings?.dataRevision || 0),
     domainById: new Map(domains.map((item) => [item.id, item])),
     collectionById,
-    entryById: new Map(backup.entries.map((item) => [item.id, item])),
+    entryById,
+    wordsByNormalizedText,
+    relatedPhrasesByEntry,
+    phraseComponentsByEntry,
     membershipsByEntry: groupBy(backup.memberships, (item) => item.entryId),
     membershipsByCollection: groupBy(backup.memberships, (item) => item.collectionId),
     pinByEntry: new Map(backup.pins.map((item) => [item.entryId, item])),
@@ -602,24 +641,41 @@ export async function deleteEntry(entryId) {
   });
 }
 
-export async function togglePin(entryId, contextCollectionId) {
-  return mutate('切换 PIN', (draft) => {
-    const existing = draft.pins.find((item) => item.entryId === entryId);
-    if (existing) {
-      draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
-      return;
-    }
-    const entry = draft.entries.find((item) => item.id === entryId);
-    if (!entry) throw new Error('内容不存在');
-    const projection = buildProjection(draft);
-    if (!(projection.get(contextCollectionId) || []).some((item) => item.id === entryId)) throw new Error('PIN 上下文不可见');
-    const siblingPins = draft.pins.filter((item) => item.contextCollectionId === contextCollectionId);
-    draft.pins.push({
+export async function togglePin(entryId, contextCollectionId, retry = true) {
+  const existing = state.pinByEntry.get(entryId) || null;
+  const entry = state.entryById.get(entryId);
+  if (!entry) throw new Error('内容不存在');
+  if (!(state.projection.get(contextCollectionId) || []).some((item) => item.id === entryId)) throw new Error('PIN 上下文不可见');
+  let after = null;
+  if (!existing) {
+    const siblingPins = state.pins.filter((item) => item.contextCollectionId === contextCollectionId);
+    after = {
       id: safeId('pin', entryId), entryId, domainId: entry.domainId, contextCollectionId,
       order: siblingPins.length ? Math.max(...siblingPins.map((item) => Number(item.order || 0))) + 1 : 0,
       createdAt: new Date().toISOString(),
+    };
+  }
+  const key = existing?.id || after.id;
+  try {
+    const revision = await commitChanges([{ store: 'pins', key, before: existing ? clone(existing) : null, after: after ? clone(after) : null }], {
+      label: '切换 PIN', expectedRevision: state.revision,
     });
-  });
+    state.pins = existing
+      ? state.pins.filter((item) => item.entryId !== entryId)
+      : [...state.pins, after];
+    state.pinByEntry = new Map(state.pins.map((item) => [item.entryId, item]));
+    state.revision = revision;
+    state.settings.dataRevision = revision;
+    emit('mutation', { kind: 'pin', entryId, contextCollectionId });
+    broadcast(revision);
+    return state;
+  } catch (error) {
+    if (retry && String(error?.message || error).includes('另一实例')) {
+      await reloadStore('sync');
+      return togglePin(entryId, contextCollectionId, false);
+    }
+    throw error;
+  }
 }
 
 export async function setLastPosition(domainId, collectionId, entryId) {
@@ -695,15 +751,15 @@ export function getVisibleEntries(collectionId) {
 }
 
 export function getRelatedPhrases(entryId) {
-  return relatedPhrases(backupFromState(), entryId);
+  return state.relatedPhrasesByEntry.get(entryId) || [];
 }
 
 export function getPhraseComponents(phraseId) {
-  return phraseComponents(backupFromState(), phraseId);
+  return state.phraseComponentsByEntry.get(phraseId) || [];
 }
 
 export function search(query, options) {
-  return searchBackup(backupFromState(), query, options);
+  return searchBackup({ entries: state.entries }, query, options);
 }
 
 export async function restoreBackup(input) {

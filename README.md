@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.2
+# Vocabulary Index 3.0.3
 
 面向 iPhone Safari / 主屏幕 PWA 的本地优先英语词汇与短语索引。Windows Chrome 用于辅助管理。
 
@@ -8,7 +8,7 @@
 进入列表 → 浏览或展开字母 → 点按复制 → 外部词典查询 → 返回原位置
 ```
 
-## 3.0.2 交互原则
+## 3.0.3 交互原则
 
 - 普通词表只显示词汇；短语表只显示短语。
 - 普通词表使用字母分组；短语表使用同一行结构，但不显示首字母标题。
@@ -52,11 +52,11 @@ ZIP 根目录就是仓库根目录。整体替换仓库项目文件时保留 `.g
 
 ## 文档
 
-- `PRODUCT_MANUAL_3.0.2.md`：产品功能手册；
-- `UX_SPEC_3.0.2.md`：交互硬约束；
-- `CHANGE_REPORT_3.0.2.md`：本轮重构说明；
+- `PRODUCT_MANUAL_3.0.3.md`：产品功能手册；
+- `UX_SPEC_3.0.3.md`：交互硬约束；
+- `CHANGE_REPORT_3.0.3.md`：本轮重构说明；
 - `DATA_FORMATS.md`：数据与导入格式；
 - `DATA_REPORT.md`：内置数据和投影计数；
 - `MIGRATION_3.0.0.md`：2.x 迁移说明；
 - `DEPLOY.md`：部署与回滚；
-- `TEST_REPORT_3.0.2.md`：验证结果与边界。
+- `TEST_REPORT_3.0.3.md`：验证结果与边界。

@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.6 测试报告
+# Vocabulary Index 3.0.7 测试报告
 
 测试日期：2026-08-01
 
@@ -9,8 +9,8 @@
 | 业务模型与导入测试 | `run-tests: OK` |
 | 静态 UI / PWA / 数据交换契约 | `static-tests: OK` |
 | 随机压力测试 | `stress-tests: OK (115 entries, 114 memberships)` |
-| 搜索性能 | 25 次查询约 25–30 ms |
-| 小型词表 VIX 预检 | Node 环境约 2.5–2.7 s |
+| 搜索性能 | 25 次查询约 28.0 ms |
+| 小型词表 VIX 预检 | Node 环境约 2.68 s |
 | 完整计算机术语域 VIX 预检 | Node 环境约 3.0 s |
 | JavaScript / MJS 语法 | 通过 |
 | TypeScript `checkJs` | 0 错误 |
@@ -51,6 +51,10 @@ Phrases: 587
 | 人工智能 | 19 |
 
 544 个普通词全部拥有一个且仅一个用户可见主分类。四表数量之和为 544。隐藏来源 Collection 不进入用户投影。
+
+## 关联展开释义与 Seed 初始化
+
+已加入静态契约与人工验收项：关联子项读取当前词域/全局候选的繁体释义；数据交换中心包含 Seed 还原入口、显式确认、自动恢复备份和专用单事务恢复路径。
 
 ## 数据交换测试
 

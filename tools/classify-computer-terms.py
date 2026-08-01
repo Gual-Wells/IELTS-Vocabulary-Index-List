@@ -61,7 +61,7 @@ for idx,e in enumerate(sorted(entries,key=lambda x:x['normalizedText'])):
  new.append({'id':mid,'entryId':e['id'],'collectionId':cid,'sourceLabel':e.get('glossSource',''),'sourceOrder':idx,'createdAt':ts,'updatedAt':ts})
  audit.append({'text':e['text'],'glossHant':e.get('glossHant',''),'source':e.get('glossSource',''),'collectionId':cid,'collectionName':CAT_BY_ID[cid][1]})
 seed['memberships']=existing+new
-seed['appVersion']='3.0.6'; seed['exportedAt']=ts
+seed['appVersion']='3.0.7'; seed['exportedAt']=ts
 seed.setdefault('settings',{})['builtInSeedRevision']=2
 seed_path.write_text(json.dumps(seed,ensure_ascii=False,indent=2)+'\n','utf-8')
 report={'generatedAt':ts,'domainId':D,'words':len(entries),'classified':len(new),'counts':{CAT_BY_ID[k][1]:v for k,v in counts.items()},'sourceCounts':{CAT_BY_ID[k][1]:dict(v) for k,v in source_counts.items()},'items':audit}

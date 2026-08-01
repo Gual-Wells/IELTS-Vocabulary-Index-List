@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.6 数据格式
+# Vocabulary Index 3.0.7 数据格式
 
 系统保留两种 JSON：
 
@@ -16,7 +16,7 @@
 ```json
 {
   "schemaVersion": 3,
-  "appVersion": "3.0.6",
+  "appVersion": "3.0.7",
   "exportedAt": "2026-08-01T00:00:00.000Z",
   "domains": [],
   "collections": [],
@@ -233,3 +233,7 @@ Membership 只接受普通词和普通词表。短语导入不需要 Membership�
 - 修订 2：为 544 个普通词补充四个互斥普通词表和 Membership。
 
 升级过程幂等，不复制既有 Entry，不覆盖 PIN、标注、浏览位置或用户自建内容。
+
+## 7. Seed 初始化
+
+`data/seed.json` 是随版本发布的初始完整内容快照，不是 VIX 内容包。数据交换中心的“还原到 Seed”会先导出当前完整备份，再以单次恢复事务写入 Seed。该操作会重置 PIN、位置、标注和应用设置。

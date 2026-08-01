@@ -3,7 +3,7 @@ import {
   clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getPhraseComponents, getRelatedPhrases, getState,
   getPinsForCollection, getVisibleEntries, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, replaceAnnotations, restoreBackup,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, replaceAnnotations, resetToSeed, restoreBackup,
   search, setDomainGlossEnabled, setLastPosition, setNumberMode, subscribe, togglePin, undo,
 } from './v3-store.js';
 import {
@@ -16,7 +16,7 @@ import {
 import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 
-const APP_VERSION = '3.0.6';
+const APP_VERSION = '3.0.7';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -604,6 +604,7 @@ function openDataExchangeDialog() {
     el('option', { value: 'export-content', text: '导出内容' }),
     el('option', { value: 'export-backup', text: '导出完整备份' }),
     el('option', { value: 'restore-backup', text: '恢复完整备份' }),
+    el('option', { value: 'reset-seed', text: '还原到 Seed' }),
   ]);
   const scope = el('select', {}, [
     el('option', { value: 'global', text: '全局' }),
@@ -618,6 +619,10 @@ function openDataExchangeDialog() {
   ]);
   const file = el('input', { type: 'file', accept: '.json,application/json' });
   const status = el('p', { className: 'help-text exchange-status', text: '' });
+  const seedConfirm = el('input', { type: 'checkbox' });
+  const seedConfirmField = el('label', { className: 'inline-field exchange-seed-confirm hidden' }, [
+    el('span', { text: '确认还原初始数据' }), seedConfirm,
+  ]);
   const scopeField = field('范围', scope);
   const domainField = field('独立域', domain);
   const collectionField = field('词表', collection);
@@ -650,8 +655,10 @@ function openDataExchangeDialog() {
     collectionField.classList.toggle('hidden', !contentOperation || scope.value !== 'collection');
     modeField.classList.toggle('hidden', !importing);
     fileField.classList.toggle('hidden', !importing && operation.value !== 'restore-backup');
+    seedConfirmField.classList.toggle('hidden', operation.value !== 'reset-seed');
     if (operation.value === 'export-backup') status.textContent = '包含内容、PIN、位置、标注和设置。';
     else if (operation.value === 'restore-backup') status.textContent = '恢复会整体替换当前应用状态。';
+    else if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置、标注与显示设置；执行前自动导出完整备份。';
     else if (operation.value === 'export-content') status.textContent = '内容 JSON 不包含 PIN、位置、标注和应用设置。';
     else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并先生成恢复备份。';
     fillDomains();
@@ -664,10 +671,20 @@ function openDataExchangeDialog() {
 
   openDialog({
     title: '数据交换',
-    body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, status])],
+    body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, seedConfirmField, status])],
     submitText: '执行',
     onSubmit: async () => {
       if (operation.value === 'export-backup') { await exportBackupNow(); return; }
+      if (operation.value === 'reset-seed') {
+        if (!seedConfirm.checked) throw new Error('请先确认还原初始数据');
+        const recovery = await exportFullBackup();
+        downloadText(`vocabulary-index-recovery-before-seed-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
+        await resetToSeed();
+        closeDialog({ all: true });
+        goHome();
+        showToast('已还原到当前版本 Seed');
+        return;
+      }
       if (operation.value === 'restore-backup') {
         const parsed = await readImportFile(file.files?.[0]);
         if (parsed.kind !== 'backup') throw new Error('该文件不是完整备份');
@@ -979,7 +996,7 @@ function relationItemsForEntry(entry) {
     }
     const byText = new Map();
     for (const phrase of phrases.values()) {
-      const item = byText.get(phrase.normalizedText) || { text: phrase.text, destinations: [] };
+      const item = byText.get(phrase.normalizedText) || { text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', destinations: [] };
       const targetEntry = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID ? globalPhraseRepresentative(phrase.normalizedText) : phrase;
       const targetCollectionId = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID ? SYSTEM_GLOBAL_PHRASES_ID : systemPhraseCollectionId(phrase.domainId);
       if (targetEntry && !item.destinations.some((destination) => destination.collectionId === targetCollectionId && destination.entry.id === targetEntry.id)) {
@@ -998,7 +1015,7 @@ function relationItemsForEntry(entry) {
     for (const component of getPhraseComponents(phrase.id)) {
       const key = normalizeEnglish(component.token);
       if (!key) continue;
-      const item = byToken.get(key) || { text: component.token, destinations: [] };
+      const item = byToken.get(key) || { text: component.token, normalizedText: key, kind: 'word', destinations: [] };
       const destination = preferredNormalDestination(component.entry);
       if (destination && !item.destinations.some((candidate) => candidate.collectionId === destination.collectionId && candidate.entry.id === destination.entry.id)) {
         item.destinations.push(destination);
@@ -1046,14 +1063,34 @@ function jumpToRelation(item) {
   });
 }
 
+function displayGlossForRelationItem(item) {
+  const state = getState();
+  const candidates = item.kind === 'phrase'
+    ? (state.phrasesByNormalizedText.get(item.normalizedText) || [])
+    : (state.wordsByNormalizedText.get(item.normalizedText) || []);
+  if (!candidates.length) return '';
+  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId)) {
+    return [...candidates]
+      .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
+      .find((candidate) => state.domainById.get(candidate.domainId)?.glossEnabled && candidate.glossHant)?.glossHant || '';
+  }
+  const collection = state.collectionById.get(currentCollectionId);
+  const domain = state.domainById.get(collection?.domainId);
+  if (!domain?.glossEnabled) return '';
+  return candidates.find((candidate) => candidate.domainId === domain.id && candidate.glossHant)?.glossHant || '';
+}
+
 function renderRelationPanel(entry) {
   const items = relationItemsForEntry(entry);
   if (!items.length || !expandedRelations.has(entry.id)) return null;
-  return el('div', { className: 'relation-panel' }, items.map((item) =>
-    el('div', { className: 'relation-item' }, [
-      el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { text: item.text })]),
-      item.destinations?.length ? iconButton('jump', 'relation-jump', `跳转到 ${item.text}`, () => jumpToRelation(item)) : null,
-    ])));
+  return el('div', { className: 'relation-panel' }, items.map((item) => {
+    const gloss = displayGlossForRelationItem(item);
+    return el('div', { className: 'relation-item' }, [
+      el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { className: 'relation-text', text: item.text })]),
+      gloss ? el('span', { className: 'relation-gloss', text: gloss, title: gloss }) : el('span', { className: 'relation-gloss empty', 'aria-hidden': 'true' }),
+      item.destinations?.length ? iconButton('jump', 'relation-jump', `跳转到 ${item.text}`, () => jumpToRelation(item)) : el('span', { className: 'relation-jump-placeholder', 'aria-hidden': 'true' }),
+    ]);
+  }));
 }
 
 function toggleEntryRelations(entryId) {

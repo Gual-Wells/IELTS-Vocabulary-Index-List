@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.6 本地架构
+# Vocabulary Index 3.0.7 本地架构
 
 ## 模块
 
@@ -52,3 +52,7 @@
 ## PWA 更新
 
 活动 Worker 始终从同代缓存提供 App Shell。新 Worker 安装完成后保持 waiting，用户确认后发送 `SKIP_WAITING`，随后重新载入一次。
+
+## Seed 还原路径
+
+`v3-ui.js → v3-store.js/resetToSeed → v3-db.js/replaceWithCanonicalSeed → data/seed.json`。读取后复用完整恢复事务，一次替换业务表和设置表，并清空历史表。

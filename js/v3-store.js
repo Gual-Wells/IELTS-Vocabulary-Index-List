@@ -5,7 +5,7 @@ import {
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, redo as dbRedo,
-  replaceWithBackup, setLastPositionSetting, setSettings, undo as dbUndo,
+  replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings, undo as dbUndo,
 } from './v3-db.js';
 
 const listeners = new Set();
@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.6',
+    appVersion: '3.0.7',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,7 +36,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.6', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.7', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -775,6 +775,12 @@ export function search(query, options) {
 export async function restoreBackup(input) {
   const revision = await replaceWithBackup(input, { expectedRevision: state.revision });
   await reloadStore('restore');
+  broadcast(revision);
+}
+
+export async function resetToSeed() {
+  const revision = await replaceWithCanonicalSeed({ expectedRevision: state.revision });
+  await reloadStore('reset-seed');
   broadcast(revision);
 }
 

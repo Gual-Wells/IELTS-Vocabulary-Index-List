@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.6 数据报告
+# Vocabulary Index 3.0.7 数据报告
 
 ## 总体
 

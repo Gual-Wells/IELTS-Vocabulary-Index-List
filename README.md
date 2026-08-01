@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.6
+# Vocabulary Index 3.0.7
 
 本地优先的英语词汇与短语索引，主要面向 iPhone Safari / 主屏幕 PWA，Windows Chrome 用于辅助管理。
 
@@ -8,7 +8,10 @@
 进入词表 → 浏览或定位英文 → 点按复制 → 外部词典查询 → 返回原位置
 ```
 
-## 3.0.6 更新
+## 3.0.7 更新
+
+- 开启繁体释义后，关联展开项与一级表项同样显示繁体释义；
+- 数据交换中心恢复“还原到 Seed”初始化入口，执行前自动下载完整备份；
 
 - 首页继续采用“全局索引区 → 独立词域区 → 词表卡片”的轻量视觉封装，避免全局与各词域混成同一平面。
 - “计算机术语”在总词表和短语之后增加四个普通词表：
@@ -50,11 +53,11 @@ npx tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
 
 ## 当前文档
 
-- `PRODUCT_MANUAL_3.0.6.md`：产品功能手册；
-- `UX_SPEC_3.0.6.md`：交互硬约束；
-- `CHANGE_REPORT_3.0.6.md`：本轮变更；
+- `PRODUCT_MANUAL_3.0.7.md`：产品功能手册；
+- `UX_SPEC_3.0.7.md`：交互硬约束；
+- `CHANGE_REPORT_3.0.7.md`：本轮变更；
 - `DATA_FORMATS.md`：Schema 3、VIX JSON 与示例；
 - `DATA_REPORT.md`：内置数据和投影计数；
 - `DEPLOY.md`：部署与回滚；
-- `TEST_REPORT_3.0.6.md`：验证结果；
+- `TEST_REPORT_3.0.7.md`：验证结果；
 - `tests/MANUAL_CHECKLIST.md`：真机验收。

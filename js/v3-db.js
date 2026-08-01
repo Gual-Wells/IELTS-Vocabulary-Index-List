@@ -151,7 +151,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.6',
+    appVersion: '3.0.7',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -206,7 +206,7 @@ export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
 
   return canonicalizeBackup({
     ...base,
-    appVersion: '3.0.6',
+    appVersion: '3.0.7',
     domains,
     collections,
     entries: baseEntries,
@@ -233,7 +233,7 @@ async function ensureBuiltInSeedRevision(db) {
     const settingRecords = await getAllFromTransaction(readTx, STORES.settings);
     snapshot.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
     await readCompletion;
-    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.0.6', exportedAt: new Date().toISOString(), ...snapshot });
+    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.0.7', exportedAt: new Date().toISOString(), ...snapshot });
     const merged = mergeBuiltInDomainBackup(current, await loadCanonicalSeed());
     const revision = Math.max(Date.now(), Number(snapshot.settings?.dataRevision || 0) + 1);
     const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
@@ -277,6 +277,11 @@ export async function initializeDatabase() {
     await completion;
     return { migrated: Boolean(legacy), sourceVersion: source.appVersion || '2.x', builtInSeedRevision: BUILTIN_SEED_REVISION };
   });
+}
+
+export async function replaceWithCanonicalSeed({ expectedRevision = null } = {}) {
+  const seed = await loadCanonicalSeed();
+  return replaceWithBackup(seed, { expectedRevision, migrationNoticePending: false });
 }
 
 export async function getSetting(key, fallback = null) {
@@ -368,7 +373,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.6',
+    appVersion: '3.0.7',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });

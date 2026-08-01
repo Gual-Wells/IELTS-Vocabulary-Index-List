@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = (relative) => fs.existsSync(path.join(root, relative));
 
 const html = read('index.html');
-assert.ok(html.includes('name="application-version" content="3.0.6"'));
+assert.ok(html.includes('name="application-version" content="3.0.7"'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.includes('./js/v3-upgrade.js'));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'), '升级引导必须先于样式和应用模块加载');
@@ -69,6 +69,9 @@ assert.ok(ui.includes('preferredNormalDestination'), '短语组成词必须跳�
 assert.ok(ui.includes("className: 'relation-copy'"), '关联子项文字必须保留复制');
 assert.ok(ui.includes("iconButton('jump', 'relation-jump'"), '关联跳转必须使用独立控件');
 assert.ok(ui.includes("className: 'entry-gloss'"), '启用释义后必须行内显示');
+assert.ok(ui.includes("function displayGlossForRelationItem"), '关联展开项必须按当前词域显示繁体释义');
+assert.ok(ui.includes("className: 'relation-gloss'"), '关联展开项必须保留释义栏');
+assert.ok(css.includes('.relation-gloss'), '关联释义必须具备与一级表项一致的截断样式');
 
 
 // 性能硬约束：高频读取不得复制整库；PIN 不得走全量 mutate。
@@ -172,6 +175,11 @@ assert.ok(dataWorker.includes('planVixImport'));
 assert.ok(dataWorker.includes('JSON.parse'), '大型内容 JSON 必须在 Worker 中解析');
 assert.ok(css.includes('.data-exchange-form'));
 assert.ok(css.includes('.exchange-summary'));
+assert.ok(ui.includes("value: 'reset-seed'"), '数据交换中心必须保留还原到 Seed 入口');
+assert.ok(ui.includes('vocabulary-index-recovery-before-seed-'), '还原 Seed 前必须自动导出恢复备份');
+assert.ok(ui.includes('await resetToSeed()'), '还原 Seed 必须调用专用事务接口');
+assert.ok(store.includes('export async function resetToSeed()'));
+assert.ok(read('js/v3-db.js').includes('replaceWithCanonicalSeed'));
 assert.ok(model.includes('contentSources'), '完整备份必须保存来源目录');
 assert.ok(model.includes("collection?.type === 'normal' && !collection.hidden"), '隐藏来源不得抢占普通词表投影');
 
@@ -183,9 +191,9 @@ assert.ok(!/qwen|llama|gpt-oss|openai\/gpt/i.test(ai), 'AI 策略不得按模型
 assert.ok(store.includes('expectedRevision'));
 assert.ok(read('js/v3-db.js').includes('setLastPositionSetting'));
 assert.ok(store.includes('BroadcastChannel'));
-assert.ok(app.includes("const MODULE_VERSION = '3.0.6'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.0.7'"));
 assert.ok(app.includes('registration.waiting'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.6'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.7'));
 assert.ok(upgrade.includes('caches.delete'));
 assert.ok(!upgrade.includes('indexedDB'), '升级引导不得触碰业务数据库');
 
@@ -199,7 +207,7 @@ for (const name of jsFiles) {
 }
 
 const sw = read('sw.js');
-assert.ok(sw.includes('v3.0.6-navigation-20260801-2'));
+assert.ok(sw.includes('v3.0.7-navigation-20260801-1'));
 const installBody = sw.match(/sw\.addEventListener\('install',[\s\S]*?\n}\);/)?.[0] || '';
 assert.ok(!installBody.includes('skipWaiting'));
 assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));

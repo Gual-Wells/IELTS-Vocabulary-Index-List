@@ -149,7 +149,7 @@ const batches = createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({
 assert.ok(batches.length >= 3);
 assert.ok(batches.every((batch) => batch.length <= 32));
 
-// Verify the complete 3.0.6 seed contract: retained General English plus classified computer terms and VIX exchange.
+// Verify the complete 3.0.7 seed contract: retained General English plus classified computer terms and VIX exchange.
 const seedPath = path.join(root, 'data', 'seed.json');
 if (fs.existsSync(seedPath)) {
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));

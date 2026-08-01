@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gual-wells.github.io/IELTS-Vocabulary-Index-List/data/vix-json.schema.json",
+  "title": "Vocabulary Index VIX JSON",
+  "type": "object",
+  "required": ["format", "version", "target", "mode", "data"],
+  "properties": {
+    "format": { "const": "vix-json" },
+    "version": { "const": 1 },
+    "exportedAt": { "type": "string" },
+    "target": {
+      "type": "object",
+      "required": ["scope"],
+      "properties": {
+        "scope": { "enum": ["global", "domain", "collection"] },
+        "domainKey": { "type": "string" },
+        "collectionKey": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "mode": { "enum": ["merge", "replace"] },
+    "data": {
+      "type": "object",
+      "required": ["domains", "collections", "entries", "memberships"],
+      "properties": {
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "name"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "order": { "type": "number" },
+              "glossEnabled": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "domainKey", "name", "kind"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1 },
+              "domainKey": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "label": { "type": "string" },
+              "kind": { "enum": ["normal", "phrases"] },
+              "order": { "type": "number" },
+              "hidden": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "text"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1 },
+              "domainKey": { "type": "string" },
+              "text": { "type": "string", "minLength": 1, "maxLength": 160 },
+              "glossHans": { "type": "string", "maxLength": 120 },
+              "glossHant": { "type": "string", "maxLength": 120 },
+              "glossSource": { "type": "string", "maxLength": 120 },
+              "sourceRefs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "memberships": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["collectionKey"],
+            "properties": {
+              "entryKey": { "type": "string" },
+              "entryText": { "type": "string" },
+              "collectionKey": { "type": "string", "minLength": 1 },
+              "sourceLabel": { "type": "string", "maxLength": 120 },
+              "sourceOrder": { "type": "number" }
+            },
+            "anyOf": [
+              { "required": ["entryKey"] },
+              { "required": ["entryText"] }
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "title"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "publisher": { "type": "string" },
+          "url": { "type": "string" },
+          "retrievedAt": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "context": { "type": "object" }
+  },
+  "additionalProperties": false
+}

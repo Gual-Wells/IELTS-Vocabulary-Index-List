@@ -3,6 +3,8 @@ import { migrateLegacyBackup, canonicalizeBackup, SCHEMA_VERSION } from './v3-mo
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 3;
 export const HISTORY_LIMIT = 100;
+export const BUILTIN_SEED_REVISION = 2;
+export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 
 const PREFIX = 'v3';
 export const STORES = Object.freeze({
@@ -149,33 +151,131 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.4',
+    appVersion: '3.0.6',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
 }
 
+async function loadCanonicalSeed() {
+  return migrateLegacyBackup(await loadLegacySeed());
+}
+
+export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
+  const base = canonicalizeBackup(baseBackup);
+  const seed = canonicalizeBackup(seedBackup);
+  const seedDomain = seed.domains.find((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID);
+  if (!seedDomain) throw new Error('内置词库缺少计算机术语词域');
+  const domainExists = base.domains.some((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID);
+  const domains = domainExists ? [...base.domains] : [...base.domains, seedDomain];
+
+  const collectionById = new Map(base.collections.map((item) => [item.id, item]));
+  const collections = [...base.collections];
+  for (const collection of seed.collections.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID)) {
+    if (!collectionById.has(collection.id)) {
+      collectionById.set(collection.id, collection);
+      collections.push(collection);
+    }
+  }
+
+  const baseEntries = [...base.entries];
+  const entryById = new Map(baseEntries.map((item) => [item.id, item]));
+  const entryByText = new Map(baseEntries.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID).map((item) => [item.normalizedText, item]));
+  const seedEntryToActualId = new Map();
+  for (const entry of seed.entries.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID)) {
+    const existing = entryById.get(entry.id) || entryByText.get(entry.normalizedText);
+    if (existing) seedEntryToActualId.set(entry.id, existing.id);
+    else {
+      baseEntries.push(entry);
+      entryById.set(entry.id, entry);
+      entryByText.set(entry.normalizedText, entry);
+      seedEntryToActualId.set(entry.id, entry.id);
+    }
+  }
+
+  const memberships = [...base.memberships];
+  const membershipPairs = new Set(memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
+  for (const membership of seed.memberships) {
+    const entryId = seedEntryToActualId.get(membership.entryId);
+    if (!entryId || !collectionById.has(membership.collectionId)) continue;
+    const pair = `${entryId}\u0000${membership.collectionId}`;
+    if (membershipPairs.has(pair)) continue;
+    memberships.push({ ...membership, id: membership.id, entryId });
+    membershipPairs.add(pair);
+  }
+
+  return canonicalizeBackup({
+    ...base,
+    appVersion: '3.0.6',
+    domains,
+    collections,
+    entries: baseEntries,
+    memberships,
+    settings: {
+      ...base.settings,
+      builtInSeedRevision: BUILTIN_SEED_REVISION,
+      contentSources: seed.settings?.contentSources || base.settings?.contentSources || [],
+    },
+  });
+}
+
+async function ensureBuiltInSeedRevision(db) {
+  const applied = Number(await getSetting('builtInSeedRevision', 0));
+  if (applied >= BUILTIN_SEED_REVISION) return { builtInMerged: false };
+  return enqueueWrite(async () => {
+    const recheck = Number(await getSetting('builtInSeedRevision', 0));
+    if (recheck >= BUILTIN_SEED_REVISION) return { builtInMerged: false };
+    const storeNames = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings];
+    const readTx = db.transaction(storeNames, 'readonly');
+    const readCompletion = transactionPromise(readTx);
+    const snapshot = {};
+    await Promise.all(DATA_STORE_KEYS.map(async (key) => { snapshot[key] = await getAllFromTransaction(readTx, STORES[key]); }));
+    const settingRecords = await getAllFromTransaction(readTx, STORES.settings);
+    snapshot.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
+    await readCompletion;
+    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.0.6', exportedAt: new Date().toISOString(), ...snapshot });
+    const merged = mergeBuiltInDomainBackup(current, await loadCanonicalSeed());
+    const revision = Math.max(Date.now(), Number(snapshot.settings?.dataRevision || 0) + 1);
+    const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
+    const tx = db.transaction(writeStores, 'readwrite');
+    const completion = transactionPromise(tx);
+    putBackupIntoTransaction(tx, merged, {
+      dataRevision: revision,
+      historyPointer: 0,
+      historySequence: 0,
+      builtInSeedRevision: BUILTIN_SEED_REVISION,
+    });
+    tx.objectStore(STORES.history).clear();
+    await completion;
+    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION };
+  });
+}
+
 export async function initializeDatabase() {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
-  if (Number(existing) === SCHEMA_VERSION) return { migrated: false };
+  if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
 
   return enqueueWrite(async () => {
     const recheck = await getSetting('schemaVersion', null);
     if (Number(recheck) === SCHEMA_VERSION) return { migrated: false };
     const legacy = await readLegacySnapshot(db);
     const source = legacy || await loadLegacySeed();
-    const backup = migrateLegacyBackup(source);
+    let backup = migrateLegacyBackup(source);
+    if (!backup.domains.some((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID)) {
+      backup = mergeBuiltInDomainBackup(backup, await loadCanonicalSeed());
+    }
     const allStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
     const tx = db.transaction(allStores, 'readwrite');
     const completion = transactionPromise(tx);
     putBackupIntoTransaction(tx, backup, {
       dataRevision: Date.now(), historyPointer: 0, historySequence: 0,
+      builtInSeedRevision: BUILTIN_SEED_REVISION,
       migrationNoticePending: Boolean(legacy), migrationSource: source.appVersion || '2.x',
     });
     tx.objectStore(STORES.history).clear();
     await completion;
-    return { migrated: Boolean(legacy), sourceVersion: source.appVersion || '2.x' };
+    return { migrated: Boolean(legacy), sourceVersion: source.appVersion || '2.x', builtInSeedRevision: BUILTIN_SEED_REVISION };
   });
 }
 
@@ -268,7 +368,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.4',
+    appVersion: '3.0.6',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });

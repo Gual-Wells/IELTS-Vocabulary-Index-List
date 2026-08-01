@@ -1,0 +1,23 @@
+{
+  "format": "vix-json",
+  "version": 1,
+  "target": { "scope": "collection", "domainKey": "domain_computer_terms", "collectionKey": "collection_computer_research" },
+  "mode": "replace",
+  "data": {
+    "domains": [
+      { "key": "domain_computer_terms", "name": "计算机术语", "glossEnabled": true }
+    ],
+    "collections": [
+      { "key": "collection_computer_research", "domainKey": "domain_computer_terms", "name": "研究方法", "kind": "normal", "order": 6 }
+    ],
+    "entries": [
+      { "key": "entry_ablation", "domainKey": "domain_computer_terms", "text": "ablation", "glossHans": "消融", "glossHant": "消融" },
+      { "key": "entry_baseline", "domainKey": "domain_computer_terms", "text": "baseline", "glossHans": "基线", "glossHant": "基線" }
+    ],
+    "memberships": [
+      { "entryKey": "entry_ablation", "collectionKey": "collection_computer_research", "sourceOrder": 0 },
+      { "entryKey": "entry_baseline", "collectionKey": "collection_computer_research", "sourceOrder": 1 }
+    ]
+  },
+  "sources": []
+}

@@ -1,0 +1,23 @@
+{
+  "format": "vix-json",
+  "version": 1,
+  "target": { "scope": "global" },
+  "mode": "replace",
+  "data": {
+    "domains": [
+      { "key": "domain_demo", "name": "示例词域", "order": 0, "glossEnabled": true }
+    ],
+    "collections": [
+      { "key": "domain_demo__phrases", "domainKey": "domain_demo", "name": "短语", "kind": "phrases", "order": 1 },
+      { "key": "collection_demo_core", "domainKey": "domain_demo", "name": "核心", "kind": "normal", "order": 2 }
+    ],
+    "entries": [
+      { "key": "entry_demo_word", "domainKey": "domain_demo", "text": "example", "glossHans": "示例", "glossHant": "示例" },
+      { "key": "entry_demo_phrase", "domainKey": "domain_demo", "text": "worked example", "glossHans": "例题", "glossHant": "例題" }
+    ],
+    "memberships": [
+      { "entryKey": "entry_demo_word", "collectionKey": "collection_demo_core", "sourceOrder": 0 }
+    ]
+  },
+  "sources": []
+}

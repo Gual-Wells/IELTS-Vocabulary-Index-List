@@ -9,7 +9,9 @@ import {
   relatedPhrases, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, tokenizeEnglish, validateBackup,
 } from '../js/v3-model.js';
 import { parseCsv, parseImportContent, parseJsonContent, parseTextList } from '../js/v3-import.js';
+import { mergeBuiltInDomainBackup } from '../js/v3-db.js';
 import { createAiCheckBatches, parseRetryAfter } from '../js/v3-ai.js';
+import { createVixPackage, normalizeVixPackage, planVixImport, VIX_FORMAT, VIX_VERSION } from '../js/v3-exchange.js';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(dirname, '..');
@@ -22,6 +24,9 @@ assert.equal(isPhraseText('thread pool'), true);
 assert.equal(isPhraseText('thread-pool'), false);
 assert.deepEqual(tokenizeEnglish("don't give up"), ["don't", 'give', 'up']);
 assert.equal(normalizeGlossHant('开发后台线程池'), '開發後台線程池');
+assert.equal(normalizeGlossHant('访问控制'), '訪問控制');
+assert.equal(normalizeGlossHant('准确率指标'), '準確率指標');
+assert.equal(normalizeGlossHant('软件供应链'), '軟件供應鏈');
 assert.equal(parseLegacySourceLine('access n., v.').text, 'access');
 assert.equal(parseLegacySourceLine('access n., v.').sourceLabel, 'n., v.');
 assert.equal(parseLegacySourceLine('# A'), null);
@@ -144,26 +149,137 @@ const batches = createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({
 assert.ok(batches.length >= 3);
 assert.ok(batches.every((batch) => batch.length <= 32));
 
-// When the retained 2.4.1 seed is present, verify the real migration contract.
+// Verify the complete 3.0.6 seed contract: retained General English plus classified computer terms and VIX exchange.
 const seedPath = path.join(root, 'data', 'seed.json');
 if (fs.existsSync(seedPath)) {
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  assert.equal(seed.entries.length, 5005);
   const migrated = migrateLegacyBackup(seed, { timestamp: '2026-08-01T00:00:00.000Z' });
-  assert.equal(migrated.entries.length, 5005);
-  assert.equal(migrated.collections.filter((item) => item.type === 'normal').length, 7);
-  assert.equal(migrated.memberships.length, 6407);
-  assert.equal(migrated.phraseTokens.length, 20);
+  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.domains.length, 2);
+  assert.equal(migrated.entries.length, 6126);
+  assert.equal(migrated.entries.filter((item) => item.kind === 'word').length, 5539);
+  assert.equal(migrated.entries.filter((item) => item.kind === 'phrase').length, 587);
+  assert.equal(migrated.memberships.length, 7495);
+  assert.equal(migrated.phraseTokens.length, 1312);
+  assert.equal(migrated.settings.builtInSeedRevision, 2);
+  assert.equal(migrated.settings.contentSources.length, 14);
+  const computerDomain = migrated.domains.find((item) => item.id === 'domain_computer_terms');
+  assert.ok(computerDomain?.glossEnabled);
+  const computerEntries = migrated.entries.filter((item) => item.domainId === computerDomain.id);
+  assert.equal(computerEntries.length, 1121);
+  assert.equal(computerEntries.filter((item) => item.kind === 'word').length, 544);
+  assert.equal(computerEntries.filter((item) => item.kind === 'phrase').length, 577);
+  assert.ok(computerEntries.every((item) => item.glossHant && item.glossSource));
+  const hiddenSource = migrated.collections.find((item) => item.domainId === computerDomain.id && item.hidden);
+  assert.ok(hiddenSource && hiddenSource.type === 'normal');
+  const computerCollections = migrated.collections
+    .filter((item) => item.domainId === computerDomain.id && item.type === 'normal' && !item.hidden)
+    .sort((a, b) => a.order - b.order);
+  assert.deepEqual(computerCollections.map((item) => item.name), ['计算机基础与系统', '软件开发与数据', '网络、云与安全', '人工智能']);
+  const expectedComputerCounts = new Map([
+    ['计算机基础与系统', 214], ['软件开发与数据', 197], ['网络、云与安全', 114], ['人工智能', 19],
+  ]);
+  const visibleComputerIds = new Set(computerCollections.map((item) => item.id));
+  const membershipCountByWord = new Map();
+  for (const membership of migrated.memberships.filter((item) => visibleComputerIds.has(item.collectionId))) {
+    membershipCountByWord.set(membership.entryId, (membershipCountByWord.get(membership.entryId) || 0) + 1);
+  }
+  for (const entry of computerEntries.filter((item) => item.kind === 'word')) assert.equal(membershipCountByWord.get(entry.id), 1, `${entry.text} 必须只进入一个大领域普通词表`);
   const fullProjection = buildProjection(migrated);
-  assert.equal(fullProjection.get(systemDomainWordsCollectionId(migrated.domains[0].id)).length, 4995);
-  assert.equal(fullProjection.get(SYSTEM_GLOBAL_WORDS_ID).length, 4995);
-  assert.equal(fullProjection.get(SYSTEM_GLOBAL_PHRASES_ID).length, 10);
+  assert.equal(fullProjection.get(systemDomainWordsCollectionId('domain_general_english')).length, 4995);
+  assert.equal(fullProjection.get(systemPhraseCollectionId('domain_general_english')).length, 10);
+  assert.equal(fullProjection.get(systemDomainWordsCollectionId(computerDomain.id)).length, 544);
+  assert.equal(fullProjection.get(systemPhraseCollectionId(computerDomain.id)).length, 577);
+  assert.equal(fullProjection.get(hiddenSource.id).length, 0, '隐藏来源不得抢占用户可见投影');
+  for (const collection of computerCollections) assert.equal(fullProjection.get(collection.id).length, expectedComputerCounts.get(collection.name));
+  assert.equal(computerCollections.reduce((sum, item) => sum + fullProjection.get(item.id).length, 0), 544);
+  assert.equal(fullProjection.get(SYSTEM_GLOBAL_WORDS_ID).length, 5322);
+  assert.equal(fullProjection.get(SYSTEM_GLOBAL_PHRASES_ID).length, 587);
   for (const collection of migrated.collections) {
     const visible = fullProjection.get(collection.id) || [];
     if (collection.type === 'normal') assert.ok(visible.every((entry) => entry.kind === 'word'));
     else assert.ok(visible.every((entry) => entry.kind === 'phrase'));
   }
   assert.ok(migrated.memberships.every((item) => !Object.hasOwn(item, 'sourceText')));
+
+  const legacyOnly = migrateLegacyBackup(legacy, { timestamp: '2026-08-01T00:00:00.000Z' });
+  const mergedBuiltIn = mergeBuiltInDomainBackup(legacyOnly, migrated);
+  assert.equal(mergedBuiltIn.domains.length, 2, '2.x 直接升级必须同时获得内置计算机术语域');
+  assert.equal(mergedBuiltIn.entries.length, legacyOnly.entries.length + 1121);
+  assert.equal(mergeBuiltInDomainBackup(mergedBuiltIn, migrated).memberships.length, mergedBuiltIn.memberships.length, '内置域合并必须幂等');
+
+  const pre306CollectionIds = new Set(migrated.collections.filter((item) => !visibleComputerIds.has(item.id)).map((item) => item.id));
+  const pre306 = canonicalizeBackup({
+    ...migrated,
+    appVersion: '3.0.5',
+    collections: migrated.collections.filter((item) => pre306CollectionIds.has(item.id)),
+    memberships: migrated.memberships.filter((item) => pre306CollectionIds.has(item.collectionId)),
+    settings: { ...migrated.settings, builtInSeedRevision: 1 },
+  });
+  const upgraded306 = mergeBuiltInDomainBackup(pre306, migrated);
+  assert.equal(upgraded306.settings.builtInSeedRevision, 2);
+  assert.equal(upgraded306.collections.filter((item) => item.domainId === computerDomain.id && item.type === 'normal' && !item.hidden).length, 4);
+  assert.equal(upgraded306.memberships.length, 7495);
+
+  const globalPackage = createVixPackage(migrated, { scope: 'global' });
+  assert.equal(globalPackage.format, VIX_FORMAT);
+  assert.equal(globalPackage.version, VIX_VERSION);
+  assert.equal(globalPackage.target.scope, 'global');
+  assert.equal(globalPackage.data.domains.length, 2);
+  assert.ok(!Object.hasOwn(globalPackage, 'pins'));
+  assert.equal(normalizeVixPackage(globalPackage).data.entries.length, migrated.entries.length);
+  assert.equal(parseJsonContent(JSON.stringify(globalPackage)).kind, 'content-package');
+
+  const aiCollection = computerCollections.find((item) => item.name === '人工智能');
+  const aiPackage = createVixPackage(migrated, { scope: 'collection', collectionId: aiCollection.id });
+  assert.equal(aiPackage.target.collectionKey, aiCollection.id);
+  assert.equal(aiPackage.data.entries.length, 19);
+  const noChangePlan = planVixImport(migrated, aiPackage, { scope: 'collection', domainId: computerDomain.id, collectionId: aiCollection.id, mode: 'merge', targetMode: 'current' });
+  assert.equal(noChangePlan.summary.addedWords, 0);
+  assert.equal(noChangePlan.summary.removedWords, 0);
+
+  const incrementPackage = {
+    format: VIX_FORMAT, version: VIX_VERSION, mode: 'merge',
+    target: { scope: 'collection', domainKey: computerDomain.id, collectionKey: aiCollection.id },
+    data: {
+      domains: [{ key: computerDomain.id, name: computerDomain.name, glossEnabled: true }],
+      collections: [{ key: aiCollection.id, domainKey: computerDomain.id, name: aiCollection.name, kind: 'normal', order: aiCollection.order }],
+      entries: [
+        { key: 'entry-agentic-workflow', domainKey: computerDomain.id, text: 'agentic', glossHans: '智能体式', sourceRefs: ['NIST-AI'] },
+        { key: 'entry-agentic-workflow-phrase', domainKey: computerDomain.id, text: 'agentic workflow', glossHans: '智能体工作流', sourceRefs: ['NIST-AI'] },
+      ],
+      memberships: [{ entryKey: 'entry-agentic-workflow', collectionKey: aiCollection.id, sourceLabel: 'NIST-AI' }],
+    },
+    sources: [],
+  };
+  const incrementPlan = planVixImport(migrated, incrementPackage, { scope: 'collection', domainId: computerDomain.id, collectionId: aiCollection.id, mode: 'merge', targetMode: 'current' }, 'import');
+  assert.equal(incrementPlan.summary.addedWords, 1);
+  assert.equal(incrementPlan.summary.addedPhrases, 1);
+  const addedWord = incrementPlan.nextBackup.entries.find((item) => item.domainId === computerDomain.id && item.normalizedText === 'agentic');
+  const addedPhrase = incrementPlan.nextBackup.entries.find((item) => item.domainId === computerDomain.id && item.normalizedText === 'agentic workflow');
+  assert.ok(addedWord && addedPhrase);
+  assert.ok(incrementPlan.nextBackup.memberships.some((item) => item.entryId === addedWord.id && item.collectionId === aiCollection.id));
+  assert.ok(!incrementPlan.nextBackup.memberships.some((item) => item.entryId === addedPhrase.id), '短语不得污染普通词表 Membership');
+  assert.equal(validateBackup(incrementPlan.nextBackup), true);
+
+  const exampleDirectory = path.join(root, 'data', 'examples');
+  for (const filename of fs.readdirSync(exampleDirectory).filter((name) => name.endsWith('.json'))) {
+    const example = JSON.parse(fs.readFileSync(path.join(exampleDirectory, filename), 'utf8'));
+    assert.equal(normalizeVixPackage(example).format, VIX_FORMAT, `${filename} 必须符合 VIX 基础格式`);
+  }
+  const globalReplaceExample = JSON.parse(fs.readFileSync(path.join(exampleDirectory, 'vix-global-replace-sample.json'), 'utf8'));
+  const globalReplacePlan = planVixImport(migrated, globalReplaceExample, { scope: 'global', mode: 'replace', targetMode: 'file' }, 'import');
+  assert.deepEqual(globalReplacePlan.nextBackup.domains.map((item) => item.id), ['domain_demo']);
+  assert.equal(globalReplacePlan.nextBackup.entries.length, 2, '全局替换不得保留同 ID 词域中的旧内容');
+  assert.equal(globalReplacePlan.nextBackup.memberships.length, 1);
+
+  const newCollectionExample = JSON.parse(fs.readFileSync(path.join(exampleDirectory, 'vix-new-collection.json'), 'utf8'));
+  const newCollectionPlan = planVixImport(migrated, newCollectionExample, {
+    scope: 'collection', domainId: computerDomain.id, collectionId: '__new_collection__', mode: 'replace', targetMode: 'current',
+  }, 'import');
+  assert.ok(newCollectionPlan.nextBackup.collections.some((item) => item.id === 'collection_computer_research'));
+  assert.equal(buildProjection(newCollectionPlan.nextBackup).get('collection_computer_research').length, 2);
 }
+
 
 console.log('run-tests: OK');

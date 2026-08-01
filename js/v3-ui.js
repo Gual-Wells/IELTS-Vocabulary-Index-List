@@ -14,8 +14,9 @@ import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
 import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID } from './v3-model.js';
+import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 
-const APP_VERSION = '3.0.4';
+const APP_VERSION = '3.0.6';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -445,7 +446,7 @@ function libraryManagerBody() {
   for (const domain of domains) {
     const phraseCollection = state.collectionById.get(systemPhraseCollectionId(domain.id));
     const normalCollections = state.collections
-      .filter((item) => item.domainId === domain.id && item.type === 'normal')
+      .filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const section = el('section', { className: 'manager-domain', dataset: { sortId: domain.id } });
     const domainHeader = el('div', { className: 'manager-domain-header' }, [
@@ -497,6 +498,206 @@ async function exportBackupNow() {
   showToast('完整备份已导出');
 }
 
+let dataExchangeWorker = null;
+let dataExchangeRequestId = 0;
+const dataExchangeRequests = new Map();
+
+function getDataExchangeWorker() {
+  if (dataExchangeWorker) return dataExchangeWorker;
+  dataExchangeWorker = new Worker(new URL('./v3-data-worker.js', import.meta.url), { type: 'module' });
+  dataExchangeWorker.addEventListener('message', (event) => {
+    const pending = dataExchangeRequests.get(event.data?.id);
+    if (!pending) return;
+    dataExchangeRequests.delete(event.data.id);
+    if (event.data.ok) pending.resolve(event.data.plan);
+    else pending.reject(new Error(event.data.error || '内容预检失败'));
+  });
+  dataExchangeWorker.addEventListener('error', (event) => {
+    for (const pending of dataExchangeRequests.values()) pending.reject(new Error(event.message || '数据工作线程异常'));
+    dataExchangeRequests.clear();
+    dataExchangeWorker?.terminate();
+    dataExchangeWorker = null;
+  });
+  return dataExchangeWorker;
+}
+
+async function planDataExchangeFile(file, selection, conflictPolicy = 'current') {
+  if (!file) throw new Error('请选择 JSON 文件');
+  if (file.size > 64 * 1024 * 1024) throw new Error('导入文件超过 64 MB 上限');
+  const [content, currentBackup] = await Promise.all([file.text(), exportFullBackup()]);
+  const id = ++dataExchangeRequestId;
+  return new Promise((resolve, reject) => {
+    dataExchangeRequests.set(id, { resolve, reject });
+    getDataExchangeWorker().postMessage({ id, content, currentBackup, selection, conflictPolicy });
+  });
+}
+
+function dataExchangeFilename(scope, domainId = '', collectionId = '') {
+  const state = getState();
+  const clean = (value) => String(value || '').replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || 'content';
+  if (scope === 'domain') return `vix-domain-${clean(state.domainById.get(domainId)?.name || domainId)}.json`;
+  if (scope === 'collection') return `vix-collection-${clean(state.collectionById.get(collectionId)?.name || collectionId)}.json`;
+  return `vix-global-${APP_VERSION}.json`;
+}
+
+function dataExchangeSummary(plan) {
+  const summary = plan.summary || {};
+  const rows = [
+    ['新增独立域', summary.addedDomains], ['移除独立域', summary.removedDomains],
+    ['新增词表', summary.addedCollections], ['移除词表', summary.removedCollections],
+    ['新增词汇', summary.addedWords], ['新增短语', summary.addedPhrases],
+    ['更新释义', summary.updatedGlosses], ['新增归属', summary.addedMemberships],
+    ['移除词汇', summary.removedWords], ['移除短语', summary.removedPhrases],
+    ['移除归属', summary.removedMemberships], ['跳过重复', summary.skippedDuplicates],
+    ['冲突', summary.conflicts],
+  ].filter(([, value]) => Number(value || 0) > 0);
+  if (!rows.length) rows.push(['变化', 0]);
+  return el('div', { className: 'exchange-summary' }, rows.map(([label, value]) => el('div', { className: 'exchange-summary-row' }, [
+    el('span', { text: label }), el('strong', { text: Number(value || 0).toLocaleString() }),
+  ])));
+}
+
+function openDataExchangePreview(file, selection, initialPlan) {
+  const conflictPolicy = el('select', {}, [
+    el('option', { value: 'current', text: '保留当前释义' }),
+    el('option', { value: 'import', text: '使用导入释义' }),
+  ]);
+  const targetMode = el('select', {}, [
+    el('option', { value: 'current', text: '使用当前选择' }),
+    el('option', { value: 'file', text: '使用文件声明目标' }),
+  ]);
+  const body = [
+    el('div', { className: 'exchange-target-line', text: `${selection.scope === 'global' ? '全局' : selection.scope === 'domain' ? '独立域' : '词表'} · ${selection.mode === 'replace' ? '完整替换' : '增量合并'}` }),
+    dataExchangeSummary(initialPlan),
+  ];
+  if (initialPlan.mismatch) body.push(el('div', { className: 'warning-box compact-warning', text: initialPlan.mismatch }), field('目标处理', targetMode));
+  if (initialPlan.conflicts?.length) {
+    body.push(field('释义冲突', conflictPolicy));
+    body.push(el('div', { className: 'conflict-list' }, initialPlan.conflicts.slice(0, 20).map((item) => el('div', { className: 'conflict-item' }, [
+      el('strong', { text: item.text }), el('span', { text: `${item.current} → ${item.incoming}` }),
+    ]))));
+    if (initialPlan.conflicts.length > 20) body.push(el('p', { className: 'help-text', text: `另有 ${initialPlan.conflicts.length - 20} 项冲突未展开。` }));
+  }
+  openDialog({
+    title: '导入预检',
+    description: '确认后会先自动下载恢复备份，再以单次事务写入。',
+    body,
+    submitText: selection.mode === 'replace' && selection.scope === 'global' ? '备份并替换全局内容' : '备份并导入',
+    destructive: selection.mode === 'replace',
+    onSubmit: async () => {
+      const finalSelection = { ...selection, targetMode: initialPlan.mismatch ? targetMode.value : 'current' };
+      const finalPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
+      const recovery = await exportFullBackup();
+      downloadText(`vocabulary-index-recovery-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
+      await restoreBackup(finalPlan.nextBackup);
+      closeDialog({ all: true });
+      goHome();
+      showToast('内容 JSON 已导入');
+    },
+  });
+}
+
+function openDataExchangeDialog() {
+  const state = getState();
+  const operation = el('select', {}, [
+    el('option', { value: 'import-content', text: '导入内容' }),
+    el('option', { value: 'export-content', text: '导出内容' }),
+    el('option', { value: 'export-backup', text: '导出完整备份' }),
+    el('option', { value: 'restore-backup', text: '恢复完整备份' }),
+  ]);
+  const scope = el('select', {}, [
+    el('option', { value: 'global', text: '全局' }),
+    el('option', { value: 'domain', text: '独立域' }),
+    el('option', { value: 'collection', text: '词表' }),
+  ]);
+  const domain = el('select');
+  const collection = el('select');
+  const mode = el('select', {}, [
+    el('option', { value: 'merge', text: '增量合并' }),
+    el('option', { value: 'replace', text: '完整替换' }),
+  ]);
+  const file = el('input', { type: 'file', accept: '.json,application/json' });
+  const status = el('p', { className: 'help-text exchange-status', text: '' });
+  const scopeField = field('范围', scope);
+  const domainField = field('独立域', domain);
+  const collectionField = field('词表', collection);
+  const modeField = field('写入方式', mode);
+  const fileField = field('JSON 文件', file);
+
+  const fillCollections = () => {
+    const selectedDomainId = domain.value || state.domains[0]?.id || '';
+    const list = state.collections.filter((item) => item.domainId === selectedDomainId && !item.hidden)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+    const includeNew = operation.value === 'import-content' && scope.value === 'collection';
+    collection.replaceChildren(
+      ...(includeNew ? [el('option', { value: NEW_COLLECTION_TARGET, text: '新建普通词表' })] : []),
+      ...list.map((item) => el('option', { value: item.id, text: item.name })),
+    );
+  };
+  const fillDomains = () => {
+    const includeNew = operation.value === 'import-content' && scope.value === 'domain';
+    domain.replaceChildren(
+      ...(includeNew ? [el('option', { value: NEW_DOMAIN_TARGET, text: '新建独立域' })] : []),
+      ...state.domains.map((item) => el('option', { value: item.id, text: item.name })),
+    );
+    fillCollections();
+  };
+  const refresh = () => {
+    const contentOperation = ['import-content', 'export-content'].includes(operation.value);
+    const importing = operation.value === 'import-content';
+    scopeField.classList.toggle('hidden', !contentOperation);
+    domainField.classList.toggle('hidden', !contentOperation || scope.value === 'global');
+    collectionField.classList.toggle('hidden', !contentOperation || scope.value !== 'collection');
+    modeField.classList.toggle('hidden', !importing);
+    fileField.classList.toggle('hidden', !importing && operation.value !== 'restore-backup');
+    if (operation.value === 'export-backup') status.textContent = '包含内容、PIN、位置、标注和设置。';
+    else if (operation.value === 'restore-backup') status.textContent = '恢复会整体替换当前应用状态。';
+    else if (operation.value === 'export-content') status.textContent = '内容 JSON 不包含 PIN、位置、标注和应用设置。';
+    else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并先生成恢复备份。';
+    fillDomains();
+  };
+  operation.addEventListener('change', refresh);
+  scope.addEventListener('change', refresh);
+  domain.addEventListener('change', fillCollections);
+  mode.addEventListener('change', refresh);
+  refresh();
+
+  openDialog({
+    title: '数据交换',
+    body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, status])],
+    submitText: '执行',
+    onSubmit: async () => {
+      if (operation.value === 'export-backup') { await exportBackupNow(); return; }
+      if (operation.value === 'restore-backup') {
+        const parsed = await readImportFile(file.files?.[0]);
+        if (parsed.kind !== 'backup') throw new Error('该文件不是完整备份');
+        await restoreBackup(parsed.backup);
+        closeDialog({ all: true });
+        goHome();
+        showToast('完整备份已恢复');
+        return;
+      }
+      const selection = {
+        scope: scope.value,
+        mode: mode.value,
+        domainId: scope.value === 'global' ? '' : domain.value,
+        collectionId: scope.value === 'collection' ? collection.value : '',
+        targetMode: 'current',
+      };
+      if (operation.value === 'export-content') {
+        const backup = await exportFullBackup();
+        const pkg = createVixPackage(backup, selection);
+        downloadText(dataExchangeFilename(selection.scope, selection.domainId, selection.collectionId), `${JSON.stringify(pkg, null, 2)}\n`);
+        showToast('内容 JSON 已导出');
+        return;
+      }
+      const selectedFile = file.files?.[0];
+      const plan = await planDataExchangeFile(selectedFile, selection, 'current');
+      openDataExchangePreview(selectedFile, selection, plan);
+    },
+  });
+}
+
 async function performUndo() {
   try { if (!(await undo())) showToast('没有可撤销操作'); }
   catch (error) { displayError(error); }
@@ -531,7 +732,8 @@ function renderHome() {
     el('div', { className: 'home-hero-actions' }, heroActions),
   ]);
 
-  const sections = [el('section', { className: 'domain-section global-section' }, [
+  const sections = [el('section', { className: 'index-scope global-scope' }, [
+    el('header', { className: 'scope-heading' }, [el('h3', { text: '全局' })]),
     el('div', { className: 'collection-grid global-grid' }, [
       collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)),
       collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID)),
@@ -540,16 +742,16 @@ function renderHome() {
   for (const domain of [...state.domains].sort((a, b) => a.order - b.order)) {
     const phraseCollection = state.collectionById.get(systemPhraseCollectionId(domain.id));
     const normalCollections = state.collections
-      .filter((item) => item.domainId === domain.id && item.type === 'normal')
+      .filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const collections = [state.collectionById.get(systemDomainWordsCollectionId(domain.id)), phraseCollection, ...normalCollections].filter(Boolean);
-    const heading = state.domains.length > 1
-      ? el('div', { className: 'domain-heading' }, [el('h3', { text: domain.name })])
-      : null;
     const grid = collections.length
       ? el('div', { className: 'collection-grid' }, collections.map(collectionCard))
       : el('div', { className: 'empty-state', text: '暂无内容' });
-    sections.push(el('section', { className: 'domain-section' }, [heading, grid]));
+    sections.push(el('section', { className: 'index-scope domain-scope', dataset: { domainId: domain.id } }, [
+      el('header', { className: 'scope-heading' }, [el('h3', { text: domain.name })]),
+      grid,
+    ]));
   }
   elements['home-view'].replaceChildren(hero, ...sections);
 }
@@ -752,11 +954,13 @@ function preferredNormalDestination(entry) {
   const state = getState();
   const candidates = (state.membershipsByEntry.get(entry.id) || [])
     .map((membership) => ({ membership, collection: state.collectionById.get(membership.collectionId) }))
-    .filter((item) => item.collection?.type === 'normal')
+    .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden)
     .sort((a, b) => Number(a.collection.order || 0) - Number(b.collection.order || 0)
       || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
       || a.collection.name.localeCompare(b.collection.name));
-  return candidates[0] ? { entry, collectionId: candidates[0].collection.id, label: candidates[0].collection.name, domainId: entry.domainId } : null;
+  return candidates[0]
+    ? { entry, collectionId: candidates[0].collection.id, label: candidates[0].collection.name, domainId: entry.domainId }
+    : { entry, collectionId: systemDomainWordsCollectionId(entry.domainId), label: '总词表', domainId: entry.domainId };
 }
 
 function globalPhraseRepresentative(normalizedText) {
@@ -1594,7 +1798,7 @@ function openSearchDialog() {
     const group = el('optgroup', { label: domain.name });
     group.append(el('option', { value: `collection:${systemDomainWordsCollectionId(domain.id)}`, text: '总词表' }));
     const collections = state.collections
-      .filter((item) => item.domainId === domain.id)
+      .filter((item) => item.domainId === domain.id && !item.hidden)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     for (const collection of collections) group.append(el('option', { value: `collection:${collection.id}`, text: collection.name }));
     scope.append(group);
@@ -1725,14 +1929,13 @@ function openSettingsDialog() {
     catch (error) { displayError(error); }
     finally { refresh.disabled = false; refresh.textContent = '刷新模型'; }
   });
-  const exportButton = button('导出完整 JSON', 'secondary-button', () => exportBackupNow().catch(displayError));
-  const restoreButton = button('恢复备份', 'secondary-button', openRestoreDialog);
+  const exchangeButton = button('数据交换', 'secondary-button', openDataExchangeDialog);
   const manageButton = button('管理词库', 'secondary-button', openLibraryManager);
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('API Key', key), field('模型', model), updated, refresh]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [manageButton])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [exportButton, restoreButton])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [exchangeButton])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '版本' }), el('p', { className: 'help-text', text: `Vocabulary Index ${APP_VERSION}` })]),
   ];
   openDialog({ title: '设置', body, submitText: '保存', onSubmit: async () => { setApiKey(key.value); if (model.value) selectModel(model.value); await setNumberMode(numberMode.value); showToast('已保存'); } });
@@ -1821,10 +2024,11 @@ async function handleDialogSubmit(event) {
   event.preventDefault();
   if (!dialogSubmitHandler) return;
   const submit = /** @type {HTMLButtonElement | null} */ (elements['dialog-actions'].querySelector('button[type="submit"]'));
+  const activeHandler = dialogSubmitHandler;
   try {
     if (submit) { submit.disabled = true; submit.dataset.oldText = submit.textContent; submit.textContent = '处理中…'; }
-    await dialogSubmitHandler();
-    closeDialog();
+    await activeHandler();
+    if (dialogSubmitHandler === activeHandler) closeDialog();
     renderApp();
   } catch (error) { displayError(error); }
   finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = submit.dataset.oldText || '保存'; } }

@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = (relative) => fs.existsSync(path.join(root, relative));
 
 const html = read('index.html');
-assert.ok(html.includes('name="application-version" content="3.0.4"'));
+assert.ok(html.includes('name="application-version" content="3.0.6"'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.includes('./js/v3-upgrade.js'));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'), '升级引导必须先于样式和应用模块加载');
@@ -39,6 +39,8 @@ const upgrade = read('js/v3-upgrade.js');
 const store = read('js/v3-store.js');
 const model = read('js/v3-model.js');
 const ai = read('js/v3-ai.js');
+const exchange = read('js/v3-exchange.js');
+const dataWorker = read('js/v3-data-worker.js');
 
 // 词汇与短语同构；主列表不显示词性，不出现独立详情。
 assert.ok(ui.includes("function relationItemsForEntry"));
@@ -120,7 +122,7 @@ assert.ok(css.includes('body.modal-open'));
 assert.ok(ui.includes('makeSortableList'));
 assert.ok(ui.includes('reorderCollections'));
 assert.ok(ui.includes('reorderDomains'));
-assert.ok(ui.includes(".filter((item) => item.domainId === domain.id)"), '管理器必须包含短语表，而非只列普通词表');
+assert.ok(ui.includes("item.type === 'normal' && !item.hidden"), '管理器与首页不得暴露内置来源词表');
 assert.ok(!ui.includes('提高优先级') && !ui.includes('降低优先级'));
 assert.ok(css.includes('.drag-handle'));
 
@@ -139,6 +141,40 @@ assert.ok(ui.includes('0.38'), '长距离跳转应使用阅读锚点');
 assert.ok(!jumpBody.includes('renderCollection()'));
 assert.ok(ui.includes("window.addEventListener('scroll', persistScrollPosition"));
 
+
+assert.ok(ui.includes("className: 'index-scope global-scope'"), '首页必须封装全局层');
+assert.ok(ui.includes("className: 'index-scope domain-scope'"), '首页必须分别封装独立词域');
+assert.ok(css.includes('.index-scope') && css.includes('.global-scope') && css.includes('.domain-scope'));
+assert.ok(model.includes('hidden: Boolean(hidden)'), '词表模型必须保留隐藏来源标记');
+const dbSource = read('js/v3-db.js');
+assert.ok(dbSource.includes('BUILTIN_SEED_REVISION = 2'));
+assert.ok(dbSource.includes("BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms'"));
+assert.ok(dbSource.includes('ensureBuiltInSeedRevision'), '既有 3.0 数据库必须一次性合并新内置词域');
+
+// 数据交换中心：统一全局、独立域、词表的内容导入导出与完整备份。
+assert.ok(ui.includes("button('数据交换'"), '首页设置必须提供数据交换入口');
+assert.ok(ui.includes("title: '数据交换'"));
+assert.ok(ui.includes('if (dialogSubmitHandler === activeHandler) closeDialog()'), '打开差异预览后不得被父表单提交逻辑立即关闭');
+assert.ok(ui.includes("value: 'import-content'"));
+assert.ok(ui.includes("value: 'export-content'"));
+assert.ok(ui.includes("value: 'export-backup'"));
+assert.ok(ui.includes("value: 'restore-backup'"));
+assert.ok(ui.includes("value: 'merge'"));
+assert.ok(ui.includes("value: 'replace'"));
+assert.ok(ui.includes('planDataExchangeFile'));
+assert.ok(ui.includes('openDataExchangePreview'));
+assert.ok(ui.includes('vocabulary-index-recovery-'), '内容导入前必须自动生成恢复备份');
+assert.ok(exchange.includes("export const VIX_FORMAT = 'vix-json'"));
+assert.ok(exchange.includes('export function createVixPackage'));
+assert.ok(exchange.includes('export function planVixImport'));
+assert.ok(exchange.includes('normalizePersonalReferences'));
+assert.ok(dataWorker.includes('planVixImport'));
+assert.ok(dataWorker.includes('JSON.parse'), '大型内容 JSON 必须在 Worker 中解析');
+assert.ok(css.includes('.data-exchange-form'));
+assert.ok(css.includes('.exchange-summary'));
+assert.ok(model.includes('contentSources'), '完整备份必须保存来源目录');
+assert.ok(model.includes("collection?.type === 'normal' && !collection.hidden"), '隐藏来源不得抢占普通词表投影');
+
 // AI、数据和 PWA 契约。
 assert.ok(ui.includes('createAiCheckBatches'));
 assert.ok(ui.includes('AiCheckController'));
@@ -147,9 +183,9 @@ assert.ok(!/qwen|llama|gpt-oss|openai\/gpt/i.test(ai), 'AI 策略不得按模型
 assert.ok(store.includes('expectedRevision'));
 assert.ok(read('js/v3-db.js').includes('setLastPositionSetting'));
 assert.ok(store.includes('BroadcastChannel'));
-assert.ok(app.includes("const MODULE_VERSION = '3.0.4'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.0.6'"));
 assert.ok(app.includes('registration.waiting'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.4'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.6'));
 assert.ok(upgrade.includes('caches.delete'));
 assert.ok(!upgrade.includes('indexedDB'), '升级引导不得触碰业务数据库');
 
@@ -163,7 +199,7 @@ for (const name of jsFiles) {
 }
 
 const sw = read('sw.js');
-assert.ok(sw.includes('v3.0.4-navigation-20260801-1'));
+assert.ok(sw.includes('v3.0.6-navigation-20260801-2'));
 const installBody = sw.match(/sw\.addEventListener\('install',[\s\S]*?\n}\);/)?.[0] || '';
 assert.ok(!installBody.includes('skipWaiting'));
 assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));
@@ -171,6 +207,8 @@ assert.ok(sw.includes('async function appShellFirst'));
 assert.ok(sw.includes('event.respondWith(appShellFirst(request))'), '导航必须使用当前代 App Shell，避免新 HTML 与旧 JS 混装');
 const precacheBody = sw.match(/const PRECACHE = \[([\s\S]*?)\];/)?.[1] || '';
 const precache = [...precacheBody.matchAll(/['"](\.\/[^'"]+)['"]/g)].map((match) => match[1]);
+assert.ok(precache.includes('./js/v3-exchange.js'));
+assert.ok(precache.includes('./js/v3-data-worker.js'));
 assert.equal(new Set(precache).size, precache.length);
 for (const relative of precache) {
   const clean = relative.replace(/^\.\//, '');

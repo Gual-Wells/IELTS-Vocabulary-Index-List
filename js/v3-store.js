@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.4',
+    appVersion: '3.0.6',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,7 +36,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.4', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.6', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -87,10 +87,10 @@ function buildState(snapshot) {
     })));
   }
   const collectionById = new Map(collections.map((item) => [item.id, item]));
-  collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, virtual: true, createdAt: '', updatedAt: '' });
-  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语表', label: '', type: 'system-global-phrases', order: -1, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语表', label: '', type: 'system-global-phrases', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
-    collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '总词表', label: '', type: 'system-domain-words', order: -1, virtual: true, createdAt: '', updatedAt: '' });
+    collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '总词表', label: '', type: 'system-domain-words', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   }
   return {
     ...backup,
@@ -367,7 +367,7 @@ export async function moveCollection(collectionId, direction) {
 
 export async function reorderCollections(domainId, orderedIds) {
   return mutate('调整词表顺序', (draft) => {
-    const siblings = draft.collections.filter((item) => item.domainId === domainId);
+    const siblings = draft.collections.filter((item) => item.domainId === domainId && item.type === 'normal' && !item.hidden);
     const expected = new Set(siblings.map((item) => item.id));
     const order = [...orderedIds].filter((id) => expected.has(id));
     for (const item of siblings) if (!order.includes(item.id)) order.push(item.id);

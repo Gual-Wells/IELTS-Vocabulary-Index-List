@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-08-01T13:20:00.000Z",
+  "domainId": "domain_computer_terms",
+  "domainName": "计算机术语",
+  "entries": 1121,
+  "words": 544,
+  "phrases": 577,
+  "glossCoverage": 1121,
+  "translationPipeline": "Simplified Chinese terminology -> protected ICU Hans-Hant one-to-one conversion",
+  "sourceCounts": {
+    "PY": 77,
+    "CORE": 246,
+    "HW": 46,
+    "NIST": 76,
+    "GH": 59,
+    "MDN": 178,
+    "NIST-AI": 66,
+    "DATA": 71,
+    "K8S": 64,
+    "OS": 29,
+    "DSA": 81,
+    "IETF": 58,
+    "CNCF": 47,
+    "DEVOPS": 23
+  },
+  "officialSourceFamilies": [
+    "MDN",
+    "Python",
+    "GitHub",
+    "Kubernetes",
+    "CNCF",
+    "NIST CSRC",
+    "NIST AI",
+    "RFC Editor"
+  ],
+  "curatedCompositeCategories": [
+    "CORE",
+    "DSA",
+    "DATA",
+    "OS",
+    "HW",
+    "DEVOPS"
+  ]
+}

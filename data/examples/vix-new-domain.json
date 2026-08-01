@@ -1,0 +1,25 @@
+{
+  "format": "vix-json",
+  "version": 1,
+  "target": { "scope": "domain", "domainKey": "domain_medical_demo" },
+  "mode": "replace",
+  "data": {
+    "domains": [
+      { "key": "domain_medical_demo", "name": "医学术语示例", "order": 2, "glossEnabled": true }
+    ],
+    "collections": [
+      { "key": "collection_medical_core", "domainKey": "domain_medical_demo", "name": "基础医学", "kind": "normal", "order": 2 },
+      { "key": "domain_medical_demo__phrases", "domainKey": "domain_medical_demo", "name": "短语", "kind": "phrases", "order": 1 }
+    ],
+    "entries": [
+      { "key": "entry_medical_neuron", "domainKey": "domain_medical_demo", "text": "neuron", "glossHans": "神经元", "glossHant": "神經元", "sourceRefs": ["demo-medical"] },
+      { "key": "entry_medical_cell_membrane", "domainKey": "domain_medical_demo", "text": "cell membrane", "glossHans": "细胞膜", "glossHant": "細胞膜", "sourceRefs": ["demo-medical"] }
+    ],
+    "memberships": [
+      { "entryKey": "entry_medical_neuron", "collectionKey": "collection_medical_core", "sourceLabel": "demo-medical", "sourceOrder": 0 }
+    ]
+  },
+  "sources": [
+    { "key": "demo-medical", "title": "示例医学术语源", "publisher": "Example", "url": "https://example.com/medical", "retrievedAt": "2026-08-01" }
+  ]
+}

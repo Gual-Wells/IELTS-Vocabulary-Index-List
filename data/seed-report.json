@@ -1,34 +1,65 @@
 {
-  "sourceCounts": {
-    "A1": 901,
-    "A2": 872,
-    "B1": 809,
-    "B2": 1427,
-    "C1": 1315,
-    "AWL": 549,
-    "AVL": 548
+  "generatedAt": "2026-08-01T14:20:00.000Z",
+  "schemaVersion": 3,
+  "appVersion": "3.0.6",
+  "total": {
+    "domains": 2,
+    "collections": 14,
+    "entries": 6126,
+    "words": 5539,
+    "phrases": 587,
+    "memberships": 7495,
+    "phraseTokens": 1312
   },
-  "uniqueEntries": 5005,
-  "canonicalCounts": {
-    "A1": 899,
-    "A2": 791,
-    "B1": 691,
-    "B2": 1294,
-    "C1": 1277,
-    "AWL": 53,
-    "AVL": 0
+  "global": {
+    "words": 5322,
+    "phrases": 587
   },
-  "laterDuplicateOccurrences": 1416,
-  "multiSourceEntries": 862,
-  "mergedPosEntries": 351,
-  "internalDuplicateLines": {
-    "A1": 2,
-    "A2": 5,
-    "B1": 2,
-    "B2": 2,
-    "C1": 2,
-    "AWL": 1
+  "generalEnglish": {
+    "entries": 5005,
+    "words": 4995,
+    "phrases": 10,
+    "visibleCollectionCounts": {
+      "A1": 894,
+      "A2": 786,
+      "B1": 691,
+      "B2": 1294,
+      "C1": 1277,
+      "AWL": 53,
+      "AVL": 0
+    }
   },
-  "malformed": [],
-  "awlAvlNote": "AVL 与 AWL 内容相同，唯一区别是 AWL 内 region n. 重复一次；按全局优先级规则 AVL 无独占词条。"
+  "computerTerms": {
+    "domainId": "domain_computer_terms",
+    "entries": 1121,
+    "words": 544,
+    "phrases": 577,
+    "glossEnabled": true,
+    "glossCoverage": 1121,
+    "hiddenSourceCollections": [
+      "collection_computer_terms_builtin_source"
+    ],
+    "visibleCollectionCounts": {
+      "计算机基础与系统": 214,
+      "软件开发与数据": 197,
+      "网络、云与安全": 114,
+      "人工智能": 19
+    },
+    "sourceCounts": {
+      "PY": 77,
+      "CORE": 246,
+      "HW": 46,
+      "NIST": 76,
+      "GH": 59,
+      "MDN": 178,
+      "NIST-AI": 66,
+      "DATA": 71,
+      "K8S": 64,
+      "OS": 29,
+      "DSA": 81,
+      "IETF": 58,
+      "CNCF": 47,
+      "DEVOPS": 23
+    }
+  }
 }

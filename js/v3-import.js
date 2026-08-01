@@ -2,6 +2,7 @@ import {
   canonicalizeBackup, migrateLegacyBackup, normalizeDisplayText, normalizeEnglish,
   normalizeGlossHant, parseLegacySourceLine,
 } from './v3-model.js';
+import { isVixContentPackage, normalizeVixPackage } from './v3-exchange.js';
 
 export const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
 
@@ -101,6 +102,7 @@ export function parseJsonContent(text) {
     return { kind: 'entries', entries: mergeRows(entries), errors: [] };
   }
   if (parsed && typeof parsed === 'object') {
+    if (isVixContentPackage(parsed)) return { kind: 'content-package', package: normalizeVixPackage(parsed), errors: [] };
     if (Number(parsed.schemaVersion) === 3 || Array.isArray(parsed.domains)) {
       return { kind: 'backup', backup: canonicalizeBackup(parsed), errors: [] };
     }
@@ -108,7 +110,7 @@ export function parseJsonContent(text) {
       return { kind: 'backup', backup: migrateLegacyBackup(parsed), errors: [] };
     }
   }
-  throw new Error('JSON 既不是内容数组，也不是受支持的完整备份');
+  throw new Error('JSON 既不是内容数组、VIX 内容文件，也不是受支持的完整备份');
 }
 
 export function parseImportContent(content, filename = '') {

@@ -1,15 +1,22 @@
-# 3.0 数据与导入格式
+# Vocabulary Index 3.0.6 数据格式
 
-## 规范化
+系统保留两种 JSON：
 
-英文词项执行：Unicode NFKC、忽略大小写、合并空白、弯引号转直引号、Unicode 连字符/减号转 ASCII 连字符、删除零宽/BOM/双向控制字符。单个词项上限 160 个 JavaScript 字符单元。
+1. **Schema 3 完整备份**：精确迁移或恢复整个应用状态；
+2. **VIX JSON 内容包**：在全局、独立域或词表范围内交换词库内容。
 
-## 完整 JSON
+二者不能混用。模型或外部工具应生成 VIX JSON，不应生成完整备份。
+
+## 1. 英文规范化
+
+英文执行 Unicode NFKC、忽略大小写、合并空白、弯引号转直引号、Unicode 连字符/减号转 ASCII 连字符，并删除零宽、BOM 和双向控制字符。单条英文上限 160 个 JavaScript 字符单元。
+
+## 2. Schema 3 完整备份
 
 ```json
 {
   "schemaVersion": 3,
-  "appVersion": "3.0.4",
+  "appVersion": "3.0.6",
   "exportedAt": "2026-08-01T00:00:00.000Z",
   "domains": [],
   "collections": [],
@@ -22,12 +29,14 @@
 }
 ```
 
+完整备份由应用导出，包含 PIN、浏览位置、标注和应用设置。Groq API Key 与撤销历史不进入备份。恢复时应用重新生成 PhraseToken，并校验 ID、唯一性、关系、PIN 和浏览位置。
+
 ### Domain
 
 ```json
 {
-  "id": "domain_computer_science_xxx",
-  "name": "计算机科学",
+  "id": "domain_computer_terms",
+  "name": "计算机术语",
   "order": 1,
   "glossEnabled": true,
   "createdAt": "...",
@@ -37,7 +46,7 @@
 
 ### Collection
 
-`type` 只能为 `normal` 或 `system-phrases`。每个词域必须恰有一个系统短语表，其 ID 固定为 `<domainId>__phrases`。
+`type` 只能为 `normal` 或 `system-phrases`。每个词域恰有一个系统短语表，ID 固定为 `<domainId>__phrases`。`hidden: true` 表示内部来源 Collection，不进入首页、管理器、搜索范围或普通跳转目标。
 
 ### Entry
 
@@ -55,7 +64,7 @@
 }
 ```
 
-约束：同一词域内 `normalizedText` 唯一；普通 word 至少有一个普通词表来源；phrase 可以没有普通来源。`glossHant` 最大 120 字符，只保存通用繁体。
+同一词域内 `normalizedText` 唯一。`kind` 由英文文本决定：单个词为 `word`，多词表达为 `phrase`。数据库只保存繁体释义 `glossHant`；简体释义可以作为生成阶段或导入审计信息，但不会成为第二套 UI 字段。
 
 ### Membership
 
@@ -64,99 +73,163 @@
   "id": "membership_xxx",
   "entryId": "entry_xxx",
   "collectionId": "collection_xxx",
-  "sourceLabel": "n.",
+  "sourceLabel": "NIST",
   "sourceOrder": 12,
   "createdAt": "...",
   "updatedAt": "..."
 }
 ```
 
-Membership 只能指向普通词表。`sourceLabel` 只归档旧词性/来源标签，不参与身份、搜索、排序或 AI 核查。
-
-**3.0 不存在 `sourceText` 字段。英文文本只从 Entry 读取。**
+Membership 只能连接普通词与普通 Collection。短语不通过 Membership 进入普通词表。
 
 ### PhraseToken
 
-```json
-{
-  "id": "entry_xxx:0",
-  "phraseId": "entry_xxx",
-  "domainId": "domain_xxx",
-  "token": "thread",
-  "normalizedToken": "thread",
-  "tokenIndex": 0
-}
-```
+PhraseToken 是应用内部派生索引，不应由 VIX JSON 提供。完整恢复时也会根据短语文本重新生成。
 
-完整备份恢复时忽略外部提供的索引并根据短语文本重建，然后执行一致性验证。
+## 3. VIX JSON 内容包
 
-### Pin
+统一格式：
 
 ```json
 {
-  "id": "pin_xxx",
-  "entryId": "entry_xxx",
-  "domainId": "domain_xxx",
-  "contextCollectionId": "collection_xxx",
-  "order": 0,
-  "createdAt": "..."
+  "format": "vix-json",
+  "version": 1,
+  "exportedAt": "2026-08-01T00:00:00.000Z",
+  "target": {
+    "scope": "domain",
+    "domainKey": "domain_computer_terms",
+    "collectionKey": ""
+  },
+  "mode": "merge",
+  "data": {
+    "domains": [],
+    "collections": [],
+    "entries": [],
+    "memberships": []
+  },
+  "sources": []
 }
 ```
 
-同一词项最多一个 PIN。`order` 保留 2.4.1 的 PIN 切换顺序；上下文词表必须能实际显示该词项。
+正式 Schema：`data/vix-json.schema.json`。示例位于 `data/examples/`。
 
-### Settings
+### 3.1 target.scope
 
-`numberMode` 只能为 `none`、`group` 或 `global`。`lastPositions` 以 `lastPosition:<domainId>:<collectionId>` 为键；恢复时必须指向该词表当前可见词项。
+- `global`：全部词域和内容结构；
+- `domain`：一个独立词域；
+- `collection`：一个普通词表或该域唯一短语表。
 
-## 词项导入
+全局总表、全局短语表和词域总词表均为运行时派生视图，不写入 `collections`，也不能作为直接导入目标。
 
-### TXT / Markdown
+### 3.2 mode
 
-```text
-# 标题
-thread n.
-thread pool
-```
+- `merge`：只新增或更新明确出现的内容；未出现的现有内容保留，不执行隐式删除；
+- `replace`：只完整替换面板选定的全局、独立域或词表范围。
 
-只有井号后带空格的行视为标题；`#hashtag n.` 是正常词项。
+面板选择与文件声明不一致时，必须由用户明确选择使用当前目标或文件目标。
 
-### CSV
-
-```csv
-text,sourceLabel,gloss
-thread,n.,线程
-thread pool,,线程池
-```
-
-无表头时按 `text,sourceLabel,gloss` 解析。未启用释义的词域不会写入 gloss。
-
-### JSON 数组
+### 3.3 data.domains
 
 ```json
-[
-  { "text": "thread", "sourceLabel": "n.", "gloss": "线程" },
-  { "text": "thread pool", "glossHant": "線程池" }
-]
+{
+  "key": "domain_computer_terms",
+  "name": "计算机术语",
+  "order": 1,
+  "glossEnabled": true
+}
 ```
 
-兼容旧 `{ "word": "access", "pos": "n., v." }` 和 `{ "w": "access", "d": "n." }`。
+`key` 是内容交换稳定键，不要求外部工具生成数据库 UUID。
 
-## 安全边界
+### 3.4 data.collections
 
-- 单文件上限 64 MB。
-- 解析和预览完成前不修改 IndexedDB。
-- 完整恢复执行 schema、ID、唯一性、关联、PIN、上次位置和短语索引校验。
-- 未知实体字段不会进入数据库。
-- Groq API Key 不进入备份。
-- 撤销历史不进入备份。
+```json
+{
+  "key": "collection_computer_ai",
+  "domainKey": "domain_computer_terms",
+  "name": "人工智能",
+  "label": "",
+  "kind": "normal",
+  "order": 5
+}
+```
 
-## 3.0.4 派生投影
+`kind` 为 `normal` 或 `phrases`。每个词域只能有一个 `phrases` Collection；新短语会合并到该固定短语表。
 
-以下列表只在运行时生成，不写入 `collections`，也不复制 Entry：
+### 3.5 data.entries
 
-- `__global_all_words`：跨词域普通词全局去重；
-- `__global_all_phrases`：跨词域短语全局去重；
-- `<domainId>__all_words`：指定词域全部普通词。
+```json
+{
+  "key": "entry:domain_computer_terms:speculative-decoding",
+  "domainKey": "domain_computer_terms",
+  "text": "speculative decoding",
+  "glossHant": "推測解碼",
+  "glossSource": "nist-ai",
+  "sourceRefs": ["nist-ai"]
+}
+```
 
-词域短语表仍是每个词域唯一的系统 Collection。普通词表顺序只决定普通词的优先投影，不影响三类派生总表。
+应用根据英文自动判断词汇或短语，规范化、去重并重建关系索引。
+
+### 3.6 data.memberships
+
+```json
+{
+  "entryKey": "entry:domain_computer_terms:inference",
+  "collectionKey": "collection_computer_ai",
+  "sourceLabel": "nist-ai",
+  "sourceOrder": 18
+}
+```
+
+Membership 只接受普通词和普通词表。短语导入不需要 Membership。
+
+### 3.7 sources
+
+```json
+{
+  "key": "nist-ai",
+  "title": "NIST AI Resource Center",
+  "publisher": "NIST",
+  "url": "https://airc.nist.gov/",
+  "retrievedAt": "2026-08-01"
+}
+```
+
+来源目录保存在内容元数据中，默认不进入日常列表 UI。
+
+## 4. 数据交换中心支持的组合
+
+| 操作 | 范围 | 方式 |
+|---|---|---|
+| 新建完整独立域 | 独立域 | 完整替换 |
+| 增量更新独立域 | 独立域 | 增量合并 |
+| 新建普通词表 | 词表 | 完整替换 |
+| 增量更新普通词表 | 词表 | 增量合并 |
+| 增量或替换短语表 | 词表 | 合并或替换 |
+| 导出全局内容 | 全局 | 不适用 |
+| 替换全局格局 | 全局 | 完整替换 |
+
+词表级替换只改变目标普通词表的 Membership；仍被其他词表引用的 Entry 不得删除。
+
+## 5. 导入安全边界
+
+- 单文件上限 64 MB；
+- JSON 解析和差异计算在模块 Web Worker 中执行；
+- 预检完成前不修改 IndexedDB；
+- 完整替换前自动下载当前完整恢复备份；
+- 提交使用一次完整恢复事务，不逐条写入和重绘；
+- 导入完成后只重建一次内存索引和界面；
+- 失败时不提交半套数据；
+- 释义冲突可统一保留当前值或使用导入值；
+- PIN、标注和浏览位置按仍然存在的 Entry 与投影重新校验；
+- Groq API Key 不进入 VIX JSON 或完整备份。
+
+## 6. 内置数据修订
+
+`settings.builtInSeedRevision` 当前值为 `2`：
+
+- 修订 1：加入“计算机术语”词域；
+- 修订 2：为 544 个普通词补充四个互斥普通词表和 Membership。
+
+升级过程幂等，不复制既有 Entry，不覆盖 PIN、标注、浏览位置或用户自建内容。

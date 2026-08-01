@@ -1,7 +1,7 @@
 import {
   buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
   createMembership, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant, relatedPhrases,
-  phraseComponents, safeId, searchBackup, systemPhraseCollectionId, tokenizeEnglish,
+  phraseComponents, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, redo as dbRedo,
@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 3,
-    appVersion: '3.0.1',
+    appVersion: '3.0.2',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -36,13 +36,18 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.1', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.2', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
     return a.order - b.order || a.name.localeCompare(b.name);
   });
   const projection = buildProjection(backup);
+  const collectionById = new Map(collections.map((item) => [item.id, item]));
+  collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, virtual: true, createdAt: '', updatedAt: '' });
+  for (const domain of domains) {
+    collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '总词表', label: '', type: 'system-domain-words', order: -1, virtual: true, createdAt: '', updatedAt: '' });
+  }
   return {
     ...backup,
     domains,
@@ -50,7 +55,7 @@ function buildState(snapshot) {
     projection,
     revision: Number(snapshot.settings?.dataRevision || 0),
     domainById: new Map(domains.map((item) => [item.id, item])),
-    collectionById: new Map(collections.map((item) => [item.id, item])),
+    collectionById,
     entryById: new Map(backup.entries.map((item) => [item.id, item])),
     membershipsByEntry: groupBy(backup.memberships, (item) => item.entryId),
     membershipsByCollection: groupBy(backup.memberships, (item) => item.collectionId),
@@ -208,7 +213,7 @@ function normalizeSoftReferences(backup) {
   return backup;
 }
 
-async function mutate(label, mutator) {
+async function mutate(label, mutator, retry = true) {
   const before = backupFromState();
   const draft = clone(before);
   await mutator(draft);
@@ -217,10 +222,18 @@ async function mutate(label, mutator) {
   const after = canonicalizeBackup(draft);
   const changes = diffBackup(before, after);
   if (!changes.length) return state;
-  const revision = await commitChanges(changes, { label, expectedRevision: state.revision });
-  await reloadStore('mutation');
-  broadcast(revision);
-  return state;
+  try {
+    const revision = await commitChanges(changes, { label, expectedRevision: state.revision });
+    await reloadStore('mutation');
+    broadcast(revision);
+    return state;
+  } catch (error) {
+    if (retry && String(error?.message || error).includes('另一实例')) {
+      await reloadStore('sync');
+      return mutate(label, mutator, false);
+    }
+    throw error;
+  }
 }
 
 function nextOrder(items) {

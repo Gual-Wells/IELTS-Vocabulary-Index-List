@@ -6,7 +6,7 @@ import {
   buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain,
   createEntry, createMembership, isPhraseText, migrateLegacyBackup, normalizeDisplayText,
   normalizeEnglish, normalizeGlossHant, parseLegacySourceLine, phraseComponents,
-  relatedPhrases, safeId, searchBackup, systemPhraseCollectionId, tokenizeEnglish, validateBackup,
+  relatedPhrases, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish, validateBackup,
 } from '../js/v3-model.js';
 import { parseCsv, parseImportContent, parseJsonContent, parseTextList } from '../js/v3-import.js';
 import { createAiCheckBatches, parseRetryAfter } from '../js/v3-ai.js';
@@ -83,6 +83,11 @@ assert.ok(a1Projection.every((item) => item.kind === 'word'), '普通词表投�
 const phraseProjection = projection.get(systemPhraseCollectionId(backup.domains[0].id));
 assert.ok(phraseProjection.some((item) => item.id === phrase.id));
 assert.ok(phraseProjection.every((item) => item.kind === 'phrase'), '短语表投影只能包含短语');
+const domainTotalProjection = projection.get(systemDomainWordsCollectionId(backup.domains[0].id));
+assert.equal(domainTotalProjection.length, 2);
+assert.ok(domainTotalProjection.every((item) => item.kind === 'word'));
+const globalProjection = projection.get(SYSTEM_GLOBAL_WORDS_ID);
+assert.equal(globalProjection.length, 2);
 assert.equal(searchBackup(backup, 'thr').length, 2);
 assert.equal(searchBackup(backup, 'thred').some((item) => item.text === 'thread'), true, '轻微拼写错误应命中');
 
@@ -98,6 +103,15 @@ const crossDomain = canonicalizeBackup({
   memberships: [...backup.memberships, createMembership({ entryId: secondAccess.id, collectionId: secondCollection.id, timestamp: '2026-08-01T00:00:00.000Z' })],
 });
 assert.equal(crossDomain.entries.filter((item) => item.normalizedText === 'access').length, 2, '同形词可存在于不同词域');
+const crossProjection = buildProjection(crossDomain);
+assert.equal(crossProjection.get(SYSTEM_GLOBAL_WORDS_ID).filter((item) => item.normalizedText === 'access').length, 1, '全局总表必须全局去重');
+assert.equal(crossProjection.get(systemDomainWordsCollectionId(secondDomain.id)).filter((item) => item.normalizedText === 'access').length, 1, '词域总表必须域内去重');
+const virtualContextBackup = canonicalizeBackup({
+  ...crossDomain,
+  pins: [{ id: safeId('pin', access.id), entryId: access.id, domainId: access.domainId, contextCollectionId: SYSTEM_GLOBAL_WORDS_ID, order: 0, createdAt: '2026-08-01T00:00:00.000Z' }],
+  settings: { ...crossDomain.settings, lastPositions: { ...crossDomain.settings.lastPositions, [`lastPosition:global:${SYSTEM_GLOBAL_WORDS_ID}`]: access.id } },
+});
+assert.equal(validateBackup(virtualContextBackup), true, '虚拟总表必须支持 PIN 与独立上次位置');
 assert.throws(() => canonicalizeBackup({ ...crossDomain, entries: [...crossDomain.entries, { ...secondAccess, id: 'duplicate' }] }), /重复/);
 assert.equal(canonicalizeBackup({ ...crossDomain, settings: { ...crossDomain.settings, numberMode: 'none' } }).settings.numberMode, 'none');
 assert.equal(canonicalizeBackup({ ...crossDomain, settings: { ...crossDomain.settings, numberMode: 'group' } }).settings.numberMode, 'group');
@@ -130,6 +144,8 @@ if (fs.existsSync(seedPath)) {
   assert.equal(migrated.memberships.length, 6407);
   assert.equal(migrated.phraseTokens.length, 20);
   const fullProjection = buildProjection(migrated);
+  assert.equal(fullProjection.get(systemDomainWordsCollectionId(migrated.domains[0].id)).length, 4995);
+  assert.equal(fullProjection.get(SYSTEM_GLOBAL_WORDS_ID).length, 4995);
   for (const collection of migrated.collections) {
     const visible = fullProjection.get(collection.id) || [];
     if (collection.type === 'normal') assert.ok(visible.every((entry) => entry.kind === 'word'));

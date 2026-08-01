@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = (relative) => fs.existsSync(path.join(root, relative));
 
 const html = read('index.html');
-assert.ok(html.includes('name="application-version" content="3.0.1"'));
+assert.ok(html.includes('name="application-version" content="3.0.2"'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.includes('./js/v3-upgrade.js'));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'), '升级引导必须先于样式和应用模块加载');
@@ -42,10 +42,10 @@ const ai = read('js/v3-ai.js');
 
 // 词汇与短语同构；主列表不显示词性，不出现独立详情。
 assert.ok(ui.includes("function relationItemsForEntry"));
-assert.ok(ui.includes("getRelatedPhrases(entry.id)"));
+assert.ok(ui.includes("getRelatedPhrases(word.id)"));
 assert.ok(ui.includes("getPhraseComponents(entry.id)"));
 assert.ok(ui.includes("className: 'relation-panel'"));
-assert.ok(ui.includes("button('PIN', `entry-pin"), 'PIN 必须直接位于表项');
+assert.ok(ui.includes("className: `entry-pin${pinned ? ' active' : ''}`"), 'PIN 必须直接位于表项');
 assert.ok(ui.includes("button('⋯', 'entry-more'"));
 assert.ok(!ui.includes('openEntryDetails'));
 assert.ok(!ui.includes("className: 'entry-pos'"), '主列表不得显示词性');
@@ -54,6 +54,12 @@ assert.ok(!ui.includes('相关短语') && !ui.includes('组成词') && !ui.inclu
 assert.ok(model.includes("if (entry.kind === 'phrase')"));
 assert.ok(model.includes('continue;'), '短语投影到短语表后必须停止进入普通词表');
 assert.ok(store.includes("collection.type === 'normal' && entry.kind === 'word'"));
+assert.ok(model.includes('SYSTEM_GLOBAL_WORDS_ID'));
+assert.ok(model.includes('systemDomainWordsCollectionId'));
+assert.ok(ui.includes("collection.type === 'system-phrases'"));
+assert.ok(ui.includes("className: 'letter-section flat-section'"), '短语词表不得生成首字母标题');
+assert.ok(ui.includes('if (relationPanel) row.append(relationPanel)'), '空关系面板不得被 append 为 null 文本');
+assert.ok(ui.includes('jumpToRelation'));
 
 // PIN 与审阅控制器持续可达。
 assert.ok(css.includes('.app.has-pin'));
@@ -82,7 +88,7 @@ assert.ok(ui.includes('const dialogStack = []'));
 assert.ok(ui.includes('snapshotAppDialog'));
 assert.ok(ui.includes('restoreAppDialog'));
 assert.ok(ui.includes('lockPageForModal'));
-assert.ok(ui.includes("input.focus({ preventScroll: true })"));
+assert.ok(!ui.includes("input.focus({ preventScroll: true })"), '搜索不应自动聚焦并推动 iOS 视口');
 assert.ok(css.includes('--visual-height'));
 assert.ok(css.includes('.search-dialog[open]'));
 assert.ok(css.includes('body.modal-open'));
@@ -98,7 +104,7 @@ assert.ok(css.includes('.drag-handle'));
 // 卡片不得保留大面积绝对定位“宽额头”。
 assert.ok(css.includes('.collection-card-title'));
 assert.match(css, /\.collection-card\s*\{[^}]*display:\s*grid/s);
-const refineCss = css.slice(css.indexOf('/* 3.0.1 interaction refinement */'));
+const refineCss = css.slice(css.indexOf('/* 3.0.2 interaction refinement */'));
 assert.ok(!/\.collection-card \.count\s*\{[^}]*position:\s*absolute/s.test(refineCss));
 assert.ok(!ui.includes('count-label'));
 
@@ -117,9 +123,9 @@ assert.ok(!/qwen|llama|gpt-oss|openai\/gpt/i.test(ai), 'AI 策略不得按模型
 assert.ok(store.includes('expectedRevision'));
 assert.ok(read('js/v3-db.js').includes('setLastPositionSetting'));
 assert.ok(store.includes('BroadcastChannel'));
-assert.ok(app.includes("const MODULE_VERSION = '3.0.1'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.0.2'"));
 assert.ok(app.includes('registration.waiting'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.1'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.0.2'));
 assert.ok(upgrade.includes('caches.delete'));
 assert.ok(!upgrade.includes('indexedDB'), '升级引导不得触碰业务数据库');
 
@@ -133,7 +139,7 @@ for (const name of jsFiles) {
 }
 
 const sw = read('sw.js');
-assert.ok(sw.includes('v3.0.1-ui-refine-20260801'));
+assert.ok(sw.includes('v3.0.2-relationship-totals-20260801-1'));
 const installBody = sw.match(/sw\.addEventListener\('install',[\s\S]*?\n}\);/)?.[0] || '';
 assert.ok(!installBody.includes('skipWaiting'));
 assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));

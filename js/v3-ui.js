@@ -13,9 +13,9 @@ import {
 import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
-import { normalizeEnglish, systemPhraseCollectionId } from './v3-model.js';
+import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
 
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.0.2';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -44,6 +44,7 @@ let taskPanelExpanded = true;
 let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
 let lastPersistedEntryId = '';
+let suppressNextMutationRender = false;
 const expandedRelations = new Set();
 const dialogStack = [];
 let currentDialogMeta = { onRestore: null };
@@ -79,7 +80,12 @@ function showToast(message, type = 'info') {
 
 function displayError(error) {
   console.error(error);
-  showToast(error?.message || String(error), 'error');
+  const message = error?.message || String(error);
+  if (String(message).includes('另一实例')) {
+    showToast('已同步另一窗口的数据，请再试一次');
+    return;
+  }
+  showToast(message, 'error');
 }
 
 function field(label, control, help = '') {
@@ -88,12 +94,13 @@ function field(label, control, help = '') {
   return wrapper;
 }
 
+let viewportUpdateFrame = 0;
 function updateVisualViewportVars() {
-  const viewport = window.visualViewport;
-  const height = viewport?.height || window.innerHeight;
-  const offsetTop = viewport?.offsetTop || 0;
-  document.documentElement.style.setProperty('--visual-height', `${height}px`);
-  document.documentElement.style.setProperty('--visual-top', `${offsetTop}px`);
+  cancelAnimationFrame(viewportUpdateFrame);
+  viewportUpdateFrame = requestAnimationFrame(() => {
+    const height = window.visualViewport?.height || window.innerHeight;
+    document.documentElement.style.setProperty('--visual-height', `${Math.round(height)}px`);
+  });
 }
 
 function lockPageForModal() {
@@ -118,7 +125,8 @@ function unlockPageForModal() {
   document.body.style.left = '';
   document.body.style.right = '';
   document.body.style.width = '';
-  window.scrollTo(0, lockedScrollY);
+  const targetY = lockedScrollY;
+  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, targetY)));
 }
 
 function snapshotAppDialog() {
@@ -246,17 +254,17 @@ function parseRoute() {
 
 function navigateCollection(collectionId, entryId = '') {
   const hash = collectionRoute(collectionId, entryId);
-  if (location.hash === hash) {
-    currentCollectionId = collectionId;
-    pendingJumpEntryId = entryId;
-    renderApp();
-  } else location.hash = hash;
+  if (location.hash !== hash) history.pushState(null, '', hash);
+  currentCollectionId = collectionId;
+  pendingJumpEntryId = entryId;
+  renderApp();
 }
 
 function goHome() {
   closeReview();
-  if (location.hash) location.hash = '';
-  else { currentCollectionId = ''; renderApp(); }
+  if (location.hash) history.pushState(null, '', location.pathname + location.search);
+  currentCollectionId = '';
+  renderApp();
 }
 
 function projectionCollectionForEntry(entryId) {
@@ -264,10 +272,12 @@ function projectionCollectionForEntry(entryId) {
   const entry = state.entryById.get(entryId);
   if (!entry) return '';
   if (entry.kind === 'phrase') return systemPhraseCollectionId(entry.domainId);
-  for (const [collectionId, entries] of state.projection.entries()) {
-    if (entries.some((item) => item.id === entryId)) return collectionId;
-  }
-  return '';
+  return systemDomainWordsCollectionId(entry.domainId);
+}
+
+
+function positionDomainId(collection, entry = null) {
+  return collection?.domainId || entry?.domainId || 'global';
 }
 
 function annotationCountForCollection(collectionId) {
@@ -347,9 +357,8 @@ function collectionCard(collection) {
   ]);
 }
 
-function searchResultButton(entry, onSelect) {
+function searchResultButton(entry, onSelect, collectionId = projectionCollectionForEntry(entry.id)) {
   const state = getState();
-  const collectionId = projectionCollectionForEntry(entry.id);
   const collection = state.collectionById.get(collectionId);
   return el('button', { type: 'button', className: 'search-result', on: { click: () => onSelect(entry, collectionId) } }, [
     el('strong', { text: entry.text }),
@@ -460,7 +469,7 @@ function renderHome() {
   elements['back-button'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
-  elements['page-subtitle'].textContent = `${state.entries.filter((entry) => entry.kind === 'word').length.toLocaleString()} · 本地保存`;
+  elements['page-subtitle'].textContent = `${getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString()} · 本地保存`;
   elements['settings-button'].textContent = '•••';
   elements['settings-button'].setAttribute('aria-label', '设置');
 
@@ -475,11 +484,13 @@ function renderHome() {
     el('div', { className: 'home-hero-actions' }, heroActions),
   ]);
 
-  const sections = [];
+  const sections = [el('section', { className: 'domain-section global-section' }, [
+    el('div', { className: 'collection-grid global-grid' }, [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID))]),
+  ])];
   for (const domain of [...state.domains].sort((a, b) => a.order - b.order)) {
-    const collections = state.collections
+    const collections = [state.collectionById.get(systemDomainWordsCollectionId(domain.id)), ...state.collections
       .filter((item) => item.domainId === domain.id)
-      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))];
     const heading = state.domains.length > 1
       ? el('div', { className: 'domain-heading' }, [el('h3', { text: domain.name })])
       : null;
@@ -513,7 +524,7 @@ function renderCollection() {
 
 function renderCollectionToolbar(collection) {
   const annotationCount = annotationCountForCollection(collection.id);
-  const lastPosition = getLastPosition(collection.domainId, collection.id);
+  const lastPosition = getLastPosition(positionDomainId(collection), collection.id);
   const quickActions = [];
   if (lastPosition) quickActions.push(button('继续上次位置', 'secondary-button compact-button continue-button', () => jumpToEntry(lastPosition, { collectionId: collection.id }), { title: '继续上次位置' }));
   if (annotationCount) quickActions.push(button(`${annotationCount}`, 'secondary-button compact-button annotation-count-button', () => startAnnotationReview(collection.id), { title: '待核查' }));
@@ -569,6 +580,15 @@ function letterForEntry(entry) {
 
 function renderEntryList(collection, domain, entries) {
   collectionRenderContext = null;
+  if (collection.type === 'system-phrases') {
+    elements['letter-nav'].classList.add('hidden');
+    const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
+    collectionRenderContext = { collection, domain, entries, grouped: new Map(), globalIndexById, sectionByLetter: new Map(), flat: true };
+    elements['entry-list'].replaceChildren(el('section', { className: 'letter-section flat-section' }, [
+      el('div', { className: 'letter-body flat-body' }, entries.map((entry, index) => renderEntryRow(entry, collection, domain, { groupIndex: index + 1, globalIndex: index + 1 }))),
+    ]));
+    return;
+  }
   if (!entries.length) {
     elements['letter-nav'].classList.add('hidden');
     elements['entry-list'].replaceChildren(el('div', { className: 'empty-state', text: '暂无内容' }));
@@ -595,7 +615,7 @@ function renderEntryList(collection, domain, entries) {
     const section = sectionByLetter.get(letter);
     if (section) {
       suppressScrollPersistence(750);
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      section.scrollIntoView({ behavior: 'auto', block: 'start' });
     }
   }, { disabled: !grouped.has(letter) })));
 
@@ -656,7 +676,15 @@ function updateActiveLetter(letter = '') {
 
 function relationItemsForEntry(entry) {
   if (entry.kind === 'word') {
-    return getRelatedPhrases(entry.id)
+    const state = getState();
+    const sourceWords = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID
+      ? state.entries.filter((candidate) => candidate.kind === 'word' && candidate.normalizedText === entry.normalizedText)
+      : [entry];
+    const phrases = new Map();
+    for (const word of sourceWords) {
+      for (const phrase of getRelatedPhrases(word.id)) phrases.set(`${phrase.domainId}:${phrase.normalizedText}`, phrase);
+    }
+    return [...phrases.values()]
       .map((phrase) => ({ id: phrase.id, text: phrase.text, entry: phrase }))
       .sort((a, b) => normalizeEnglish(a.text).localeCompare(normalizeEnglish(b.text), 'en'));
   }
@@ -683,12 +711,24 @@ async function copyText(text) {
   showToast(`已复制：${text}`);
 }
 
+function jumpToRelation(item) {
+  if (!item.entry) {
+    copyText(item.text).catch(displayError);
+    return;
+  }
+  const targetCollectionId = item.entry.kind === 'phrase'
+    ? systemPhraseCollectionId(item.entry.domainId)
+    : systemDomainWordsCollectionId(item.entry.domainId);
+  navigateCollection(targetCollectionId, item.entry.id);
+}
+
 function renderRelationPanel(entry) {
   const items = relationItemsForEntry(entry);
   if (!items.length || !expandedRelations.has(entry.id)) return null;
   return el('div', { className: 'relation-panel' }, items.map((item) =>
-    el('button', { type: 'button', className: `relation-item${item.entry ? '' : ' unresolved'}`, on: { click: () => copyText(item.text).catch(displayError) } }, [
+    el('button', { type: 'button', className: `relation-item${item.entry ? '' : ' unresolved'}`, on: { click: () => jumpToRelation(item) } }, [
       el('span', { text: item.text }),
+      item.entry ? el('span', { className: 'relation-jump', text: '›' }) : null,
     ])));
 }
 
@@ -705,9 +745,19 @@ function toggleEntryRelations(entryId) {
   current.replaceWith(renderEntryRow(entry, context.collection, context.domain, { groupIndex, globalIndex: index }));
 }
 
-async function toggleEntryPin(entry, collection) {
+async function toggleEntryPin(entry, collection, sourceButton = null) {
   const wasPinned = getState().pinByEntry.has(entry.id);
-  await togglePin(entry.id, collection.id);
+  sourceButton?.classList.toggle('active', !wasPinned);
+  sourceButton?.setAttribute('aria-pressed', wasPinned ? 'false' : 'true');
+  suppressNextMutationRender = true;
+  try {
+    await togglePin(entry.id, collection.id);
+  } catch (error) {
+    suppressNextMutationRender = false;
+    sourceButton?.classList.toggle('active', wasPinned);
+    sourceButton?.setAttribute('aria-pressed', wasPinned ? 'true' : 'false');
+    throw error;
+  }
   syncPinIndexForEntry(collection.id, entry.id);
   const context = collectionRenderContext;
   const current = document.getElementById(`entry-${entry.id}`);
@@ -736,11 +786,13 @@ function renderEntryRow(entry, collection, _domain, indexes = { groupIndex: 0, g
       el('span', { className: 'entry-text', text: entry.text }),
     ]),
     annotation ? button('•', 'entry-annotation', () => startAnnotationReview(collection.id, entry.id), { title: '待核查' }) : null,
-    relations.length ? button(expanded ? '⌃' : '⌄', 'entry-relations', () => toggleEntryRelations(entry.id), { title: expanded ? '收起' : '展开' }) : null,
-    button('PIN', `entry-pin${pinned ? ' active' : ''}`, () => toggleEntryPin(entry, collection).catch(displayError), { title: pinned ? '取消 PIN' : '设置 PIN' }),
+    relations.length ? button(expanded ? '⌃' : '⌄', 'entry-relations', () => toggleEntryRelations(entry.id), { title: expanded ? '收起关联' : '展开关联' }) : el('span', { className: 'entry-relations-placeholder', 'aria-hidden': 'true' }),
+    el('button', { type: 'button', className: `entry-pin${pinned ? ' active' : ''}`, text: 'PIN', title: pinned ? '取消 PIN' : '设置 PIN', 'aria-pressed': pinned ? 'true' : 'false', on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) } }),
     button('⋯', 'entry-more', () => openEntryActions(entry.id, collection.id), { title: '更多' }),
   ]);
-  row.append(line, renderRelationPanel(entry));
+  row.append(line);
+  const relationPanel = renderRelationPanel(entry);
+  if (relationPanel) row.append(relationPanel);
   return row;
 }
 
@@ -781,7 +833,7 @@ async function copyEntry(entry, collection) {
       if (!document.execCommand('copy')) throw new Error('浏览器拒绝复制');
     }
     const firstSavedPosition = !getLastPosition(entry.domainId, collection.id);
-    await setLastPosition(entry.domainId, collection.id, entry.id);
+    await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id);
     lastPersistedEntryId = entry.id;
     if (firstSavedPosition && currentCollectionId === collection.id) {
       renderCollectionToolbar(collection);
@@ -800,6 +852,7 @@ function ensureEntryRendered(entryId) {
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
   if (!context || !entry || context.collection.id !== currentCollectionId) return null;
+  if (context.flat) return document.getElementById(`entry-${entryId}`);
   const letter = letterForEntry(entry);
   setLetterSectionOpen(letter, true);
   updateActiveLetter(letter);
@@ -814,7 +867,7 @@ function suppressScrollPersistence(milliseconds = 700) {
 }
 
 /** @param {string} entryId @param {{ behavior?: ScrollBehavior, collectionId?: string }} [options] */
-function jumpToEntry(entryId, { behavior = 'smooth', collectionId = currentCollectionId } = {}) {
+function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollectionId } = {}) {
   const state = getState();
   const entry = state.entryById.get(entryId);
   if (!entry) { showToast('内容已不存在'); return false; }
@@ -885,9 +938,9 @@ function persistScrollPosition() {
     const entry = entryId ? state.entryById.get(entryId) : null;
     const collection = state.collectionById.get(currentCollectionId);
     if (entry && collection && entry.domainId === collection.domainId && entry.id !== lastPersistedEntryId) {
-      const firstSavedPosition = !getLastPosition(collection.domainId, collection.id);
+      const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id);
       lastPersistedEntryId = entry.id;
-      setLastPosition(collection.domainId, collection.id, entry.id)
+      setLastPosition(positionDomainId(collection, entry), collection.id, entry.id)
         .then(() => {
           if (firstSavedPosition && currentCollectionId === collection.id) renderCollectionToolbar(collection);
         })
@@ -1003,6 +1056,16 @@ function openCollectionActions(collectionId) {
   if (!collection) return;
   const entries = getVisibleEntries(collectionId);
   const annotationCount = annotationCountForCollection(collectionId);
+  if (collection.virtual) {
+    openActionDialog({ title: collection.name, body: [
+      el('div', { className: 'action-list' }, [
+        button('导出 CSV', '', () => { exportCollectionCsv(collection.id); closeActionDialog(); }),
+        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id); }) : null,
+        button('应用设置与备份', '', () => openSettingsDialog()),
+      ].filter(Boolean)),
+    ] });
+    return;
+  }
   const actions = [
     el('div', { className: 'action-group' }, [
       el('p', { className: 'action-group-title', text: '新增' }),
@@ -1344,10 +1407,12 @@ function openSearchDialog() {
   const input = el('input', { type: 'search', placeholder: '搜索', autocomplete: 'off', spellcheck: false, inputMode: 'search' });
   const scope = el('select');
   scope.append(el('option', { value: 'all', text: '全部' }));
+  scope.append(el('option', { value: `collection:${SYSTEM_GLOBAL_WORDS_ID}`, text: '全局总表' }));
   const domains = [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   for (const domain of domains) {
     scope.append(el('option', { value: `domain:${domain.id}`, text: domain.name }));
     const group = el('optgroup', { label: domain.name });
+    group.append(el('option', { value: `collection:${systemDomainWordsCollectionId(domain.id)}`, text: '总词表' }));
     const collections = state.collections
       .filter((item) => item.domainId === domain.id)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
@@ -1377,9 +1442,20 @@ function openSearchDialog() {
     closeSearchDialog();
     navigateCollection(collectionId, entry.id);
   };
+  const targetCollectionForResult = (entry) => {
+    const value = scope.value;
+    if (value.startsWith('collection:')) {
+      const id = value.slice('collection:'.length);
+      if (getVisibleEntries(id).some((candidate) => candidate.id === entry.id)) return id;
+    }
+    if (value.startsWith('domain:')) return entry.kind === 'phrase'
+      ? systemPhraseCollectionId(entry.domainId)
+      : systemDomainWordsCollectionId(entry.domainId);
+    return entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId) : SYSTEM_GLOBAL_WORDS_ID;
+  };
   const showEntries = (entries, label = '') => {
     status.textContent = label || (entries.length ? entries.length.toLocaleString() : '无结果');
-    results.replaceChildren(...entries.map((entry) => searchResultButton(entry, selectResult)));
+    results.replaceChildren(...entries.map((entry) => searchResultButton(entry, selectResult, targetCollectionForResult(entry))));
   };
   const renderLocal = () => {
     requestSequence += 1;
@@ -1433,10 +1509,7 @@ function openSearchDialog() {
     lockPageForModal();
     elements['search-dialog'].showModal();
   }
-  requestAnimationFrame(() => {
-    updateVisualViewportVars();
-    try { input.focus({ preventScroll: true }); } catch { input.focus(); }
-  });
+  requestAnimationFrame(updateVisualViewportVars);
 }
 
 function openSettingsDialog() {
@@ -1594,11 +1667,14 @@ export async function initializeUI() {
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
   window.addEventListener('hashchange', renderApp);
+  window.addEventListener('popstate', renderApp);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
-  window.visualViewport?.addEventListener('scroll', updateVisualViewportVars);
   window.addEventListener('scroll', persistScrollPosition, { passive: true });
   subscribe(({ type }) => {
-    if (type === 'external-change') showToast('检测到另一实例的数据更新，已重新载入');
+    if (type === 'mutation' && suppressNextMutationRender) {
+      suppressNextMutationRender = false;
+      return;
+    }
     renderApp();
   });
   await initializeStore();

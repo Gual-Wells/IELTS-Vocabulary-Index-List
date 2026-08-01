@@ -1,4 +1,4 @@
-# Vocabulary Index 3.0.1 本地架构
+# Vocabulary Index 3.0.2 本地架构
 
 ## 1. 运行模块
 
@@ -50,7 +50,7 @@ Entry 英文在词域内唯一。Membership 只保存关联、当前词表词性
 
 ## 4. 浏览渲染
 
-- 普通词表与短语表共用同一字母 Section、折叠和行组件；
+- 普通词表使用字母 Section；短语表使用同一行组件但不生成首字母标题；
 - 普通词表只投影 word，短语表只投影 phrase；
 - 展开一级行时局部生成关系子项，不重建整表；
 - 搜索/PIN/位置/标注通过 `ensureEntryRendered()` 局部展开；

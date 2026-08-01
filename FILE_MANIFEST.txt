@@ -1,26 +1,23 @@
-Vocabulary Index 3.0.1 complete source manifest
+Vocabulary Index 3.0.2 complete source manifest
 Generated: 2026-08-01
-Payload files: 42
-Note: FILE_MANIFEST.txt and SHA256SUMS.txt are integrity metadata and are not counted below.
 
-bytes	path
 0	.nojekyll
-840	CHANGELOG.md
-1231	CHANGE_REPORT_3.0.1.md
+1246	CHANGELOG.md
+1854	CHANGE_REPORT_3.0.2.md
 3407	DATA_FORMATS.md
-892	DATA_REPORT.md
+614	DATA_REPORT.md
 2201	DEPLOY.md
-3120	LOCAL_ARCHITECTURE.md
+3141	LOCAL_ARCHITECTURE.md
 1447	MIGRATION_3.0.0.md
-5688	PRODUCT_MANUAL_3.0.1.md
-2347	README.md
+2837	PRODUCT_MANUAL_3.0.2.md
+2456	README.md
 734	SECURITY.md
-1549	TEST_REPORT_3.0.1.md
-1675	UX_SPEC_3.0.1.md
+1024	TEST_REPORT_3.0.2.md
+1024	UX_SPEC_3.0.2.md
 33779	assets/icons/apple-touch-icon.png
 36899	assets/icons/icon-192.png
 151357	assets/icons/icon-512.png
-27508	css/v3.css
+28422	css/v3.css
 661	data/seed-report.json
 1461154	data/seed.json
 11267	data/source/A1.txt
@@ -35,14 +32,14 @@ bytes	path
 1980	js/v3-app.js
 21344	js/v3-db.js
 6437	js/v3-import.js
-35850	js/v3-model.js
-32766	js/v3-store.js
-75996	js/v3-ui.js
-915	js/v3-upgrade.js
+37180	js/v3-model.js
+33577	js/v3-store.js
+80149	js/v3-ui.js
+925	js/v3-upgrade.js
 523	manifest.webmanifest
 332	package.json
-2265	sw.js
-2347	tests/MANUAL_CHECKLIST.md
-8653	tests/run-tests.mjs
-8832	tests/static-tests.mjs
+2275	sw.js
+1133	tests/MANUAL_CHECKLIST.md
+10126	tests/run-tests.mjs
+9369	tests/static-tests.mjs
 5403	tests/stress-tests.mjs

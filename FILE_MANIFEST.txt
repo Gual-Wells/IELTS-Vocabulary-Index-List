@@ -1,45 +1,49 @@
-# Vocabulary Index 3.0.0 RC2 full-source file manifest
-# Paths are relative to repository root.
-# FILE_MANIFEST.txt and SHA256SUMS.txt are generated metadata.
+Vocabulary Index 3.0.0 complete source manifest
+Generated: 2026-08-01
+FILE_MANIFEST.txt and SHA256SUMS.txt are generated metadata.
 
-.nojekyll	0 bytes
-CHANGELOG.md	1585 bytes
-CHANGE_REPORT_3.0.0-UX.md	1079 bytes
-CHANGE_REPORT_3.0.0.md	1848 bytes
-DATA_FORMATS.md	3407 bytes
-DATA_REPORT.md	586 bytes
-DEPLOY.md	1570 bytes
-LOCAL_ARCHITECTURE.md	2133 bytes
-MIGRATION_3.0.0.md	1447 bytes
-README.md	2355 bytes
-SECURITY.md	734 bytes
-TEST_REPORT_3.0.0.md	2850 bytes
-UX_REDESIGN_3.0.0.md	7112 bytes
-assets/icons/apple-touch-icon.png	33779 bytes
-assets/icons/icon-192.png	36899 bytes
-assets/icons/icon-512.png	151357 bytes
-css/v3.css	24233 bytes
-data/seed-report.json	661 bytes
-data/seed.json	1461154 bytes
-data/source/A1.txt	11267 bytes
-data/source/A2.txt	11040 bytes
-data/source/AVL.txt	7475 bytes
-data/source/AWL.txt	7486 bytes
-data/source/B1.txt	10551 bytes
-data/source/B2.txt	18993 bytes
-data/source/C1.txt	17857 bytes
-index.html	4313 bytes
-js/v3-ai.js	10527 bytes
-js/v3-app.js	1061 bytes
-js/v3-db.js	21344 bytes
-js/v3-import.js	6437 bytes
-js/v3-model.js	35892 bytes
-js/v3-store.js	27971 bytes
-js/v3-ui.js	58383 bytes
-manifest.webmanifest	521 bytes
-package.json	332 bytes
-sw.js	2125 bytes
-tests/MANUAL_CHECKLIST.md	5537 bytes
-tests/run-tests.mjs	8029 bytes
-tests/static-tests.mjs	5155 bytes
-tests/stress-tests.mjs	5403 bytes
+Payload files (excluding generated metadata): 42
+
+Bytes	Path
+0	.nojekyll
+1964	CHANGELOG.md
+2526	CHANGE_REPORT_3.0.0.md
+3407	DATA_FORMATS.md
+586	DATA_REPORT.md
+2071	DEPLOY.md
+2899	LOCAL_ARCHITECTURE.md
+1447	MIGRATION_3.0.0.md
+25355	PREPRODUCTION_REPORT_3.0.0.md
+12612	PRODUCT_MANUAL_3.0.0.md
+2414	README.md
+734	SECURITY.md
+3442	TEST_REPORT_3.0.0.md
+1149	UX_SPEC_3.0.0.md
+33779	assets/icons/apple-touch-icon.png
+36899	assets/icons/icon-192.png
+151357	assets/icons/icon-512.png
+21677	css/v3.css
+661	data/seed-report.json
+1461154	data/seed.json
+11267	data/source/A1.txt
+11040	data/source/A2.txt
+7475	data/source/AVL.txt
+7486	data/source/AWL.txt
+10551	data/source/B1.txt
+18993	data/source/B2.txt
+17857	data/source/C1.txt
+5953	index.html
+12459	js/v3-ai.js
+1980	js/v3-app.js
+21344	js/v3-db.js
+6437	js/v3-import.js
+35892	js/v3-model.js
+31202	js/v3-store.js
+74260	js/v3-ui.js
+521	manifest.webmanifest
+332	package.json
+2210	sw.js
+5907	tests/MANUAL_CHECKLIST.md
+8029	tests/run-tests.mjs
+7182	tests/static-tests.mjs
+5403	tests/stress-tests.mjs

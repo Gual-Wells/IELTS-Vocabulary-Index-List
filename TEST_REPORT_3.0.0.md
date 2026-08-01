@@ -1,86 +1,115 @@
-# Vocabulary Index 3.0.0 RC2 测试报告
+# Vocabulary Index 3.0.0 测试报告
 
 测试日期：2026-08-01
 
-## 已通过
-
-### 功能与迁移
+## 1. 自动功能与真实 Seed 合同
 
 ```bash
 npm test
 ```
 
-覆盖规范化、短语识别、繁体转换、旧 `sources` 迁移、独立上次位置键、人工词性覆盖、PIN 顺序、三种序号模式、Membership 无 `sourceText`、域内唯一、跨域同形词、系统短语表、精确词元关联、投影优先级、模糊搜索、导入解析、Groq Retry-After 与动态分批。
+结果：`run-tests: OK`
 
-结果：通过。
+覆盖：
 
-### 静态应用与 UX 契约
+- 英文规范化、短语识别和精确词元；
+- 简体输入到通用繁体的当前转换实现；
+- 2.4.1 分类、来源、人工词性、PIN、标注和上次位置迁移；
+- Domain / Collection / Entry / Membership / PhraseToken；
+- 词域内唯一和跨词域同形词；
+- 系统短语表、相关短语和组成词；
+- 三种序号模式；
+- TXT、Markdown、CSV、JSON 解析；
+- Groq Retry-After 和动态分批。
+
+完整 Seed 断言：
+
+- 5,005 个 Entry；
+- 7 个普通词表；
+- 6,407 条 Membership；
+- 20 条 PhraseToken；
+- Membership 不包含 `sourceText`。
+
+## 2. 静态应用与 UX 契约
 
 ```bash
 npm run test:static
 ```
 
-除原有 HTML ID、CSP、模块依赖、Service Worker、Manifest、跨实例修订号和无云同步契约外，本轮新增断言：
+结果：`static-tests: OK`
 
-- PIN 存在独立 sticky 导航条；
-- PIN 不再位于会滚出视口的顶部按钮矩阵；
-- 字母导航按 PIN 条高度避让；
-- iPhone 操作栏固定在安全区上方；
-- 词条详情进入 Sheet，不使用 `expandedEntries` 整表重绘状态；
-- AI 审阅同时具备上一条与下一条；
-- 高频触控目标达到 44px 级别；
-- 自定义控件具备 `:focus-visible`。
+覆盖：
 
-结果：通过。
+- HTML ID 唯一、CSP 和无内联事件；
+- 模块依赖和 Service Worker 预缓存；
+- 无运行时 GitHub 云同步代码；
+- 动作、详情、搜索、表单和确认容器分离；
+- 无永久移动端底栏；
+- PIN / 标注 sticky 上下文及互斥；
+- 字母导航避让上下文控制器；
+- `jumpToEntry()` 局部展开并禁止调用整表重绘；
+- 手动滚动位置保存；
+- 当前词表词性显示；
+- AI 模型目录持久化和禁止品牌硬编码；
+- PWA 用户确认更新；
+- 3.0 视觉变量、44px 触控目标和可见焦点。
 
-### 随机事务模型压力
+## 3. 压力模型
 
 ```bash
 npm run test:stress
 ```
 
-执行 600 步确定性新增、复用、短语、来源增加/移除、删除和 PIN 操作；每步重新规范化并验证完整数据不变量。固定随机种子的最终状态：115 个词项、114 条来源关系。
+结果：`stress-tests: OK (115 entries, 114 memberships)`
 
-结果：通过。
+固定随机种子执行 600 步新增、复用、短语、来源增加/移除、删除和 PIN 操作。每步重新规范化并检查域内唯一、关系完整性和 Membership 无重复英文。
 
-### JavaScript 静态类型
+## 4. JavaScript 静态类型与语法
+
+浏览器模块：
 
 ```bash
 tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
-  --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable js/*.js
-
-tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
-  --moduleResolution Bundler --lib ES2022,WebWorker sw.js
+  --moduleResolution bundler --lib ES2022,DOM js/*.js
 ```
 
-结果：零错误。全部 JS/MJS 另通过 `node --check`。
+Service Worker：
 
-### 完整 Seed 合同
+```bash
+tsc --allowJs --checkJs --noEmit --target ES2022 --module ES2022 \
+  --moduleResolution bundler --lib ES2022,WebWorker sw.js
+```
 
-- 5,005 个词项；
-- 7 个普通词表；
-- 6,407 条 Membership；
-- 20 条 PhraseToken（10 个双词短语）；
-- Membership 全部不存在 `sourceText`。
+结果：零错误。
 
-### 代表性静态渲染
+全部 JavaScript / MJS 使用 `node --check` 通过。HTML 可解析，CSS 花括号平衡。
 
-使用交付 CSS 与真实界面结构，在以下视口生成静态渲染用于布局检查：
+## 5. 完整包验证
 
-- 390×844：单词域首页；
-- 390×844：滚动到长词表中部，确认顶栏、PIN、字母导航和底部工具栏的堆叠；
-- 1280×900：桌面首页。
+候选完整 ZIP 已解压到空目录并重新执行：
 
-该步骤验证 CSS 布局，不等同于真实浏览器业务端到端测试。
+- `sha256sum -c SHA256SUMS.txt`：全部文件通过；
+- `npm run test:all`：全部通过；
+- 全部 JS/MJS `node --check`：通过；
+- 浏览器模块与 Service Worker 分别执行 `checkJs`：零错误；
+- HTML 解析和 CSS 结构检查：通过；
+- 本地 HTTP 对 index、Manifest、CSS、全部模块、Seed、图标和 Service Worker 的资源请求：全部 HTTP 200；
+- 与 3.0 RC/2.4.1 基线逐字节比对：`seed.json`、`seed-report.json`、七份源词表和三个图标完全一致。
 
-## 未自动完成
+最终 ZIP 在更新本报告后再次生成，并重复同一套解压复测。
 
-受受管 Chromium 策略限制，本地 HTTP 和 `file:` 页面均被组织策略阻止，因此未声称完成真实应用 URL 的浏览器 E2E。仍需按人工清单验证：
+## 6. 未声称完成
 
-- iPhone Safari / 主屏幕 PWA 首次迁移；
-- PIN 在真实惯性滚动与安全区中的持续可达性；
-- 输入法、键盘弹出和 Sheet 高度；
-- 离线冷启动与 Service Worker 更新；
-- Safari 与 PWA 双实例；
-- 真实 Groq API、限流和暂停/取消；
-- 真实 5,005 词 UI 性能。
+当前环境中的受管 Chromium 无法稳定完成应用 Seed 初始化后退出，因此没有把截图或真实浏览器 E2E 声称为已通过。
+
+仍需用户在实际部署地址完成：
+
+- iPhone Safari 与主屏幕 PWA；
+- Safe Area 和虚拟键盘；
+- 复制后进入牛津词典、返回原位置；
+- PIN 连续导航；
+- 真实 Groq 模型刷新、AI 新增和 AI 核查；
+- 429/5xx/断网、暂停、取消和部分结果；
+- 离线冷启动；
+- PWA 更新提示；
+- Safari 标签页与主屏幕双实例。

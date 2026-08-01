@@ -1,69 +1,80 @@
-# 3.0 本地架构
+# Vocabulary Index 3.0.0 本地架构
 
-## 数据关系
+## 1. 运行模块
 
-```text
-Domain
-├── Collection (normal)
-├── Collection (system-phrases, exactly one)
-├── Entry (word | phrase)
-│   ├── Membership -> normal Collection
-│   ├── PhraseToken[] (phrase only, rebuildable)
-│   ├── Pin? (at most one)
-│   └── Annotation? (at most one)
-└── Settings.lastPositions
-```
+- `v3-app.js`：版本一致性、UI 启动、Service Worker 注册与更新通知；
+- `v3-ui.js`：路由、浏览、PIN、搜索、动作/详情、AI 任务与对话容器；
+- `v3-store.js`：业务状态、统一事务、投影、PIN、标注、位置和跨实例通知；
+- `v3-db.js`：IndexedDB Schema 3、迁移、事务历史和修订号冲突检查；
+- `v3-model.js`：规范化、实体构造、备份校验、短语词元和投影；
+- `v3-import.js`：TXT/Markdown/CSV/JSON 解析、预览数据和导出；
+- `v3-ai.js`：Groq 模型目录、请求重试、结构化 AI 新增、搜索联想和分批核查；
+- `sw.js`：离线缓存与用户确认式更新。
 
-### Entry
+## 2. 数据实体
 
-词项身份为：
+- Domain；
+- Collection（normal / system-phrases）；
+- Entry（word / phrase）；
+- Membership；
+- PhraseToken；
+- Pin；
+- Annotation；
+- Settings；
+- History。
 
-```text
-domainId + normalizedText
-```
+Entry 英文在词域内唯一。Membership 只保存关联、当前词表词性和来源顺序，不保存重复英文。
 
-词性不参与身份。英文文本仅保存在 Entry。
+## 3. UI 状态分层
 
-### Membership
+### 持久业务状态
 
-来源关系只保存：
+位于 IndexedDB：词域、词表、词项、Membership、PIN、标注、序号、位置和历史。
 
-```text
-id, entryId, collectionId, sourceLabel, sourceOrder, createdAt, updatedAt
-```
+### 本地敏感/网络设置
 
-**不保存 `sourceText`。** 修改 Entry 文本时无需同步多份英文镜像，因此不会再次出现旧版“核心词形与来源词形不一致”的耦合缺陷。
+位于 localStorage：Groq API Key、当前模型、模型目录和刷新时间。它们不进入完整 JSON。
 
-### PhraseToken
+### 临时 UI 状态
 
-从短语 Entry 文本确定性重建。反向关联使用精确 `normalizedToken`，不使用字符串包含。
+位于 `v3-ui.js` 内存：
 
-## IndexedDB
+- 当前词表；
+- 每个词表的展开字母；
+- PIN 当前索引；
+- 标注审阅索引；
+- 当前 AI 任务；
+- 对话提交回调；
+- 当前局部列表渲染上下文。
 
-数据库名称沿用 `gual-vocabulary-index`，版本提升为 3。3.0 新对象仓库统一使用 `v3` 前缀，旧对象仓库只在首次迁移时读取：
+## 4. 浏览渲染
 
-- `v3Domains`
-- `v3Collections`
-- `v3Entries`
-- `v3Memberships`
-- `v3PhraseTokens`
-- `v3Pins`
-- `v3Annotations`
-- `v3Settings`
-- `v3History`
+- 进入词表时创建字母 Section 壳；
+- 展开字母时只创建该字母的词条 DOM；
+- 收起时只移除该字母 Body；
+- 搜索/PIN/位置/标注通过 `ensureEntryRendered()` 局部展开；
+- `jumpToEntry()` 不重建整表，只执行一次 `scrollIntoView()` 和目标高亮；
+- 手动滚动通过防抖保存稳定可见 Entry。
 
-首次迁移在一个 readwrite 事务中整体写入新仓库。普通写入、撤销和重做均在 IndexedDB 原生回调中直接排队，避免 Safari 在 Promise 间隙自动提交事务。
+## 5. 对话容器职责
 
-## 多实例
+- `app-dialog`：新增、编辑、设置、导入和 AI 启动表单；
+- `action-dialog`：低频动作菜单；
+- `detail-dialog`：只读来源、释义和短语关系；
+- `search-dialog`：搜索输入、范围和结果；
+- `confirm-dialog`：危险操作确认。
 
-- `BroadcastChannel('gual-vocabulary-index-v3')` 广播修订号。
-- 每次业务修改、完整恢复、撤销和重做均带 `expectedRevision`。
-- 修订号不一致时安全中止，不静默覆盖。
-- 上次位置使用单独的原子“读取—合并—写回”事务，不进入撤销历史，也不会用陈旧对象覆盖其他词表位置。
-- IndexedDB `versionchange` 时主动关闭旧连接。
+不同任务不再共享同一个动态通用弹窗。
 
-## PWA
+## 6. 并发与数据一致性
 
-- Service Worker 缓存命名空间：`gual-vocabulary-index-v3.0.0-rc2`。
-- 导航使用 network-first，离线回退应用壳。
-- HTML meta 版本与入口模块版本不一致时阻止启动，避免旧 HTML / 新 JS 混用。
+- 所有业务修改通过 Store 的 `mutate()`；
+- DB 写入验证预期修订号和 before 快照；
+- 历史记录和业务提交保持一致；
+- BroadcastChannel 通知其他同源实例；
+- 上次位置使用原子设置合并，不挤入业务撤销历史；
+- AI 每批结果按词项快照提交 Annotation，不直接修改 Entry。
+
+## 7. PWA 更新
+
+新 Service Worker 安装完成后保持 waiting。UI 显示更新提示；只有用户点击“立即更新”才发送 `SKIP_WAITING`，随后在 `controllerchange` 时重新载入一次。

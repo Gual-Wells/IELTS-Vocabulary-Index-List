@@ -1,7 +1,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v3.0.0-rc2`;
+const CACHE_NAME = `${CACHE_PREFIX}v3.0.0-final`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest', './css/v3.css',
@@ -15,8 +15,12 @@ sw.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     await cache.addAll(PRECACHE);
-    await sw.skipWaiting();
   })());
+});
+
+
+sw.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') sw.skipWaiting();
 });
 
 sw.addEventListener('activate', (event) => {

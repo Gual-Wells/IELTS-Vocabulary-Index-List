@@ -121,6 +121,27 @@ function jsonEqual(a, b) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
+function sourceLabelParts(value) {
+  return normalizeDisplayText(value)
+    .split(/\s*(?:,|\/|;|，|、)\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function mergeSourceLabels(...values) {
+  const result = [];
+  const seen = new Set();
+  for (const value of values) {
+    for (const part of sourceLabelParts(value)) {
+      const key = part.toLocaleLowerCase('en');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(part);
+    }
+  }
+  return result.join(', ');
+}
+
 function diffArray(store, beforeItems, afterItems, key = 'id') {
   const before = mapById(beforeItems, key);
   const after = mapById(afterItems, key);
@@ -355,7 +376,7 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
       const nextLabel = normalizeDisplayText(item?.sourceLabel || item?.pos || '');
       const updated = createMembership({
         ...membership,
-        sourceLabel: nextLabel || membership.sourceLabel,
+        sourceLabel: mergeSourceLabels(membership.sourceLabel, nextLabel),
         sourceOrder,
         updatedAt: new Date().toISOString(),
       });
@@ -390,13 +411,22 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
         draft.annotations = draft.annotations.filter((item) => !removed.has(item.entryId));
       }
     }
-    const seen = new Set();
-    items.forEach((item, index) => {
+    const mergedItems = new Map();
+    for (const item of items) {
       const normalized = normalizeEnglish(item?.text || item?.word || '');
-      if (!normalized || seen.has(normalized)) return;
-      seen.add(normalized);
-      upsertEntryInDraft(draft, collection, item, index);
-    });
+      if (!normalized) continue;
+      const previous = mergedItems.get(normalized);
+      if (!previous) {
+        mergedItems.set(normalized, { ...item, sourceLabel: item?.sourceLabel || item?.pos || '' });
+        continue;
+      }
+      mergedItems.set(normalized, {
+        ...previous,
+        sourceLabel: mergeSourceLabels(previous?.sourceLabel || previous?.pos || '', item?.sourceLabel || item?.pos || ''),
+        gloss: previous?.gloss || previous?.glossHant || item?.gloss || item?.glossHant || '',
+      });
+    }
+    [...mergedItems.values()].forEach((item, index) => upsertEntryInDraft(draft, collection, item, index));
   });
 }
 
@@ -427,10 +457,13 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
     }
     resultingId = entry.id;
     if (collection.type === 'normal') {
-      const exists = draft.memberships.some((item) => item.entryId === entry.id && item.collectionId === collection.id);
-      if (!exists) {
+      const existing = draft.memberships.find((item) => item.entryId === entry.id && item.collectionId === collection.id);
+      if (!existing) {
         const sourceOrder = nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id));
         draft.memberships.push(createMembership({ entryId: entry.id, collectionId: collection.id, sourceLabel, sourceOrder }));
+      } else if (sourceLabel) {
+        existing.sourceLabel = mergeSourceLabels(existing.sourceLabel, sourceLabel);
+        existing.updatedAt = new Date().toISOString();
       }
     }
   });
@@ -468,6 +501,37 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
     }
     Object.assign(entry, candidate);
     if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
+    if (entry.kind === 'word') removeOrphanWord(draft, entry.id);
+  });
+}
+
+export async function editEntryInCollection(entryId, collectionId, updates, expectedUpdatedAt) {
+  return mutate('编辑词项与词性', (draft) => {
+    const entry = draft.entries.find((item) => item.id === entryId);
+    const collection = draft.collections.find((item) => item.id === collectionId);
+    if (!entry || !collection) throw new Error('词项或词表不存在');
+    if (entry.domainId !== collection.domainId) throw new Error('词项与词表不属于同一词域');
+    if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('词项已在其他实例更新，请重新打开后再编辑');
+    const domain = draft.domains.find((item) => item.id === entry.domainId);
+    const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.glossHant) : entry.glossHant;
+    const candidate = createEntry({
+      ...entry,
+      text: updates.text ?? entry.text,
+      glossHant: nextGloss,
+      glossSource: nextGloss ? normalizeDisplayText(updates.glossSource || entry.glossSource || 'manual') : '',
+      updatedAt: new Date().toISOString(),
+    });
+    const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
+    if (collision) throw new Error('同一词域内已有该词项');
+    const textChanged = candidate.normalizedText !== entry.normalizedText;
+    Object.assign(entry, candidate);
+    if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
+    if (collection.type === 'normal') {
+      const membership = draft.memberships.find((item) => item.entryId === entryId && item.collectionId === collectionId);
+      if (!membership) throw new Error('当前词表没有该词项的来源关系');
+      membership.sourceLabel = normalizeDisplayText(updates.sourceLabel ?? membership.sourceLabel);
+      membership.updatedAt = new Date().toISOString();
+    }
     if (entry.kind === 'word') removeOrphanWord(draft, entry.id);
   });
 }

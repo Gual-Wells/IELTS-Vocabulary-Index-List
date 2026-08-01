@@ -13,9 +13,12 @@
   <title>Vocabulary Index 3.0</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+  <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
   <link rel="stylesheet" href="./css/v3.css">
 </head>
 <body>
+  <noscript>此工具需要 JavaScript 才能运行。</noscript>
+
   <div id="boot-screen" class="boot-screen" role="status">
     <div class="boot-mark">V</div>
     <p>正在打开本地词汇索引…</p>
@@ -29,37 +32,34 @@
         <p id="page-subtitle">Vocabulary Index 3.0</p>
       </div>
       <div class="topbar-actions">
-        <button id="undo-button" class="icon-button history-button hidden" type="button" aria-label="撤销" title="撤销">↶</button>
-        <button id="redo-button" class="icon-button history-button hidden" type="button" aria-label="重做" title="重做">↷</button>
         <button id="search-button" class="icon-button" type="button" aria-label="搜索">⌕</button>
         <button id="settings-button" class="icon-button" type="button" aria-label="设置">⚙</button>
       </div>
     </header>
 
+    <div id="update-banner" class="update-banner hidden" role="status">
+      <span>新版本已准备好。</span>
+      <button id="update-now-button" class="compact-button" type="button">立即更新</button>
+      <button id="update-later-button" class="icon-button compact" type="button" aria-label="稍后更新">×</button>
+    </div>
+
     <main id="main-content" tabindex="-1">
-      <section id="home-view" class="view"></section>
+      <section id="home-view" class="view" aria-label="词表首页"></section>
       <section id="collection-view" class="view hidden" aria-labelledby="page-title">
         <div id="collection-toolbar" class="collection-toolbar"></div>
-        <section id="pin-bar" class="pin-bar hidden" aria-label="PIN 导航"></section>
+        <section id="pin-bar" class="context-bar pin-bar hidden" aria-label="PIN 导航"></section>
+        <section id="annotation-review-bar" class="context-bar review-bar hidden" aria-live="polite"></section>
         <nav id="letter-nav" class="letter-nav hidden" aria-label="字母索引"></nav>
         <div id="entry-list" class="entry-list"></div>
       </section>
     </main>
 
-    <nav id="mobile-action-bar" class="mobile-action-bar hidden" aria-label="当前词表操作">
-      <button type="button" data-collection-action="search"><span aria-hidden="true">⌕</span><span>搜索</span></button>
-      <button type="button" data-collection-action="add"><span aria-hidden="true">＋</span><span>新增</span></button>
-      <button type="button" data-collection-action="ai-add"><span aria-hidden="true">✦</span><span>AI 新增</span></button>
-      <button type="button" data-collection-action="ai-check"><span aria-hidden="true">✓</span><span>AI 核查</span></button>
-      <button type="button" data-collection-action="more"><span aria-hidden="true">•••</span><span>更多</span></button>
-    </nav>
-
+    <button id="task-capsule" class="task-capsule hidden" type="button" aria-label="打开 AI 核查任务"></button>
     <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>
-    <div id="annotation-review-bar" class="review-bar hidden" aria-live="polite"></div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   </div>
 
-  <dialog id="app-dialog" class="app-dialog" data-mode="modal">
+  <dialog id="app-dialog" class="app-dialog form-dialog">
     <form id="dialog-form" method="dialog">
       <header class="dialog-header">
         <div>
@@ -70,6 +70,61 @@
       </header>
       <div id="dialog-body" class="dialog-body"></div>
       <footer id="dialog-actions" class="dialog-actions"></footer>
+    </form>
+  </dialog>
+
+  <dialog id="action-dialog" class="sheet-dialog action-dialog">
+    <div class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <h2 id="action-title"></h2>
+          <p id="action-description" class="muted"></p>
+        </div>
+        <button id="action-close" class="icon-button" type="button" aria-label="关闭">×</button>
+      </header>
+      <div id="action-body" class="dialog-body"></div>
+    </div>
+  </dialog>
+
+  <dialog id="detail-dialog" class="sheet-dialog detail-dialog">
+    <div class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <h2 id="detail-title">词项详情</h2>
+          <p id="detail-description" class="muted"></p>
+        </div>
+        <button id="detail-close" class="icon-button" type="button" aria-label="关闭">×</button>
+      </header>
+      <div id="detail-body" class="dialog-body"></div>
+    </div>
+  </dialog>
+
+  <dialog id="search-dialog" class="sheet-dialog search-dialog">
+    <div class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <h2>搜索词汇</h2>
+          <p class="muted">英文即时匹配；中文可按需使用 AI 联想。</p>
+        </div>
+        <button id="search-close" class="icon-button" type="button" aria-label="关闭">×</button>
+      </header>
+      <div id="search-body" class="dialog-body"></div>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="confirm-dialog">
+    <form id="confirm-form" method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <h2 id="confirm-title"></h2>
+          <p id="confirm-description" class="muted"></p>
+        </div>
+      </header>
+      <div id="confirm-body" class="dialog-body"></div>
+      <footer class="dialog-actions">
+        <button id="confirm-cancel" class="secondary-button" type="button">取消</button>
+        <button id="confirm-submit" class="danger-button" type="submit">确认</button>
+      </footer>
     </form>
   </dialog>
 

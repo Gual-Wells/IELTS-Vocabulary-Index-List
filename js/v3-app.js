@@ -1,7 +1,26 @@
-import { initializeUI } from './v3-ui.js';
+import { initializeUI, notifyServiceWorkerUpdate } from './v3-ui.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
 const MODULE_VERSION = '3.0.0';
+let reloadingForServiceWorker = false;
+
+function watchServiceWorkerRegistration(registration) {
+  if (registration.waiting && navigator.serviceWorker.controller) notifyServiceWorkerUpdate(registration.waiting);
+  registration.addEventListener('updatefound', () => {
+    const installing = registration.installing;
+    if (!installing) return;
+    installing.addEventListener('statechange', () => {
+      if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+        notifyServiceWorkerUpdate(registration.waiting || installing);
+      }
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForServiceWorker) return;
+    reloadingForServiceWorker = true;
+    location.reload();
+  });
+}
 
 async function start() {
   if (HTML_VERSION !== MODULE_VERSION) {
@@ -9,8 +28,13 @@ async function start() {
   }
   await initializeUI();
   if ('serviceWorker' in navigator) {
-    try { await navigator.serviceWorker.register('./sw.js', { scope: './' }); }
-    catch (error) { console.warn('Service Worker 注册失败', error); }
+    try {
+      const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+      watchServiceWorkerRegistration(registration);
+      registration.update().catch(() => {});
+    } catch (error) {
+      console.warn('Service Worker 注册失败', error);
+    }
   }
 }
 

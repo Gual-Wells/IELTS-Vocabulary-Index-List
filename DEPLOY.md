@@ -1,36 +1,58 @@
-# Vocabulary Index 3.0 部署
+# Vocabulary Index 3.0.0 部署与回滚
 
-## 推荐：分支 RC 验收
+## 1. 部署前
 
-1. 将 3.0 完整源码提交到独立 `release/v3.0.0-rc2` 分支。
-2. 不立即覆盖 `main`。
-3. 使用临时 Pages/本地 HTTPS 环境验证。
-4. 完成 iPhone 清单后再合并。
+1. 在当前线上版本导出完整 JSON；
+2. 单独保留旧源码 ZIP 和 2.4.1 JSON；
+3. 关闭该 Pages 地址的其他 Safari 标签页和主屏幕 PWA；
+4. 核对完整 ZIP 的 SHA-256；
+5. 将 ZIP 解压到临时目录，确认 `index.html` 位于解压根目录。
 
-## 正式镜像替换
+## 2. GitHub Desktop 完整替换
 
-GitHub 网页“Upload files”不会删除旧文件，不适合本次主版本升级。合并时应确保：
+1. 当前分支切到 `main`；
+2. 确认没有正在进行的 merge；
+3. 打开本地仓库目录；
+4. 保留隐藏的 `.git`，删除其余旧项目文件；
+5. 将完整 ZIP 根目录中的全部内容复制到仓库根目录；
+6. GitHub Desktop 中检查 Added / Modified / Deleted；
+7. 提交：`Replace repository with Vocabulary Index 3.0.0 full source`；
+8. Push origin。
 
-- 本交付 ZIP 是完整源码树，应整体部署，不与旧分支逐文件合并；
-- 新 `index.html`、`sw.js`、`manifest.webmanifest`、`css/v3.css`、`js/v3-*.js` 全部同时部署；
-- 旧 `js/*.js` 与旧拆分 CSS 从交付树删除；
-- `data/seed.json`、`data/source/` 和图标保持原文件；
-- Pages 来源继续为仓库根目录。
+不要合并旧的 `agent/vocabulary-index-3.0.0-rc` 或其他覆盖分支。
 
-## iPhone 更新缓存
+## 3. 发布后
 
-1. 完全关闭该站点 Safari 标签页和主屏幕应用。
-2. Safari 打开正式地址，等待数秒后刷新。
-3. 设置页确认版本为 `Vocabulary Index 3.0.0`。
-4. 再从主屏幕启动。
-5. 本版 Service Worker 使用 `gual-vocabulary-index-v3.0.0-rc2` 缓存；若主屏幕仍是旧程序，可删除主屏幕图标后重新添加；**不要删除网站数据**。
+1. 等待 GitHub Pages 部署完成；
+2. Safari 打开 Pages 地址；
+3. 看到更新提示后点击“立即更新”；
+4. 完全关闭并重新打开主屏幕 PWA；
+5. 检查设置中的版本为 `3.0.0`；
+6. 按 `tests/MANUAL_CHECKLIST.md` 验收；
+7. 验收通过后导出新的 3.0 完整 JSON。
 
-## 最低部署验收
+## 4. 从 2.4.1 迁移
 
-- 单词域首页直接显示 7 个普通词表和“短语”入口；
-- 旧 5,005 个词项仍存在；
-- 旧词性不在主行显示，但完整 JSON 中以 `sourceLabel` 保留；
-- 系统短语表可打开，初始短语词元索引为 20 条；
-- Safari 与主屏幕 PWA 显示同一版本；
-- 离线冷启动可读取本地数据；
-- 导出一份 3.0 完整 JSON 并验证恢复预览。
+首次运行会在单个 IndexedDB 升级流程中迁移旧数据。迁移后：
+
+- 旧分类变为普通词表；
+- 建立默认词域；
+- 每个词域建立系统短语表；
+- 同形词按词域合并；
+- 词性变为 Membership `sourceLabel`；
+- PIN、标注、序号和上次位置映射到新 ID。
+
+迁移前后的 JSON 都应保留。
+
+## 5. 回滚
+
+代码回滚不能自动把 Schema 3 数据降级成 2.4.1 数据结构。需要回滚时：
+
+1. 保留当前 3.0 完整 JSON；
+2. 部署旧版完整源码；
+3. 使用升级前保存的 2.4.1 JSON 恢复；
+4. 不要尝试把 3.0 JSON直接导入 2.4.1。
+
+## 6. 缓存处理
+
+正常更新通过顶部更新提示完成。只有在已经导出完整备份、确认 Pages 文件正确且更新提示长期失效时，才考虑清理对应网站数据。清理网站数据会删除 IndexedDB、API Key 和模型设置。

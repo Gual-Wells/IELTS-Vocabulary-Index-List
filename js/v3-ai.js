@@ -150,20 +150,56 @@ function extractJson(text) {
 export async function requestJson(messages, { temperature = 0.1, maxTokens = 1600 } = {}) {
   const model = getSelectedModel();
   if (!model) throw new Error('请先刷新并选择 Groq 模型');
-  const response = await groqFetch('/chat/completions', {
-    method: 'POST',
-    body: JSON.stringify({
+  const request = async (withResponseFormat) => {
+    const body = {
       model,
       messages,
       temperature,
       max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-    }),
-  });
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('AI 未返回内容');
-  return extractJson(content);
+    };
+    if (withResponseFormat) body.response_format = { type: 'json_object' };
+    const response = await groqFetch('/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('AI 未返回内容');
+    return extractJson(content);
+  };
+  try {
+    return await request(true);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (!/response[_ -]?format|json[_ -]?object|unsupported|not support|不支持/i.test(message)) throw error;
+    return request(false);
+  }
+}
+
+export async function suggestSearchTerms(query) {
+  const clean = String(query || '').trim();
+  if (!clean) return [];
+  const payload = await requestJson([
+    {
+      role: 'system',
+      content: 'Convert one Chinese concept into concise English vocabulary search terms. Return one JSON object only. Do not explain.',
+    },
+    {
+      role: 'user',
+      content: `Chinese concept: ${clean}\nReturn {"terms":["term 1","term 2"]}. Use common dictionary headwords or short phrases, at most 12 terms, no duplicates.`,
+    },
+  ], { temperature: 0.1, maxTokens: 500 });
+  const seen = new Set();
+  const terms = [];
+  for (const item of Array.isArray(payload?.terms) ? payload.terms : []) {
+    const term = String(item || '').trim();
+    const key = term.toLocaleLowerCase('en');
+    if (!term || seen.has(key)) continue;
+    seen.add(key);
+    terms.push(term);
+    if (terms.length >= 12) break;
+  }
+  return terms;
 }
 
 export async function suggestEntries({ domainName, collectionName, instruction, existing = [], glossEnabled = false }) {
@@ -174,12 +210,15 @@ export async function suggestEntries({ domainName, collectionName, instruction, 
     },
     {
       role: 'user',
-      content: `Domain: ${domainName}\nList: ${collectionName}\nTask: ${instruction}\nAlready present: ${existing.slice(0, 300).join(', ')}\nReturn {"entries":[{"text":"...","gloss":"..."}]}. Use base/common forms, no duplicates. ${glossEnabled ? 'gloss may be Simplified or Traditional Chinese.' : 'Use an empty gloss.'}`,
+      content: `Domain: ${domainName}\nList: ${collectionName}\nTask: ${instruction}\nAlready present: ${existing.slice(0, 300).join(', ')}\nReturn {"entries":[{"text":"...","sourceLabel":"n.","gloss":"..."}]}. Use base/common forms, standard concise part-of-speech labels, and no duplicates. ${glossEnabled ? 'gloss may be Simplified or Traditional Chinese.' : 'Use an empty gloss.'}`,
     },
   ], { temperature: 0.25, maxTokens: 2200 });
   const entries = Array.isArray(payload?.entries) ? payload.entries : [];
-  return entries.map((item) => ({ text: String(item?.text || '').trim(), gloss: String(item?.gloss || '').trim() }))
-    .filter((item) => item.text);
+  return entries.map((item) => ({
+    text: String(item?.text || '').trim(),
+    sourceLabel: String(item?.sourceLabel || item?.pos || '').trim(),
+    gloss: String(item?.gloss || '').trim(),
+  })).filter((item) => item.text);
 }
 
 function estimateTokens(entries) {
@@ -229,18 +268,24 @@ export async function checkEntries(entries, { controller = new AiCheckController
     const payload = await requestJson([
       {
         role: 'system',
-        content: 'Check English spelling and obvious text-format errors only. Do not judge part of speech, meaning, style, or capitalization variants unless clearly malformed. Return JSON only.',
+        content: 'Check English spelling, obvious text-format errors, and whether the supplied part-of-speech label is plausible for the headword. Return JSON only. Do not judge meaning, style, or harmless capitalization variants.',
       },
       {
         role: 'user',
-        content: `Items:\n${batch.map((entry) => `${entry.id}\t${entry.text}`).join('\n')}\nReturn {"issues":[{"entryId":"...","suggestion":"...","reason":"..."}]}. Omit correct items.`,
+        content: `Items:\n${batch.map((entry) => `${entry.id}\t${entry.text}\t${entry.sourceLabel || ''}`).join('\n')}\nReturn {"issues":[{"entryId":"...","suggestion":"...","posSuggestion":"...","reason":"..."}]}. Leave suggestion empty when spelling is correct. Leave posSuggestion empty when the label is acceptable. Omit fully correct items.`,
       },
     ], { temperature: 0, maxTokens: 1800 });
-    const issues = (Array.isArray(payload?.issues) ? payload.issues : []).map((item) => ({
-      entryId: String(item?.entryId || ''),
-      spelling: { incorrect: true, suggestion: String(item?.suggestion || '').trim() },
-      reason: String(item?.reason || '').trim().slice(0, 240),
-    })).filter((item) => item.entryId && (item.spelling.suggestion || item.reason));
+    const issues = (Array.isArray(payload?.issues) ? payload.issues : []).map((item) => {
+      const suggestion = String(item?.suggestion || '').trim();
+      const posSuggestion = String(item?.posSuggestion || item?.pos || '').trim();
+      const rawReason = String(item?.reason || '').trim();
+      const reason = [posSuggestion ? `词性建议：${posSuggestion}` : '', rawReason].filter(Boolean).join('；').slice(0, 240);
+      return {
+        entryId: String(item?.entryId || ''),
+        spelling: { incorrect: Boolean(suggestion), suggestion },
+        reason,
+      };
+    }).filter((item) => item.entryId && (item.spelling.suggestion || item.reason));
     annotations.push(...issues);
     await onBatch(issues, batch);
     onProgress({ completed: index + 1, total: batches.length, currentSize: batch.length });

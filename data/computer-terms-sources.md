@@ -1,7 +1,7 @@
 # 计算机术语内置词域：来源与构建说明
 
 构建日期：2026-08-01  
-适用版本：Vocabulary Index 3.3.1
+适用版本：Vocabulary Index 3.4.0
 
 ## 数据范围
 
@@ -63,7 +63,7 @@
 
 - `computer-terms-source.tsv`：英文、简体中文、来源标签；
 - `computer-terms-source-report.json`：数量及来源分布；
-- `seed.json`：应用实际加载的 Schema 4 数据，其中释义已经转换为繁体。
+- `seed.json`：应用实际加载的 Schema 5 数据，其中释义已经转换为繁体。
 
 ## 许可与归属
 

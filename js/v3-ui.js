@@ -3,7 +3,7 @@ import {
   clearAllAnnotations, clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getPhraseComponents, getRelatedPhrases, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, replaceAnnotations, resetToSeed, restoreBackup,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationHistory, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
 } from './v3-store.js';
 import {
@@ -17,12 +17,12 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.3.1';
+const APP_VERSION = '3.4.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
-  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu',
+  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'back-to-top', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog', 'dialog-form', 'dialog-title', 'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions',
@@ -61,7 +61,10 @@ let openModalCount = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
 let activeQueryMenu = null;
+let activeRelationTargetMenu = null;
 let scrollUiFrame = 0;
+let letterTrackInteractionUntil = 0;
+const forcedExtremeEntryKeys = new Set();
 let routeRenderFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
@@ -111,6 +114,7 @@ const ICONS = {
   top: '<path d="M5.2 5h13.6"></path><path d="m7.1 12.2 4.9-4.9 4.9 4.9"></path><path d="M12 7.7v11.2"></path>',
   intra: '<rect x="4.2" y="5.2" width="15.6" height="13.6" rx="2.4"></rect><path d="M7.4 12h8.5M13.1 9.2 15.9 12l-2.8 2.8"></path>',
   external: '<rect x="3.3" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><rect x="14.1" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><path d="M9.6 12h6.1M13.2 9.4l2.6 2.6-2.6 2.6"></path>',
+  multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
   dictionary: '<path d="M4.3 6.2A3.2 3.2 0 0 1 7.5 3H12v16.7H7.5a3.2 3.2 0 0 0-3.2 3.2V6.2Z"></path><path d="M19.7 6.2A3.2 3.2 0 0 0 16.5 3H12v16.7h4.5a3.2 3.2 0 0 1 3.2 3.2V6.2Z"></path><path d="M7.2 7.4h2.1M14.7 7.4h2.1M7.2 11h2.1M14.7 11h2.1"></path>',
   aiChat: '<path d="M5.1 4.2h13.8a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2h-7.5l-5.5 4.1v-4.1h-.8a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2Z"></path><path d="m12 7.1.72 1.68 1.68.72-1.68.72L12 11.9l-.72-1.68-1.68-.72 1.68-.72L12 7.1Z" fill="currentColor" stroke="none"></path>',
@@ -203,9 +207,13 @@ function updateOverlayLayout() {
       const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .context-bar, .letter-nav')]
         .filter((node) => !node.classList.contains('hidden'))
         .map((node) => node.getBoundingClientRect())
-        .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280);
-      const bottom = topSurfaces.reduce((value, rect) => Math.max(value, rect.bottom), viewportTop + 72);
+        .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
+        .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+      let bottom = viewportTop;
+      for (const rect of topSurfaces) if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
+      bottom = Math.max(bottom, viewportTop + 72);
       document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
+      document.documentElement.style.setProperty('--content-sticky-top', `${Math.ceil(bottom + 2)}px`);
     });
   });
 }
@@ -408,40 +416,21 @@ function relationExpansionKey(collectionId, entryId) {
 function annotationRecordForEntry(entry, collection) {
   const state = getState();
   if (!entry) return null;
-  if (!isGlobalCollection(collection)) {
-    const annotation = state.annotationByEntry.get(entry.id);
-    return annotation ? { annotation, sourceEntryId: entry.id } : null;
-  }
-  const candidates = entry.kind === 'phrase'
-    ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [entry])
-    : (state.wordsByNormalizedText.get(entry.normalizedText) || [entry]);
-  for (const candidate of candidates) {
-    const annotation = state.annotationByEntry.get(candidate.id);
-    if (annotation) return { annotation, sourceEntryId: candidate.id };
-  }
-  return null;
+  const annotation = state.annotationByEntry.get(entry.id);
+  return annotation ? { annotation, sourceEntryId: entry.id } : null;
 }
 
 function reviewDisplayEntryId(entryId, collectionId) {
   const state = getState();
   const entry = state.entryById.get(entryId);
   if (!entry) return '';
-  if (!isGlobalCollection(collectionId)) return entryId;
-  const visible = getVisibleEntries(collectionId);
-  return visible.find((candidate) => candidate.kind === entry.kind && candidate.normalizedText === entry.normalizedText)?.id || '';
+  return getState().visibleEntryIdsByCollection.get(collectionId)?.has(entryId) ? entryId : '';
 }
 
 function annotationCountForCollection(collectionId) {
   const state = getState();
-  if (!isGlobalCollection(collectionId)) {
-    const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
-    return state.annotations.filter((item) => visible.has(item.entryId)).length;
-  }
-  const visibleKeys = new Set(getVisibleEntries(collectionId).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
-  return state.annotations.filter((item) => {
-    const entry = state.entryById.get(item.entryId);
-    return entry && visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`);
-  }).length;
+  const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
+  return state.annotations.filter((item) => visible.has(item.entryId)).length;
 }
 
 
@@ -501,6 +490,11 @@ function displayCollectionLabel(collection) {
 }
 
 function collectionCountSummary(collectionId) {
+  const state = getState();
+  if (isGlobalCollection(collectionId)) {
+    const count = state.projectionUniqueCounts.get(collectionId) || 0;
+    return collectionId === SYSTEM_GLOBAL_WORDS_ID ? `${count.toLocaleString()} 词` : `${count.toLocaleString()} 短语`;
+  }
   let words = 0;
   let phrases = 0;
   for (const entry of getVisibleEntries(collectionId)) {
@@ -511,6 +505,7 @@ function collectionCountSummary(collectionId) {
 }
 
 function collectionCard(collection) {
+  const state = getState();
   const entries = getVisibleEntries(collection.id);
   const label = displayCollectionLabel(collection);
   let words = 0;
@@ -521,7 +516,7 @@ function collectionCard(collection) {
   }
   const count = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
-    : entries.length.toLocaleString();
+    : (isGlobalCollection(collection.id) ? (state.projectionUniqueCounts.get(collection.id) || 0) : entries.length).toLocaleString();
   const globalSystem = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collection.id);
   const domainSystem = !globalSystem && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
@@ -542,7 +537,7 @@ function collectionCard(collection) {
   }, [
     el('div', { className: 'collection-card-title' }, [
       el('h3', { text: collection.name }),
-      el('span', { className: 'arrow' }, [svgIcon('jump')]),
+      el('span', { className: 'arrow' }, [svgIcon('enter')]),
     ]),
     label ? el('div', { className: 'label', text: label }) : null,
     el('div', { className: 'count', text: count }),
@@ -552,21 +547,33 @@ function collectionCard(collection) {
 function searchResultButton(entry, onSelect, collectionId = projectionCollectionForEntry(entry.id)) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
+  const conflict = isGlobalCollection(collectionId) && state.globalConflictKeys.has(`${entry.kind}\u0000${entry.normalizedText}`);
+  const contextLabel = conflict
+    ? [state.domainById.get(entry.domainId)?.name, collection?.name].filter(Boolean).join(' · ')
+    : collection?.name;
   return el('button', { type: 'button', className: 'search-result', on: { click: () => onSelect(entry, collectionId) } }, [
     el('strong', { text: entry.text }),
-    collection ? el('span', { text: collection.name }) : null,
+    contextLabel ? el('span', { text: contextLabel }) : null,
   ]);
 }
 
 function makeSortableList(container, onCommit) {
   let dragged = null;
   let pointerId = null;
-  const finish = async () => {
+  let originalIds = [];
+  const finish = async (commit = true) => {
     if (!dragged) return;
     dragged.classList.remove('dragging');
     dragged = null;
     pointerId = null;
+    if (!commit) {
+      const rowById = new Map([...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => [item.dataset.sortId, item]));
+      for (const id of originalIds) if (rowById.has(id)) container.append(rowById.get(id));
+      originalIds = [];
+      return;
+    }
     const ids = [...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => item.dataset.sortId);
+    originalIds = [];
     try { await onCommit(ids); }
     catch (error) { displayError(error); }
   };
@@ -576,6 +583,7 @@ function makeSortableList(container, onCommit) {
       if (!row) return;
       event.preventDefault();
       pointerId = event.pointerId;
+      originalIds = [...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => item.dataset.sortId);
       dragged = row;
       row.classList.add('dragging');
       handle.setPointerCapture?.(pointerId);
@@ -588,8 +596,8 @@ function makeSortableList(container, onCommit) {
       const rect = target.getBoundingClientRect();
       container.insertBefore(dragged, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
     });
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
+    handle.addEventListener('pointerup', () => finish(true));
+    handle.addEventListener('pointercancel', () => finish(false));
   });
 }
 
@@ -708,12 +716,14 @@ function getDataExchangeWorker() {
 async function planDataExchangeFile(file, selection, conflictPolicy = 'current') {
   if (!file) throw new Error('请选择 JSON 文件');
   if (file.size > 64 * 1024 * 1024) throw new Error('导入文件超过 64 MB 上限');
+  const baseRevision = getState().revision;
   const [content, currentBackup] = await Promise.all([file.text(), exportFullBackup()]);
   const id = ++dataExchangeRequestId;
-  return new Promise((resolve, reject) => {
+  const plan = await new Promise((resolve, reject) => {
     dataExchangeRequests.set(id, { resolve, reject });
     getDataExchangeWorker().postMessage({ id, content, currentBackup, selection, conflictPolicy });
   });
+  return { ...plan, baseRevision };
 }
 
 function dataExchangeFilename(scope, domainId = '', collectionId = '') {
@@ -733,6 +743,7 @@ function dataExchangeSummary(plan) {
     ['更新释义', summary.updatedGlosses], ['新增归属', summary.addedMemberships],
     ['移除词汇', summary.removedWords], ['移除短语', summary.removedPhrases],
     ['移除归属', summary.removedMemberships], ['跳过重复', summary.skippedDuplicates],
+    ['跳过脏归属', summary.skippedMemberships],
     ['冲突', summary.conflicts],
   ].filter(([, value]) => Number(value || 0) > 0);
   if (!rows.length) rows.push(['变化', 0]);
@@ -762,6 +773,23 @@ function openDataExchangePreview(file, selection, initialPlan) {
     ]))));
     if (initialPlan.conflicts.length > 20) body.push(el('p', { className: 'help-text', text: `另有 ${initialPlan.conflicts.length - 20} 项冲突未展开。` }));
   }
+  if (initialPlan.membershipIssues?.length) {
+    const issueLabel = (item) => {
+      if (item.type === 'ambiguous-bare-entry-key') return '歧义裸键';
+      if (item.type === 'ambiguous-entry-text' || item.type === 'ambiguous-entry-reference') return '歧义词条引用';
+      if (item.type === 'unresolved-collection-reference') return '无效词表引用';
+      return '无法解析词条';
+    };
+    body.push(el('div', { className: 'warning-box compact-warning', text: '文件包含无法安全绑定的脏归属数据。系统不会猜测；这些归属将被跳过，其他合法内容继续导入。' }));
+    body.push(el('div', { className: 'conflict-list' }, initialPlan.membershipIssues.slice(0, 20).map((item) => {
+      const candidates = (item.candidates || []).map((candidate) => `${candidate.domainId} · ${candidate.text}`).join('；');
+      return el('div', { className: 'conflict-item' }, [
+        el('strong', { text: `${issueLabel(item)}：${item.reference || '(空)'}` }),
+        el('span', { text: `${item.collectionKey ? `目标 ${item.collectionKey}` : '未声明目标'}${candidates ? `；候选 ${candidates}` : ''}` }),
+      ]);
+    })));
+    if (initialPlan.membershipIssues.length > 20) body.push(el('p', { className: 'help-text', text: `另有 ${initialPlan.membershipIssues.length - 20} 项脏归属未展开。` }));
+  }
   openDialog({
     title: '导入预检',
     description: selection.mode === 'replace'
@@ -780,11 +808,24 @@ function openDataExchangePreview(file, selection, initialPlan) {
           description: '确认后将替换所选范围。',
           submitText: '确认替换',
           onSubmit: async () => {
+            if (getState().revision !== finalPlan.baseRevision) {
+              const refreshedPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
+              requestAnimationFrame(() => openDataExchangePreview(file, finalSelection, refreshedPlan));
+              showToast('数据已变化，已重新生成导入预检');
+              return;
+            }
+            cancelActiveTaskForDataChange();
             await restoreBackup(finalPlan.nextBackup);
             goHome();
             showToast('内容 JSON 已替换');
           },
         })));
+        return;
+      }
+      if (getState().revision !== finalPlan.baseRevision) {
+        const refreshedPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
+        requestAnimationFrame(() => openDataExchangePreview(file, finalSelection, refreshedPlan));
+        showToast('数据已变化，已重新生成导入预检');
         return;
       }
       cancelActiveTaskForDataChange();
@@ -969,7 +1010,7 @@ function renderHome() {
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
   elements['page-subtitle'].textContent = 'Vocabulary Index';
-  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString()} 个全局词汇` });
+  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
@@ -1036,7 +1077,7 @@ function renderCollection() {
   }
   const countText = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
-    : entries.length.toLocaleString();
+    : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : entries.length).toLocaleString();
   const collectionSubtitle = [countText, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
   elements['page-subtitle'].textContent = collectionSubtitle;
   renderLargeTitle({ eyebrow: domain?.name || (globalSystemView ? '全局索引' : ''), title: collection.name, subtitle: collectionSubtitle });
@@ -1121,6 +1162,10 @@ function renderPinBar(collection) {
   pinIndex = Math.max(0, Math.min(pinIndex, pins.length - 1));
   const pin = pins[pinIndex];
   const entry = state.entryById.get(pin.entryId);
+  const pinDomainLabel = entry && isGlobalCollection(collection)
+    && state.globalConflictKeys.has(`${entry.kind}\u0000${entry.normalizedText}`)
+    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
+    : '';
   elements['pin-bar'].classList.remove('hidden');
   elements.app.classList.add('has-pin');
   elements.app.classList.remove('has-review');
@@ -1128,7 +1173,7 @@ function renderPinBar(collection) {
     iconButton('chevron', 'pin-nav-button pin-prev', '上一个 PIN', () => jumpPinned(collection.id, -1)),
     el('button', { type: 'button', className: 'pin-current', 'aria-label': '重新定位当前 PIN', on: { click: () => entry && jumpToEntry(entry.id, { reason: 'pin' }) } }, [
       el('span', { className: 'pin-kicker', text: `PIN ${pinIndex + 1}/${pins.length}` }),
-      el('strong', { text: entry?.text || 'PIN 已失效' }),
+      el('strong', { text: [entry?.text || 'PIN 已失效', pinDomainLabel].filter(Boolean).join(' · ') }),
     ]),
     iconButton('chevron', 'pin-nav-button pin-next', '下一个 PIN', () => jumpPinned(collection.id, 1)),
   );
@@ -1278,6 +1323,11 @@ function navigationControls(collection, section, sectionContext, mode, otherSect
 function populateNavigationBar(nav, controls) {
   const fixed = el('div', { className: 'letter-nav-fixed' }, controls.fixed);
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
+  const markTrackInteraction = (duration = 700) => { letterTrackInteractionUntil = Date.now() + duration; };
+  track.addEventListener('pointerdown', () => markTrackInteraction(900), { passive: true });
+  track.addEventListener('pointerup', () => markTrackInteraction(450), { passive: true });
+  track.addEventListener('pointercancel', () => markTrackInteraction(300), { passive: true });
+  track.addEventListener('scroll', () => markTrackInteraction(320), { passive: true });
   nav.replaceChildren(fixed, track);
   nav.classList.toggle('no-track', !controls.track.length);
 }
@@ -1311,12 +1361,29 @@ function materializeEntryChunk(chunk) {
   const data = entryChunkData.get(chunk);
   if (!data || chunk.dataset.rendered === 'true') return;
   chunk.dataset.rendered = 'true';
-  chunk.replaceChildren(...data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
+  const rows = data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
     groupIndex,
     globalIndex: data.globalIndexById.get(entry.id) || groupIndex,
-  })));
+  }));
+  chunk.replaceChildren(...rows);
   chunk.style.minHeight = '';
   entryChunkObserver?.unobserve(chunk);
+  requestAnimationFrame(() => {
+    for (const row of rows) {
+      if (!row.isConnected || !row.classList.contains('phrase-two-line')) continue;
+      const viewport = row.querySelector('.entry-text-viewport');
+      const content = row.querySelector('.entry-text-content');
+      if (!viewport || !content || (content.scrollHeight <= viewport.clientHeight + 1 && content.scrollWidth <= viewport.clientWidth + 1)) continue;
+      const entry = getState().entryById.get(row.dataset.entryId);
+      if (!entry) continue;
+      forcedExtremeEntryKeys.add(`${data.collection.id}\u0000${entry.id}`);
+      const record = data.items.find((item) => item.entry.id === entry.id);
+      row.replaceWith(renderEntryRow(entry, data.collection, data.domain, {
+        groupIndex: record?.groupIndex || 1,
+        globalIndex: data.globalIndexById.get(entry.id) || record?.groupIndex || 1,
+      }));
+    }
+  });
 }
 
 function ensureEntryChunkObserver() {
@@ -1327,12 +1394,12 @@ function ensureEntryChunkObserver() {
   return entryChunkObserver;
 }
 
-function renderEntryChunks(entries, collection, domain, globalIndexById, { startIndex = 1, renderFirst = true } = {}) {
+function renderEntryChunks(entries, collection, domain, globalIndexById, { startIndex = 1, renderFirst = true, groupIndexById = null } = {}) {
   const fragment = document.createDocumentFragment();
   for (let offset = 0; offset < entries.length; offset += ENTRY_CHUNK_SIZE) {
     const slice = entries.slice(offset, offset + ENTRY_CHUNK_SIZE);
     const chunk = el('div', { className: 'entry-chunk', dataset: { rendered: 'false' } });
-    const items = slice.map((entry, index) => ({ entry, groupIndex: startIndex + offset + index }));
+    const items = slice.map((entry, index) => ({ entry, groupIndex: groupIndexById?.get(entry.id) || startIndex + offset + index }));
     entryChunkData.set(chunk, { items, collection, domain, globalIndexById });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
     const estimatedHeight = slice.reduce((total, entry) => {
@@ -1355,6 +1422,27 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
   return fragment;
 }
 
+function groupedNumberIndex(entries, collection) {
+  const shareByText = isGlobalCollection(collection);
+  const result = new Map();
+  let number = 0;
+  let previousKey = '';
+  for (const entry of entries) {
+    const key = shareByText ? `${entry.kind}\u0000${entry.normalizedText}` : entry.id;
+    if (key !== previousKey) {
+      number += 1;
+      previousKey = key;
+    }
+    result.set(entry.id, number);
+  }
+  return result;
+}
+
+function uniqueEntryCountForDisplay(entries, collection) {
+  if (!isGlobalCollection(collection)) return entries.length;
+  return new Set(entries.map((entry) => `${entry.kind}\u0000${entry.normalizedText}`)).size;
+}
+
 function renderAlphabetContent(context, sectionContext) {
   const { collection, domain, globalIndexById } = context;
   const section = sectionContext.section;
@@ -1370,11 +1458,11 @@ function renderAlphabetContent(context, sectionContext) {
     const sectionNode = el('section', {
       className: 'letter-section', id: `letter-${section}-${letter === '#' ? 'other' : letter}`, dataset: { letter, section },
     });
-    const heading = button('', 'letter-heading', () => setLetterSectionOpen(section, letter, !expandedLetters.has(letter)));
+    const heading = button('', 'letter-heading', (event) => toggleLetterSectionWithAnchor(section, letter, event.currentTarget));
     heading.setAttribute('aria-expanded', expandedLetters.has(letter) ? 'true' : 'false');
     heading.append(
       el('span', { className: 'letter-title', text: letter }),
-      el('span', { className: 'letter-count', text: sectionContext.grouped.get(letter).length.toLocaleString() }),
+      el('span', { className: 'letter-count', text: uniqueEntryCountForDisplay(sectionContext.grouped.get(letter), collection).toLocaleString() }),
       el('span', { className: 'letter-indicator' }, [svgIcon('chevron')]),
     );
     sectionNode.append(heading);
@@ -1422,7 +1510,7 @@ function renderDateContent(context, sectionContext) {
       el('h4', { className: 'date-day-title', text: `${Number(day)} 日` }),
     ]);
     const dayBody = el('div', { className: 'letter-body date-day-body' });
-    dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById));
+    dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection) }));
     daySection.append(dayBody);
     root.append(daySection);
     sectionContext.sectionByKey.set(dateKey, daySection);
@@ -1430,7 +1518,7 @@ function renderDateContent(context, sectionContext) {
   unmarked.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   if (unmarked.length) {
     const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
-    unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById));
+    unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection) }));
     const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [
       el('h2', { className: 'date-unmarked-heading', text: '未标注' }),
       unmarkedBody,
@@ -1445,6 +1533,7 @@ function renderDateContent(context, sectionContext) {
 
 function renderEntryList(collection, domain, entries) {
   resetEntryChunking();
+  forcedExtremeEntryKeys.clear();
   collectionRenderContext = null;
   const mode = getViewMode(collection.id);
   const sections = new Map();
@@ -1462,7 +1551,7 @@ function renderEntryList(collection, domain, entries) {
   }
   const firstSection = sections.keys().next().value;
   if (!sections.has(activeSection)) activeSection = firstSection;
-  const globalIndexById = new Map(renderedOrder.map((entry, index) => [entry.id, index + 1]));
+  const globalIndexById = groupedNumberIndex(renderedOrder, collection);
   const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById };
   collectionRenderContext = context;
 
@@ -1506,7 +1595,7 @@ function setLetterSectionOpen(section, letter, open) {
     expandedLetters.add(letter);
     if (!body) {
       body = el('div', { className: 'letter-body' });
-      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById));
+      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, { groupIndexById: groupedNumberIndex(entries, context.collection) }));
       sectionNode.append(body);
     }
   } else {
@@ -1519,8 +1608,71 @@ function setLetterSectionOpen(section, letter, open) {
   return true;
 }
 
-function updateActiveLetter(section, letter = '') {
-  elements['collection-view'].querySelectorAll(`.letter-nav[data-section="${section}"] [data-letter]`).forEach((item) => item.classList.toggle('active', Boolean(letter) && item.dataset.letter === letter));
+function toggleLetterSectionWithAnchor(section, letter, heading) {
+  const context = collectionRenderContext;
+  if (!context || context.mode !== 'alphabet') return;
+  const open = !expandedLettersFor(currentCollectionId, section).has(letter);
+  if (open) {
+    setLetterSectionOpen(section, letter, true);
+    return;
+  }
+  const beforeTop = heading?.getBoundingClientRect().top;
+  const root = document.documentElement;
+  const previousAnchor = root.style.overflowAnchor;
+  root.style.overflowAnchor = 'none';
+  setLetterSectionOpen(section, letter, false);
+  requestAnimationFrame(() => {
+    if (heading?.isConnected && Number.isFinite(beforeTop)) {
+      const delta = heading.getBoundingClientRect().top - beforeTop;
+      if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+    }
+    requestAnimationFrame(() => { root.style.overflowAnchor = previousAnchor; syncActiveAlphabetHeading(); });
+  });
+}
+
+function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}) {
+  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
+    const active = item.dataset.section === section && Boolean(letter) && item.dataset.letter === letter;
+    item.classList.toggle('active', active);
+    if (!active || !ensureVisible || Date.now() < letterTrackInteractionUntil) return;
+    const track = item.closest('.letter-nav-track');
+    if (!track) return;
+    const itemRect = item.getBoundingClientRect();
+    const trackRect = track.getBoundingClientRect();
+    let nextLeft = track.scrollLeft;
+    if (itemRect.left < trackRect.left + 4) nextLeft += itemRect.left - trackRect.left - 8;
+    else if (itemRect.right > trackRect.right - 4) nextLeft += itemRect.right - trackRect.right + 8;
+    if (Math.abs(nextLeft - track.scrollLeft) > 1) track.scrollTo({ left: Math.max(0, nextLeft), behavior: 'smooth' });
+  });
+}
+
+function syncActiveAlphabetHeading() {
+  const context = collectionRenderContext;
+  if (!currentCollectionId || !context || context.mode !== 'alphabet') return;
+  const probe = readingViewportBounds().top + 2;
+  const sections = [...elements['entry-list'].querySelectorAll('.letter-section[data-letter][data-section]')];
+  let active = null;
+  for (const node of sections) {
+    const rect = node.getBoundingClientRect();
+    if (rect.top <= probe && rect.bottom > probe) { active = node; break; }
+    if (rect.top <= probe) active = node;
+    else if (!active) { active = node; break; }
+  }
+  if (!active) return;
+  for (const heading of elements['entry-list'].querySelectorAll('.letter-heading.active-sticky')) heading.classList.remove('active-sticky');
+  active.querySelector('.letter-heading')?.classList.add('active-sticky');
+  activeSection = active.dataset.section || activeSection;
+  updateActiveLetter(activeSection, active.dataset.letter || '', { ensureVisible: true });
+}
+
+function updateLargeTitleState() {
+  const title = elements['large-title'];
+  const topbar = document.querySelector('.topbar');
+  if (!title || !topbar) return;
+  const titleRect = title.getBoundingClientRect();
+  const barRect = topbar.getBoundingClientRect();
+  const collapsed = titleRect.bottom <= barRect.bottom + 12 || window.scrollY >= Math.max(44, title.offsetTop + title.offsetHeight - 36);
+  elements.app.classList.toggle('large-title-collapsed', collapsed);
 }
 
 function normalDestinationsForEntries(entries, { preferredCollectionId = '', domainId = '' } = {}) {
@@ -1559,111 +1711,56 @@ function normalDestinationsForEntries(entries, { preferredCollectionId = '', dom
 
 function hasRelationsForEntry(entry) {
   const state = getState();
-  const isGlobal = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId);
-  if (entry.kind === 'word') {
-    const candidates = isGlobal ? (state.wordsByNormalizedText.get(entry.normalizedText) || [entry]) : [entry];
-    if (candidates.some((candidate) => getRelatedPhrases(candidate.id).length)) return true;
-    if (!isGlobal) {
-      return (state.wordsByNormalizedText.get(entry.normalizedText) || [])
-        .some((candidate) => candidate.domainId !== entry.domainId && getRelatedPhrases(candidate.id).length);
-    }
-    return false;
-  }
-  const candidates = isGlobal ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [entry]) : [entry];
-  return candidates.some((candidate) => getPhraseComponents(candidate.id).length);
+  if (entry.kind === 'word') return getRelatedPhrases(entry.id).length > 0;
+  const components = getPhraseComponents(entry.id);
+  return components.some((component) => (state.wordsByNormalizedText.get(normalizeEnglish(component.token)) || []).length);
 }
 
 function relationItemsForEntry(entry) {
   const state = getState();
   const sourceCollection = state.collectionById.get(currentCollectionId);
-  const isGlobal = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId);
-  const sourceDomainId = isGlobal ? '' : (sourceCollection?.domainId || entry.domainId);
   const preferredCollectionId = sourceCollection?.type === 'normal' ? sourceCollection.id : '';
 
   if (entry.kind === 'word') {
-    if (isGlobal) {
-      const byText = new Map();
-      for (const word of state.wordsByNormalizedText.get(entry.normalizedText) || [entry]) {
-        for (const phrase of getRelatedPhrases(word.id)) {
-          const item = byText.get(phrase.normalizedText) || {
-            text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', targetEntries: [], navigationKind: 'global',
-          };
-          if (!item.targetEntries.some((candidate) => candidate.id === phrase.id)) item.targetEntries.push(phrase);
-          byText.set(phrase.normalizedText, item);
-        }
-      }
-      return [...byText.values()].map((item) => ({
-        ...item,
-        destinations: normalDestinationsForEntries(item.targetEntries),
-      })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-    }
-
-    const localPhrases = getRelatedPhrases(entry.id);
-    if (localPhrases.length) {
-      return localPhrases.map((phrase) => ({
-        text: phrase.text,
-        normalizedText: phrase.normalizedText,
-        kind: 'phrase',
-        navigationKind: 'intra',
-        destinations: normalDestinationsForEntries([phrase], { preferredCollectionId, domainId: sourceDomainId }),
-      })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-    }
-
     const byText = new Map();
-    for (const externalWord of state.wordsByNormalizedText.get(entry.normalizedText) || []) {
-      if (externalWord.domainId === sourceDomainId) continue;
-      for (const phrase of getRelatedPhrases(externalWord.id)) {
-        const item = byText.get(phrase.normalizedText) || {
-          text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', targetEntries: [], navigationKind: 'external',
-        };
-        if (!item.targetEntries.some((candidate) => candidate.id === phrase.id)) item.targetEntries.push(phrase);
-        byText.set(phrase.normalizedText, item);
+    for (const relatedPhrase of getRelatedPhrases(entry.id)) {
+      const targetEntries = state.phrasesByNormalizedText.get(relatedPhrase.normalizedText) || [relatedPhrase];
+      const item = byText.get(relatedPhrase.normalizedText) || {
+        text: relatedPhrase.text,
+        normalizedText: relatedPhrase.normalizedText,
+        kind: 'phrase',
+        targetEntries: [],
+      };
+      for (const candidate of targetEntries) {
+        if (!item.targetEntries.some((target) => target.id === candidate.id)) item.targetEntries.push(candidate);
       }
+      byText.set(relatedPhrase.normalizedText, item);
     }
     return [...byText.values()].map((item) => ({
       ...item,
-      destinations: normalDestinationsForEntries(item.targetEntries),
+      destinations: normalDestinationsForEntries(item.targetEntries, { preferredCollectionId }),
     })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   }
 
-  if (isGlobal) {
-    const byToken = new Map();
-    for (const phrase of state.phrasesByNormalizedText.get(entry.normalizedText) || [entry]) {
-      for (const component of getPhraseComponents(phrase.id)) {
-        const key = normalizeEnglish(component.token);
-        if (!key) continue;
-        const item = byToken.get(key) || { text: component.token, normalizedText: key, kind: 'word', targetEntries: [], navigationKind: 'global' };
-        if (component.entry && !item.targetEntries.some((candidate) => candidate.id === component.entry.id)) item.targetEntries.push(component.entry);
-        byToken.set(key, item);
-      }
-    }
-    return [...byToken.values()].map((item) => ({
-      ...item,
-      destinations: normalDestinationsForEntries(item.targetEntries),
-    })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-  }
-
-  return getPhraseComponents(entry.id).map((component) => {
+  const byToken = new Map();
+  for (const component of getPhraseComponents(entry.id)) {
     const key = normalizeEnglish(component.token);
-    if (component.entry) {
-      return {
-        text: component.token,
-        normalizedText: key,
-        kind: 'word',
-        navigationKind: 'intra',
-        destinations: normalDestinationsForEntries([component.entry], { preferredCollectionId, domainId: sourceDomainId }),
-      };
-    }
-    const externalWords = (state.wordsByNormalizedText.get(key) || []).filter((candidate) => candidate.domainId !== sourceDomainId);
-    return {
+    if (!key) continue;
+    const item = byToken.get(key) || {
       text: component.token,
       normalizedText: key,
       kind: 'word',
-      navigationKind: externalWords.length ? 'external' : 'none',
-      destinations: normalDestinationsForEntries(externalWords),
+      targetEntries: [],
     };
-  }).filter((item) => item.normalizedText)
-    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+    for (const word of state.wordsByNormalizedText.get(key) || []) {
+      if (!item.targetEntries.some((candidate) => candidate.id === word.id)) item.targetEntries.push(word);
+    }
+    byToken.set(key, item);
+  }
+  return [...byToken.values()].map((item) => ({
+    ...item,
+    destinations: normalDestinationsForEntries(item.targetEntries, { preferredCollectionId }),
+  })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
 }
 
 async function copyText(text) {
@@ -1681,59 +1778,119 @@ async function copyText(text) {
 }
 
 function navigateRelationDestination(destination) {
+  closeRelationTargetMenu();
   closeActionDialog();
   navigateCollection(destination.collectionId, destination.entry.id, 'relation');
 }
 
-function jumpToRelation(item) {
+function relationNavigationMode(sourceEntry, destinations) {
+  if (destinations.length > 1) return 'multi';
+  if (destinations.length === 1 && destinations[0].domainId === sourceEntry.domainId) return 'intra';
+  return destinations.length === 1 ? 'external' : 'none';
+}
+
+function closeRelationTargetMenu({ restoreFocus = false } = {}) {
+  if (!activeRelationTargetMenu) return;
+  const source = activeRelationTargetMenu.source;
+  elements['relation-target-menu'].classList.add('hidden');
+  elements['relation-target-menu'].replaceChildren();
+  activeRelationTargetMenu = null;
+  if (restoreFocus && source?.isConnected) source.focus({ preventScroll: true });
+}
+
+function positionRelationTargetMenu() {
+  if (!activeRelationTargetMenu || elements['relation-target-menu'].classList.contains('hidden')) return;
+  const source = activeRelationTargetMenu.source;
+  if (!source?.isConnected) { closeRelationTargetMenu(); return; }
+  const menu = elements['relation-target-menu'];
+  const sourceRect = source.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportLeft = viewport?.offsetLeft || 0;
+  const viewportWidth = viewport?.width || window.innerWidth;
+  const viewportHeight = viewport?.height || window.innerHeight;
+  const viewportRight = viewportLeft + viewportWidth;
+  const viewportBottom = viewportTop + viewportHeight;
+  const chromeBottom = Math.max(viewportTop + 8, document.querySelector('.topbar')?.getBoundingClientRect().bottom || viewportTop);
+  const gap = 8;
+  let top = sourceRect.bottom + gap;
+  let below = true;
+  if (top + menuRect.height > viewportBottom - 8) {
+    top = sourceRect.top - menuRect.height - gap;
+    below = false;
+  }
+  top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
+  const left = Math.min(Math.max(viewportLeft + 8, sourceRect.right - menuRect.width), viewportRight - menuRect.width - 8);
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  menu.classList.toggle('below', below);
+}
+
+function openRelationTargetMenu(item, sourceEntry, source) {
+  closeRelationTargetMenu();
+  const state = getState();
+  const destinations = item.destinations || [];
+  activeRelationTargetMenu = { source, item, sourceEntry };
+  elements['relation-target-menu'].replaceChildren(
+    el('div', { className: 'relation-target-menu-title', text: `跳转到 · ${item.text}` }),
+    ...destinations.map((destination) => {
+      const domainName = state.domainById.get(destination.domainId)?.name || destination.domainId;
+      const label = [domainName, destination.label].filter(Boolean).join(' · ');
+      const option = button(label, 'relation-target-option', () => navigateRelationDestination(destination));
+      option.setAttribute('role', 'menuitem');
+      return option;
+    }),
+  );
+  elements['relation-target-menu'].classList.remove('hidden');
+  requestAnimationFrame(() => {
+    positionRelationTargetMenu();
+    elements['relation-target-menu'].querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  });
+}
+
+function jumpToRelation(item, sourceEntry, sourceButton = null) {
   const destinations = item.destinations || [];
   if (!destinations.length) return;
   if (destinations.length === 1) {
     navigateRelationDestination(destinations[0]);
     return;
   }
-  const state = getState();
-  openActionDialog({
-    title: item.text,
-    description: '选择目标词表',
-    body: [el('div', { className: 'action-list' }, destinations.map((destination) => {
-      const domainName = state.domainById.get(destination.domainId)?.name || '';
-      return button([domainName, destination.label].filter(Boolean).join(' · '), '', () => navigateRelationDestination(destination));
-    }))],
-  });
+  if (sourceButton) openRelationTargetMenu(item, sourceEntry, sourceButton);
 }
 
-function displayGlossForRelationItem(item) {
+function displayGlossForRelationItem(item, sourceEntry) {
   const state = getState();
   const candidates = item.kind === 'phrase'
     ? (state.phrasesByNormalizedText.get(item.normalizedText) || [])
     : (state.wordsByNormalizedText.get(item.normalizedText) || []);
   if (!candidates.length) return '';
-  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId)) {
-    return [...candidates]
-      .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
-      .find((candidate) => state.domainById.get(candidate.domainId)?.glossEnabled && candidate.glossHant)?.glossHant || '';
-  }
-  const collection = state.collectionById.get(currentCollectionId);
-  const domain = state.domainById.get(collection?.domainId);
+  const domain = state.domainById.get(sourceEntry?.domainId);
   if (!domain?.glossEnabled) return '';
-  return candidates.find((candidate) => candidate.domainId === domain.id && candidate.glossHant)?.glossHant || '';
+  return candidates.find((candidate) => candidate.domainId === sourceEntry.domainId && candidate.glossHant)?.glossHant || '';
 }
 
 function renderRelationPanel(entry, items = null) {
   const relationItems = items || relationItemsForEntry(entry);
   if (!relationItems.length || !expandedRelations.has(relationExpansionKey(currentCollectionId, entry.id))) return null;
   return el('div', { className: 'relation-panel' }, relationItems.map((item) => {
-    const gloss = displayGlossForRelationItem(item);
+    const gloss = displayGlossForRelationItem(item, entry);
+    const navigationMode = relationNavigationMode(entry, item.destinations || []);
+    const navigationLabel = navigationMode === 'multi'
+      ? `选择 ${item.text} 的跳转目标`
+      : navigationMode === 'external'
+        ? `跳到其他独立域中的 ${item.text}`
+        : `跳到当前独立域中的 ${item.text}`;
+    const jumpButton = item.destinations?.length ? iconButton(
+      navigationMode,
+      `relation-jump ${navigationMode}`,
+      navigationLabel,
+      (event) => jumpToRelation(item, entry, event.currentTarget),
+    ) : el('span', { className: 'relation-jump-placeholder', 'aria-hidden': 'true' });
     return el('div', { className: 'relation-item' }, [
       el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { className: 'relation-text', text: item.text })]),
       gloss ? el('span', { className: 'relation-gloss', text: gloss, title: gloss }) : el('span', { className: 'relation-gloss empty', 'aria-hidden': 'true' }),
-      item.destinations?.length ? iconButton(
-        'jump',
-        `relation-jump ${item.navigationKind || 'intra'}`,
-        item.navigationKind === 'external' ? `跳到其他独立域中的 ${item.text}` : item.navigationKind === 'global' ? `从全局下钻到 ${item.text}` : `跳到当前独立域中的 ${item.text}`,
-        () => jumpToRelation(item),
-      ) : el('span', { className: 'relation-jump-placeholder', 'aria-hidden': 'true' }),
+      jumpButton,
     ]);
   }));
 }
@@ -1745,7 +1902,7 @@ function indexesForRenderedEntry(context, entry) {
   if (!sectionContext) return { groupIndex: 1, globalIndex };
   if (context.mode === 'alphabet') {
     const group = sectionContext.grouped.get(letterForEntry(entry)) || [];
-    return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex };
+    return { groupIndex: groupedNumberIndex(group, context.collection).get(entry.id) || 1, globalIndex };
   }
   const stamp = getStudyStamp(entry, context.collection.id);
   const group = stamp
@@ -1753,7 +1910,7 @@ function indexesForRenderedEntry(context, entry) {
       .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'))
     : sectionContext.entries.filter((item) => !getStudyStamp(item, context.collection.id))
       .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-  return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex };
+  return { groupIndex: groupedNumberIndex(group, context.collection).get(entry.id) || 1, globalIndex };
 }
 
 function toggleEntryRelations(entryId) {
@@ -1771,7 +1928,7 @@ function toggleEntryRelations(entryId) {
 async function toggleEntryPin(entry, collection, sourceButton = null) {
   closeQueryMenu();
   const existingPin = getState().pinByEntry.get(entry.id) || null;
-  const wasPinned = existingPin?.contextCollectionId === collection.id;
+  const wasPinned = Boolean(existingPin);
   sourceButton?.classList.toggle('active', !wasPinned);
   sourceButton?.setAttribute('aria-pressed', wasPinned ? 'false' : 'true');
   try {
@@ -1791,18 +1948,8 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
 
 function displayGlossForEntry(entry, collection, domain) {
   const state = getState();
-  if (collection.id === SYSTEM_GLOBAL_WORDS_ID) {
-    const candidates = state.wordsByNormalizedText.get(entry.normalizedText) || [entry];
-    return [...candidates]
-      .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
-      .find((candidate) => state.domainById.get(candidate.domainId)?.glossEnabled && candidate.glossHant)?.glossHant || '';
-  }
-  if (collection.id === SYSTEM_GLOBAL_PHRASES_ID) {
-    const candidates = state.phrasesByNormalizedText.get(entry.normalizedText) || [entry];
-    return [...candidates]
-      .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
-      .find((candidate) => state.domainById.get(candidate.domainId)?.glossEnabled && candidate.glossHant)?.glossHant || '';
-  }
+  const entryDomain = state.domainById.get(entry.domainId);
+  if (isGlobalCollection(collection)) return entryDomain?.glossEnabled ? entry.glossHant || '' : '';
   return domain?.glossEnabled ? entry.glossHant || '' : '';
 }
 
@@ -1871,7 +2018,7 @@ function handleEntryPrimaryAction(entry, collection, annotationRecord) {
   else copyEntry(entry, collection);
 }
 
-function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind) {
+function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, sourceDomainLabel = '') {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
   let pointerStart = null;
   let suppressClick = false;
@@ -1885,6 +2032,7 @@ function createTextViewport(entry, collection, gloss, annotationRecord, layoutKi
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
   ]);
   viewport.append(content);
+  if (sourceDomainLabel) viewport.append(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
   const updateOverflowState = () => {
     if (!isScrollable) return;
     const overflow = viewport.scrollWidth > viewport.clientWidth + 1;
@@ -2013,7 +2161,7 @@ function entryActionButtons(entry, collection, pinned, studyStamp) {
 function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, globalIndex: 0 }) {
   const state = getState();
   const pinRecord = state.pinByEntry.get(entry.id) || null;
-  const pinned = pinRecord?.contextCollectionId === collection.id;
+  const pinned = Boolean(pinRecord);
   const annotationRecord = annotationRecordForEntry(entry, collection);
   const annotation = annotationRecord?.annotation || null;
   const numberMode = state.settings.numberMode || 'global';
@@ -2022,15 +2170,20 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const relations = expanded ? relationItemsForEntry(entry) : null;
   const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
+  const conflictKey = `${entry.kind}\u0000${entry.normalizedText}`;
+  const sourceDomainLabel = isGlobalCollection(collection) && state.globalConflictKeys.has(conflictKey)
+    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
+    : '';
   const studyStamp = getStudyStamp(entry, collection.id);
-  const layoutKind = entryLayoutKind(entry, gloss);
+  const layoutKey = `${collection.id}\u0000${entry.id}`;
+  const layoutKind = forcedExtremeEntryKeys.has(layoutKey) ? 'phrase-extreme' : entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
-  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind);
+  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, sourceDomainLabel);
   const indexBadge = indexText ? el('span', { className: 'entry-index-badge', text: indexText, 'aria-hidden': 'true' }) : null;
   let primary;
   if (layoutKind === 'phrase-extreme') {
@@ -2085,21 +2238,6 @@ function openEntryActions(entryId, collectionId) {
   const entry = state.entryById.get(entryId);
   const collection = state.collectionById.get(collectionId);
   if (!entry || !collection) return;
-  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
-    const candidates = entry.kind === 'phrase'
-      ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [])
-      : (state.wordsByNormalizedText.get(entry.normalizedText) || []);
-    openActionDialog({
-      title: entry.text,
-      description: '全局总表是系统聚合视图。请选择要管理的独立域内容。',
-      body: [el('div', { className: 'action-list' }, [...candidates]
-        .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
-        .map((candidate) => button(state.domainById.get(candidate.domainId)?.name || candidate.domainId, '', () => {
-          openEntryActions(candidate.id, candidate.kind === 'phrase' ? systemPhraseCollectionId(candidate.domainId) : systemDomainWordsCollectionId(candidate.domainId));
-        })))],
-    });
-    return;
-  }
   const memberships = state.membershipsByEntry.get(entry.id) || [];
   const annotation = state.annotationByEntry.get(entry.id);
   const normalActions = [
@@ -2696,7 +2834,9 @@ async function startAiCheck(collectionId) {
   const entries = getVisibleEntries(collectionId).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
   if (!entries.length) return;
   const controller = new AiCheckController();
-  const task = { controller, paused: false, completed: 0, total: 1, collectionId, status: '准备 AI 核查…' };
+  const entryIds = entries.map((entry) => entry.id);
+  const startAnnotations = getState().annotations.filter((item) => entryIds.includes(item.entryId)).map((item) => structuredClone(item));
+  const task = { controller, paused: false, completed: 0, total: 1, collectionId, status: '准备 AI 核查…', entryIds, startAnnotations, suppressHistory: false };
   activeTask = task;
   taskPanelExpanded = true;
   renderTaskPanel('准备 AI 核查…');
@@ -2718,8 +2858,14 @@ async function startAiCheck(collectionId) {
         });
       },
     });
-    if (activeTask === task) showToast(result.cancelled ? '核查已取消；已完成批次的标注已保留' : 'AI 核查完成');
-  } catch (error) { if (activeTask === task) displayError(error); }
+    if (!task.suppressHistory) await recordAiAnnotationHistory(task.startAnnotations, task.entryIds, `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId}`);
+    if (activeTask === task) showToast(result.cancelled ? '核查已取消；已完成批次可整体撤销' : 'AI 核查完成');
+  } catch (error) {
+    if (!task.suppressHistory) {
+      try { await recordAiAnnotationHistory(task.startAnnotations, task.entryIds, `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId}`); } catch {}
+    }
+    if (activeTask === task && error?.name !== 'AbortError') displayError(error);
+  }
   finally {
     if (activeTask === task) activeTask = null;
     renderTaskPanel('');
@@ -2729,6 +2875,7 @@ async function startAiCheck(collectionId) {
 function cancelActiveTaskForDataChange() {
   if (!activeTask) return;
   const task = activeTask;
+  task.suppressHistory = true;
   task.controller.cancel();
   activeTask = null;
   renderTaskPanel('');
@@ -2763,25 +2910,14 @@ function renderTaskPanel(status) {
 
 function annotationReviewIds(collectionId = '') {
   const state = getState();
-  if (!collectionId) return [...state.annotations]
-    .map((item) => state.entryById.get(item.entryId))
-    .filter(Boolean)
-    .sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'))
-    .map((entry) => entry.id);
-  if (!isGlobalCollection(collectionId)) {
-    const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
-    return [...state.annotations]
-      .filter((item) => visible.has(item.entryId))
-      .map((item) => state.entryById.get(item.entryId))
-      .filter(Boolean)
-      .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'))
-      .map((entry) => entry.id);
-  }
-  const visibleKeys = new Set(getVisibleEntries(collectionId).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
+  const annotated = new Set(state.annotations.map((item) => item.entryId));
+  if (collectionId) return (state.projection.get(collectionId) || []).filter((entry) => annotated.has(entry.id)).map((entry) => entry.id);
+  const domainOrder = new Map(state.domains.map((domain, index) => [domain.id, index]));
   return [...state.annotations]
     .map((item) => state.entryById.get(item.entryId))
-    .filter((entry) => entry && visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`))
-    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.domainId.localeCompare(b.domainId))
+    .filter(Boolean)
+    .sort((a, b) => (domainOrder.get(a.domainId) ?? Number.MAX_SAFE_INTEGER) - (domainOrder.get(b.domainId) ?? Number.MAX_SAFE_INTEGER)
+      || a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id))
     .map((entry) => entry.id);
 }
 
@@ -2833,6 +2969,10 @@ function renderReviewBar() {
   if (!entry || !annotation) { if (syncReview()) renderReviewBar(); return; }
   const displayEntryId = reviewDisplayEntryId(entryId, review.collectionId) || entryId;
   const targetCollectionId = review.collectionId || projectionCollectionForEntry(entryId);
+  const reviewDomainLabel = isGlobalCollection(targetCollectionId)
+    && state.globalConflictKeys.has(`${entry.kind}\u0000${entry.normalizedText}`)
+    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
+    : '';
   if (targetCollectionId && targetCollectionId !== currentCollectionId) {
     navigateCollection(targetCollectionId, displayEntryId);
     return;
@@ -2851,7 +2991,7 @@ function renderReviewBar() {
   elements['annotation-review-bar'].replaceChildren(
     previous,
     el('div', { className: 'review-text' }, [
-      el('strong', { text: `${review.index + 1}/${review.ids.length} · ${entry.text}` }),
+      el('strong', { text: `${review.index + 1}/${review.ids.length} · ${entry.text}${reviewDomainLabel ? ` · ${reviewDomainLabel}` : ''}` }),
       el('span', { text: `${annotation.spelling.suggestion ? `建议 ${annotation.spelling.suggestion}` : '需检查'}${annotation.reason ? ` · ${annotation.reason}` : ''}` }),
     ]),
     next,
@@ -2898,12 +3038,6 @@ function closeReview() {
 }
 
 
-function globalRepresentative(entry) {
-  if (!entry) return null;
-  const collectionId = entry.kind === 'phrase' ? SYSTEM_GLOBAL_PHRASES_ID : SYSTEM_GLOBAL_WORDS_ID;
-  return getVisibleEntries(collectionId).find((candidate) => candidate.normalizedText === entry.normalizedText) || null;
-}
-
 function openSearchDialog() {
   const state = getState();
   const input = el('input', { type: 'search', placeholder: '搜索', autocomplete: 'off', spellcheck: false, inputMode: 'search' });
@@ -2946,9 +3080,8 @@ function openSearchDialog() {
     return allowedIds;
   };
   const selectResult = (entry, collectionId) => {
-    const targetEntry = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId) ? (globalRepresentative(entry) || entry) : entry;
     closeSearchDialog();
-    requestAnimationFrame(() => requestAnimationFrame(() => navigateCollection(collectionId, targetEntry.id, 'search')));
+    requestAnimationFrame(() => requestAnimationFrame(() => navigateCollection(collectionId, entry.id, 'search')));
   };
   const targetCollectionForResult = (entry) => {
     const value = scope.value;
@@ -2975,7 +3108,7 @@ function openSearchDialog() {
       return;
     }
     const allowed = visibleIds();
-    const found = search(query, { limit: 180 }).filter((entry) => allowed.has(entry.id)).slice(0, 80);
+    const found = search(query, { limit: 80, entryIds: allowed });
     showEntries(found);
   };
   input.addEventListener('input', () => {
@@ -3001,8 +3134,8 @@ function openSearchDialog() {
       const seen = new Set();
       const found = [];
       for (const term of terms) {
-        for (const entry of search(term, { limit: 30 })) {
-          if (!allowed.has(entry.id) || seen.has(entry.id)) continue;
+        for (const entry of search(term, { limit: 80, entryIds: allowed })) {
+          if (seen.has(entry.id)) continue;
           seen.add(entry.id);
           found.push(entry);
           if (found.length >= 80) break;
@@ -3033,7 +3166,7 @@ function openSettingsDialog() {
   const model = el('select');
   const numberMode = el('select', {}, [
     el('option', { value: 'none', text: '无序号', selected: state.settings.numberMode === 'none' }),
-    el('option', { value: 'group', text: '字母内编号', selected: state.settings.numberMode === 'group' }),
+    el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
     el('option', { value: 'global', text: '连续编号', selected: !['none', 'group'].includes(state.settings.numberMode) }),
   ]);
   const updated = el('p', { className: 'help-text' });
@@ -3063,13 +3196,20 @@ function openSettingsDialog() {
 function showMigrationNotice() {
   const state = getState();
   if (!state.settings.migrationNoticePending) return;
+  const studyIssues = Array.isArray(state.settings.studyStampMigrationIssues) ? state.settings.studyStampMigrationIssues : [];
+  const body = [
+    el('div', { className: 'warning-box', text: '建议立即导出一份当前版本完整 JSON，并保留升级前备份直到真机验收完成。' }),
+    el('p', { className: 'help-text', text: '系统总表现为具体内容的投影视图；跨域同形内容分别显示。学习日期已升级为具体内容状态。' }),
+  ];
+  if (studyIssues.length) body.push(el('details', { className: 'migration-issues' }, [
+    el('summary', { text: `${studyIssues.length} 条旧全局学习日期存在跨域候选，已按旧域顺序迁移` }),
+    el('ul', {}, studyIssues.slice(0, 50).map((item) => el('li', { text: `${item.sourceKey} → ${item.chosenEntryId}` }))),
+    studyIssues.length > 50 ? el('p', { className: 'help-text', text: `另有 ${studyIssues.length - 50} 条，请在完整备份 settings.studyStampMigrationIssues 中查看。` }) : null,
+  ]));
   openDialog({
     title: '数据模型升级完成',
-    description: `已从 ${state.settings.migrationSource || '2.x'} 迁移到词域数据模型。`,
-    body: [
-      el('div', { className: 'warning-box', text: '建议立即导出一份当前版本完整 JSON，并保留升级前备份直到真机验收完成。' }),
-      el('p', { className: 'help-text', text: '旧词性仍保留在数据层；界面已隐藏。每个词域已建立词汇总表与短语总表；普通表可同时包含词汇与短语。' }),
-    ],
+    description: `已从 ${state.settings.migrationSource || '旧版本'} 迁移到 Schema 5。`,
+    body,
     submitText: '我已了解',
     onSubmit: acknowledgeMigrationNotice,
   });
@@ -3133,6 +3273,7 @@ function renderApp() {
   closeQueryMenu();
   if (currentCollectionId) renderCollection(); else renderHome();
   if (review.ids.length) { syncReview(); renderReviewBar(); }
+  requestAnimationFrame(() => { updateLargeTitleState(); syncActiveAlphabetHeading(); updateOverlayLayout(); });
 }
 
 async function handleDialogSubmit(event) {
@@ -3163,13 +3304,7 @@ function refreshVisibleEntryRows(entryIds = []) {
   for (const row of elements['entry-list'].querySelectorAll('.entry-row[data-entry-id]')) {
     const entry = state.entryById.get(row.dataset.entryId);
     if (!entry) continue;
-    let affected = changed.has(entry.id);
-    if (!affected && isGlobalCollection(currentCollectionId)) {
-      const candidates = entry.kind === 'phrase'
-        ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [])
-        : (state.wordsByNormalizedText.get(entry.normalizedText) || []);
-      affected = candidates.some((candidate) => changed.has(candidate.id));
-    }
+    const affected = changed.has(entry.id);
     if (affected) row.replaceWith(renderEntryRow(entry, collectionRenderContext.collection, collectionRenderContext.domain, indexesForRenderedEntry(collectionRenderContext, entry)));
   }
 }
@@ -3198,10 +3333,12 @@ function handleStoreEvent({ type, detail }) {
 
 function handleWindowScroll() {
   if (activeQueryMenu) closeQueryMenu();
+  if (activeRelationTargetMenu) closeRelationTargetMenu();
   if (!scrollUiFrame) {
     scrollUiFrame = requestAnimationFrame(() => {
       scrollUiFrame = 0;
-      elements.app.classList.toggle('large-title-collapsed', window.scrollY > 44);
+      updateLargeTitleState();
+      syncActiveAlphabetHeading();
       updateBackToTopVisibility();
     });
   }
@@ -3252,9 +3389,8 @@ export async function initializeUI() {
   window.addEventListener('resize', updateVisualViewportVars, { passive: true });
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
   document.addEventListener('pointerdown', (event) => {
-    if (!activeQueryMenu) return;
-    if (elements['query-menu'].contains(event.target) || activeQueryMenu.source?.contains(event.target)) return;
-    closeQueryMenu();
+    if (activeQueryMenu && !elements['query-menu'].contains(event.target) && !activeQueryMenu.source?.contains(event.target)) closeQueryMenu();
+    if (activeRelationTargetMenu && !elements['relation-target-menu'].contains(event.target) && !activeRelationTargetMenu.source?.contains(event.target)) closeRelationTargetMenu();
   }, { capture: true });
   elements['query-menu']?.addEventListener('keydown', (event) => {
     const options = [...elements['query-menu'].querySelectorAll('[role="menuitem"]')];
@@ -3269,6 +3405,21 @@ export async function initializeUI() {
     } else if (event.key === 'Escape') {
       event.preventDefault();
       closeQueryMenu({ restoreFocus: true });
+    }
+  });
+  elements['relation-target-menu']?.addEventListener('keydown', (event) => {
+    const options = [...elements['relation-target-menu'].querySelectorAll('[role="menuitem"]')];
+    if (!options.length) return;
+    const index = Math.max(0, options.indexOf(document.activeElement));
+    if (['ArrowUp', 'ArrowLeft'].includes(event.key)) {
+      event.preventDefault();
+      options[(index - 1 + options.length) % options.length].focus();
+    } else if (['ArrowDown', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault();
+      options[(index + 1) % options.length].focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeRelationTargetMenu({ restoreFocus: true });
     }
   });
   const preventGestureZoom = (event) => {

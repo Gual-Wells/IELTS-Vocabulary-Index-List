@@ -1,5 +1,5 @@
 import {
-  SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID, buildProjection, canonicalizeBackup, cleanStudyStampReferences,
+  buildProjection, canonicalizeBackup, cleanStudyStampReferences,
   createCollection, createDomain, createEntry, createMembership, isPhraseText, normalizeDisplayText,
   normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemPhraseCollectionId,
   toTraditional,
@@ -208,7 +208,7 @@ function collectionIdentity(domainId, name, type) {
   return `${domainId}\u0000${type}\u0000${normalizeEnglish(name)}`;
 }
 
-function summaryBetween(before, after, conflicts, skippedDuplicates = 0) {
+function summaryBetween(before, after, conflicts, skippedDuplicates = 0, membershipIssues = []) {
   const byId = (items) => new Map(items.map((item) => [item.id, item]));
   const bDomains = byId(before.domains); const aDomains = byId(after.domains);
   const bCollections = byId(before.collections); const aCollections = byId(after.collections);
@@ -230,6 +230,7 @@ function summaryBetween(before, after, conflicts, skippedDuplicates = 0) {
     addedMemberships: [...afterMemberships].filter((key) => !beforeMemberships.has(key)).length,
     removedMemberships: [...beforeMemberships].filter((key) => !afterMemberships.has(key)).length,
     skippedDuplicates,
+    skippedMemberships: membershipIssues.length,
     conflicts: conflicts.length,
   };
 }
@@ -242,11 +243,6 @@ function normalizePersonalReferences(backup) {
     let entry = entryById.get(pin.entryId);
     if (!entry) return [];
     if ((projection.get(pin.contextCollectionId) || []).some((item) => item.id === entry.id)) return [{ ...pin, domainId: entry.domainId }];
-    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(pin.contextCollectionId)) {
-      const representative = (projection.get(pin.contextCollectionId) || [])
-        .find((item) => item.kind === entry.kind && item.normalizedText === entry.normalizedText);
-      if (representative) return [{ ...pin, id: stableId('pin', representative.id), entryId: representative.id, domainId: representative.domainId }];
-    }
     const fallback = entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId) : systemDomainWordsCollectionId(entry.domainId);
     if (!(projection.get(fallback) || []).some((item) => item.id === entry.id)) return [];
     return [{ ...pin, domainId: entry.domainId, contextCollectionId: fallback }];
@@ -258,15 +254,6 @@ function normalizePersonalReferences(backup) {
     const parts = key.split(':');
     const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
     if ((projection.get(collectionId) || []).some((item) => item.id === entryId)) continue;
-    const oldEntry = entryById.get(entryId);
-    if (oldEntry && [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
-      const representative = (projection.get(collectionId) || [])
-        .find((item) => item.kind === oldEntry.kind && item.normalizedText === oldEntry.normalizedText);
-      if (representative) {
-        lastPositions[key] = representative.id;
-        continue;
-      }
-    }
     delete lastPositions[key];
   }
   const validCollectionIds = new Set(projection.keys());
@@ -307,6 +294,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   let entries = [...draft.entries];
   let memberships = [...draft.memberships];
   const conflicts = [];
+  const membershipIssues = [];
   let skippedDuplicates = 0;
   const timestamp = new Date().toISOString();
 
@@ -415,6 +403,19 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   }
 
   const entryByIdentity = new Map(entries.map((item) => [contentIdentity(item.domainId, item.normalizedText), item]));
+  const entryCandidatesByReference = new Map();
+  const entryCandidatesByNormalizedText = new Map();
+  const registerCandidate = (map, key, entry) => {
+    const reference = normalizeDisplayText(key);
+    if (!reference || !entry) return;
+    const candidates = map.get(reference) || [];
+    if (!candidates.some((item) => item.id === entry.id)) candidates.push(entry);
+    map.set(reference, candidates);
+  };
+  const onlyCandidate = (map, key) => {
+    const candidates = map.get(key) || [];
+    return candidates.length === 1 ? candidates[0] : null;
+  };
   const entryByPackageKey = new Map();
   for (const incoming of pkg.data.entries) {
     const domainId = target.scope === 'global' ? domainMap.get(incoming.domainKey) : targetDomainId;
@@ -439,9 +440,12 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
       entryByIdentity.set(identity, updated);
       skippedDuplicates += 1;
     }
+    const qualifiedKey = entryPackageKey(incoming.domainKey || pkg.target.domainKey || '', incoming.normalizedText);
+    registerCandidate(entryCandidatesByReference, incoming.key, entry);
+    registerCandidate(entryCandidatesByReference, qualifiedKey, entry);
+    registerCandidate(entryCandidatesByNormalizedText, incoming.normalizedText, entry);
     entryByPackageKey.set(incoming.key, entry);
-    entryByPackageKey.set(entryPackageKey(incoming.domainKey || pkg.target.domainKey || '', incoming.normalizedText), entry);
-    entryByPackageKey.set(incoming.normalizedText, entry);
+    entryByPackageKey.set(qualifiedKey, entry);
   }
 
   const membershipSet = new Set(memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
@@ -454,10 +458,79 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     membershipSet.add(key);
   };
 
+  const resolveMembershipEntry = (incoming) => {
+    const rawKey = normalizeDisplayText(incoming.entryKey);
+    if (rawKey) {
+      const exactCandidates = entryCandidatesByReference.get(rawKey) || [];
+      if (exactCandidates.length === 1) return exactCandidates[0];
+      if (exactCandidates.length > 1) {
+        membershipIssues.push({
+          type: 'ambiguous-entry-reference',
+          reference: rawKey,
+          collectionKey: incoming.collectionKey,
+          candidates: exactCandidates.map((item) => ({ id: item.id, domainId: item.domainId, text: item.text })),
+        });
+        return null;
+      }
+
+      // A bare entryKey is accepted only when it resolves to exactly one concrete Entry.
+      // Cross-domain homographs are dirty/ambiguous input and are never guessed.
+      if (!rawKey.startsWith('entry:')) {
+        const normalized = normalizeEnglish(rawKey);
+        const bareCandidates = entryCandidatesByNormalizedText.get(normalized) || [];
+        if (bareCandidates.length === 1) return bareCandidates[0];
+        if (bareCandidates.length > 1) {
+          membershipIssues.push({
+            type: 'ambiguous-bare-entry-key',
+            reference: rawKey,
+            collectionKey: incoming.collectionKey,
+            candidates: bareCandidates.map((item) => ({ id: item.id, domainId: item.domainId, text: item.text })),
+          });
+          return null;
+        }
+      }
+    }
+
+    const rawText = normalizeDisplayText(incoming.entryText);
+    if (rawText) {
+      const normalized = normalizeEnglish(rawText);
+      const textCandidates = entryCandidatesByNormalizedText.get(normalized) || [];
+      if (textCandidates.length === 1) return textCandidates[0];
+      if (textCandidates.length > 1) {
+        membershipIssues.push({
+          type: 'ambiguous-entry-text',
+          reference: rawText,
+          collectionKey: incoming.collectionKey,
+          candidates: textCandidates.map((item) => ({ id: item.id, domainId: item.domainId, text: item.text })),
+        });
+        return null;
+      }
+    }
+
+    membershipIssues.push({
+      type: 'unresolved-entry-reference',
+      reference: rawKey || rawText || '(空)',
+      collectionKey: incoming.collectionKey,
+      candidates: [],
+    });
+    return null;
+  };
+
   for (const incoming of pkg.data.memberships) {
-    const entry = entryByPackageKey.get(incoming.entryKey) || entryByPackageKey.get(normalizeEnglish(incoming.entryText));
+    const entry = resolveMembershipEntry(incoming);
     const collectionId = target.scope === 'collection' && targetCollection?.type === 'normal'
       ? targetCollection.id : collectionMap.get(incoming.collectionKey);
+    const targetCollectionForMembership = collections.find((item) => item.id === collectionId);
+    if (!entry) continue;
+    if (!targetCollectionForMembership || targetCollectionForMembership.type !== 'normal') {
+      membershipIssues.push({
+        type: 'unresolved-collection-reference',
+        reference: incoming.entryKey || incoming.entryText || entry.text,
+        collectionKey: incoming.collectionKey || '(空)',
+        candidates: [{ id: entry.id, domainId: entry.domainId, text: entry.text }],
+      });
+      continue;
+    }
     addMembership(entry, collectionId, incoming.sourceLabel, incoming.sourceOrder);
   }
 
@@ -498,7 +571,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '3.3.1',
+    appVersion: '3.4.0',
     exportedAt: timestamp,
     domains,
     collections,
@@ -509,6 +582,6 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   const nextBackup = canonicalizeBackup(nextRaw);
   // canonicalizeBackup intentionally keeps a compact settings whitelist; restore the validated source catalog.
   nextBackup.settings.contentSources = [...sourceMap.values()];
-  const summary = summaryBetween(before, nextBackup, conflicts, skippedDuplicates);
-  return { package: pkg, target, mismatch, conflicts, conflictPolicy, summary, nextBackup };
+  const summary = summaryBetween(before, nextBackup, conflicts, skippedDuplicates, membershipIssues);
+  return { package: pkg, target, mismatch, conflicts, membershipIssues, conflictPolicy, summary, nextBackup };
 }

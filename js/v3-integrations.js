@@ -20,14 +20,10 @@ function sourceKeysForEntry(entry) {
   return value ? value.split(/[+,/|;\s]+/).filter(Boolean) : [];
 }
 
-function matchingInstances(state, entry, collectionId) {
-  if (![SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) return [entry];
-  const source = entry.kind === 'phrase'
-    ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [])
-    : (state.wordsByNormalizedText.get(entry.normalizedText) || []);
-  return [...source].sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0)
-    - Number(state.domainById.get(b.domainId)?.order || 0)
-    || String(a.id).localeCompare(String(b.id)));
+function matchingInstances(_state, entry, _collectionId) {
+  // System total tables are projection views. Query/copy always targets the
+  // concrete entry represented by the selected row, never a synthetic group.
+  return [entry];
 }
 
 /**
@@ -135,10 +131,6 @@ export function createEntryContext(state, entry, collectionId, options = {}) {
     }
   }
 
-  if (isGlobal) {
-    const globalStamp = state.studyStampByKey.get(`global:${entry.kind}:${entry.normalizedText}`);
-    if (globalStamp) studyMap.set(globalStamp.key, globalStamp);
-  }
 
   const sourceCatalog = (state.settings?.contentSources || [])
     .filter((source) => sourceKeys.has(String(source.key || '')))
@@ -155,15 +147,9 @@ export function createEntryContext(state, entry, collectionId, options = {}) {
       mode: String(options.viewMode || 'alphabet'),
       section: String(options.section || (entry.kind === 'phrase' ? 'phrase' : 'word')),
     },
-    subject: isGlobal ? {
-      scope: 'global-aggregate',
-      kind: entry.kind,
-      text: entry.text,
-      normalizedText: entry.normalizedText,
-      aggregateKey: `global:${entry.kind}:${entry.normalizedText}`,
-      instanceEntryIds: instances.map((item) => item.id),
-    } : {
+    subject: {
       scope: 'domain-entry',
+      projectedFromGlobal: isGlobal,
       kind: entry.kind,
       text: entry.text,
       normalizedText: entry.normalizedText,

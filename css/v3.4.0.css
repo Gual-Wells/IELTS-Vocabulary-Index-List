@@ -1,0 +1,188 @@
+/* Vocabulary Index 3.4.0 release layer.
+   Projection-view identity, sticky group navigation and a flat iPhone visual baseline. */
+
+:root {
+  --relation-rail-width: 17px;
+  --entry-index-offset: 38px;
+  --content-sticky-top: calc(var(--topbar-height) + var(--update-overlay-offset) + 60px);
+}
+
+/* The title owns the physical center of the screen, independent of asymmetric actions. */
+.topbar {
+  grid-template-columns: 88px minmax(0, 1fr) 88px;
+  grid-template-areas: "back title actions";
+  column-gap: 0;
+  background: var(--chrome-surface);
+  box-shadow: none;
+}
+.topbar > #back-button { justify-self: start; }
+.topbar > .brand-block { justify-self: stretch; text-align: center; }
+.topbar > .topbar-actions { justify-self: end; }
+.app.large-title-collapsed .topbar { box-shadow: 0 1px 0 var(--line); }
+
+.navigation-top-button,
+.navigation-top-button .ui-icon,
+.letter-nav-fixed button,
+.letter-nav-track button {
+  display: grid;
+  place-items: center;
+}
+.navigation-top-button .ui-icon { margin: 0; }
+
+/* Flat home hierarchy: no decorative rails, glows, gradients or floating-card shadows. */
+.index-scope::before { display: none !important; }
+.index-scope,
+.global-scope,
+.domain-scope {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.global-scope {
+  background: color-mix(in srgb, var(--accent-soft) 44%, var(--bg)) !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+}
+.collection-card,
+.collection-card.system-card,
+.collection-card.global-system-card,
+.collection-card.domain-system-card,
+.global-grid .collection-card {
+  background: var(--surface) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border-color: var(--line-strong) !important;
+}
+.collection-card.system-card { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)) !important; }
+.collection-card:active { background: var(--surface-soft) !important; }
+
+/* Stable number rail only when numbering is enabled. */
+.entry-row { margin-left: 0; }
+.entry-row.has-index { margin-left: var(--entry-index-offset); }
+.entry-line {
+  grid-template-columns: minmax(0, 1fr) auto 152px;
+  column-gap: 0;
+  box-shadow: none;
+}
+.entry-study-date:not(.marked) { display: none; }
+.entry-study-date.marked { min-width: 42px; width: auto; padding-inline: 3px; }
+.entry-index-badge { left: calc(-1 * var(--entry-index-offset) + 1px); }
+.entry-actions { width: 152px; min-width: 152px; }
+.entry-actions > button { width: 38px; min-width: 38px; }
+.entry-text-viewport { min-width: 0; position: relative; }
+.entry-text-content { min-width: max-content; }
+
+/* Cross-domain homographs/homophrases expose the concrete source entry. */
+.entry-source-domain {
+  position: absolute;
+  top: 2px;
+  right: 5px;
+  max-width: min(42%, 150px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  font-size: 9.5px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: .015em;
+  pointer-events: none;
+}
+.entry-text-viewport:has(.entry-source-domain) .entry-text-content { padding-right: min(43%, 154px); }
+.entry-line-extreme .entry-source-domain { top: 0; }
+
+/* Real group headings become the dynamic subsection title. */
+.letter-section {
+  overflow: visible !important;
+  contain: none;
+}
+.letter-heading {
+  position: sticky;
+  top: var(--content-sticky-top);
+  z-index: 35;
+  background: var(--surface);
+  border-radius: 14px;
+}
+.letter-section:has(.letter-heading[aria-expanded="true"]) > .letter-heading {
+  border-radius: 14px 14px 0 0;
+}
+.letter-heading.active-sticky { color: var(--accent-ink); }
+
+/* Opaque navigation with no content ghosting. */
+.letter-nav,
+.section-letter-nav {
+  background: var(--chrome-surface) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+/* Flat relation rail and target menu. */
+.entry-relation-tab,
+.entry-relation-tab.active {
+  background: color-mix(in srgb, var(--accent-soft) 44%, var(--surface)) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.relation-target-menu {
+  position: fixed;
+  z-index: 132;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(360px, calc(var(--visual-height) - 32px));
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  background: var(--surface-strong);
+  box-shadow: 0 12px 30px rgb(35 32 27 / 16%);
+}
+.relation-target-menu-title {
+  padding: 7px 9px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.relation-target-menu [role="menuitem"] {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.relation-target-menu [role="menuitem"]:active,
+.relation-target-menu [role="menuitem"]:focus-visible { background: var(--accent-soft); }
+
+/* Two-line phrases are measured at materialization time; upgraded rows use extreme layout. */
+.phrase-two-line .entry-text-content { max-height: 2.55em; }
+
+/* Lighter manager and dialog geometry while preserving 44pt hit targets. */
+.app-dialog,
+.sheet-dialog .dialog-card,
+.confirm-dialog .dialog-card {
+  box-shadow: 0 12px 34px rgb(35 32 27 / 15%);
+}
+.dialog-header { min-height: 58px; }
+.dialog-header .icon-button {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+@media (max-width: 390px) {
+  :root { --entry-index-offset: 36px; }
+  .topbar { grid-template-columns: 80px minmax(0, 1fr) 80px; }
+  .entry-line { grid-template-columns: minmax(0, 1fr) auto 144px; }
+  .entry-actions { width: 144px; min-width: 144px; }
+  .entry-actions > button { width: 36px; min-width: 36px; }
+  .entry-source-domain { max-width: 132px; }
+  .entry-text-viewport:has(.entry-source-domain) .entry-text-content { padding-right: 136px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-nav-track { scroll-behavior: auto; }
+}

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const DEFAULT_DOMAIN_ID = 'domain_general_english';
 export const DEFAULT_DOMAIN_NAME = '通用英语';
 export const SYSTEM_PHRASE_SUFFIX = '__phrases';
@@ -70,10 +70,7 @@ export function globalStudyStampKey(kind, normalizedText) {
 
 export function cleanStudyStampReferences(backup) {
   const entryIds = new Set((backup?.entries || []).map((item) => item.id));
-  const aggregateKeys = new Set((backup?.entries || []).map((item) => globalStudyStampKey(item.kind, item.normalizedText)));
-  backup.studyStamps = (backup?.studyStamps || []).filter((item) => item.scope === 'entry'
-    ? entryIds.has(item.entryId)
-    : item.scope === 'global' && aggregateKeys.has(item.key));
+  backup.studyStamps = (backup?.studyStamps || []).filter((item) => item.scope === 'entry' && entryIds.has(item.entryId));
   return backup;
 }
 
@@ -191,6 +188,73 @@ export function createStudyStamp({ key = '', scope = 'entry', entryId = '', kind
     reviewDateKey: cleanDate,
     reviewedAt: String(reviewedAt || nowIso()),
     revision: Math.max(1, Number(revision || 1)),
+  };
+}
+
+function laterStudyStamp(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  if (left.reviewDateKey !== right.reviewDateKey) return left.reviewDateKey > right.reviewDateKey ? left : right;
+  if (left.reviewedAt !== right.reviewedAt) return left.reviewedAt > right.reviewedAt ? left : right;
+  return Number(left.revision || 0) >= Number(right.revision || 0) ? left : right;
+}
+
+function migrateStudyStampsToEntries(rawStamps, entries, domains) {
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  const domainOrder = new Map([...domains]
+    .sort((a, b) => a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'))
+    .map((domain, index) => [domain.id, index]));
+  const entriesByAggregate = new Map();
+  for (const entry of entries) {
+    const aggregateKey = globalStudyStampKey(entry.kind, entry.normalizedText);
+    const list = entriesByAggregate.get(aggregateKey) || [];
+    list.push(entry);
+    entriesByAggregate.set(aggregateKey, list);
+  }
+  for (const list of entriesByAggregate.values()) {
+    list.sort((a, b) => (domainOrder.get(a.domainId) ?? Number.MAX_SAFE_INTEGER)
+      - (domainOrder.get(b.domainId) ?? Number.MAX_SAFE_INTEGER)
+      || a.id.localeCompare(b.id));
+  }
+
+  const migrated = new Map();
+  const issues = [];
+  for (const raw of array(rawStamps)) {
+    let entry = null;
+    if (raw?.scope === 'entry' || raw?.entryId) entry = entryById.get(String(raw?.entryId || '')) || null;
+    else if (raw?.scope === 'global' || String(raw?.key || '').startsWith('global:')) {
+      const aggregateKey = raw?.key || globalStudyStampKey(raw?.kind, normalizeEnglish(raw?.normalizedText));
+      const candidates = entriesByAggregate.get(aggregateKey) || [];
+      entry = candidates[0] || null;
+      if (entry && candidates.length > 1) {
+        issues.push({
+          type: 'global-study-stamp-ambiguous',
+          sourceKey: String(raw?.key || aggregateKey),
+          reviewDateKey: String(raw?.reviewDateKey || ''),
+          chosenEntryId: entry.id,
+          candidateEntryIds: candidates.map((candidate) => candidate.id),
+        });
+      }
+    }
+    if (!entry) continue;
+    let stamp;
+    try {
+      stamp = createStudyStamp({
+        key: `entry:${entry.id}`,
+        scope: 'entry',
+        entryId: entry.id,
+        reviewDateKey: raw?.reviewDateKey,
+        reviewedAt: raw?.reviewedAt,
+        revision: raw?.revision,
+      });
+    } catch {
+      continue;
+    }
+    migrated.set(stamp.key, laterStudyStamp(migrated.get(stamp.key), stamp));
+  }
+  return {
+    stamps: [...migrated.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    issues,
   };
 }
 
@@ -1379,7 +1443,7 @@ function legacyWord(entry) {
 }
 
 export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
-  if ([3, SCHEMA_VERSION].includes(Number(input?.schemaVersion)) && Array.isArray(input?.domains)) {
+  if ([3, 4, SCHEMA_VERSION].includes(Number(input?.schemaVersion)) && Array.isArray(input?.domains)) {
     return canonicalizeBackup({ ...input, schemaVersion: SCHEMA_VERSION, studyStamps: array(input?.studyStamps) });
   }
 
@@ -1541,7 +1605,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.1',
+    appVersion: '3.4.0',
     exportedAt: timestamp,
     domains,
     collections,
@@ -1589,7 +1653,8 @@ export function canonicalizeBackup(input) {
     createdAt: item?.createdAt || timestamp,
     updatedAt: item?.updatedAt || timestamp,
   })).filter((item) => item.spelling.incorrect || item.reason);
-  const studyStamps = array(input?.studyStamps).map((item) => createStudyStamp(item));
+  const migratedStudy = migrateStudyStampsToEntries(input?.studyStamps, entries, domains);
+  const studyStamps = migratedStudy.stamps;
   pins.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.contextCollectionId.localeCompare(b.contextCollectionId) || a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.entryId.localeCompare(b.entryId));
   annotations.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
   studyStamps.sort((a, b) => a.key.localeCompare(b.key));
@@ -1605,6 +1670,8 @@ export function canonicalizeBackup(input) {
     migrationComplete: Boolean(settingsInput.migrationComplete),
     migrationSource: normalizeDisplayText(settingsInput.migrationSource || ''),
     migrationNoticePending: Boolean(settingsInput.migrationNoticePending),
+    studyStampMigrationIssues: [...array(settingsInput.studyStampMigrationIssues), ...migratedStudy.issues]
+      .filter((item, index, list) => item?.type && list.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(item)) === index),
     builtInSeedRevision: Math.max(0, Number(settingsInput.builtInSeedRevision || 0)),
     contentSources: array(settingsInput.contentSources).map((item) => ({
       key: normalizeDisplayText(item?.key || item?.id || ''),
@@ -1616,7 +1683,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.3.1'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.4.0'),
     exportedAt: timestamp,
     domains,
     collections,
@@ -1633,7 +1700,7 @@ export function canonicalizeBackup(input) {
 }
 
 export function validateBackup(backup) {
-  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 4');
+  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 5');
   const domains = array(backup.domains);
   const collections = array(backup.collections);
   const entries = array(backup.entries);
@@ -1744,12 +1811,7 @@ export function validateBackup(backup) {
   }
   for (const stamp of studyStamps) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(stamp.reviewDateKey) || !stamp.reviewedAt) throw new Error('学习日期记录无效');
-    if (stamp.scope === 'entry') {
-      if (!entryById.has(stamp.entryId) || stamp.key !== `entry:${stamp.entryId}`) throw new Error('学习日期关联无效');
-    } else if (stamp.scope === 'global') {
-      if (!['word', 'phrase'].includes(stamp.kind) || !stamp.normalizedText || stamp.key !== `global:${stamp.kind}:${stamp.normalizedText}`) throw new Error('全局学习日期关联无效');
-      if (!entries.some((entry) => entry.kind === stamp.kind && entry.normalizedText === stamp.normalizedText)) throw new Error('全局学习日期没有对应聚合内容');
-    } else throw new Error('学习日期作用域无效');
+    if (stamp.scope !== 'entry' || !entryById.has(stamp.entryId) || stamp.key !== `entry:${stamp.entryId}`) throw new Error('学习日期关联无效');
   }
   return true;
 }
@@ -1772,8 +1834,8 @@ export function buildProjection(backup) {
   projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
   for (const domain of domains) projection.set(systemDomainWordsCollectionId(domain.id), []);
 
-  const globalByText = new Map();
-  const globalPhrasesByText = new Map();
+  const globalWords = [];
+  const globalPhrases = [];
   for (const entry of entries) {
     const candidates = (membershipsByEntry.get(entry.id) || [])
       .map((membership) => ({ membership, collection: collectionById.get(membership.collectionId) }))
@@ -1785,24 +1847,28 @@ export function buildProjection(backup) {
     if (entry.kind === 'phrase') {
       projection.get(systemPhraseCollectionId(entry.domainId))?.push(entry);
       for (const candidate of candidates) projection.get(candidate.collection.id)?.push(entry);
-      const currentPhrase = globalPhrasesByText.get(entry.normalizedText);
-      if (!currentPhrase || (domainOrder.get(entry.domainId) ?? Number.MAX_SAFE_INTEGER) < (domainOrder.get(currentPhrase.domainId) ?? Number.MAX_SAFE_INTEGER)) {
-        globalPhrasesByText.set(entry.normalizedText, entry);
-      }
+      globalPhrases.push(entry);
       continue;
     }
 
     projection.get(systemDomainWordsCollectionId(entry.domainId))?.push(entry);
-    const current = globalByText.get(entry.normalizedText);
-    if (!current || (domainOrder.get(entry.domainId) ?? Number.MAX_SAFE_INTEGER) < (domainOrder.get(current.domainId) ?? Number.MAX_SAFE_INTEGER)) {
-      globalByText.set(entry.normalizedText, entry);
-    }
+    globalWords.push(entry);
     if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
   }
-  projection.set(SYSTEM_GLOBAL_WORDS_ID, [...globalByText.values()]);
-  projection.set(SYSTEM_GLOBAL_PHRASES_ID, [...globalPhrasesByText.values()]);
-  for (const list of projection.values()) list.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  const globalSorter = (a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en')
+    || (domainOrder.get(a.domainId) ?? Number.MAX_SAFE_INTEGER) - (domainOrder.get(b.domainId) ?? Number.MAX_SAFE_INTEGER)
+    || a.id.localeCompare(b.id);
+  projection.set(SYSTEM_GLOBAL_WORDS_ID, globalWords.sort(globalSorter));
+  projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
+  for (const [collectionId, list] of projection.entries()) {
+    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) continue;
+    list.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id));
+  }
   return projection;
+}
+
+export function uniqueProjectionCount(entries) {
+  return new Set(array(entries).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`)).size;
 }
 
 export function relatedPhrases(backup, entryId) {

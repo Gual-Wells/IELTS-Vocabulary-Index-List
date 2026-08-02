@@ -1,7 +1,7 @@
 import { initializeUI, notifyServiceWorkerUpdate } from './v3-ui.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
-const MODULE_VERSION = '3.3.1';
+const MODULE_VERSION = '3.4.0';
 let reloadingForServiceWorker = false;
 
 const viewportMeta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="viewport"]'));

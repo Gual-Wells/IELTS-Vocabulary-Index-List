@@ -79,12 +79,28 @@ function classifyRetry(response, error) {
   return { retry: false, message: response ? `Groq 请求失败（HTTP ${response.status}）` : String(error?.message || error || '请求失败') };
 }
 
-async function groqFetch(path, options = {}, { retries = MAX_RETRIES, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+function abortError(message = '请求已取消') {
+  try { return new DOMException(message, 'AbortError'); } catch { const error = new Error(message); error.name = 'AbortError'; return error; }
+}
+
+function abortableDelay(milliseconds, signal = null) {
+  if (signal?.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, milliseconds);
+    const onAbort = () => { clearTimeout(timer); reject(abortError()); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function groqFetch(path, options = {}, { retries = MAX_RETRIES, timeoutMs = REQUEST_TIMEOUT_MS, signal = null } = {}) {
   const key = requireKey();
   let lastError = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (signal?.aborted) throw abortError();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    signal?.addEventListener('abort', onExternalAbort, { once: true });
     let response = null;
     try {
       const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -103,17 +119,19 @@ async function groqFetch(path, options = {}, { retries = MAX_RETRIES, timeoutMs 
       }
       const headerDelay = parseRetryAfter(response.headers.get('Retry-After'));
       const delay = Math.max(headerDelay, Math.min(8000, 700 * (2 ** attempt)));
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await abortableDelay(delay, signal);
     } catch (error) {
+      if (signal?.aborted) throw abortError();
       const retry = classifyRetry(response, error);
       lastError = error instanceof Error ? error : new Error(String(error));
       if (!retry.retry || attempt >= retries) {
         if (lastError.message && !['Failed to fetch', 'Load failed'].includes(lastError.message)) throw lastError;
         throw new Error(retry.message);
       }
-      await new Promise((resolve) => setTimeout(resolve, Math.min(8000, 700 * (2 ** attempt))));
+      await abortableDelay(Math.min(8000, 700 * (2 ** attempt)), signal);
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onExternalAbort);
     }
   }
   throw lastError || new Error('Groq 请求失败');
@@ -147,7 +165,7 @@ function extractJson(text) {
   throw new Error('AI 返回内容不是有效 JSON');
 }
 
-export async function requestJson(messages, { temperature = 0.1, maxTokens = 1600 } = {}) {
+export async function requestJson(messages, { temperature = 0.1, maxTokens = 1600, signal = null } = {}) {
   const model = getSelectedModel();
   if (!model) throw new Error('请先刷新并选择 Groq 模型');
   const request = async (withResponseFormat) => {
@@ -161,7 +179,7 @@ export async function requestJson(messages, { temperature = 0.1, maxTokens = 160
     const response = await groqFetch('/chat/completions', {
       method: 'POST',
       body: JSON.stringify(body),
-    });
+    }, { signal });
     const payload = await response.json();
     const content = payload?.choices?.[0]?.message?.content;
     if (!content) throw new Error('AI 未返回内容');
@@ -244,13 +262,15 @@ export class AiCheckController {
     this.paused = false;
     this.cancelled = false;
     this.waiters = [];
+    this.abortController = new AbortController();
+    this.signal = this.abortController.signal;
   }
   pause() { this.paused = true; }
   resume() {
     this.paused = false;
     for (const resolve of this.waiters.splice(0)) resolve();
   }
-  cancel() { this.cancelled = true; this.resume(); }
+  cancel() { this.cancelled = true; this.abortController.abort(); this.resume(); }
   async checkpoint() {
     if (this.cancelled) return false;
     if (this.paused) await new Promise((resolve) => this.waiters.push(resolve));
@@ -274,7 +294,7 @@ export async function checkEntries(entries, { controller = new AiCheckController
         role: 'user',
         content: `Items:\n${batch.map((entry) => `${entry.id}\t${entry.text}\t${entry.sourceLabel || ''}`).join('\n')}\nReturn {"issues":[{"entryId":"...","suggestion":"...","posSuggestion":"...","reason":"..."}]}. Leave suggestion empty when spelling is correct. Leave posSuggestion empty when the label is acceptable. Omit fully correct items.`,
       },
-    ], { temperature: 0, maxTokens: 1800 });
+    ], { temperature: 0, maxTokens: 1800, signal: controller.signal });
     const issues = (Array.isArray(payload?.issues) ? payload.issues : []).map((item) => {
       const suggestion = String(item?.suggestion || '').trim();
       const posSuggestion = String(item?.posSuggestion || item?.pos || '').trim();

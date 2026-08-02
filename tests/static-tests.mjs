@@ -18,15 +18,17 @@ const app = read('js/v3-app.js');
 const upgrade = read('js/v3-upgrade.js');
 const sw = read('sw.js');
 const cssBase = read('css/v3.css');
-const cssRelease = read('css/v3.3.1.css');
+const css331 = read('css/v3.3.1.css');
+const cssRelease = read('css/v3.4.0.css');
 const css = `${cssBase}
+${css331}
 ${cssRelease}`;
 const pkg = JSON.parse(read('package.json'));
 const seed = JSON.parse(read('data/seed.json'));
 
 // Version, shell, CSP and iPhone-only viewport contract.
-assert.ok(html.includes('name="application-version" content="3.3.1"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.3.1</title>'));
+assert.ok(html.includes('name="application-version" content="3.4.0"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.4.0</title>'));
 assert.ok(html.includes('maximum-scale=1'));
 assert.ok(html.includes('user-scalable=no'));
 assert.ok(html.includes('viewport-fit=cover'));
@@ -35,13 +37,13 @@ assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'));
 assert.ok(html.includes('./js/v3-app.js'));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
-assert.ok(app.includes("const MODULE_VERSION = '3.3.1'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.4.0'"));
 assert.ok(app.includes("const canonical = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover'"));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.3.1'));
-assert.ok(sw.includes('v3.3.1-ios-shell-20260802-2'));
-assert.ok(upgrade.includes('v3.3.1-ios-shell-20260802-2'));
-assert.equal(pkg.version, '3.3.1');
-assert.equal(seed.appVersion, '3.3.1');
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.4.0'));
+assert.ok(sw.includes('v3.4.0-ios-shell-20260803-1'));
+assert.ok(upgrade.includes('v3.4.0-ios-shell-20260803-1'));
+assert.equal(pkg.version, '3.4.0');
+assert.equal(seed.appVersion, '3.4.0');
 assert.equal(JSON.parse(read('data/seed-report.json')).builtInSeedRevision, 3);
 
 const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
@@ -170,7 +172,7 @@ assert.ok(ui.includes('function returnToTop()'));
 assert.ok(ui.includes("elements['back-to-top']?.addEventListener('click', returnToTop)"));
 assert.ok(ui.includes("navigation-top-button"));
 assert.ok(ui.includes("classList.toggle('at-top'"));
-assert.ok(cssRelease.includes('.back-to-top { display: none !important; }'));
+assert.ok(css.includes('.back-to-top { display: none !important; }'));
 
 // Unified icon cache and redesigned relation secondary jump.
 assert.ok(ui.includes('const ICONS = {'));
@@ -178,7 +180,8 @@ assert.ok(ui.includes('iconTemplateCache'));
 for (const icon of ['refresh', 'dictionary', 'aiChat', 'query', 'disclosure', 'jump', 'warning', 'clear']) {
   assert.ok(ui.includes(`${icon}:`), `缺少统一图标 ${icon}`);
 }
-assert.ok(ui.includes("iconButton(\n        'jump',") || ui.includes("iconButton(\n      'jump',"));
+assert.ok(ui.includes('function relationNavigationMode'));
+for (const icon of ['intra', 'external', 'multi']) assert.ok(ui.includes(`${icon}:`), `缺少跳转图标 ${icon}`);
 assert.ok(css.includes('.relation-jump'));
 
 // System projections and 3.1 composite collection semantics remain intact.
@@ -208,14 +211,14 @@ assert.ok(store.includes('export async function refreshStudyDate(entryId, collec
 assert.ok(ui.includes('async function refreshEntryStudyDate'));
 assert.ok(!ui.match(/copyText[\s\S]{0,500}refreshStudyDate/), '复制不得刷新学习日期');
 
-// Schema 4, Seed revision 3 and complete data preservation.
-assert.ok(model.includes('export const SCHEMA_VERSION = 4'));
+// Schema 5, Seed revision 3 and complete data preservation.
+assert.ok(model.includes('export const SCHEMA_VERSION = 5'));
 assert.ok(db.includes('export const DB_VERSION = 4'));
 assert.ok(db.includes('const BUILTIN_SEED_REVISION = 3'));
 assert.ok(db.includes('StudyStamps'));
 assert.ok(db.includes("const DATA_STORE_KEYS = ['domains', 'collections', 'entries', 'memberships', 'phraseTokens', 'pins', 'annotations', 'studyStamps']"));
 assert.ok(db.includes('async function readCurrentSnapshot(db)'));
-assert.ok(model.includes('if ([3, SCHEMA_VERSION].includes(Number(input?.schemaVersion))'));
+assert.ok(model.includes('if ([3, 4, SCHEMA_VERSION].includes(Number(input?.schemaVersion))'));
 
 // Relation navigation remains normal-collection-only and secondary items preserve copy/jump separation.
 assert.ok(ui.includes('function normalDestinationsForEntries'));
@@ -262,21 +265,51 @@ assert.ok(!css.includes('backdrop-filter: blur(18px)'));
 assert.ok(!css.includes('backdrop-filter: blur(16px)'));
 assert.ok(!css.includes('backdrop-filter: blur(14px)'));
 
-// 3.3.1 regression guards for virtual views, local annotation writes, and corrected cascade.
+// 3.4.0 regression guards for virtual views, local annotation writes, and corrected cascade.
 assert.ok(model.includes('export function positionScopeDomainId'));
 assert.ok(ui.includes('return positionScopeDomainId(collection, entry)'));
 assert.ok(ui.includes('lastPersistedPositionKey'));
 assert.ok(ui.includes('lastPersistedPositionKey = `${positionDomainId(collection)}'));
 assert.ok(ui.includes('visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)'));
 assert.ok(store.includes('cleanStudyStampReferences'));
-assert.ok(store.includes('migrateGlobalStudyStampOnRename'));
+assert.ok(model.includes('migrateStudyStampsToEntries'));
+assert.ok(store.includes('studyStampKeyFor(entry, collectionId)'));
 assert.ok(store.includes("emit('annotation-change'"));
 assert.ok(!store.match(/export async function replaceAnnotations[\s\S]{0,1800}backupFromState/));
 assert.ok(exchange.includes('memberships = memberships.filter((item) => !removed.has(item.entryId))'));
-assert.ok(cssRelease.includes('.review-bar .review-edit'));
-assert.ok(cssRelease.includes('display: inline-flex !important'));
+assert.ok(css.includes('.review-bar .review-edit'));
+assert.ok(css.includes('display: inline-flex !important'));
 assert.ok(html.includes('./css/v3.3.1.css'));
+assert.ok(html.includes('./css/v3.4.0.css'));
 assert.ok(sw.includes('./css/v3.3.1.css'));
+assert.ok(sw.includes('./css/v3.4.0.css'));
+
+// 3.4.0 projection, numbering, sticky navigation and async correctness guards.
+assert.ok(model.includes('globalWords.push(entry)'));
+assert.ok(model.includes('globalPhrases.push(entry)'));
+assert.ok(model.includes('export function uniqueProjectionCount'));
+assert.ok(store.includes('projectionUniqueCounts'));
+assert.ok(store.includes('globalConflictKeys'));
+assert.ok(store.includes('.filter((item) => visibleIds.has(item.entryId))'), 'PIN 必须按具体 Entry 在所有可见投影中生效');
+assert.ok(store.includes('if (!existing) {'), '已存在 PIN 在其他投影视图中点击时必须取消，而不是迁移到虚拟总表');
+assert.ok(ui.includes('entry-source-domain'));
+assert.ok(ui.includes('groupedNumberIndex'));
+assert.ok(ui.includes('toggleLetterSectionWithAnchor'));
+assert.ok(ui.includes('syncActiveAlphabetHeading'));
+assert.ok(ui.includes('forcedExtremeEntryKeys'));
+assert.ok(ui.includes('relation-target-menu'));
+assert.ok(ui.includes('baseRevision'));
+assert.ok(ui.includes('已重新生成导入预检'));
+assert.ok(exchange.includes('ambiguous-bare-entry-key'));
+assert.ok(exchange.includes('skippedMemberships'));
+assert.ok(ui.includes('跳过脏归属'));
+assert.ok(db.includes('export async function recordHistoryOnly'));
+assert.ok(store.includes('recordAiAnnotationHistory'));
+assert.ok(cssRelease.includes('.index-scope::before { display: none'));
+assert.ok(cssRelease.includes('background-image: none'));
+assert.ok(cssRelease.includes('.entry-source-domain'));
+assert.ok(cssRelease.includes('.letter-heading'));
+assert.ok(cssRelease.includes('position: sticky'));
 
 // PWA precache resources exist and do not duplicate.
 const precacheBody = sw.match(/const PRECACHE = \[([\s\S]*?)\];/)?.[1] || '';
@@ -290,7 +323,7 @@ assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));
 assert.ok(!sw.match(/addEventListener\('install'[\s\S]*?\}\);/)?.[0].includes('skipWaiting'));
 
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.3.1'));
+assert.ok(manifest.name.includes('3.4.0'));
 assert.equal(manifest.start_url, './');
 assert.equal(manifest.scope, './');
 assert.equal(manifest.display, 'standalone');

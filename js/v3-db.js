@@ -177,7 +177,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.1',
+    appVersion: '3.4.0',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -240,7 +240,7 @@ export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
 
   return canonicalizeBackup({
     ...base,
-    appVersion: '3.3.1',
+    appVersion: '3.4.0',
     domains,
     collections,
     entries,
@@ -267,7 +267,7 @@ async function ensureBuiltInSeedRevision(db) {
     const settingRecords = await getAllFromTransaction(readTx, STORES.settings);
     snapshot.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
     await readCompletion;
-    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.3.1', exportedAt: new Date().toISOString(), ...snapshot });
+    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.4.0', exportedAt: new Date().toISOString(), ...snapshot });
     const merged = mergeBuiltInDomainBackup(current, await loadCanonicalSeed());
     const revision = Math.max(Date.now(), Number(snapshot.settings?.dataRevision || 0) + 1);
     const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
@@ -306,7 +306,7 @@ export async function initializeDatabase() {
     putBackupIntoTransaction(tx, backup, {
       dataRevision: Date.now(), historyPointer: 0, historySequence: 0,
       builtInSeedRevision: BUILTIN_SEED_REVISION,
-      migrationNoticePending: Boolean(legacy), migrationSource: source.appVersion || (currentSnapshot ? '3.0.x' : '2.x'),
+      migrationNoticePending: Boolean(legacy || currentSnapshot), migrationSource: source.appVersion || (currentSnapshot ? '3.0.x' : '2.x'),
     });
     tx.objectStore(STORES.history).clear();
     await completion;
@@ -408,7 +408,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.1',
+    appVersion: '3.4.0',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });
@@ -545,6 +545,66 @@ export async function commitChanges(changes, { label = '修改', recordHistory =
       tx.oncomplete = () => applied ? resolve(revision) : resolve(Number(values.revisionRecord?.value || 0));
       tx.onerror = () => reject(failure || tx.error || new Error('IndexedDB 事务失败'));
       tx.onabort = () => reject(failure || tx.error || new Error('IndexedDB 事务已中止'));
+    });
+  });
+}
+
+export async function recordHistoryOnly(changes, { label = '修改', expectedRevision = null } = {}) {
+  if (!Array.isArray(changes) || !changes.length) return Number(await getSetting('dataRevision', 0));
+  return enqueueWrite(async () => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.settings, STORES.history], 'readwrite');
+      const settingsStore = tx.objectStore(STORES.settings);
+      const historyStore = tx.objectStore(STORES.history);
+      let failure = null;
+      let revision = 0;
+      let applied = false;
+      let pending = 4;
+      const values = { revisionRecord: null, pointerRecord: null, sequenceRecord: null, history: [] };
+      const fail = (error) => {
+        failure = error instanceof Error ? error : new Error(String(error || '历史写入失败'));
+        try { tx.abort(); } catch {}
+      };
+      const completeRead = () => {
+        pending -= 1;
+        if (pending !== 0 || failure) return;
+        try {
+          const currentRevision = Number(values.revisionRecord?.value || 0);
+          if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
+            fail(new Error('数据已被另一实例修改，AI 核查历史未写入。'));
+            return;
+          }
+          const pointer = Number(values.pointerRecord?.value || 0);
+          const sequence = Number(values.sequenceRecord?.value || 0) + 1;
+          for (const record of values.history) if (record.sequence > pointer) historyStore.delete(record.sequence);
+          historyStore.put({
+            sequence,
+            label,
+            createdAt: new Date().toISOString(),
+            changes: changes.map((change) => ({ ...change, before: clone(change.before), after: clone(change.after) })),
+          });
+          const remaining = values.history.filter((record) => record.sequence <= pointer).sort((a, b) => a.sequence - b.sequence);
+          const excess = Math.max(0, remaining.length + 1 - HISTORY_LIMIT);
+          for (let index = 0; index < excess; index += 1) historyStore.delete(remaining[index].sequence);
+          settingsStore.put({ key: 'historyPointer', value: sequence });
+          settingsStore.put({ key: 'historySequence', value: sequence });
+          revision = Math.max(Date.now(), currentRevision + 1);
+          settingsStore.put({ key: 'dataRevision', value: revision });
+          applied = true;
+        } catch (error) { fail(error); }
+      };
+      const capture = (request, key) => {
+        request.onsuccess = () => { values[key] = request.result; completeRead(); };
+        request.onerror = () => fail(request.error ?? new Error('IndexedDB 读取失败'));
+      };
+      capture(settingsStore.get('dataRevision'), 'revisionRecord');
+      capture(settingsStore.get('historyPointer'), 'pointerRecord');
+      capture(settingsStore.get('historySequence'), 'sequenceRecord');
+      capture(historyStore.getAll(), 'history');
+      tx.oncomplete = () => applied ? resolve(revision) : resolve(Number(values.revisionRecord?.value || 0));
+      tx.onerror = () => reject(failure || tx.error || new Error('历史写入事务失败'));
+      tx.onabort = () => reject(failure || tx.error || new Error('历史写入事务已中止'));
     });
   });
 }

@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-08-02T01:51:00.000Z",
-  "schemaVersion": 4,
-  "appVersion": "3.3.1",
+  "schemaVersion": 5,
+  "appVersion": "3.4.0",
   "builtInSeedRevision": 3,
   "total": {
     "domains": 2,

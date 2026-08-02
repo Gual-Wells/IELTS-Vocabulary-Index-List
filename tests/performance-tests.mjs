@@ -18,7 +18,8 @@ assert.ok(elapsed < 2500, `25 次本地搜索耗时过长：${elapsed.toFixed(1)
 const store = fs.readFileSync(path.join(root, 'js/v3-store.js'), 'utf8');
 assert.match(store, /return state\.relatedPhrasesByEntry\.get\(entryId\) \|\| \[\]/);
 assert.match(store, /return state\.phraseComponentsByEntry\.get\(phraseId\) \|\| \[\]/);
-assert.match(store, /return searchBackup\(\{ entries: state\.entries \}, query, options\)/);
+assert.match(store, /const entries = entryIds \? state\.entries\.filter/);
+assert.match(store, /return searchBackup\(\{ entries \}, query, searchOptions\)/);
 const collectionPackage = createVixPackage(backup, {
   scope: 'collection', collectionId: 'collection_computer_artificial_intelligence',
 });

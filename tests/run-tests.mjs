@@ -8,7 +8,7 @@ import {
   normalizeDisplayText, normalizeEnglish, normalizeGlossHant, parseLegacySourceLine, positionScopeDomainId,
   phraseComponents, relatedPhrases, safeId, searchBackup, systemPhraseCollectionId,
   systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID,
-  tokenizeEnglish, validateBackup,
+  tokenizeEnglish, uniqueProjectionCount, validateBackup,
 } from '../js/v3-model.js';
 import { parseCsv, parseImportContent, parseJsonContent, parseTextList } from '../js/v3-import.js';
 import { mergeBuiltInDomainBackup } from '../js/v3-db.js';
@@ -55,8 +55,8 @@ const legacy = {
   settings: { numberMode: 'group', 'lastPosition:cat_a1': 'old_access' },
 };
 const backup = migrateLegacyBackup(legacy, { timestamp });
-assert.equal(backup.schemaVersion, 4);
-assert.equal(backup.appVersion, '3.3.1');
+assert.equal(backup.schemaVersion, 5);
+assert.equal(backup.appVersion, '3.4.0');
 assert.equal(backup.domains.length, 1);
 assert.equal(backup.collections.filter((item) => item.type === 'normal').length, 2);
 assert.equal(backup.collections.find((item) => item.type === 'system-phrases').name, '短语总表');
@@ -83,7 +83,7 @@ assert.equal(searchBackup(backup, 'thred').some((item) => item.text === 'thread'
 // 3.0.x full backups must upgrade in place instead of falling into 2.x migration.
 const v307Backup = { ...backup, schemaVersion: 3, appVersion: '3.0.7' };
 const upgraded = migrateLegacyBackup(v307Backup, { timestamp });
-assert.equal(upgraded.schemaVersion, 4);
+assert.equal(upgraded.schemaVersion, 5);
 assert.equal(upgraded.entries.length, backup.entries.length);
 assert.equal(upgraded.memberships.length, backup.memberships.length);
 
@@ -103,7 +103,10 @@ const stateful = canonicalizeBackup({
     },
   },
 });
-assert.equal(stateful.studyStamps.length, 2);
+assert.equal(stateful.studyStamps.length, 1);
+assert.equal(stateful.studyStamps[0].scope, 'entry');
+assert.equal(stateful.studyStamps[0].entryId, access.id);
+assert.equal(stateful.studyStamps[0].reviewDateKey, '2026-08-02');
 assert.equal(stateful.settings.viewModes[awlId], 'date');
 assert.equal(validateBackup(stateful), true);
 
@@ -113,24 +116,56 @@ dirtyReferences.studyStamps.push(
   { ...globalStamp, key: 'global:word:missing', normalizedText: 'missing' },
 );
 cleanStudyStampReferences(dirtyReferences);
-assert.equal(dirtyReferences.studyStamps.length, 2, '孤儿学习日期必须在破坏性操作规范化阶段清理');
+assert.equal(dirtyReferences.studyStamps.length, 1, '孤儿及旧全局学习日期必须在破坏性操作规范化阶段清理');
 
 // Cross-domain duplicates aggregate only in system global projections.
 const secondDomain = createDomain({ name: '计算机科学', order: 1, glossEnabled: true, timestamp });
 const secondCollection = createCollection({ domainId: secondDomain.id, name: '基础', timestamp });
 const secondPhrases = createCollection({ domainId: secondDomain.id, name: '短语总表', type: 'system-phrases', timestamp });
 const secondAccess = createEntry({ domainId: secondDomain.id, text: 'access', glossHant: '訪問', timestamp });
+const secondThreadPool = createEntry({ domainId: secondDomain.id, text: 'thread pool', glossHant: '線程池', timestamp });
 const crossDomain = canonicalizeBackup({
   ...backup,
   domains: [...backup.domains, secondDomain],
   collections: [...backup.collections, secondCollection, secondPhrases],
-  entries: [...backup.entries, secondAccess],
-  memberships: [...backup.memberships, createMembership({ entryId: secondAccess.id, collectionId: secondCollection.id, timestamp })],
+  entries: [...backup.entries, secondAccess, secondThreadPool],
+  memberships: [
+    ...backup.memberships,
+    createMembership({ entryId: secondAccess.id, collectionId: secondCollection.id, timestamp }),
+    createMembership({ entryId: secondThreadPool.id, collectionId: secondCollection.id, timestamp }),
+  ],
 });
 const crossProjection = buildProjection(crossDomain);
 assert.equal(crossDomain.entries.filter((item) => item.normalizedText === 'access').length, 2);
-assert.equal(crossProjection.get(SYSTEM_GLOBAL_WORDS_ID).filter((item) => item.normalizedText === 'access').length, 1);
+assert.equal(crossProjection.get(SYSTEM_GLOBAL_WORDS_ID).filter((item) => item.normalizedText === 'access').length, 2);
+assert.equal(uniqueProjectionCount(crossProjection.get(SYSTEM_GLOBAL_WORDS_ID)), uniqueProjectionCount(projection.get(SYSTEM_GLOBAL_WORDS_ID)), '跨域同形词增加渲染行但不增加唯一词形总数');
+assert.deepEqual(crossProjection.get(SYSTEM_GLOBAL_WORDS_ID).filter((item) => item.normalizedText === 'access').map((item) => item.domainId), [backup.domains[0].id, secondDomain.id]);
+assert.equal(crossProjection.get(SYSTEM_GLOBAL_PHRASES_ID).filter((item) => item.normalizedText === 'thread pool').length, 2);
+assert.equal(uniqueProjectionCount(crossProjection.get(SYSTEM_GLOBAL_PHRASES_ID)), uniqueProjectionCount(projection.get(SYSTEM_GLOBAL_PHRASES_ID)), '跨域同形短语增加渲染行但不增加唯一短语总数');
+assert.deepEqual(crossProjection.get(SYSTEM_GLOBAL_PHRASES_ID).filter((item) => item.normalizedText === 'thread pool').map((item) => item.domainId), [backup.domains[0].id, secondDomain.id]);
 assert.ok(!crossDomain.collections.some((item) => [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(item.id)), '全局总表不得成为持久化词表');
+
+const reorderedCrossDomain = canonicalizeBackup({
+  ...crossDomain,
+  domains: crossDomain.domains.map((domain) => ({ ...domain, order: domain.id === secondDomain.id ? 0 : 1 })),
+});
+const reorderedProjection = buildProjection(reorderedCrossDomain);
+assert.deepEqual(reorderedProjection.get(SYSTEM_GLOBAL_WORDS_ID).filter((item) => item.normalizedText === 'access').map((item) => item.domainId), [secondDomain.id, backup.domains[0].id]);
+assert.deepEqual(reorderedProjection.get(SYSTEM_GLOBAL_PHRASES_ID).filter((item) => item.normalizedText === 'thread pool').map((item) => item.domainId), [secondDomain.id, backup.domains[0].id]);
+
+const schema4WithAmbiguousGlobalDate = canonicalizeBackup({
+  ...crossDomain,
+  schemaVersion: 4,
+  appVersion: '3.3.1',
+  studyStamps: [{
+    key: 'global:word:access', scope: 'global', kind: 'word', normalizedText: 'access',
+    reviewDateKey: '2026-08-03', reviewedAt: timestamp, revision: 1,
+  }],
+});
+assert.equal(schema4WithAmbiguousGlobalDate.studyStamps.length, 1);
+assert.equal(schema4WithAmbiguousGlobalDate.studyStamps[0].entryId, access.id, '旧全局日期必须迁移给旧域顺序下的代表 Entry');
+assert.equal(schema4WithAmbiguousGlobalDate.settings.studyStampMigrationIssues.length, 1);
+assert.deepEqual(schema4WithAmbiguousGlobalDate.settings.studyStampMigrationIssues[0].candidateEntryIds, [access.id, secondAccess.id]);
 
 // Text/CSV/JSON import compatibility.
 const textParsed = parseTextList('# Demo\n## A\naccess n., v.\naccess v.\nthread pool n.\n');
@@ -144,11 +179,11 @@ assert.equal(parseImportContent(JSON.stringify(v307Backup), 'backup.json').kind,
 assert.equal(parseRetryAfter('2'), 2000);
 assert.ok(createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({ id: `e${index}`, text: `word-${index}` }))).every((batch) => batch.length <= 32));
 
-// Complete 3.3.1 seed contract.
+// Complete 3.4.0 seed contract.
 const rawSeed = JSON.parse(fs.readFileSync(path.join(root, 'data/seed.json'), 'utf8'));
 const seed = migrateLegacyBackup(rawSeed, { timestamp });
-assert.equal(seed.schemaVersion, 4);
-assert.equal(seed.appVersion, '3.3.1');
+assert.equal(seed.schemaVersion, 5);
+assert.equal(seed.appVersion, '3.4.0');
 assert.equal(seed.settings.builtInSeedRevision, 3);
 assert.equal(seed.studyStamps.length, 0);
 assert.equal(seed.domains.length, 2);
@@ -219,6 +254,45 @@ assert.equal(plan.summary.removedDomains, 0);
 assert.equal(plan.summary.removedWords, 0);
 assert.equal(plan.summary.removedPhrases, 0);
 assert.equal(validateBackup(plan.nextBackup), true);
+
+// Dirty VIX bare references that match multiple concrete cross-domain Entries are skipped and reported.
+const dirtyBareReferencePackage = {
+  format: VIX_FORMAT,
+  version: VIX_VERSION,
+  target: { scope: 'global' },
+  mode: 'merge',
+  data: {
+    domains: [
+      { key: 'dirty_domain_a', name: 'Dirty A', order: 20 },
+      { key: 'dirty_domain_b', name: 'Dirty B', order: 21 },
+    ],
+    collections: [
+      { key: 'dirty_collection_a', domainKey: 'dirty_domain_a', name: 'Dirty List A', kind: 'normal', order: 2 },
+      { key: 'dirty_collection_b', domainKey: 'dirty_domain_b', name: 'Dirty List B', kind: 'normal', order: 2 },
+    ],
+    entries: [
+      { key: 'entry:dirty_domain_a:access', domainKey: 'dirty_domain_a', text: 'access' },
+      { key: 'entry:dirty_domain_b:access', domainKey: 'dirty_domain_b', text: 'access' },
+    ],
+    memberships: [
+      { entryKey: 'access', collectionKey: 'dirty_collection_a' },
+      { entryKey: 'entry:dirty_domain_b:access', collectionKey: 'dirty_collection_b' },
+    ],
+  },
+};
+const dirtyPlan = planVixImport(seed, dirtyBareReferencePackage, { targetMode: 'file' }, 'current');
+assert.equal(dirtyPlan.summary.skippedMemberships, 1);
+assert.equal(dirtyPlan.membershipIssues.length, 1);
+assert.equal(dirtyPlan.membershipIssues[0].type, 'ambiguous-bare-entry-key');
+const dirtyDomainA = dirtyPlan.nextBackup.domains.find((domain) => domain.name === 'Dirty A');
+const dirtyDomainB = dirtyPlan.nextBackup.domains.find((domain) => domain.name === 'Dirty B');
+const dirtyAccessA = dirtyPlan.nextBackup.entries.find((entry) => entry.domainId === dirtyDomainA.id && entry.normalizedText === 'access');
+const dirtyAccessB = dirtyPlan.nextBackup.entries.find((entry) => entry.domainId === dirtyDomainB.id && entry.normalizedText === 'access');
+const dirtyListA = dirtyPlan.nextBackup.collections.find((collection) => collection.name === 'Dirty List A');
+const dirtyListB = dirtyPlan.nextBackup.collections.find((collection) => collection.name === 'Dirty List B');
+assert.equal(dirtyPlan.nextBackup.memberships.some((membership) => membership.entryId === dirtyAccessA.id && membership.collectionId === dirtyListA.id), false);
+assert.equal(dirtyPlan.nextBackup.memberships.some((membership) => membership.entryId === dirtyAccessB.id && membership.collectionId === dirtyListB.id), true);
+assert.equal(validateBackup(dirtyPlan.nextBackup), true);
 
 
 // Replacing a system phrase collection must remove stale normal memberships and personal study references.

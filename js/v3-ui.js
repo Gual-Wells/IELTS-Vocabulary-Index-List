@@ -17,7 +17,7 @@ import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollection
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.1.1';
+const APP_VERSION = '3.2.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -56,6 +56,13 @@ const dialogStack = [];
 let currentDialogMeta = { onRestore: null };
 let lockedScrollY = 0;
 let openModalCount = 0;
+let scrollUiFrame = 0;
+let entryChunkObserver = null;
+const entryChunkData = new WeakMap();
+const entryChunkByEntryId = new Map();
+const iconTemplateCache = new Map();
+const ENTRY_CHUNK_SIZE = 42;
+const ENTRY_ROW_ESTIMATE = 96;
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -79,6 +86,8 @@ function button(text, className, handler, options = {}) {
 }
 
 const ICONS = {
+  back: '<path d="m15 18-6-6 6-6"></path>',
+  search: '<circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path>',
   target: '<circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path>',
   relation: '<circle cx="7" cy="8" r="2.25"></circle><circle cx="17" cy="8" r="2.25"></circle><circle cx="12" cy="17" r="2.25"></circle><path d="M9 8h6M8.5 10l2.3 4.7M15.5 10l-2.3 4.7"></path>',
   jump: '<path d="M13 5h6v6M19 5l-8 8"></path><path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"></path>',
@@ -101,17 +110,22 @@ const ICONS = {
 };
 
 function svgIcon(name, className = '') {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
+  let template = iconTemplateCache.get(name);
+  if (!template) {
+    template = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    template.setAttribute('viewBox', '0 0 24 24');
+    template.setAttribute('aria-hidden', 'true');
+    template.setAttribute('focusable', 'false');
+    template.setAttribute('fill', 'none');
+    template.setAttribute('stroke', 'currentColor');
+    template.setAttribute('stroke-width', '1.8');
+    template.setAttribute('stroke-linecap', 'round');
+    template.setAttribute('stroke-linejoin', 'round');
+    template.innerHTML = ICONS[name] || '';
+    iconTemplateCache.set(name, template);
+  }
+  const svg = /** @type {SVGElement} */ (template.cloneNode(true));
   svg.setAttribute('class', `ui-icon${className ? ` ${className}` : ''}`);
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.8');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.innerHTML = ICONS[name] || '';
   return svg;
 }
 
@@ -396,14 +410,31 @@ function displayCollectionLabel(collection) {
 function collectionCard(collection) {
   const entries = getVisibleEntries(collection.id);
   const label = displayCollectionLabel(collection);
-  const words = entries.filter((entry) => entry.kind === 'word').length;
-  const phrases = entries.filter((entry) => entry.kind === 'phrase').length;
+  let words = 0;
+  let phrases = 0;
+  for (const entry of entries) {
+    if (entry.kind === 'phrase') phrases += 1;
+    else words += 1;
+  }
   const count = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
     : entries.length.toLocaleString();
+  const globalSystem = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collection.id);
+  const domainSystem = !globalSystem && (
+    collection.id === systemDomainWordsCollectionId(collection.domainId)
+    || collection.id === systemPhraseCollectionId(collection.domainId)
+    || collection.type === 'system-phrases'
+  );
+  const classes = [
+    'collection-card',
+    collection.type === 'normal' ? 'composite-card' : '',
+    globalSystem || domainSystem ? 'system-card' : '',
+    globalSystem ? 'global-system-card' : '',
+    domainSystem ? 'domain-system-card' : '',
+  ].filter(Boolean).join(' ');
   return el('button', {
     type: 'button',
-    className: `collection-card${collection.type === 'normal' ? ' composite-card' : ''}`,
+    className: classes,
     on: { click: () => navigateCollection(collection.id) },
   }, [
     el('div', { className: 'collection-card-title' }, [
@@ -750,29 +781,26 @@ function renderHome() {
   const state = getState();
   currentCollectionId = '';
   elements.app.classList.remove('is-collection', 'has-pin', 'has-review');
+  elements['collection-view'].classList.remove('system-collection-view', 'global-system-view', 'domain-system-view');
   elements['home-view'].classList.remove('hidden');
   elements['collection-view'].classList.add('hidden');
   elements['back-button'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
-  elements['page-subtitle'].textContent = `${getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString()} · 本地保存`;
+  elements['page-subtitle'].textContent = getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString();
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
   const annotationTotal = state.annotations.length;
-  const heroActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
-  if (annotationTotal) heroActions.unshift(button(`${annotationTotal}`, 'secondary-button compact-button annotation-count-button', () => startAnnotationReview(''), { title: '待核查' }));
-  const hero = el('section', { className: 'home-hero' }, [
-    el('div', { className: 'home-hero-copy' }, [
-      el('p', { className: 'eyebrow', text: 'VOCABULARY INDEX' }),
-      el('h2', { text: '我的词表' }),
-    ]),
-    el('div', { className: 'home-hero-actions' }, heroActions),
-  ]);
+  const homeActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
+  if (annotationTotal) homeActions.unshift(button(`${annotationTotal}`, 'secondary-button compact-button annotation-count-button', () => startAnnotationReview(''), { title: '待核查' }));
 
   const sections = [el('section', { className: 'index-scope global-scope' }, [
-    el('header', { className: 'scope-heading' }, [el('h3', { text: '全局' })]),
+    el('header', { className: 'scope-heading' }, [
+      el('h3', { text: '全局' }),
+      el('div', { className: 'scope-actions' }, homeActions),
+    ]),
     el('div', { className: 'collection-grid global-grid' }, [
       collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)),
       collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID)),
@@ -792,7 +820,7 @@ function renderHome() {
       grid,
     ]));
   }
-  elements['home-view'].replaceChildren(hero, ...sections);
+  elements['home-view'].replaceChildren(...sections);
 }
 
 function renderCollection() {
@@ -801,13 +829,26 @@ function renderCollection() {
   if (!collection) { goHome(); return; }
   const domain = state.domainById.get(collection.domainId);
   const entries = getVisibleEntries(collection.id);
+  const globalSystemView = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collection.id);
+  const domainSystemView = !globalSystemView && (
+    collection.id === systemDomainWordsCollectionId(collection.domainId)
+    || collection.id === systemPhraseCollectionId(collection.domainId)
+    || collection.type === 'system-phrases'
+  );
+  elements['collection-view'].classList.toggle('system-collection-view', globalSystemView || domainSystemView);
+  elements['collection-view'].classList.toggle('global-system-view', globalSystemView);
+  elements['collection-view'].classList.toggle('domain-system-view', domainSystemView);
   elements.app.classList.add('is-collection');
   elements['home-view'].classList.add('hidden');
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
   elements['page-title'].textContent = collection.name;
-  const words = entries.filter((entry) => entry.kind === 'word').length;
-  const phrases = entries.filter((entry) => entry.kind === 'phrase').length;
+  let words = 0;
+  let phrases = 0;
+  for (const entry of entries) {
+    if (entry.kind === 'phrase') phrases += 1;
+    else words += 1;
+  }
   const countText = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
     : entries.length.toLocaleString();
@@ -1041,22 +1082,69 @@ function navigationControls(collection, section, sectionContext, mode, otherSect
   return controls;
 }
 
-function createSectionContext(section, entries, collection) {
+function createSectionContext(section, entries, collection, mode) {
   const grouped = new Map();
-  for (const entry of entries) {
-    const letter = letterForEntry(entry);
-    const list = grouped.get(letter) || [];
-    list.push(entry);
-    grouped.set(letter, list);
+  const dates = new Set();
+  if (mode === 'alphabet') {
+    for (const entry of entries) {
+      const letter = letterForEntry(entry);
+      const list = grouped.get(letter) || [];
+      list.push(entry);
+      grouped.set(letter, list);
+    }
+  } else {
+    for (const entry of entries) {
+      const dateKey = getStudyStamp(entry, collection.id)?.reviewDateKey;
+      if (dateKey) dates.add(dateKey);
+    }
   }
-  return {
-    section,
-    entries,
-    grouped,
-    sectionByKey: new Map(),
-    root: null,
-    dates: new Set(entries.map((entry) => getStudyStamp(entry, collection.id)?.reviewDateKey).filter(Boolean)),
-  };
+  return { section, entries, grouped, sectionByKey: new Map(), root: null, dates };
+}
+
+function resetEntryChunking() {
+  entryChunkObserver?.disconnect();
+  entryChunkObserver = null;
+  entryChunkByEntryId.clear();
+}
+
+function materializeEntryChunk(chunk) {
+  const data = entryChunkData.get(chunk);
+  if (!data || chunk.dataset.rendered === 'true') return;
+  chunk.dataset.rendered = 'true';
+  chunk.replaceChildren(...data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
+    groupIndex,
+    globalIndex: data.globalIndexById.get(entry.id) || groupIndex,
+  })));
+  chunk.style.minHeight = '';
+  entryChunkObserver?.unobserve(chunk);
+}
+
+function ensureEntryChunkObserver() {
+  if (entryChunkObserver || !('IntersectionObserver' in window)) return entryChunkObserver;
+  entryChunkObserver = new IntersectionObserver((records) => {
+    for (const record of records) if (record.isIntersecting) materializeEntryChunk(record.target);
+  }, { rootMargin: '960px 0px 960px' });
+  return entryChunkObserver;
+}
+
+function renderEntryChunks(entries, collection, domain, globalIndexById, { startIndex = 1, renderFirst = true } = {}) {
+  const fragment = document.createDocumentFragment();
+  for (let offset = 0; offset < entries.length; offset += ENTRY_CHUNK_SIZE) {
+    const slice = entries.slice(offset, offset + ENTRY_CHUNK_SIZE);
+    const chunk = el('div', { className: 'entry-chunk', dataset: { rendered: 'false' } });
+    const items = slice.map((entry, index) => ({ entry, groupIndex: startIndex + offset + index }));
+    entryChunkData.set(chunk, { items, collection, domain, globalIndexById });
+    for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
+    chunk.style.minHeight = `${slice.length * ENTRY_ROW_ESTIMATE}px`;
+    fragment.append(chunk);
+    if (renderFirst && offset === 0) materializeEntryChunk(chunk);
+    else {
+      const observer = ensureEntryChunkObserver();
+      if (observer) observer.observe(chunk);
+      else materializeEntryChunk(chunk);
+    }
+  }
+  return fragment;
 }
 
 function renderAlphabetContent(context, sectionContext) {
@@ -1095,82 +1183,77 @@ function renderDateContent(context, sectionContext) {
   const section = sectionContext.section;
   const root = el('section', { className: `content-section date-content ${section}-content`, id: `content-${section}`, dataset: { section } });
   if (isCompositeCollection(collection)) root.append(el('h2', { className: 'content-section-title', text: section === 'word' ? '词汇' : '短语' }));
-  const stamped = [];
+  const stampedByDate = new Map();
   const unmarked = [];
   for (const entry of sectionContext.entries) {
     const stamp = getStudyStamp(entry, collection.id);
-    if (stamp) stamped.push({ entry, stamp });
-    else unmarked.push(entry);
+    if (!stamp) {
+      unmarked.push(entry);
+      continue;
+    }
+    const group = stampedByDate.get(stamp.reviewDateKey) || [];
+    group.push(entry);
+    stampedByDate.set(stamp.reviewDateKey, group);
   }
-  stamped.sort((a, b) => b.stamp.reviewDateKey.localeCompare(a.stamp.reviewDateKey) || a.entry.normalizedText.localeCompare(b.entry.normalizedText, 'en'));
-  unmarked.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  const dates = [...stampedByDate.keys()].sort((a, b) => b.localeCompare(a));
   let currentYear = '';
   let currentMonth = '';
-  let currentDay = '';
-  let dayBody = null;
-  let dayIndex = 0;
-  for (const item of stamped) {
-    const [year, month, day] = item.stamp.reviewDateKey.split('-');
+  for (const dateKey of dates) {
+    const [year, month, day] = dateKey.split('-');
     if (year !== currentYear) {
       currentYear = year;
       currentMonth = '';
-      currentDay = '';
       root.append(el('h2', { className: 'date-year-title', text: year }));
     }
     if (month !== currentMonth) {
       currentMonth = month;
-      currentDay = '';
       root.append(el('h3', { className: 'date-month-title', text: `${Number(month)} 月` }));
     }
-    if (day !== currentDay) {
-      currentDay = day;
-      dayIndex = 0;
-      const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, item.stamp.reviewDateKey), dataset: { date: item.stamp.reviewDateKey, section } }, [
-        el('h4', { className: 'date-day-title', text: `${Number(day)} 日` }),
-      ]);
-      dayBody = el('div', { className: 'letter-body date-day-body' });
-      daySection.append(dayBody);
-      root.append(daySection);
-      sectionContext.sectionByKey.set(item.stamp.reviewDateKey, daySection);
-    }
-    dayIndex += 1;
-    dayBody.append(renderEntryRow(item.entry, collection, domain, {
-      groupIndex: dayIndex,
-      globalIndex: globalIndexById.get(item.entry.id) || dayIndex,
-    }));
+    const entries = stampedByDate.get(dateKey).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+    const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [
+      el('h4', { className: 'date-day-title', text: `${Number(day)} 日` }),
+    ]);
+    const dayBody = el('div', { className: 'letter-body date-day-body' });
+    dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById));
+    daySection.append(dayBody);
+    root.append(daySection);
+    sectionContext.sectionByKey.set(dateKey, daySection);
   }
+  unmarked.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   if (unmarked.length) {
+    const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
+    unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById));
     const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [
       el('h2', { className: 'date-unmarked-heading', text: '未标注' }),
-      el('div', { className: 'letter-body unmarked-body' }, unmarked.map((entry, index) => renderEntryRow(entry, collection, domain, {
-        groupIndex: index + 1,
-        globalIndex: globalIndexById.get(entry.id) || index + 1,
-      }))),
+      unmarkedBody,
     ]);
     root.append(unmarkedSection);
     sectionContext.sectionByKey.set('unmarked', unmarkedSection);
   }
-  if (!stamped.length && !unmarked.length) root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
+  if (!dates.length && !unmarked.length) root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
   sectionContext.root = root;
   return root;
 }
 
 function renderEntryList(collection, domain, entries) {
+  resetEntryChunking();
   collectionRenderContext = null;
   const mode = getViewMode(collection.id);
   const sections = new Map();
   if (isCompositeCollection(collection)) {
-    sections.set('word', createSectionContext('word', entries.filter((entry) => entry.kind === 'word'), collection));
-    sections.set('phrase', createSectionContext('phrase', entries.filter((entry) => entry.kind === 'phrase'), collection));
+    const words = [];
+    const phrases = [];
+    for (const entry of entries) (entry.kind === 'phrase' ? phrases : words).push(entry);
+    sections.set('word', createSectionContext('word', words, collection, mode));
+    sections.set('phrase', createSectionContext('phrase', phrases, collection, mode));
   } else {
     const section = isPhraseCollection(collection) ? 'phrase' : 'word';
-    sections.set(section, createSectionContext(section, entries, collection));
+    sections.set(section, createSectionContext(section, entries, collection, mode));
   }
   const firstSection = sections.keys().next().value;
   if (!sections.has(activeSection)) activeSection = firstSection;
   const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
-  const entrySection = new Map(entries.map((entry) => [entry.id, sectionForEntry(entry)]));
-  const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById, entrySection };
+  const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById };
   collectionRenderContext = context;
 
   const firstContext = sections.get(firstSection);
@@ -1209,10 +1292,8 @@ function setLetterSectionOpen(section, letter, open) {
   if (open) {
     expandedLetters.add(letter);
     if (!body) {
-      body = el('div', { className: 'letter-body' }, entries.map((entry, index) => renderEntryRow(entry, context.collection, context.domain, {
-        groupIndex: index + 1,
-        globalIndex: context.globalIndexById.get(entry.id) || index + 1,
-      })));
+      body = el('div', { className: 'letter-body' });
+      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById));
       sectionNode.append(body);
     }
   } else {
@@ -1238,7 +1319,6 @@ function normalDestinationsForEntries(entries, { preferredCollectionId = '', dom
       const collection = state.collectionById.get(membership.collectionId);
       if (!collection || collection.type !== 'normal' || collection.hidden) continue;
       if (domainId && collection.domainId !== domainId) continue;
-      if (!(state.projection.get(collection.id) || []).some((candidate) => candidate.id === entry.id)) continue;
       const key = `${collection.id}\u0000${entry.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1261,6 +1341,22 @@ function normalDestinationsForEntries(entries, { preferredCollectionId = '', dom
     return Number(collectionA?.order || 0) - Number(collectionB?.order || 0)
       || String(collectionA?.name || '').localeCompare(String(collectionB?.name || ''));
   });
+}
+
+function hasRelationsForEntry(entry) {
+  const state = getState();
+  const isGlobal = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId);
+  if (entry.kind === 'word') {
+    const candidates = isGlobal ? (state.wordsByNormalizedText.get(entry.normalizedText) || [entry]) : [entry];
+    if (candidates.some((candidate) => getRelatedPhrases(candidate.id).length)) return true;
+    if (!isGlobal) {
+      return (state.wordsByNormalizedText.get(entry.normalizedText) || [])
+        .some((candidate) => candidate.domainId !== entry.domainId && getRelatedPhrases(candidate.id).length);
+    }
+    return false;
+  }
+  const candidates = isGlobal ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [entry]) : [entry];
+  return candidates.some((candidate) => getPhraseComponents(candidate.id).length);
 }
 
 function relationItemsForEntry(entry) {
@@ -1410,10 +1506,10 @@ function displayGlossForRelationItem(item) {
   return candidates.find((candidate) => candidate.domainId === domain.id && candidate.glossHant)?.glossHant || '';
 }
 
-function renderRelationPanel(entry) {
-  const items = relationItemsForEntry(entry);
-  if (!items.length || !expandedRelations.has(entry.id)) return null;
-  return el('div', { className: 'relation-panel' }, items.map((item) => {
+function renderRelationPanel(entry, items = null) {
+  const relationItems = items || relationItemsForEntry(entry);
+  if (!relationItems.length || !expandedRelations.has(entry.id)) return null;
+  return el('div', { className: 'relation-panel' }, relationItems.map((item) => {
     const gloss = displayGlossForRelationItem(item);
     return el('div', { className: 'relation-item' }, [
       el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { className: 'relation-text', text: item.text })]),
@@ -1429,13 +1525,13 @@ function renderRelationPanel(entry) {
 }
 
 function indexesForRenderedEntry(context, entry) {
-  const globalIndex = context.entries.findIndex((item) => item.id === entry.id) + 1;
+  const globalIndex = context.globalIndexById.get(entry.id) || 1;
   const section = sectionForEntry(entry);
   const sectionContext = context.sections.get(section);
-  if (!sectionContext) return { groupIndex: 1, globalIndex: Math.max(1, globalIndex) };
+  if (!sectionContext) return { groupIndex: 1, globalIndex };
   if (context.mode === 'alphabet') {
     const group = sectionContext.grouped.get(letterForEntry(entry)) || [];
-    return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex: Math.max(1, globalIndex) };
+    return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex };
   }
   const stamp = getStudyStamp(entry, context.collection.id);
   const group = stamp
@@ -1443,7 +1539,7 @@ function indexesForRenderedEntry(context, entry) {
       .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'))
     : sectionContext.entries.filter((item) => !getStudyStamp(item, context.collection.id))
       .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-  return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex: Math.max(1, globalIndex) };
+  return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex };
 }
 
 function toggleEntryRelations(entryId) {
@@ -1541,23 +1637,28 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const annotation = state.annotationByEntry.get(entry.id);
   const numberMode = state.settings.numberMode || 'global';
   const indexText = numberMode === 'group' ? `${indexes.groupIndex}.` : numberMode === 'global' ? `${indexes.globalIndex}.` : '';
-  const relations = relationItemsForEntry(entry);
   const expanded = expandedRelations.has(entry.id);
+  const relations = expanded ? relationItemsForEntry(entry) : null;
+  const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
   const studyStamp = getStudyStamp(entry, collection.id);
   const row = el('article', { className: `entry-row${expanded ? ' relations-open' : ''}`, id: `entry-${entry.id}`, dataset: { entryId: entry.id, section: sectionForEntry(entry) } });
-  const line = el('div', { className: 'entry-line' }, [
+  const info = el('div', { className: 'entry-info' }, [
     el('button', { type: 'button', className: 'copy-entry', on: { click: () => copyEntry(entry, collection) } }, [
       indexText ? el('span', { className: 'entry-index', text: indexText }) : null,
-      el('span', { className: 'entry-text', text: entry.text }),
+      el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
     ]),
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : el('span', { className: 'entry-gloss empty', 'aria-hidden': 'true' }),
-    el('span', { className: `entry-study${studyStamp ? ' marked' : ''}` }, [
-      el('span', { className: 'entry-study-date', text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '', 'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期' }),
-      iconButton('refresh', 'entry-study-refresh', studyStamp ? '刷新学习日期' : '标注今天为学习日期', (event) => refreshEntryStudyDate(entry, collection, event.currentTarget).catch(displayError)),
-    ]),
-    annotation ? button('•', 'entry-annotation', () => startAnnotationReview(collection.id, entry.id), { title: '待核查' }) : null,
-    relations.length ? iconButton('relation', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)) : el('span', { className: 'entry-relations-placeholder', 'aria-hidden': 'true' }),
+    el('span', {
+      className: `entry-study-date${studyStamp ? ' marked' : ''}`,
+      text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '',
+      'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期',
+    }),
+  ]);
+  const actions = el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, [
+    iconButton('refresh', 'entry-study-refresh', studyStamp ? '刷新学习日期' : '标注今天为学习日期', (event) => refreshEntryStudyDate(entry, collection, event.currentTarget).catch(displayError)),
+    annotation ? button('•', 'entry-annotation', () => startAnnotationReview(collection.id, entry.id), { title: '待核查' }) : el('span', { className: 'entry-action-placeholder', 'aria-hidden': 'true' }),
+    hasRelations ? iconButton('relation', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)) : el('span', { className: 'entry-action-placeholder entry-relations-placeholder', 'aria-hidden': 'true' }),
     el('button', { type: 'button', className: `entry-pin${pinned ? ' active' : ''}`, title: pinned ? '取消 PIN' : '设置 PIN', 'aria-label': pinned ? '取消 PIN' : '设置 PIN', 'aria-pressed': pinned ? 'true' : 'false', on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) } }, [svgIcon('pin')]),
     iconButton('more', 'entry-more', '更多', () => openEntryActions(entry.id, collection.id)),
     iconButton('dictionary', 'entry-oxford', `在牛津英汉辞书中查询 ${entry.text}`, () => {
@@ -1567,8 +1668,8 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
       try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
     }),
   ]);
-  row.append(line);
-  const relationPanel = renderRelationPanel(entry);
+  row.append(el('div', { className: 'entry-line' }, [info, actions]));
+  const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
   if (relationPanel) row.append(relationPanel);
   return row;
 }
@@ -1624,14 +1725,17 @@ async function copyEntry(entry, collection) {
       fallbackInput.select();
       if (!document.execCommand('copy')) throw new Error('浏览器拒绝复制');
     }
+    clearPersistentJump();
+    showToast(`已复制：${entry.text}`);
     const mode = getViewMode(collection.id);
     const section = sectionForEntry(entry);
     const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
-    await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
-    lastPersistedEntryId = entry.id;
-    if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
-    clearPersistentJump();
-    showToast(`已复制：${entry.text}`);
+    setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
+      .then(() => {
+        lastPersistedEntryId = entry.id;
+        if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
+      })
+      .catch((error) => console.warn('复制后的浏览位置保存失败', error));
   } catch (error) {
     displayError(error);
   } finally {
@@ -1651,6 +1755,8 @@ function ensureEntryRendered(entryId) {
     setLetterSectionOpen(section, letter, true);
     updateActiveLetter(section, letter);
   }
+  const chunk = entryChunkByEntryId.get(entryId);
+  if (chunk) materializeEntryChunk(chunk);
   row = document.getElementById(`entry-${entryId}`);
   return row;
 }
@@ -1709,8 +1815,7 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   const entry = state.entryById.get(entryId);
   if (!entry) { showToast('内容已不存在'); return false; }
   const targetCollectionId = collectionId || projectionCollectionForEntry(entryId);
-  const visible = targetCollectionId ? getVisibleEntries(targetCollectionId) : [];
-  if (!targetCollectionId || !visible.some((item) => item.id === entryId)) {
+  if (!targetCollectionId || !state.visibleEntryIdsByCollection.get(targetCollectionId)?.has(entryId)) {
     showToast('该位置已失效');
     return false;
   }
@@ -1759,16 +1864,25 @@ function jumpPinned(collectionId, direction = 1) {
 
 function firstVisibleEntryId() {
   if (!currentCollectionId || !collectionRenderContext) return null;
-  const topbar = document.querySelector('.topbar');
-  const context = review.ids.length ? elements['annotation-review-bar'] : elements['pin-bar'];
-  const top = Math.max(topbar?.getBoundingClientRect().bottom || 0, context && !context.classList.contains('hidden') ? context.getBoundingClientRect().bottom : 0) + 10;
-  const rows = [...elements['entry-list'].querySelectorAll('.entry-row')];
-  const row = rows.find((item) => {
-    const rect = item.getBoundingClientRect();
-    return rect.height > 0 && rect.bottom > top;
-  });
-  if (row?.dataset.section) activeSection = row.dataset.section;
-  return row?.dataset.entryId || null;
+  const bounds = readingViewportBounds();
+  const x = Math.min(Math.max(24, window.innerWidth * 0.22), window.innerWidth - 24);
+  for (const offset of [6, 26, 52, 84, 116]) {
+    const node = document.elementFromPoint(x, Math.min(bounds.bottom - 4, bounds.top + offset));
+    const row = /** @type {HTMLElement | null} */ (node?.closest?.('.entry-row') || null);
+    if (row?.dataset.entryId) {
+      if (row.dataset.section) activeSection = row.dataset.section;
+      return row.dataset.entryId;
+    }
+  }
+  const renderedRows = /** @type {NodeListOf<HTMLElement>} */ (elements['entry-list'].querySelectorAll('.entry-row'));
+  for (const row of Array.from(renderedRows)) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom > bounds.top + 1 && rect.top < bounds.bottom - 1) {
+      if (row.dataset.section) activeSection = row.dataset.section;
+      return row.dataset.entryId || null;
+    }
+  }
+  return null;
 }
 
 function persistScrollPosition() {
@@ -1818,7 +1932,7 @@ function returnToTop() {
   }
   suppressScrollPersistence(900);
   navigationRevision += 1;
-  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 function openAddDomainDialog() {
@@ -2528,7 +2642,19 @@ async function handleDialogSubmit(event) {
   finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = submit.dataset.oldText || '保存'; } }
 }
 
+function handleWindowScroll() {
+  if (!scrollUiFrame) {
+    scrollUiFrame = requestAnimationFrame(() => {
+      scrollUiFrame = 0;
+      updateBackToTopVisibility();
+    });
+  }
+  if (!('onscrollend' in window)) persistScrollPosition();
+}
+
 export async function initializeUI() {
+  elements['back-button']?.replaceChildren(svgIcon('back'));
+  elements['search-button']?.replaceChildren(svgIcon('search'));
   elements['back-to-top']?.replaceChildren(svgIcon('top'));
   elements['dialog-form'].addEventListener('submit', handleDialogSubmit);
   elements['confirm-form'].addEventListener('submit', handleConfirmSubmit);
@@ -2561,7 +2687,8 @@ export async function initializeUI() {
   window.addEventListener('hashchange', renderApp);
   window.addEventListener('popstate', renderApp);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
-  window.addEventListener('scroll', () => { persistScrollPosition(); updateBackToTopVisibility(); }, { passive: true });
+  window.addEventListener('scroll', handleWindowScroll, { passive: true });
+  if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
   subscribe(({ type }) => {
     if (suppressNextMutationRender && ['mutation', 'calendar-month'].includes(type)) {
       suppressNextMutationRender = false;

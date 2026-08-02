@@ -1,16 +1,27 @@
-# Vocabulary Index 3.1.1
+# Vocabulary Index 3.2.0
 
-本地优先、按独立域组织的英语词汇与短语索引。主要面向 iPhone Safari／主屏幕 PWA，并兼容 Windows Chrome。
+面向 iPhone Safari 主屏幕 PWA 的本地优先英语词汇与短语索引。
 
-## 3.1.1
+## 平台边界
 
-- 完整保留 3.1.0 的学习日期、复合普通表、日期模式和关联导航；
-- 一级词汇与短语表项新增牛津英汉辞书查询控件；
-- 一级表项新增 ChatGPT 新聊天查询控件；
-- 牛津只发送英文纯文本；
-- ChatGPT 发送当前条目的完整上下文 JSON；
-- 全局聚合项发送其全部独立域实例；
-- Schema 4、Seed revision 3 和词库数据不变。
+- 唯一主要运行方式：Safari“添加到主屏幕”后的 standalone PWA；
+- 单用户、单设备、本地 IndexedDB；
+- 无账户、云同步或多设备合并；
+- 其他人打开公开仓库时使用各自本地数据，不会影响本机。
+
+## 3.2.0
+
+- 首页字号与信息层级收敛；
+- 系统总表增加低强度侧向渐变；
+- 一级表项改为“文本信息行＋操作行”；
+- 英文不再任意断行，繁体释义恢复可读空间；
+- 所有一级操作保持 44px 触控区域；
+- 长列表按块惰性渲染；
+- SVG 图标缓存；
+- 关联惰性解析；
+- 滚动位置追踪限流；
+- sticky 背景模糊移除；
+- standalone PWA 后台 viewport 异常防御。
 
 ## 数据概况
 
@@ -19,40 +30,29 @@
 - 全局短语：587；
 - 计算机术语：544 词、577 短语，繁体释义覆盖 100%。
 
-详见：
+## 文档
 
-- `PRODUCT_MANUAL_3.1.1.md`
-- `UX_SPEC_3.1.1.md`
-- `CHANGE_REPORT_3.1.1.md`
-- `MIGRATION_3.1.1.md`
+- `AUDIT_REPORT_3.2.0.md`
+- `PRODUCT_MANUAL_3.2.0.md`
+- `UX_SPEC_3.2.0.md`
+- `CHANGE_REPORT_3.2.0.md`
+- `MIGRATION_3.2.0.md`
+- `TEST_REPORT_3.2.0.md`
 - `DATA_FORMATS.md`
-- `DATA_REPORT.md`
-- `TEST_REPORT_3.1.1.md`
-
-## iPhone 外部查询依赖
-
-ChatGPT 快捷指令名称必须为 `AI查询`，并使用 `Start conversation with ChatGPT` 接收快捷指令输入。牛津英汉辞书通过其 App URL Scheme 直接打开。
+- `SECURITY.md`
 
 ## 本地运行
 
-本项目是静态 PWA，必须通过 HTTP(S) 打开，不能直接双击 `index.html`。
+必须通过 HTTP(S) 打开：
 
 ```bash
 python3 -m http.server 8000
 ```
 
-然后访问 `http://localhost:8000/`。
+在 iPhone Safari 访问部署地址，再通过分享菜单添加到主屏幕。
 
 ## 测试
 
 ```bash
 npm run test:all
 ```
-
-## 数据原则
-
-- 所有可编辑内容属于某个独立域；
-- 全局总表无独立新增入口；
-- 总表由 Entry 派生，不写入 Collection；
-- VIX 内容 JSON 不包含个人学习状态；
-- 完整备份用于设备迁移和灾难恢复。

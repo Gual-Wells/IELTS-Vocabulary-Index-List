@@ -84,7 +84,7 @@ const dataEntry = seed.entries.find((item) => item.domainId === 'domain_computer
 assert.ok(dataEntry);
 const dataCollection = seed.collections.find((item) => item.id === 'collection_computer_software_data');
 assert.ok(dataCollection);
-const context = createEntryContext(state, dataEntry, dataCollection.id, { appVersion: '3.1.1', viewMode: 'alphabet', section: 'word' });
+const context = createEntryContext(state, dataEntry, dataCollection.id, { appVersion: '3.2.0', viewMode: 'alphabet', section: 'word' });
 assert.equal(context.format, ENTRY_CONTEXT_FORMAT);
 assert.equal(context.subject.scope, 'domain-entry');
 assert.equal(context.subject.instanceEntryIds.length, 1);
@@ -108,12 +108,12 @@ assert.equal(parsed.searchParams.get('text'), prompt);
 assert.ok(shortcutUrl.length < 100000, `当前代表条目 URL 过长：${shortcutUrl.length}`);
 const dataGlobal = state.projection.get(SYSTEM_GLOBAL_WORDS_ID).find((item) => item.normalizedText === normalizeEnglish('data'));
 assert.ok(dataGlobal);
-const dataGlobalUrl = buildChatGPTShortcutUrl(buildChatGPTPrompt(createEntryContext(state, dataGlobal, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '3.1.1', viewMode: 'alphabet', section: 'word' })));
+const dataGlobalUrl = buildChatGPTShortcutUrl(buildChatGPTPrompt(createEntryContext(state, dataGlobal, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '3.2.0', viewMode: 'alphabet', section: 'word' })));
 assert.ok(dataGlobalUrl.length < 100000, `全局高关联条目 URL 过长：${dataGlobalUrl.length}`);
 
 const addressGlobal = state.projection.get(SYSTEM_GLOBAL_WORDS_ID).find((item) => item.normalizedText === normalizeEnglish('address'));
 assert.ok(addressGlobal);
-const globalContext = createEntryContext(state, addressGlobal, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '3.1.1', viewMode: 'date', section: 'word' });
+const globalContext = createEntryContext(state, addressGlobal, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '3.2.0', viewMode: 'date', section: 'word' });
 assert.equal(globalContext.subject.scope, 'global-aggregate');
 assert.ok(globalContext.subject.instanceEntryIds.length >= 2, '全局同形词必须导出全部独立域实例');
 assert.ok(globalContext.domains.length >= 2);

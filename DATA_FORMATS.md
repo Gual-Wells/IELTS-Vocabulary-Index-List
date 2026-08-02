@@ -1,4 +1,4 @@
-# Vocabulary Index 3.1.1 数据格式
+# Vocabulary Index 3.2.0 数据格式
 
 ## 1. 完整备份
 
@@ -7,7 +7,7 @@
 ```json
 {
   "schemaVersion": 4,
-  "appVersion": "3.1.1",
+  "appVersion": "3.2.0",
   "domains": [],
   "collections": [],
   "entries": [],
@@ -86,7 +86,7 @@ Membership 只指向 `normal` Collection。普通表可以同时拥有词汇和�
 
 ### Settings
 
-3.1.1 相关字段：
+3.2.0 相关字段：
 
 ```json
 {
@@ -186,7 +186,7 @@ data/vix-json.schema.json
   "generatedAt": "2026-08-02T03:00:00.000Z",
   "application": {
     "name": "Vocabulary Index",
-    "version": "3.1.1"
+    "version": "3.2.0"
   },
   "currentView": {
     "collectionId": "collection_computer_software_data",

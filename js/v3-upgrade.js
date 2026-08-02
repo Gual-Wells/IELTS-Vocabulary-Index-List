@@ -1,8 +1,8 @@
-// One-time compatibility bridge for upgrading from pre-3.1.1 workers.
+// One-time compatibility bridge for upgrading from pre-3.2.0 workers.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v3.1.1-entry-integrations-20260802-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:3.1.1';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v3.2.0-ios-pwa-audit-20260802-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:3.2.0';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

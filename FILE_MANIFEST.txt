@@ -1,9 +1,10 @@
-Vocabulary Index 3.1.1 complete source manifest
+Vocabulary Index 3.2.0 complete source manifest
 
-Files listed: 83
+Files listed: 89
 
 .nojekyll	0
-CHANGELOG.md	3989
+AUDIT_REPORT_3.2.0.md	14636
+CHANGELOG.md	4410
 CHANGE_REPORT_3.0.2.md	1854
 CHANGE_REPORT_3.0.3.md	1101
 CHANGE_REPORT_3.0.4.md	1067
@@ -11,34 +12,39 @@ CHANGE_REPORT_3.0.5.md	1033
 CHANGE_REPORT_3.0.7.md	1430
 CHANGE_REPORT_3.1.0.md	2092
 CHANGE_REPORT_3.1.1.md	1177
+CHANGE_REPORT_3.2.0.md	2174
 DATA_FORMATS.md	5154
 DATA_REPORT.md	1166
-DEPLOY.md	1396
-LOCAL_ARCHITECTURE.md	1858
+DEPLOY.md	894
+LOCAL_ARCHITECTURE.md	1394
 MIGRATION_3.0.0.md	2142
 MIGRATION_3.1.0.md	1372
 MIGRATION_3.1.1.md	607
+MIGRATION_3.2.0.md	923
 PRODUCT_MANUAL_3.0.4.md	4917
 PRODUCT_MANUAL_3.0.5.md	6165
 PRODUCT_MANUAL_3.0.7.md	2019
 PRODUCT_MANUAL_3.1.0.md	5967
 PRODUCT_MANUAL_3.1.1.md	7415
-README.md	1619
-SECURITY.md	1222
+PRODUCT_MANUAL_3.2.0.md	4811
+README.md	1408
+SECURITY.md	778
 TEST_REPORT_3.0.4.md	1246
 TEST_REPORT_3.0.5.md	0
 TEST_REPORT_3.0.7.md	3302
 TEST_REPORT_3.1.0.md	2877
 TEST_REPORT_3.1.1.md	2056
+TEST_REPORT_3.2.0.md	2221
 UX_SPEC_3.0.4.md	946
 UX_SPEC_3.0.5.md	704
 UX_SPEC_3.0.7.md	853
 UX_SPEC_3.1.0.md	2149
 UX_SPEC_3.1.1.md	2837
+UX_SPEC_3.2.0.md	2835
 assets/icons/apple-touch-icon.png	33779
 assets/icons/icon-192.png	36899
 assets/icons/icon-512.png	151357
-css/v3.css	43691
+css/v3.css	50405
 data/computer-terms-classification-report.json	112605
 data/computer-terms-source-report.json	812
 data/computer-terms-source.tsv	33089
@@ -60,26 +66,26 @@ data/source/B1.txt	10551
 data/source/B2.txt	18993
 data/source/C1.txt	17857
 data/vix-json.schema.json	4039
-index.html	5561
+index.html	5617
 js/v3-ai.js	12459
-js/v3-app.js	1980
+js/v3-app.js	3825
 js/v3-data-worker.js	575
 js/v3-db.js	28000
 js/v3-exchange.js	28654
 js/v3-import.js	6667
 js/v3-integrations.js	8809
 js/v3-model.js	79094
-js/v3-store.js	41243
-js/v3-ui.js	128100
-js/v3-upgrade.js	924
+js/v3-store.js	41355
+js/v3-ui.js	133322
+js/v3-upgrade.js	919
 manifest.webmanifest	523
 package.json	510
-sw.js	2350
-tests/MANUAL_CHECKLIST.md	1589
+sw.js	2345
+tests/MANUAL_CHECKLIST.md	2153
 tests/integration-tests.mjs	6956
 tests/performance-tests.mjs	2067
 tests/run-tests.mjs	13509
-tests/static-tests.mjs	10924
+tests/static-tests.mjs	13619
 tests/stress-tests.mjs	6573
 tools/classify-computer-terms.py	6236
 tools/classify-seed-phrases.py	15578

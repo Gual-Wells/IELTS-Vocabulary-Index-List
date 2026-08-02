@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 4,
-    appVersion: '3.1.1',
+    appVersion: '3.2.0',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -37,13 +37,14 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.1.1', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.2.0', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
     return a.order - b.order || a.name.localeCompare(b.name);
   });
   const projection = buildProjection(backup);
+  const visibleEntryIdsByCollection = new Map([...projection.entries()].map(([collectionId, entries]) => [collectionId, new Set(entries.map((entry) => entry.id))]));
   const entryById = new Map(backup.entries.map((item) => [item.id, item]));
   const globalPhraseByNormalizedText = new Map((projection.get(SYSTEM_GLOBAL_PHRASES_ID) || []).map((item) => [item.normalizedText, item]));
   const wordsByDomainText = new Map();
@@ -98,6 +99,7 @@ function buildState(snapshot) {
     domains,
     collections,
     projection,
+    visibleEntryIdsByCollection,
     revision: Number(snapshot.settings?.dataRevision || 0),
     domainById: new Map(domains.map((item) => [item.id, item])),
     collectionById,
@@ -660,7 +662,7 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
   const existing = state.pinByEntry.get(entryId) || null;
   const entry = state.entryById.get(entryId);
   if (!entry) throw new Error('内容不存在');
-  if (!(state.projection.get(contextCollectionId) || []).some((item) => item.id === entryId)) throw new Error('PIN 上下文不可见');
+  if (!state.visibleEntryIdsByCollection.get(contextCollectionId)?.has(entryId)) throw new Error('PIN 上下文不可见');
   let after = null;
   if (!existing) {
     const siblingPins = state.pins.filter((item) => item.contextCollectionId === contextCollectionId);
@@ -694,8 +696,7 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
 }
 
 export async function setLastPosition(domainId, collectionId, entryId, { mode = 'alphabet', section = 'main' } = {}) {
-  const visible = state.projection.get(collectionId) || [];
-  if (!visible.some((item) => item.id === entryId)) return false;
+  if (!state.visibleEntryIdsByCollection.get(collectionId)?.has(entryId)) return false;
   const key = `lastPosition:${domainId}:${collectionId}:${mode}:${section}`;
   const next = await setLastPositionSetting(key, entryId);
   state.settings.lastPositions = next;
@@ -709,7 +710,7 @@ export function getLastPosition(domainId, collectionId, { mode = 'alphabet', sec
   const entryId = positions[key] || (mode === 'alphabet' && section === 'main' ? positions[legacyKey] : null) || null;
   if (!entryId) return null;
   const entry = state.entryById.get(entryId);
-  if (!entry || !(state.projection.get(collectionId) || []).some((item) => item.id === entryId)) return null;
+  if (!entry || !state.visibleEntryIdsByCollection.get(collectionId)?.has(entryId)) return null;
   if (section === 'word' && entry.kind !== 'word') return null;
   if (section === 'phrase' && entry.kind !== 'phrase') return null;
   return entryId;
@@ -762,7 +763,7 @@ export function getStudyStamp(entry, collectionId) {
 
 export async function refreshStudyDate(entryId, collectionId, retry = true) {
   const entry = state.entryById.get(entryId);
-  if (!entry || !(state.projection.get(collectionId) || []).some((item) => item.id === entryId)) throw new Error('内容不可见');
+  if (!entry || !state.visibleEntryIdsByCollection.get(collectionId)?.has(entryId)) throw new Error('内容不可见');
   const key = studyStampKeyFor(entry, collectionId);
   const existing = state.studyStampByKey.get(key) || null;
   const scope = key.startsWith('global:') ? 'global' : 'entry';
@@ -799,7 +800,7 @@ export async function refreshStudyDate(entryId, collectionId, retry = true) {
 }
 
 export function getPinsForCollection(collectionId) {
-  const visibleIds = new Set((state.projection.get(collectionId) || []).map((item) => item.id));
+  const visibleIds = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
   return state.pins
     .filter((item) => item.contextCollectionId === collectionId && visibleIds.has(item.entryId))
     .sort((a, b) => Number(a.order || 0) - Number(b.order || 0)

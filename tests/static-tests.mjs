@@ -20,15 +20,16 @@ const sw = read('sw.js');
 const css = read('css/v3.css');
 
 // Version, shell, and CSP.
-assert.ok(html.includes('name="application-version" content="3.1.1"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.1.1</title>'));
+assert.ok(html.includes('name="application-version" content="3.2.0"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.2.0</title>'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'));
 assert.ok(html.includes('./js/v3-app.js'));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
-assert.ok(app.includes("const MODULE_VERSION = '3.1.1'"));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.1.1'));
-assert.ok(sw.includes('v3.1.1-entry-integrations-20260802-1'));
+assert.ok(app.includes("const MODULE_VERSION = '3.2.0'"));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.2.0'));
+assert.ok(sw.includes('v3.2.0-ios-pwa-audit-20260802-1'));
+assert.ok(upgrade.includes('v3.2.0-ios-pwa-audit-20260802-1'));
 assert.ok(sw.includes('./js/v3-integrations.js'));
 
 const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
@@ -38,6 +39,54 @@ for (const id of ['app', 'home-view', 'collection-view', 'letter-nav', 'entry-li
 }
 assert.ok(!html.includes('detail-dialog'));
 assert.ok(!html.includes('mobile-action-bar'));
+
+
+// 3.2.0 is deliberately optimized for iPhone standalone PWA only.
+assert.ok(html.includes('viewport-fit=cover'));
+assert.ok(html.includes('format-detection'));
+assert.ok(app.includes("'(display-mode: standalone)'"));
+assert.ok(app.includes('recoverStandaloneViewportIfNeeded'));
+assert.ok(app.includes("document.addEventListener('visibilitychange'"));
+assert.ok(css.includes('-webkit-text-size-adjust: 100%'));
+assert.ok(css.includes('.standalone-pwa') || app.includes("classList.toggle('standalone-pwa'"));
+
+// First-level entries use a stacked information/actions layout and never force word wrapping.
+assert.ok(ui.includes("className: 'entry-info'"));
+assert.ok(ui.includes("className: 'entry-actions'"));
+assert.ok(css.includes('.entry-info'));
+assert.ok(css.includes('.entry-actions'));
+assert.ok(css.includes('--tap-size: 44px'));
+assert.ok(!css.includes('--tap-size: 42px'));
+assert.ok(css.includes('text-overflow: ellipsis'));
+assert.ok(css.includes('white-space: nowrap'));
+assert.ok(!css.includes('@media (hover: none) { :focus-visible { outline: none; } }'));
+
+// System projections have their own restrained visual treatment.
+assert.ok(ui.includes("'system-card'"));
+assert.ok(ui.includes("'global-system-card'"));
+assert.ok(ui.includes("'domain-system-card'"));
+assert.ok(css.includes('.collection-card.global-system-card'));
+assert.ok(ui.includes('system-collection-view'));
+assert.ok(css.includes('#collection-view.system-collection-view'));
+assert.ok(css.includes('radial-gradient'));
+
+// Main-thread work is capped: icons are cloned from cache, relations are resolved lazily,
+// and long lists are materialized in chunks near the viewport.
+assert.ok(ui.includes('iconTemplateCache'));
+assert.ok(ui.includes('function hasRelationsForEntry(entry)'));
+assert.ok(ui.includes('const relations = expanded ? relationItemsForEntry(entry) : null'));
+assert.ok(ui.includes('IntersectionObserver'));
+assert.ok(ui.includes('ENTRY_CHUNK_SIZE = 42'));
+assert.ok(ui.includes('function materializeEntryChunk(chunk)'));
+assert.ok(ui.includes('function renderEntryChunks('));
+assert.ok(ui.includes('document.elementFromPoint'));
+assert.ok(ui.includes("window.addEventListener('scrollend'"));
+assert.ok(store.includes('visibleEntryIdsByCollection'));
+assert.ok(ui.includes('state.visibleEntryIdsByCollection.get(targetCollectionId)?.has(entryId)'));
+assert.ok(store.includes('state.visibleEntryIdsByCollection.get(contextCollectionId)?.has(entryId)'));
+assert.ok(!css.includes('backdrop-filter: blur(18px)'));
+assert.ok(!css.includes('backdrop-filter: blur(16px)'));
+assert.ok(!css.includes('backdrop-filter: blur(14px)'));
 
 // Schema 4 and preservation of 3.0.x data during IndexedDB upgrade.
 assert.ok(model.includes('export const SCHEMA_VERSION = 4'));
@@ -92,7 +141,7 @@ assert.ok(model.includes('calendarMonths:'));
 // Study date is an explicit user action and has a separate persistent store.
 assert.ok(model.includes('export function createStudyStamp'));
 assert.ok(store.includes('export async function refreshStudyDate(entryId, collectionId'));
-assert.ok(ui.includes("className: 'entry-study-date'"));
+assert.ok(ui.includes('className: `entry-study-date${studyStamp'));
 assert.ok(ui.includes("iconButton('refresh', 'entry-study-refresh'"));
 assert.ok(ui.includes('async function refreshEntryStudyDate'));
 assert.ok(!ui.match(/copyText[\s\S]{0,500}refreshStudyDate/), '复制不得刷新学习日期');
@@ -175,7 +224,7 @@ assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));
 assert.ok(!sw.match(/addEventListener\('install'[\s\S]*?\}\);/)?.[0].includes('skipWaiting'));
 
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.1.1'));
+assert.ok(manifest.name.includes('3.2.0'));
 assert.equal(manifest.start_url, './');
 assert.equal(manifest.scope, './');
 assert.equal(manifest.display, 'standalone');

@@ -1,11 +1,12 @@
-Vocabulary Index 3.3.0 complete source manifest
+Vocabulary Index 3.3.1 complete source manifest
 
-Files listed: 95
+Files listed: 103
 
 .nojekyll	0
 AUDIT_REPORT_3.2.0.md	14636
 AUDIT_REPORT_3.3.0.md	2633
-CHANGELOG.md	5563
+AUDIT_REPORT_3.3.1.md	4146
+CHANGELOG.md	6306
 CHANGE_REPORT_3.0.2.md	1854
 CHANGE_REPORT_3.0.3.md	1101
 CHANGE_REPORT_3.0.4.md	1067
@@ -15,15 +16,18 @@ CHANGE_REPORT_3.1.0.md	2092
 CHANGE_REPORT_3.1.1.md	1177
 CHANGE_REPORT_3.2.0.md	2174
 CHANGE_REPORT_3.3.0.md	5539
-DATA_FORMATS.md	5154
+CHANGE_REPORT_3.3.1.md	3167
+DATA_FORMATS.md	5166
 DATA_REPORT.md	1166
 DEPLOY.md	957
+FILE_MANIFEST.txt	2849
 LOCAL_ARCHITECTURE.md	1547
 MIGRATION_3.0.0.md	2142
 MIGRATION_3.1.0.md	1372
 MIGRATION_3.1.1.md	607
 MIGRATION_3.2.0.md	923
 MIGRATION_3.3.0.md	1113
+MIGRATION_3.3.1.md	1447
 PRODUCT_MANUAL_3.0.4.md	4917
 PRODUCT_MANUAL_3.0.5.md	6165
 PRODUCT_MANUAL_3.0.7.md	2019
@@ -31,8 +35,9 @@ PRODUCT_MANUAL_3.1.0.md	5967
 PRODUCT_MANUAL_3.1.1.md	7415
 PRODUCT_MANUAL_3.2.0.md	4811
 PRODUCT_MANUAL_3.3.0.md	2996
-README.md	2288
-SECURITY.md	778
+PRODUCT_MANUAL_3.3.1.md	2221
+README.md	2348
+SECURITY.md	835
 TEST_REPORT_3.0.4.md	1246
 TEST_REPORT_3.0.5.md	0
 TEST_REPORT_3.0.7.md	3302
@@ -40,6 +45,7 @@ TEST_REPORT_3.1.0.md	2877
 TEST_REPORT_3.1.1.md	2056
 TEST_REPORT_3.2.0.md	2221
 TEST_REPORT_3.3.0.md	4650
+TEST_REPORT_3.3.1.md	3862
 UX_SPEC_3.0.4.md	946
 UX_SPEC_3.0.5.md	704
 UX_SPEC_3.0.7.md	853
@@ -47,9 +53,11 @@ UX_SPEC_3.1.0.md	2149
 UX_SPEC_3.1.1.md	2837
 UX_SPEC_3.2.0.md	2835
 UX_SPEC_3.3.0.md	3924
+UX_SPEC_3.3.1.md	3018
 assets/icons/apple-touch-icon.png	33779
 assets/icons/icon-192.png	36899
 assets/icons/icon-512.png	151357
+css/v3.3.1.css	8746
 css/v3.css	70659
 data/computer-terms-classification-report.json	112605
 data/computer-terms-source-report.json	812
@@ -72,26 +80,26 @@ data/source/B1.txt	10551
 data/source/B2.txt	18993
 data/source/C1.txt	17857
 data/vix-json.schema.json	4039
-index.html	6445
+index.html	6497
 js/v3-ai.js	12459
 js/v3-app.js	3858
 js/v3-data-worker.js	575
 js/v3-db.js	28000
-js/v3-exchange.js	28654
+js/v3-exchange.js	29850
 js/v3-import.js	6667
 js/v3-integrations.js	8809
-js/v3-model.js	79094
-js/v3-store.js	41493
-js/v3-ui.js	147855
+js/v3-model.js	79862
+js/v3-store.js	47975
+js/v3-ui.js	161105
 js/v3-upgrade.js	915
 manifest.webmanifest	523
 package.json	510
-sw.js	2341
-tests/MANUAL_CHECKLIST.md	5867
+sw.js	2361
+tests/MANUAL_CHECKLIST.md	6268
 tests/integration-tests.mjs	6956
 tests/performance-tests.mjs	2067
-tests/run-tests.mjs	13509
-tests/static-tests.mjs	15895
+tests/run-tests.mjs	16683
+tests/static-tests.mjs	17439
 tests/stress-tests.mjs	6573
 tools/classify-computer-terms.py	6236
 tools/classify-seed-phrases.py	15578

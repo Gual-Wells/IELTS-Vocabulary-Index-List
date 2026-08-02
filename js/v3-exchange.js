@@ -1,5 +1,5 @@
 import {
-  SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID, buildProjection, canonicalizeBackup,
+  SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID, buildProjection, canonicalizeBackup, cleanStudyStampReferences,
   createCollection, createDomain, createEntry, createMembership, isPhraseText, normalizeDisplayText,
   normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemPhraseCollectionId,
   toTraditional,
@@ -239,24 +239,42 @@ function normalizePersonalReferences(backup) {
   const collectionById = new Map(backup.collections.map((item) => [item.id, item]));
   const projection = buildProjection(backup);
   backup.pins = array(backup.pins).flatMap((pin) => {
-    const entry = entryById.get(pin.entryId);
+    let entry = entryById.get(pin.entryId);
     if (!entry) return [];
     if ((projection.get(pin.contextCollectionId) || []).some((item) => item.id === entry.id)) return [{ ...pin, domainId: entry.domainId }];
+    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(pin.contextCollectionId)) {
+      const representative = (projection.get(pin.contextCollectionId) || [])
+        .find((item) => item.kind === entry.kind && item.normalizedText === entry.normalizedText);
+      if (representative) return [{ ...pin, id: stableId('pin', representative.id), entryId: representative.id, domainId: representative.domainId }];
+    }
     const fallback = entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId) : systemDomainWordsCollectionId(entry.domainId);
     if (!(projection.get(fallback) || []).some((item) => item.id === entry.id)) return [];
     return [{ ...pin, domainId: entry.domainId, contextCollectionId: fallback }];
   });
   backup.annotations = array(backup.annotations).filter((item) => entryById.has(item.entryId));
-  backup.studyStamps = array(backup.studyStamps).filter((item) => item.scope === 'global'
-    ? backup.entries.some((entry) => entry.kind === item.kind && entry.normalizedText === item.normalizedText)
-    : entryById.has(item.entryId));
+  cleanStudyStampReferences(backup);
   const lastPositions = { ...object(backup.settings?.lastPositions) };
   for (const [key, entryId] of Object.entries(lastPositions)) {
     const parts = key.split(':');
     const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
-    if (!(projection.get(collectionId) || []).some((item) => item.id === entryId)) delete lastPositions[key];
+    if ((projection.get(collectionId) || []).some((item) => item.id === entryId)) continue;
+    const oldEntry = entryById.get(entryId);
+    if (oldEntry && [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
+      const representative = (projection.get(collectionId) || [])
+        .find((item) => item.kind === oldEntry.kind && item.normalizedText === oldEntry.normalizedText);
+      if (representative) {
+        lastPositions[key] = representative.id;
+        continue;
+      }
+    }
+    delete lastPositions[key];
   }
-  backup.settings = { ...backup.settings, lastPositions };
+  const validCollectionIds = new Set(projection.keys());
+  const viewModes = Object.fromEntries(Object.entries(object(backup.settings?.viewModes))
+    .filter(([collectionId]) => validCollectionIds.has(collectionId)));
+  const calendarMonths = Object.fromEntries(Object.entries(object(backup.settings?.calendarMonths))
+    .filter(([key]) => validCollectionIds.has(key.slice(0, key.lastIndexOf(':')))));
+  backup.settings = { ...backup.settings, lastPositions, viewModes, calendarMonths };
   // Remove source records no longer referenced only when they are malformed; valid catalog records remain useful audit metadata.
   backup.settings.contentSources = array(backup.settings.contentSources).filter((item) => item?.key && item?.title);
   return backup;
@@ -390,6 +408,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     if (targetCollection.type === 'system-phrases') {
       const removed = new Set(entries.filter((item) => item.domainId === targetDomainId && item.kind === 'phrase').map((item) => item.id));
       entries = entries.filter((item) => !removed.has(item.id));
+      memberships = memberships.filter((item) => !removed.has(item.entryId));
     } else {
       memberships = memberships.filter((item) => item.collectionId !== targetCollection.id);
     }
@@ -479,7 +498,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     exportedAt: timestamp,
     domains,
     collections,

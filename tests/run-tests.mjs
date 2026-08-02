@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
+  buildProjection, canonicalizeBackup, cleanStudyStampReferences, createCollection, createDomain, createEntry,
   createMembership, createStudyStamp, isPhraseText, migrateLegacyBackup,
-  normalizeDisplayText, normalizeEnglish, normalizeGlossHant, parseLegacySourceLine,
+  normalizeDisplayText, normalizeEnglish, normalizeGlossHant, parseLegacySourceLine, positionScopeDomainId,
   phraseComponents, relatedPhrases, safeId, searchBackup, systemPhraseCollectionId,
   systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID,
   tokenizeEnglish, validateBackup,
@@ -31,6 +31,10 @@ assert.equal(normalizeGlossHant('访问控制'), '訪問控制');
 assert.equal(parseLegacySourceLine('access n., v.').sourceLabel, 'n., v.');
 assert.equal(parseLegacySourceLine('# A'), null);
 
+assert.equal(positionScopeDomainId({ id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', virtual: true }), 'global');
+assert.equal(positionScopeDomainId({ id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', virtual: true }, { domainId: 'domain_x' }), 'global');
+assert.equal(positionScopeDomainId({ id: 'ordinary', domainId: 'domain_x' }), 'domain_x');
+
 const legacy = {
   schemaVersion: 1,
   appVersion: '2.4.1',
@@ -52,7 +56,7 @@ const legacy = {
 };
 const backup = migrateLegacyBackup(legacy, { timestamp });
 assert.equal(backup.schemaVersion, 4);
-assert.equal(backup.appVersion, '3.3.0');
+assert.equal(backup.appVersion, '3.3.1');
 assert.equal(backup.domains.length, 1);
 assert.equal(backup.collections.filter((item) => item.type === 'normal').length, 2);
 assert.equal(backup.collections.find((item) => item.type === 'system-phrases').name, '短语总表');
@@ -103,6 +107,14 @@ assert.equal(stateful.studyStamps.length, 2);
 assert.equal(stateful.settings.viewModes[awlId], 'date');
 assert.equal(validateBackup(stateful), true);
 
+const dirtyReferences = structuredClone(stateful);
+dirtyReferences.studyStamps.push(
+  { ...entryStamp, key: 'entry:missing', entryId: 'missing-entry' },
+  { ...globalStamp, key: 'global:word:missing', normalizedText: 'missing' },
+);
+cleanStudyStampReferences(dirtyReferences);
+assert.equal(dirtyReferences.studyStamps.length, 2, '孤儿学习日期必须在破坏性操作规范化阶段清理');
+
 // Cross-domain duplicates aggregate only in system global projections.
 const secondDomain = createDomain({ name: '计算机科学', order: 1, glossEnabled: true, timestamp });
 const secondCollection = createCollection({ domainId: secondDomain.id, name: '基础', timestamp });
@@ -132,11 +144,11 @@ assert.equal(parseImportContent(JSON.stringify(v307Backup), 'backup.json').kind,
 assert.equal(parseRetryAfter('2'), 2000);
 assert.ok(createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({ id: `e${index}`, text: `word-${index}` }))).every((batch) => batch.length <= 32));
 
-// Complete 3.3.0 seed contract.
+// Complete 3.3.1 seed contract.
 const rawSeed = JSON.parse(fs.readFileSync(path.join(root, 'data/seed.json'), 'utf8'));
 const seed = migrateLegacyBackup(rawSeed, { timestamp });
 assert.equal(seed.schemaVersion, 4);
-assert.equal(seed.appVersion, '3.3.0');
+assert.equal(seed.appVersion, '3.3.1');
 assert.equal(seed.settings.builtInSeedRevision, 3);
 assert.equal(seed.studyStamps.length, 0);
 assert.equal(seed.domains.length, 2);
@@ -207,6 +219,38 @@ assert.equal(plan.summary.removedDomains, 0);
 assert.equal(plan.summary.removedWords, 0);
 assert.equal(plan.summary.removedPhrases, 0);
 assert.equal(validateBackup(plan.nextBackup), true);
+
+
+// Replacing a system phrase collection must remove stale normal memberships and personal study references.
+const computerPhraseCollectionId = systemPhraseCollectionId(computerDomainId);
+const phrasePackage = createVixPackage(seed, { scope: 'collection', collectionId: computerPhraseCollectionId });
+const retainedPhrase = phrasePackage.data.entries[0];
+phrasePackage.data.entries = [retainedPhrase];
+phrasePackage.mode = 'replace';
+const removedPhrase = computerPhrases.find((entry) => entry.normalizedText !== normalizeEnglish(retainedPhrase.text));
+const seedWithRemovedPhraseStamp = canonicalizeBackup({
+  ...seed,
+  studyStamps: [createStudyStamp({ entryId: removedPhrase.id, reviewDateKey: '2026-08-02', reviewedAt: timestamp })],
+});
+const phraseReplacePlan = planVixImport(seedWithRemovedPhraseStamp, phrasePackage, {
+  scope: 'collection', domainId: computerDomainId, collectionId: computerPhraseCollectionId, mode: 'replace', targetMode: 'current',
+}, 'current');
+const phraseReplaceIds = new Set(phraseReplacePlan.nextBackup.entries.map((entry) => entry.id));
+assert.equal(phraseReplacePlan.nextBackup.entries.filter((entry) => entry.domainId === computerDomainId && entry.kind === 'phrase').length, 1);
+assert.ok(phraseReplacePlan.nextBackup.memberships.every((membership) => phraseReplaceIds.has(membership.entryId)), '系统短语替换不得留下孤儿 Membership');
+assert.ok(phraseReplacePlan.nextBackup.studyStamps.every((stamp) => stamp.entryId !== removedPhrase.id), '系统短语替换不得留下孤儿学习日期');
+assert.equal(validateBackup(phraseReplacePlan.nextBackup), true);
+
+// Seed relation targets shown by the UI must actually be visible in at least one ordinary collection.
+const accessWord = seed.entries.find((entry) => entry.domainId === computerDomainId && entry.kind === 'word' && entry.normalizedText === 'access');
+const accessRelations = relatedPhrases(seed, accessWord.id);
+assert.ok(accessRelations.length >= 5);
+for (const related of accessRelations) {
+  const visibleTarget = seed.memberships.some((membership) => membership.entryId === related.id
+    && visibleComputerCollections.some((collection) => collection.id === membership.collectionId)
+    && seedProjection.get(membership.collectionId)?.some((entry) => entry.id === related.id));
+  assert.ok(visibleTarget, `关联短语缺少实际可见普通表目标：${related.text}`);
+}
 
 assert.throws(() => canonicalizeBackup({ ...seed, entries: [...seed.entries, { ...seed.entries[0], id: safeId('duplicate', 'x') }] }), /重复/);
 console.log('run-tests: OK');

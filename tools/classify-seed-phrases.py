@@ -260,7 +260,7 @@ def main() -> None:
         })
 
     data['schemaVersion'] = 4
-    data['appVersion'] = '3.3.0'
+    data['appVersion'] = '3.3.1'
     data['exportedAt'] = '2026-08-02T01:51:00.000Z'
     data['studyStamps'] = []
     settings = data.setdefault('settings', {})

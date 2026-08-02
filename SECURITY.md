@@ -1,10 +1,10 @@
-# Vocabulary Index 3.3.0 安全说明
+# Vocabulary Index 3.3.1 安全说明
 
 - 业务数据默认仅保存在当前 iPhone Web App 的 IndexedDB；
 - 不建立账户、云同步或远程业务数据库；
 - 其他人打开同一公开仓库时使用自己的浏览器存储；
 - 内容导入先预检，再以事务写入；
-- 完整替换和 Seed 恢复前生成备份；
+- 高危操作执行前提供“下载备份／不下载”选择；备份选择不阻止后续确认；
 - VIX 内容 JSON 不包含 PIN、标注、学习日期或浏览位置；
 - Groq API Key 不进入内容 JSON 或 Seed；
 - Oxford 只接收当前英文；

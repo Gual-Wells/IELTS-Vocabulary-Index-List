@@ -17,13 +17,16 @@ const integrations = read('js/v3-integrations.js');
 const app = read('js/v3-app.js');
 const upgrade = read('js/v3-upgrade.js');
 const sw = read('sw.js');
-const css = read('css/v3.css');
+const cssBase = read('css/v3.css');
+const cssRelease = read('css/v3.3.1.css');
+const css = `${cssBase}
+${cssRelease}`;
 const pkg = JSON.parse(read('package.json'));
 const seed = JSON.parse(read('data/seed.json'));
 
 // Version, shell, CSP and iPhone-only viewport contract.
-assert.ok(html.includes('name="application-version" content="3.3.0"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.3.0</title>'));
+assert.ok(html.includes('name="application-version" content="3.3.1"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.3.1</title>'));
 assert.ok(html.includes('maximum-scale=1'));
 assert.ok(html.includes('user-scalable=no'));
 assert.ok(html.includes('viewport-fit=cover'));
@@ -32,13 +35,13 @@ assert.ok(html.includes("script-src 'self'"));
 assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'));
 assert.ok(html.includes('./js/v3-app.js'));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
-assert.ok(app.includes("const MODULE_VERSION = '3.3.0'"));
+assert.ok(app.includes("const MODULE_VERSION = '3.3.1'"));
 assert.ok(app.includes("const canonical = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover'"));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.3.0'));
-assert.ok(sw.includes('v3.3.0-ios-shell-20260802-1'));
-assert.ok(upgrade.includes('v3.3.0-ios-shell-20260802-1'));
-assert.equal(pkg.version, '3.3.0');
-assert.equal(seed.appVersion, '3.3.0');
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.3.1'));
+assert.ok(sw.includes('v3.3.1-ios-shell-20260802-2'));
+assert.ok(upgrade.includes('v3.3.1-ios-shell-20260802-2'));
+assert.equal(pkg.version, '3.3.1');
+assert.equal(seed.appVersion, '3.3.1');
 assert.equal(JSON.parse(read('data/seed-report.json')).builtInSeedRevision, 3);
 
 const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
@@ -125,7 +128,8 @@ assert.ok(!css.includes('.entry-text {\n  text-overflow: ellipsis'));
 
 // Annotated entries warn in-place, redirect primary tap to review, and support current/global clear.
 assert.ok(ui.includes("annotation ? ' annotated' : ''"));
-assert.ok(ui.includes('if (annotation) startAnnotationReview'));
+assert.ok(ui.includes('if (annotationRecord) startAnnotationReview'));
+assert.ok(ui.includes("startAnnotationReview(collection.id, annotationRecord.sourceEntryId)"));
 assert.ok(ui.includes('async function clearCurrentReviewAnnotations'));
 assert.ok(ui.includes("'撤销当前词表全部标注'"));
 assert.ok(css.includes('.entry-row.annotated .entry-line'));
@@ -164,7 +168,9 @@ assert.ok(css.includes('.app.has-pin, .app.has-review { --context-height: 0px; }
 assert.ok(html.includes('id="back-to-top"'));
 assert.ok(ui.includes('function returnToTop()'));
 assert.ok(ui.includes("elements['back-to-top']?.addEventListener('click', returnToTop)"));
+assert.ok(ui.includes("navigation-top-button"));
 assert.ok(ui.includes("classList.toggle('at-top'"));
+assert.ok(cssRelease.includes('.back-to-top { display: none !important; }'));
 
 // Unified icon cache and redesigned relation secondary jump.
 assert.ok(ui.includes('const ICONS = {'));
@@ -220,13 +226,16 @@ assert.ok(ui.includes('function displayGlossForRelationItem'));
 assert.ok(ui.includes("className: 'relation-gloss'"));
 assert.ok(!ui.includes('preferredNormalDestination'), '旧版回退到总表的目标解析不得保留');
 
-// Seed reset: backup download starts first, then a compact confirmation; no checkbox gate.
-assert.ok(ui.includes('vocabulary-index-recovery-before-seed'));
+// High-risk operations offer an optional backup choice, then continue through the actual confirmation.
+assert.ok(ui.includes('function offerOptionalBackup'));
+assert.ok(ui.includes("submitText: '下载备份'"));
+assert.ok(ui.includes("cancelText: '不下载'"));
+assert.ok(ui.includes('此选择只决定是否下载备份；无论选择哪一项，操作都会继续。'));
+assert.ok(ui.includes('choiceRequired: true'));
 assert.ok(ui.includes("title: '还原到当前版本 Seed'"));
-assert.ok(ui.includes("description: '完整备份下载已发起。确认后将替换全部本地内容和个人状态。'"));
+assert.ok(ui.includes("description: '确认后将替换全部本地内容和个人状态。'"));
 assert.ok(!ui.includes('seed-reset-confirm'));
 assert.ok(!ui.includes('我已确认备份'));
-assert.ok(ui.includes('vocabulary-index-recovery-before-restore'));
 assert.ok(ui.includes("title: '确认恢复完整备份'"));
 assert.ok(ui.includes("title: '确认完整替换'"));
 assert.ok(exchange.includes('createVixPackage'));
@@ -253,6 +262,22 @@ assert.ok(!css.includes('backdrop-filter: blur(18px)'));
 assert.ok(!css.includes('backdrop-filter: blur(16px)'));
 assert.ok(!css.includes('backdrop-filter: blur(14px)'));
 
+// 3.3.1 regression guards for virtual views, local annotation writes, and corrected cascade.
+assert.ok(model.includes('export function positionScopeDomainId'));
+assert.ok(ui.includes('return positionScopeDomainId(collection, entry)'));
+assert.ok(ui.includes('lastPersistedPositionKey'));
+assert.ok(ui.includes('lastPersistedPositionKey = `${positionDomainId(collection)}'));
+assert.ok(ui.includes('visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)'));
+assert.ok(store.includes('cleanStudyStampReferences'));
+assert.ok(store.includes('migrateGlobalStudyStampOnRename'));
+assert.ok(store.includes("emit('annotation-change'"));
+assert.ok(!store.match(/export async function replaceAnnotations[\s\S]{0,1800}backupFromState/));
+assert.ok(exchange.includes('memberships = memberships.filter((item) => !removed.has(item.entryId))'));
+assert.ok(cssRelease.includes('.review-bar .review-edit'));
+assert.ok(cssRelease.includes('display: inline-flex !important'));
+assert.ok(html.includes('./css/v3.3.1.css'));
+assert.ok(sw.includes('./css/v3.3.1.css'));
+
 // PWA precache resources exist and do not duplicate.
 const precacheBody = sw.match(/const PRECACHE = \[([\s\S]*?)\];/)?.[1] || '';
 const precache = [...precacheBody.matchAll(/['"](\.\/[^'"]+)['"]/g)].map((match) => match[1]);
@@ -265,7 +290,7 @@ assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));
 assert.ok(!sw.match(/addEventListener\('install'[\s\S]*?\}\);/)?.[0].includes('skipWaiting'));
 
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.3.0'));
+assert.ok(manifest.name.includes('3.3.1'));
 assert.equal(manifest.start_url, './');
 assert.equal(manifest.scope, './');
 assert.equal(manifest.display, 'standalone');

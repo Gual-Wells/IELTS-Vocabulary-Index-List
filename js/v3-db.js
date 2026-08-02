@@ -177,7 +177,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -240,7 +240,7 @@ export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
 
   return canonicalizeBackup({
     ...base,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     domains,
     collections,
     entries,
@@ -267,7 +267,7 @@ async function ensureBuiltInSeedRevision(db) {
     const settingRecords = await getAllFromTransaction(readTx, STORES.settings);
     snapshot.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
     await readCompletion;
-    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.3.0', exportedAt: new Date().toISOString(), ...snapshot });
+    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.3.1', exportedAt: new Date().toISOString(), ...snapshot });
     const merged = mergeBuiltInDomainBackup(current, await loadCanonicalSeed());
     const revision = Math.max(Date.now(), Number(snapshot.settings?.dataRevision || 0) + 1);
     const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
@@ -408,7 +408,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });

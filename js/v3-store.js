@@ -1,6 +1,6 @@
 import {
-  buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
-  createMembership, createStudyStamp, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
+  buildPhraseTokens, buildProjection, canonicalizeBackup, cleanStudyStampReferences, createCollection, createDomain, createEntry,
+  createMembership, createStudyStamp, globalStudyStampKey, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
   safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, tokenizeEnglish,
 } from './v3-model.js';
 import {
@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 4,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -37,7 +37,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.3.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.3.1', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -174,6 +174,41 @@ function mapById(items, key = 'id') {
   return new Map(items.map((item) => [item[key], item]));
 }
 
+function removeEntryStudyReferences(draft, entry) {
+  if (!entry) return;
+  const remainingAggregate = draft.entries.some((item) => item.id !== entry.id
+    && item.kind === entry.kind && item.normalizedText === entry.normalizedText);
+  const globalKey = globalStudyStampKey(entry.kind, entry.normalizedText);
+  draft.studyStamps = draft.studyStamps.filter((item) => {
+    if (item.scope === 'entry') return item.entryId !== entry.id;
+    if (item.scope === 'global' && item.key === globalKey) return remainingAggregate;
+    return true;
+  });
+}
+
+function migrateGlobalStudyStampOnRename(draft, beforeEntry, afterEntry) {
+  if (!beforeEntry || !afterEntry || beforeEntry.normalizedText === afterEntry.normalizedText) return;
+  const oldKey = globalStudyStampKey(beforeEntry.kind, beforeEntry.normalizedText);
+  const oldStamp = draft.studyStamps.find((item) => item.key === oldKey);
+  if (!oldStamp) return;
+  const oldAggregateStillExists = draft.entries.some((item) => item.id !== beforeEntry.id
+    && item.kind === beforeEntry.kind && item.normalizedText === beforeEntry.normalizedText);
+  if (oldAggregateStillExists) return;
+  const newKey = globalStudyStampKey(afterEntry.kind, afterEntry.normalizedText);
+  const existingNew = draft.studyStamps.find((item) => item.key === newKey);
+  draft.studyStamps = draft.studyStamps.filter((item) => item.key !== oldKey);
+  if (!existingNew) {
+    draft.studyStamps.push({
+      ...oldStamp,
+      key: newKey,
+      kind: afterEntry.kind,
+      normalizedText: afterEntry.normalizedText,
+      reviewedAt: new Date().toISOString(),
+      revision: Number(oldStamp.revision || 0) + 1,
+    });
+  }
+}
+
 function jsonEqual(a, b) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
@@ -244,26 +279,49 @@ function normalizeSoftReferences(backup) {
   const entryById = mapById(backup.entries);
   const collectionById = mapById(backup.collections);
   backup.pins = backup.pins.flatMap((pin) => {
-    const entry = entryById.get(pin.entryId);
+    let entry = entryById.get(pin.entryId);
     if (!entry) return [];
     let collectionId = pin.contextCollectionId;
     if (!(projection.get(collectionId) || []).some((item) => item.id === entry.id)) {
-      collectionId = [...projection.entries()].find(([id, list]) => {
-        const collection = collectionById.get(id);
-        return collection?.domainId === entry.domainId && list.some((item) => item.id === entry.id);
-      })?.[0] || '';
+      if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
+        const representative = (projection.get(collectionId) || [])
+          .find((item) => item.kind === entry.kind && item.normalizedText === entry.normalizedText);
+        if (representative) entry = representative;
+      }
+      if (!(projection.get(collectionId) || []).some((item) => item.id === entry.id)) {
+        collectionId = [...projection.entries()].find(([id, list]) => {
+          const collection = collectionById.get(id);
+          return collection?.domainId === entry.domainId && list.some((item) => item.id === entry.id);
+        })?.[0] || '';
+      }
     }
     if (!collectionId) return [];
-    return [{ ...pin, domainId: entry.domainId, contextCollectionId: collectionId }];
+    return [{ ...pin, id: safeId('pin', entry.id), entryId: entry.id, domainId: entry.domainId, contextCollectionId: collectionId }];
   });
 
   const lastPositions = { ...(backup.settings?.lastPositions || {}) };
   for (const [key, entryId] of Object.entries(lastPositions)) {
     const parts = key.split(':');
     const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
-    if (!(projection.get(collectionId) || []).some((item) => item.id === entryId)) delete lastPositions[key];
+    if ((projection.get(collectionId) || []).some((item) => item.id === entryId)) continue;
+    const oldEntry = entryById.get(entryId);
+    if (oldEntry && [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
+      const representative = (projection.get(collectionId) || [])
+        .find((item) => item.kind === oldEntry.kind && item.normalizedText === oldEntry.normalizedText);
+      if (representative) {
+        lastPositions[key] = representative.id;
+        continue;
+      }
+    }
+    delete lastPositions[key];
   }
-  backup.settings = { ...backup.settings, lastPositions };
+  const validCollectionIds = new Set(projection.keys());
+  const viewModes = Object.fromEntries(Object.entries(backup.settings?.viewModes || {})
+    .filter(([collectionId]) => validCollectionIds.has(collectionId)));
+  const calendarMonths = Object.fromEntries(Object.entries(backup.settings?.calendarMonths || {})
+    .filter(([key]) => validCollectionIds.has(key.slice(0, key.lastIndexOf(':')))));
+  backup.settings = { ...backup.settings, lastPositions, viewModes, calendarMonths };
+  cleanStudyStampReferences(backup);
   return backup;
 }
 
@@ -423,6 +481,7 @@ function removeOrphanWord(draft, entryId) {
   draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
   draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
   draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
+  removeEntryStudyReferences(draft, entry);
 }
 
 export async function deleteDomain(domainId) {
@@ -437,7 +496,8 @@ export async function deleteDomain(domainId) {
     draft.memberships = draft.memberships.filter((item) => !entryIds.has(item.entryId));
     draft.pins = draft.pins.filter((item) => !entryIds.has(item.entryId));
     draft.annotations = draft.annotations.filter((item) => !entryIds.has(item.entryId));
-    draft.studyStamps = draft.studyStamps.filter((item) => item.scope === 'global' || !entryIds.has(item.entryId));
+    draft.studyStamps = draft.studyStamps.filter((item) => item.scope !== 'entry' || !entryIds.has(item.entryId));
+    cleanStudyStampReferences(draft);
   });
 }
 
@@ -508,6 +568,8 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
         draft.entries = draft.entries.filter((item) => !removed.has(item.id));
         draft.pins = draft.pins.filter((item) => !removed.has(item.entryId));
         draft.annotations = draft.annotations.filter((item) => !removed.has(item.entryId));
+        draft.studyStamps = draft.studyStamps.filter((item) => item.scope !== 'entry' || !removed.has(item.entryId));
+        cleanStudyStampReferences(draft);
       }
     }
     const mergedItems = new Map();
@@ -602,7 +664,9 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
     if (candidate.kind === 'word' && !draft.memberships.some((item) => item.entryId === entry.id)) {
       throw new Error('系统短语不能直接改成普通词；请先在普通词表中新增该词。');
     }
+    const beforeEntry = { ...entry };
     Object.assign(entry, candidate);
+    if (textChanged) migrateGlobalStudyStampOnRename(draft, beforeEntry, entry);
     if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
     if (entry.kind === 'word') removeOrphanWord(draft, entry.id);
   });
@@ -627,7 +691,9 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
     if (collision) throw new Error('同一词域内已有该内容');
     const textChanged = candidate.normalizedText !== entry.normalizedText;
+    const beforeEntry = { ...entry };
     Object.assign(entry, candidate);
+    if (textChanged) migrateGlobalStudyStampOnRename(draft, beforeEntry, entry);
     if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
     if (collection.type === 'normal') {
       const membership = draft.memberships.find((item) => item.entryId === entryId && item.collectionId === collectionId);
@@ -650,11 +716,12 @@ export async function removeEntryFromCollection(entryId, collectionId) {
 
 export async function deleteEntry(entryId) {
   return mutate('删除内容', (draft) => {
+    const entry = draft.entries.find((item) => item.id === entryId);
     draft.entries = draft.entries.filter((item) => item.id !== entryId);
     draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
     draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
     draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
-    draft.studyStamps = draft.studyStamps.filter((item) => item.scope === 'global' || item.entryId !== entryId);
+    removeEntryStudyReferences(draft, entry);
   });
 }
 
@@ -664,12 +731,12 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
   if (!entry) throw new Error('内容不存在');
   if (!state.visibleEntryIdsByCollection.get(contextCollectionId)?.has(entryId)) throw new Error('PIN 上下文不可见');
   let after = null;
-  if (!existing) {
+  if (!existing || existing.contextCollectionId !== contextCollectionId) {
     const siblingPins = state.pins.filter((item) => item.contextCollectionId === contextCollectionId);
     after = {
-      id: safeId('pin', entryId), entryId, domainId: entry.domainId, contextCollectionId,
+      id: existing?.id || safeId('pin', entryId), entryId, domainId: entry.domainId, contextCollectionId,
       order: siblingPins.length ? Math.max(...siblingPins.map((item) => Number(item.order || 0))) + 1 : 0,
-      createdAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || new Date().toISOString(),
     };
   }
   const key = existing?.id || after.id;
@@ -678,12 +745,12 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
       label: '切换 PIN', expectedRevision: state.revision,
     });
     state.pins = existing
-      ? state.pins.filter((item) => item.entryId !== entryId)
+      ? (after ? state.pins.map((item) => item.entryId === entryId ? after : item) : state.pins.filter((item) => item.entryId !== entryId))
       : [...state.pins, after];
     state.pinByEntry = new Map(state.pins.map((item) => [item.entryId, item]));
     state.revision = revision;
     state.settings.dataRevision = revision;
-    emit('mutation', { kind: 'pin', entryId, contextCollectionId });
+    emit('mutation', { kind: 'pin', entryId, contextCollectionId, moved: Boolean(existing && after) });
     broadcast(revision);
     return state;
   } catch (error) {
@@ -817,45 +884,87 @@ export async function setNumberMode(mode) {
   return true;
 }
 
-export async function replaceAnnotations(entryIds, annotations) {
-  return mutate('保存 AI 标注', (draft) => {
-    const target = new Set(entryIds);
-    draft.annotations = draft.annotations.filter((item) => !target.has(item.entryId));
-    for (const annotation of annotations) {
-      const entry = draft.entries.find((item) => item.id === annotation.entryId);
-      if (!entry || !target.has(entry.id)) continue;
-      const suggestion = normalizeDisplayText(annotation?.spelling?.suggestion || annotation?.suggestion || '');
-      const reason = normalizeDisplayText(annotation?.reason || '');
-      if (!suggestion && !reason) continue;
-      draft.annotations.push({
-        entryId: entry.id,
-        domainId: entry.domainId,
-        spelling: { incorrect: Boolean(annotation?.spelling?.incorrect ?? suggestion), suggestion },
-        reason,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
+async function commitAnnotationSet(nextAnnotations, label, detail = {}, retry = true, expectedRevision = null) {
+  if (expectedRevision != null && Number(state.revision) !== Number(expectedRevision)) return state;
+  const sanitized = nextAnnotations.filter((item) => {
+    const entry = state.entryById.get(item.entryId);
+    return entry && entry.domainId === item.domainId;
   });
+  const before = new Map(state.annotations.map((item) => [item.entryId, item]));
+  const after = new Map(sanitized.map((item) => [item.entryId, item]));
+  const ids = new Set([...before.keys(), ...after.keys()]);
+  const changes = [];
+  for (const entryId of ids) {
+    const left = before.get(entryId) || null;
+    const right = after.get(entryId) || null;
+    if (!jsonEqual(left, right)) changes.push({ store: 'annotations', key: entryId, before: left ? clone(left) : null, after: right ? clone(right) : null });
+  }
+  if (!changes.length) return state;
+  try {
+    const revision = await commitChanges(changes, { label, expectedRevision: state.revision });
+    state.annotations = [...after.values()].sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
+    state.annotationByEntry = new Map(state.annotations.map((item) => [item.entryId, item]));
+    state.revision = revision;
+    state.settings.dataRevision = revision;
+    emit('annotation-change', { ...detail, entryIds: [...ids] });
+    broadcast(revision);
+    return state;
+  } catch (error) {
+    if (retry && String(error?.message || error).includes('另一实例')) {
+      await reloadStore('sync');
+      if (expectedRevision != null && Number(state.revision) !== Number(expectedRevision)) return state;
+      return commitAnnotationSet(nextAnnotations, label, detail, false, expectedRevision);
+    }
+    throw error;
+  }
+}
+
+export async function replaceAnnotations(entryIds, annotations, { expectedEntries = [], expectedRevision = null } = {}) {
+  const target = new Set(entryIds);
+  const expected = new Map(expectedEntries.map((item) => [item.id, item]));
+  const retained = state.annotations.filter((item) => !target.has(item.entryId));
+  const now = new Date().toISOString();
+  const next = [...retained];
+  for (const annotation of annotations) {
+    const entry = state.entryById.get(annotation.entryId);
+    if (!entry || !target.has(entry.id)) continue;
+    const snapshot = expected.get(entry.id);
+    if (snapshot && (snapshot.updatedAt !== entry.updatedAt || snapshot.normalizedText !== entry.normalizedText)) continue;
+    const suggestion = normalizeDisplayText(annotation?.spelling?.suggestion || annotation?.suggestion || '');
+    const reason = normalizeDisplayText(annotation?.reason || '');
+    if (!suggestion && !reason) continue;
+    const existing = state.annotationByEntry.get(entry.id);
+    next.push({
+      entryId: entry.id,
+      domainId: entry.domainId,
+      spelling: { incorrect: Boolean(annotation?.spelling?.incorrect ?? suggestion), suggestion },
+      reason,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    });
+  }
+  return commitAnnotationSet(next, '保存 AI 标注', { kind: 'batch' }, true, expectedRevision);
 }
 
 export async function dismissAnnotation(entryId) {
-  return mutate('取消 AI 标注', (draft) => {
-    draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
-  });
+  return commitAnnotationSet(state.annotations.filter((item) => item.entryId !== entryId), '取消 AI 标注', { kind: 'dismiss' });
 }
 
 export async function clearAnnotationsForCollection(collectionId) {
-  return mutate('清空词表 AI 标注', (draft) => {
-    const visibleIds = new Set((buildProjection(draft).get(collectionId) || []).map((item) => item.id));
-    draft.annotations = draft.annotations.filter((item) => !visibleIds.has(item.entryId));
-  });
+  const visibleEntries = state.projection.get(collectionId) || [];
+  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
+    const visibleKeys = new Set(visibleEntries.map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
+    return commitAnnotationSet(state.annotations.filter((item) => {
+      const entry = state.entryById.get(item.entryId);
+      return !entry || !visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`);
+    }), '清空词表 AI 标注', { kind: 'clear-collection', collectionId });
+  }
+  const visibleIds = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
+  return commitAnnotationSet(state.annotations.filter((item) => !visibleIds.has(item.entryId)), '清空词表 AI 标注', { kind: 'clear-collection', collectionId });
 }
 
 export async function clearAllAnnotations() {
-  return mutate('清空全部 AI 标注', (draft) => {
-    draft.annotations = [];
-  });
+  return commitAnnotationSet([], '清空全部 AI 标注', { kind: 'clear-all' });
 }
 
 export function getVisibleEntries(collectionId) {

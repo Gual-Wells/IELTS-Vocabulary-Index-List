@@ -1,4 +1,4 @@
-# Vocabulary Index 3.3.0 数据格式
+# Vocabulary Index 3.3.1 数据格式
 
 ## 1. 完整备份
 
@@ -7,7 +7,7 @@
 ```json
 {
   "schemaVersion": 4,
-  "appVersion": "3.3.0",
+  "appVersion": "3.3.1",
   "domains": [],
   "collections": [],
   "entries": [],
@@ -86,7 +86,7 @@ Membership 只指向 `normal` Collection。普通表可以同时拥有词汇和�
 
 ### Settings
 
-3.3.0 相关字段：
+3.3.1 相关字段：
 
 ```json
 {
@@ -163,7 +163,7 @@ VIX 内容 JSON明确不包含：
 
 ## 4. Seed
 
-`settings.builtInSeedRevision` 当前值为 3。Seed 恢复会重置内容和个人学习状态；执行前应生成完整备份。
+`settings.builtInSeedRevision` 当前值为 3。Seed 恢复会重置内容和个人学习状态；执行前会询问是否下载完整备份。
 
 ## 5. Schema
 
@@ -186,7 +186,7 @@ data/vix-json.schema.json
   "generatedAt": "2026-08-02T03:00:00.000Z",
   "application": {
     "name": "Vocabulary Index",
-    "version": "3.3.0"
+    "version": "3.3.1"
   },
   "currentView": {
     "collectionId": "collection_computer_software_data",

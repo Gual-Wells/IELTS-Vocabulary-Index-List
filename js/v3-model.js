@@ -59,6 +59,24 @@ export function domainIdFromSystemWordsCollectionId(collectionId) {
     : '';
 }
 
+export function positionScopeDomainId(collection, entry = null) {
+  if (collection?.virtual && !collection?.domainId) return 'global';
+  return collection?.domainId || entry?.domainId || 'global';
+}
+
+export function globalStudyStampKey(kind, normalizedText) {
+  return `global:${kind}:${normalizedText}`;
+}
+
+export function cleanStudyStampReferences(backup) {
+  const entryIds = new Set((backup?.entries || []).map((item) => item.id));
+  const aggregateKeys = new Set((backup?.entries || []).map((item) => globalStudyStampKey(item.kind, item.normalizedText)));
+  backup.studyStamps = (backup?.studyStamps || []).filter((item) => item.scope === 'entry'
+    ? entryIds.has(item.entryId)
+    : item.scope === 'global' && aggregateKeys.has(item.key));
+  return backup;
+}
+
 function hash32(input, seed = 0x811c9dc5) {
   let hash = seed >>> 0;
   for (const character of String(input)) {
@@ -1523,7 +1541,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.3.0',
+    appVersion: '3.3.1',
     exportedAt: timestamp,
     domains,
     collections,
@@ -1598,7 +1616,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.3.0'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.3.1'),
     exportedAt: timestamp,
     domains,
     collections,

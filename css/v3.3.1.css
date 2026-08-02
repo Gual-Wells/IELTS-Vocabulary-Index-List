@@ -1,0 +1,270 @@
+/* Vocabulary Index 3.3.1 corrective layer.
+   This file intentionally owns the final iPhone geometry and state visuals so
+   legacy release rules in v3.css cannot silently override the current design. */
+
+:root {
+  --relation-rail-width: 18px;
+  --entry-index-offset: 38px;
+  --update-overlay-offset: 0px;
+  --entry-row-estimate: 68px;
+  --chrome-surface: #f5f1e8;
+}
+
+html,
+body {
+  background: var(--bg);
+  overflow-x: clip;
+}
+
+.app.has-pin,
+.app.has-review { --context-height: 0px; }
+
+/* Fixed compact navigation: explicit grid areas prevent the home title from
+   falling into the 44px back-button column when the back button is hidden. */
+.topbar {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas: "back title actions";
+  background: var(--chrome-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.topbar::before { background: var(--chrome-surface); }
+.topbar > #back-button { grid-area: back; }
+.topbar > .brand-block { grid-area: title; min-width: 0; }
+.topbar > .topbar-actions { grid-area: actions; }
+.app:not(.is-collection) #back-button.hidden {
+  display: grid !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.update-banner,
+.home-annotation-banner,
+.context-bar,
+.letter-nav {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.update-banner { background: var(--accent-ink); }
+.home-annotation-banner { background: #fff4c9; }
+.context-bar { background: var(--surface-strong); }
+.letter-nav {
+  background: var(--chrome-surface);
+  box-shadow: 0 8px 16px rgb(54 48 38 / 5%);
+}
+.section-letter-nav { background: var(--chrome-surface); }
+
+
+/* Overlay geometry stays outside document flow but uses separate slots so
+   update, home warning, context controls, and sticky navigation never occupy
+   the same interactive area. */
+.home-annotation-banner {
+  top: calc(var(--topbar-height) + var(--update-overlay-offset) + 8px);
+}
+.context-bar {
+  top: calc(var(--topbar-height) + var(--update-overlay-offset) + 62px);
+  max-width: min(760px, calc(100vw - 24px));
+  margin-inline: auto;
+}
+.letter-nav {
+  top: calc(var(--topbar-height) + var(--update-overlay-offset));
+}
+.letter-body,
+.date-day-body,
+.unmarked-body { padding-left: 0 !important; }
+
+/* The persistent return-to-top action now lives in the sticky navigation
+   tools, not over list rows. The legacy floating control remains hidden. */
+.back-to-top { display: none !important; }
+.navigation-top-button.at-top {
+  color: color-mix(in srgb, var(--muted) 46%, transparent);
+  background: transparent;
+}
+.navigation-top-button:not(.at-top) { color: var(--accent); }
+
+/* Stable outer geometry: number track, normal body, and relation track are
+   independent. Relation presence never changes body widths or spacing. */
+.entry-row {
+  margin-left: var(--entry-index-offset);
+  overflow: visible;
+}
+.entry-primary-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--relation-rail-width);
+  align-items: stretch;
+}
+.entry-line {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 48px 160px;
+}
+.entry-index-badge {
+  left: calc(-1 * var(--entry-index-offset) + 1px);
+  width: 35px;
+  min-width: 35px;
+  max-width: 35px;
+  height: 26px;
+  padding-inline: 4px;
+  border-radius: 8px;
+  font-size: 10.25px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* Local horizontal text view: complete text, no ellipsis. Edge fades are
+   rendered only when content actually overflows and follow the scroll state. */
+.entry-text-viewport.has-overflow.at-scroll-start:not(.at-scroll-end) {
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
+}
+.entry-text-viewport.has-overflow:not(.at-scroll-start):not(.at-scroll-end) {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 18px), transparent 100%);
+}
+.entry-text-viewport.has-overflow.at-scroll-end:not(.at-scroll-start) {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 100%);
+}
+.phrase-two-line .entry-text-viewport {
+  overflow: hidden;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+.phrase-two-line .entry-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Attached relation control: visually subordinate, formally designed, and
+   aligned to the body without consuming any internal entry space. */
+.entry-relation-rail { min-width: var(--relation-rail-width); }
+.entry-relation-tab {
+  min-width: var(--relation-rail-width);
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+  background: linear-gradient(180deg, #f8faf8 0%, #edf2ef 100%);
+  color: color-mix(in srgb, var(--accent) 84%, var(--muted));
+  box-shadow: 1px 1px 3px rgb(45 80 66 / 3%);
+}
+.entry-relation-tab.active {
+  background: linear-gradient(180deg, #e8f0ec, #dfeae4);
+  color: var(--accent-ink);
+}
+.entry-relation-tab .ui-icon {
+  width: 11.5px;
+  height: 11.5px;
+  transition: transform .18s cubic-bezier(.2,.72,.2,1);
+}
+.entry-relation-tab.active .relation-disclosure { transform: rotate(90deg); }
+.relation-panel {
+  margin-right: var(--relation-rail-width);
+  border-left-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+}
+.relation-item { grid-template-columns: minmax(82px, auto) minmax(0, 1fr) 42px; }
+.relation-jump,
+.relation-jump-placeholder { width: 42px; min-width: 42px; height: 42px; }
+.relation-jump {
+  color: var(--accent);
+  border-radius: 11px;
+}
+.relation-jump .ui-icon { width: 18px; height: 18px; }
+
+/* Annotation review controls must remain available on iPhone. */
+.review-bar .review-edit,
+.review-bar .review-dismiss {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.review-bar {
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  grid-template-rows: auto auto;
+  gap: 4px;
+  min-height: 72px;
+  padding: 6px;
+}
+.review-bar .review-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.review-bar button {
+  min-width: 38px;
+  min-height: 38px;
+  padding-inline: 8px;
+}
+.entry-row.annotated .entry-line { cursor: pointer; }
+.entry-row.annotated .entry-text-viewport { cursor: pointer; }
+
+/* Modal proportions and hierarchy. Visual close glyph stays low weight while
+   retaining the 44pt hit target. */
+.app-dialog {
+  width: min(356px, calc(100vw - 48px));
+  max-height: min(calc(var(--visual-height) - 72px), 720px);
+}
+.sheet-dialog {
+  width: min(376px, calc(100vw - 40px));
+  margin-bottom: calc(18px + var(--safe-bottom));
+}
+.confirm-dialog { width: min(310px, calc(100vw - 56px)); }
+.search-dialog .dialog-card {
+  left: max(20px, env(safe-area-inset-left, 0px));
+  right: max(20px, env(safe-area-inset-right, 0px));
+  top: calc(var(--visual-top) + var(--safe-top) + 82px);
+  max-height: calc(var(--visual-height) - var(--safe-top) - var(--safe-bottom) - 122px);
+}
+.keyboard-visible .search-dialog .dialog-card {
+  top: calc(var(--visual-top) + var(--safe-top) + 16px);
+  max-height: calc(var(--visual-height) - var(--safe-top) - 32px);
+}
+.dialog-header .icon-button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+.dialog-header .icon-button:active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.dialog-header .icon-button .ui-icon { width: 18px; height: 18px; }
+
+/* Toasts avoid fixed chrome and its optional update overlay. */
+.toast-region {
+  top: var(--toast-top, calc(var(--topbar-height) + var(--update-overlay-offset) + 66px));
+  z-index: 118;
+}
+
+.manager-count {
+  max-width: 148px;
+  text-align: right;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+}
+
+@media (max-width: 390px) {
+  :root {
+    --relation-rail-width: 17px;
+    --entry-index-offset: 36px;
+  }
+  .entry-line { grid-template-columns: minmax(0, 1fr) 42px 148px; }
+  .entry-index-badge { width: 33px; min-width: 33px; max-width: 33px; }
+  .review-bar { grid-template-columns: 36px minmax(0,1fr) 36px; gap: 3px; }
+  .review-bar button { min-width: 36px; min-height: 36px; padding-inline: 6px; font-size: 11px; }
+  .phrase-two-line .entry-line { grid-template-columns: minmax(0, 1fr) 39px 138px; }
+  .app-dialog { width: calc(100vw - 40px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-relation-tab .ui-icon { transition: none !important; }
+}

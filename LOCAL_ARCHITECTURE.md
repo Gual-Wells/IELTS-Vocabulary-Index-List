@@ -1,4 +1,4 @@
-# Vocabulary Index 3.3.0 本地架构
+# Vocabulary Index 3.3.1 本地架构
 
 ## 目标
 

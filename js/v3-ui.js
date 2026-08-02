@@ -13,11 +13,11 @@ import {
 import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
-import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID } from './v3-model.js';
+import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.3.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -43,14 +43,15 @@ let activeTask = null;
 let review = { ids: [], index: 0, collectionId: '' };
 let dialogSubmitHandler = null;
 let confirmSubmitHandler = null;
+let confirmCancelHandler = null;
+let confirmChoiceRequired = false;
 let collectionRenderContext = null;
 let scrollPersistenceTimer = 0;
 let suppressScrollPersistenceUntil = 0;
 let taskPanelExpanded = true;
 let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
-let lastPersistedEntryId = '';
-let suppressNextMutationRender = false;
+let lastPersistedPositionKey = '';
 let activeSection = 'main';
 let navigationRevision = 0;
 const expandedRelations = new Set();
@@ -60,8 +61,8 @@ let openModalCount = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
 let activeQueryMenu = null;
-let lastTextScrollAt = 0;
 let scrollUiFrame = 0;
+let routeRenderFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
 const entryChunkByEntryId = new Map();
@@ -95,28 +96,28 @@ const ICONS = {
   search: '<circle cx="10.7" cy="10.7" r="6.2"></circle><path d="m15.4 15.4 4.4 4.4"></path>',
   target: '<circle cx="12" cy="12" r="6.4"></circle><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4"></path>',
   relation: '<path d="M8 7.2h8M8.2 16.8h7.6"></path><circle cx="6" cy="7.2" r="2"></circle><circle cx="18" cy="7.2" r="2"></circle><circle cx="6" cy="16.8" r="2"></circle><circle cx="18" cy="16.8" r="2"></circle>',
-  disclosure: '<path d="M8.8 5.7c0-.75.86-1.18 1.46-.72l7.1 5.55c.88.68.88 2.01 0 2.7l-7.1 5.55c-.6.46-1.46.03-1.46-.72V5.7Z" fill="currentColor" stroke="none"></path>',
-  jump: '<path d="M13.5 5.2h4.2c.6 0 1.1.5 1.1 1.1v4.2"></path><path d="m18.4 5.6-7.1 7.1"></path><path d="M17.8 13.3v4.4c0 .6-.5 1.1-1.1 1.1H6.3c-.6 0-1.1-.5-1.1-1.1V7.3c0-.6.5-1.1 1.1-1.1h4.4"></path>',
+  disclosure: '<path d="M8.9 6.35c0-.72.78-1.15 1.39-.77l6.95 4.34c1.25.78 1.25 2.6 0 3.38l-6.95 4.34c-.61.38-1.39-.05-1.39-.77V6.35Z"></path><path d="m11.35 9.25 4.2 2.75-4.2 2.75"></path>',
+  jump: '<circle cx="8.2" cy="12" r="3.3"></circle><circle cx="8.2" cy="12" r=".85" fill="currentColor" stroke="none"></circle><path d="M11.7 12h7.1M16 9.25 18.8 12 16 14.75"></path>',
   pin: '<path d="M9.1 3.8h5.8l-.75 4.4 2.8 2.75v1.75h-3.65v6.25L12 21l-1.3-2.05V12.7H7.05v-1.75l2.8-2.75-.75-4.4Z"></path>',
   more: '<circle cx="5.2" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="18.8" cy="12" r="1.35" fill="currentColor" stroke="none"></circle>',
   chevron: '<path d="m8.4 9.3 3.6 3.6 3.6-3.6"></path>',
   enter: '<path d="M18.8 5.2v6.9H7.1"></path><path d="m10.1 9.1-3 3 3 3"></path>',
-  refresh: '<rect x="4.1" y="5.8" width="15.8" height="14.1" rx="2.4"></rect><path d="M8 3.5v4.1M16 3.5v4.1M4.1 10.1h15.8"></path><path d="M15.9 13.5a3.7 3.7 0 1 1-1.05-1.55"></path><path d="M15.9 11.4v2.4h-2.4"></path>',
+  refresh: '<rect x="4.2" y="5.4" width="15.6" height="14.4" rx="2.5"></rect><path d="M8 3.5v3.9M16 3.5v3.9M4.2 9.7h15.6"></path><path d="M15.8 13.1a3.55 3.55 0 1 1-1.05-1.2"></path><path d="M15.8 11.15v2.35h-2.35"></path>',
   calendar: '<rect x="3.8" y="5.4" width="16.4" height="15" rx="2.4"></rect><path d="M8 3.4v4M16 3.4v4M3.8 9.9h16.4"></path>',
   alphabet: '<path d="M4.8 19 9.6 5l4.8 14M6.7 14h5.8"></path><path d="M16.6 8.1h3.2l-3.2 4.1h3.2"></path>',
   phrase: '<path d="M4.5 6.5h15M4.5 12h11.2M4.5 17.5h15"></path>',
   word: '<path d="M5.2 5.1h13.6M12 5.1v13.8M8.2 18.9h7.6"></path>',
   unmarked: '<circle cx="12" cy="12" r="8.1"></circle><path d="M9.5 9.5a2.75 2.75 0 1 1 4.15 2.35c-1.05.62-1.65 1.16-1.65 2.25M12 17.3h.01"></path>',
-  top: '<path d="m6.3 13.8 5.7-5.7 5.7 5.7"></path><path d="M12 8.4v11.1M5.1 4.5h13.8"></path>',
+  top: '<path d="M5.2 5h13.6"></path><path d="m7.1 12.2 4.9-4.9 4.9 4.9"></path><path d="M12 7.7v11.2"></path>',
   intra: '<rect x="4.2" y="5.2" width="15.6" height="13.6" rx="2.4"></rect><path d="M7.4 12h8.5M13.1 9.2 15.9 12l-2.8 2.8"></path>',
   external: '<rect x="3.3" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><rect x="14.1" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><path d="M9.6 12h6.1M13.2 9.4l2.6 2.6-2.6 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
   dictionary: '<path d="M4.3 6.2A3.2 3.2 0 0 1 7.5 3H12v16.7H7.5a3.2 3.2 0 0 0-3.2 3.2V6.2Z"></path><path d="M19.7 6.2A3.2 3.2 0 0 0 16.5 3H12v16.7h4.5a3.2 3.2 0 0 1 3.2 3.2V6.2Z"></path><path d="M7.2 7.4h2.1M14.7 7.4h2.1M7.2 11h2.1M14.7 11h2.1"></path>',
   aiChat: '<path d="M5.1 4.2h13.8a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2h-7.5l-5.5 4.1v-4.1h-.8a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2Z"></path><path d="m12 7.1.72 1.68 1.68.72-1.68.72L12 11.9l-.72-1.68-1.68-.72 1.68-.72L12 7.1Z" fill="currentColor" stroke="none"></path>',
-  query: '<circle cx="9.4" cy="10.2" r="5.2"></circle><path d="m13.3 14.1 3.8 3.8"></path><path d="m17.4 5.2.55 1.28 1.28.55-1.28.55-.55 1.28-.55-1.28-1.28-.55 1.28-.55.55-1.28Z" fill="currentColor" stroke="none"></path>',
+  query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
   clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
-  close: '<path d="m7 7 10 10M17 7 7 17"></path>',
+  close: '<path d="m7.35 7.35 9.3 9.3M16.65 7.35l-9.3 9.3"></path>',
   grip: '<circle cx="8" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="17" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="17" r="1.15" fill="currentColor" stroke="none"></circle>',
   add: '<path d="M12 5v14M5 12h14"></path>',
 };
@@ -130,7 +131,7 @@ function svgIcon(name, className = '') {
     template.setAttribute('focusable', 'false');
     template.setAttribute('fill', 'none');
     template.setAttribute('stroke', 'currentColor');
-    template.setAttribute('stroke-width', '1.8');
+    template.setAttribute('stroke-width', '1.75');
     template.setAttribute('stroke-linecap', 'round');
     template.setAttribute('stroke-linejoin', 'round');
     template.innerHTML = ICONS[name] || '';
@@ -188,6 +189,24 @@ function updateVisualViewportVars() {
     document.documentElement.classList.toggle('keyboard-visible', keyboardVisible);
     elements['search-dialog']?.classList.toggle('keyboard-visible', keyboardVisible);
     if (activeQueryMenu) positionQueryMenu();
+    updateOverlayLayout();
+  });
+}
+
+function updateOverlayLayout() {
+  requestAnimationFrame(() => {
+    const updateVisible = elements['update-banner'] && !elements['update-banner'].classList.contains('hidden');
+    const updateHeight = updateVisible ? Math.ceil(elements['update-banner'].getBoundingClientRect().height + 8) : 0;
+    document.documentElement.style.setProperty('--update-overlay-offset', `${updateHeight}px`);
+    requestAnimationFrame(() => {
+      const viewportTop = window.visualViewport?.offsetTop || 0;
+      const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .context-bar, .letter-nav')]
+        .filter((node) => !node.classList.contains('hidden'))
+        .map((node) => node.getBoundingClientRect())
+        .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280);
+      const bottom = topSurfaces.reduce((value, rect) => Math.max(value, rect.bottom), viewportTop + 72);
+      document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
+    });
   });
 }
 
@@ -296,25 +315,39 @@ function closeSearchDialog() {
   }
 }
 
-function closeConfirmDialog() {
+function closeConfirmDialog({ force = false } = {}) {
+  if (confirmChoiceRequired && !force) return false;
   if (elements['confirm-dialog'].open) {
     elements['confirm-dialog'].close();
     unlockPageForModal();
   }
   confirmSubmitHandler = null;
+  confirmCancelHandler = null;
+  confirmChoiceRequired = false;
+  return true;
 }
 
-function openConfirmDialog({ title, description = '', body = [], submitText = '确认', onSubmit }) {
+function openConfirmDialog({ title, description = '', body = [], submitText = '确认', cancelText = '取消', onSubmit, onCancel = null, choiceRequired = false, destructive = true }) {
   elements['confirm-title'].textContent = title;
   elements['confirm-description'].textContent = description;
   elements['confirm-description'].classList.toggle('hidden', !description);
   elements['confirm-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
   elements['confirm-submit'].textContent = submitText;
+  elements['confirm-submit'].className = destructive ? 'danger-button' : 'primary-button';
+  elements['confirm-cancel'].textContent = cancelText;
   confirmSubmitHandler = onSubmit;
+  confirmCancelHandler = onCancel;
+  confirmChoiceRequired = Boolean(choiceRequired);
   if (!elements['confirm-dialog'].open) {
     lockPageForModal();
     elements['confirm-dialog'].showModal();
   }
+}
+
+function handleConfirmCancel() {
+  const handler = confirmCancelHandler;
+  closeConfirmDialog({ force: true });
+  if (handler) Promise.resolve().then(handler).catch(displayError);
 }
 
 function collectionRoute(collectionId, entryId = '') {
@@ -344,7 +377,8 @@ function goHome() {
   closeReview();
   closeQueryMenu();
   restoreHomeScrollPending = Boolean(currentCollectionId);
-  if (location.hash) history.pushState(null, '', location.pathname + location.search);
+  pendingJumpEntryId = '';
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   currentCollectionId = '';
   renderApp();
 }
@@ -359,12 +393,55 @@ function projectionCollectionForEntry(entryId) {
 
 
 function positionDomainId(collection, entry = null) {
-  return collection?.domainId || entry?.domainId || 'global';
+  return positionScopeDomainId(collection, entry);
+}
+
+function isGlobalCollection(collectionOrId) {
+  const id = typeof collectionOrId === 'string' ? collectionOrId : collectionOrId?.id;
+  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(id);
+}
+
+function relationExpansionKey(collectionId, entryId) {
+  return `${collectionId}\u0000${entryId}`;
+}
+
+function annotationRecordForEntry(entry, collection) {
+  const state = getState();
+  if (!entry) return null;
+  if (!isGlobalCollection(collection)) {
+    const annotation = state.annotationByEntry.get(entry.id);
+    return annotation ? { annotation, sourceEntryId: entry.id } : null;
+  }
+  const candidates = entry.kind === 'phrase'
+    ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [entry])
+    : (state.wordsByNormalizedText.get(entry.normalizedText) || [entry]);
+  for (const candidate of candidates) {
+    const annotation = state.annotationByEntry.get(candidate.id);
+    if (annotation) return { annotation, sourceEntryId: candidate.id };
+  }
+  return null;
+}
+
+function reviewDisplayEntryId(entryId, collectionId) {
+  const state = getState();
+  const entry = state.entryById.get(entryId);
+  if (!entry) return '';
+  if (!isGlobalCollection(collectionId)) return entryId;
+  const visible = getVisibleEntries(collectionId);
+  return visible.find((candidate) => candidate.kind === entry.kind && candidate.normalizedText === entry.normalizedText)?.id || '';
 }
 
 function annotationCountForCollection(collectionId) {
   const state = getState();
-  return getVisibleEntries(collectionId).filter((entry) => state.annotationByEntry.has(entry.id)).length;
+  if (!isGlobalCollection(collectionId)) {
+    const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
+    return state.annotations.filter((item) => visible.has(item.entryId)).length;
+  }
+  const visibleKeys = new Set(getVisibleEntries(collectionId).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
+  return state.annotations.filter((item) => {
+    const entry = state.entryById.get(item.entryId);
+    return entry && visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`);
+  }).length;
 }
 
 
@@ -421,6 +498,16 @@ function displayCollectionLabel(collection) {
   const name = String(collection?.name || '').trim().toLocaleLowerCase();
   if (normalized === name || normalized === `oxford ${name}`) return '';
   return label;
+}
+
+function collectionCountSummary(collectionId) {
+  let words = 0;
+  let phrases = 0;
+  for (const entry of getVisibleEntries(collectionId)) {
+    if (entry.kind === 'phrase') phrases += 1;
+    else words += 1;
+  }
+  return `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`;
 }
 
 function collectionCard(collection) {
@@ -539,7 +626,7 @@ function libraryManagerBody() {
       list.append(el('div', { className: 'manager-row', dataset: { sortId: collection.id } }, [
         iconButton('grip', 'drag-handle', '拖动词表', () => {}),
         el('span', { className: 'manager-name', text: collection.name }),
-        el('span', { className: 'manager-count', text: getVisibleEntries(collection.id).length.toLocaleString() }),
+        el('span', { className: 'manager-count', text: collectionCountSummary(collection.id) }),
         iconButton('more', 'manager-more', '词表操作', () => openCollectionMenu(collection.id)),
       ]));
     }
@@ -564,6 +651,35 @@ async function exportBackupNow() {
   const backup = await exportFullBackup();
   downloadText(`vocabulary-index-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.json`, `${JSON.stringify(backup, null, 2)}\n`);
   showToast('完整备份已导出');
+}
+
+async function downloadRecoveryBackup(prefix = 'recovery') {
+  const backup = await exportFullBackup();
+  const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
+  downloadText(`vocabulary-index-${prefix}-${APP_VERSION}-${stamp}.json`, `${JSON.stringify(backup, null, 2)}\n`);
+  showToast('完整备份下载已发起');
+}
+
+function offerOptionalBackup(onContinue, { title = '是否下载完整备份？', description = '本次操作会修改或覆盖数据。是否先下载当前完整备份？' } = {}) {
+  const advance = () => {
+    cancelActiveTaskForDataChange();
+    requestAnimationFrame(() => onContinue());
+  };
+  openConfirmDialog({
+    title,
+    description,
+    body: el('p', { className: 'help-text', text: '此选择只决定是否下载备份；无论选择哪一项，操作都会继续。' }),
+    submitText: '下载备份',
+    cancelText: '不下载',
+    onSubmit: async () => {
+      try { await downloadRecoveryBackup('recovery-before-change'); }
+      catch (error) { displayError(error); }
+      finally { advance(); }
+    },
+    onCancel: advance,
+    choiceRequired: true,
+    destructive: false,
+  });
 }
 
 let dataExchangeWorker = null;
@@ -648,33 +764,33 @@ function openDataExchangePreview(file, selection, initialPlan) {
   }
   openDialog({
     title: '导入预检',
-    description: '确认后会先自动下载恢复备份，再以单次事务写入。',
+    description: selection.mode === 'replace'
+      ? '确认后先选择是否下载当前完整备份，再以单次事务替换所选范围。'
+      : '确认后以单次事务合并所选内容。',
     body,
-    submitText: selection.mode === 'replace' && selection.scope === 'global' ? '备份并替换全局内容' : '备份并导入',
+    submitText: selection.mode === 'replace' && selection.scope === 'global' ? '继续替换全局内容' : '继续导入',
     destructive: selection.mode === 'replace',
     onSubmit: async () => {
       const finalSelection = { ...selection, targetMode: initialPlan.mismatch ? targetMode.value : 'current' };
       const finalPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
-      const recovery = await exportFullBackup();
-      downloadText(`vocabulary-index-recovery-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
+      closeDialog({ all: true });
       if (selection.mode === 'replace') {
-        closeDialog({ all: true });
-        requestAnimationFrame(() => openConfirmDialog({
+        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
           title: '确认完整替换',
-          description: '恢复备份下载已发起。确认后将替换所选范围。',
+          description: '确认后将替换所选范围。',
           submitText: '确认替换',
           onSubmit: async () => {
             await restoreBackup(finalPlan.nextBackup);
             goHome();
             showToast('内容 JSON 已替换');
           },
-        }));
+        })));
         return;
       }
-      await restoreBackup(finalPlan.nextBackup);
-      closeDialog({ all: true });
-      goHome();
-      showToast('内容 JSON 已导入');
+      cancelActiveTaskForDataChange();
+      restoreBackup(finalPlan.nextBackup)
+        .then(() => { goHome(); showToast('内容 JSON 已导入'); })
+        .catch(displayError);
     },
   });
 }
@@ -735,7 +851,7 @@ function openDataExchangeDialog() {
     fileField.classList.toggle('hidden', !importing && operation.value !== 'restore-backup');
     if (operation.value === 'export-backup') status.textContent = '包含内容、PIN、位置、标注和设置。';
     else if (operation.value === 'restore-backup') status.textContent = '恢复会整体替换当前应用状态。';
-    else if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置、标注与显示设置；执行前自动导出完整备份。';
+    else if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置、标注与显示设置；执行前可选择是否下载完整备份。';
     else if (operation.value === 'export-content') status.textContent = '内容 JSON 不包含 PIN、位置、标注和应用设置。';
     else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并先生成恢复备份。';
     fillDomains();
@@ -753,38 +869,33 @@ function openDataExchangeDialog() {
     onSubmit: async () => {
       if (operation.value === 'export-backup') { await exportBackupNow(); return; }
       if (operation.value === 'reset-seed') {
-        const recovery = await exportFullBackup();
-        downloadText(`vocabulary-index-recovery-before-seed-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}
-`);
         closeDialog({ all: true });
-        requestAnimationFrame(() => openConfirmDialog({
+        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
           title: '还原到当前版本 Seed',
-          description: '完整备份下载已发起。确认后将替换全部本地内容和个人状态。',
+          description: '确认后将替换全部本地内容和个人状态。',
           submitText: '确认还原',
           onSubmit: async () => {
             await resetToSeed();
             goHome();
             showToast('已还原到当前版本 Seed');
           },
-        }));
+        }), { title: '还原前是否下载备份？' }));
         return;
       }
       if (operation.value === 'restore-backup') {
         const parsed = await readImportFile(file.files?.[0]);
         if (parsed.kind !== 'backup') throw new Error('该文件不是完整备份');
-        const recovery = await exportFullBackup();
-        downloadText(`vocabulary-index-recovery-before-restore-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
         closeDialog({ all: true });
-        requestAnimationFrame(() => openConfirmDialog({
+        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
           title: '确认恢复完整备份',
-          description: '当前状态备份下载已发起。确认后将整体替换本机应用状态。',
+          description: '确认后将整体替换本机应用状态。',
           submitText: '确认恢复',
           onSubmit: async () => {
             await restoreBackup(parsed.backup);
             goHome();
             showToast('完整备份已恢复');
           },
-        }));
+        }), { title: '恢复前是否下载当前备份？' }));
         return;
       }
       const selection = {
@@ -809,12 +920,12 @@ function openDataExchangeDialog() {
 }
 
 async function performUndo() {
-  try { if (!(await undo())) showToast('没有可撤销操作'); }
+  try { cancelActiveTaskForDataChange(); if (!(await undo())) showToast('没有可撤销操作'); }
   catch (error) { displayError(error); }
 }
 
 async function performRedo() {
-  try { if (!(await redo())) showToast('没有可重做操作'); }
+  try { cancelActiveTaskForDataChange(); if (!(await redo())) showToast('没有可重做操作'); }
   catch (error) { displayError(error); }
 }
 
@@ -827,6 +938,7 @@ function renderLargeTitle({ eyebrow = '', title = '', subtitle = '' } = {}) {
 }
 
 async function clearAllAnnotationsFromHome() {
+  cancelActiveTaskForDataChange();
   await clearAllAnnotations();
   showToast('全部标注已撤销');
 }
@@ -835,12 +947,14 @@ function renderHomeAnnotationBanner() {
   const total = getState().annotations.length;
   if (!total || currentCollectionId) {
     elements['home-annotation-banner'].classList.add('hidden');
+    updateOverlayLayout();
     return;
   }
   elements['home-annotation-icon'].replaceChildren(svgIcon('warning'));
   elements['home-annotation-text'].textContent = `${total.toLocaleString()} 条待处理标注`;
   elements['clear-all-annotations'].replaceChildren(svgIcon('clear'), el('span', { text: '全部撤销' }));
   elements['home-annotation-banner'].classList.remove('hidden');
+  updateOverlayLayout();
 }
 
 function renderHome() {
@@ -931,8 +1045,7 @@ function renderCollection() {
   renderCollectionToolbar(collection);
   renderPinBar(collection);
   renderEntryList(collection, domain, entries);
-  elements['back-to-top']?.classList.remove('hidden');
-  updateBackToTopVisibility();
+  elements['back-to-top']?.classList.add('hidden');
   if (pendingJumpEntryId) queueMicrotask(() => jumpToEntry(pendingJumpEntryId, { collectionId: collection.id, reason: pendingJumpReason }));
 }
 
@@ -1001,6 +1114,7 @@ function renderPinBar(collection) {
     elements['pin-bar'].classList.add('hidden');
     elements.app.classList.remove('has-pin');
     if (!pins.length) pinIndex = 0;
+    updateOverlayLayout();
     return;
   }
   if (pendingJumpEntryId) syncPinIndexForEntry(collection.id, pendingJumpEntryId);
@@ -1018,6 +1132,7 @@ function renderPinBar(collection) {
     ]),
     iconButton('chevron', 'pin-nav-button pin-next', '下一个 PIN', () => jumpPinned(collection.id, 1)),
   );
+  updateOverlayLayout();
 }
 
 function letterForEntry(entry) {
@@ -1101,14 +1216,12 @@ function calendarForSection(collection, section, dates) {
     el('header', { className: 'calendar-header' }, [
       iconButton('chevron', 'calendar-prev', '上个月', async () => {
         const next = monthShift(monthKey, -1);
-        suppressNextMutationRender = true;
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
       el('strong', { text: `${year} 年 ${month} 月` }),
       iconButton('chevron', 'calendar-next', '下个月', async () => {
         const next = monthShift(monthKey, 1);
-        suppressNextMutationRender = true;
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
@@ -1119,8 +1232,9 @@ function calendarForSection(collection, section, dates) {
   return calendar;
 }
 
-function navigationControls(collection, section, sectionContext, mode, otherSection = '') {
+function navigationControls(collection, section, sectionContext, mode, otherSection = '', { includeTop = false } = {}) {
   const fixed = [lastPositionButton(collection, section, mode)];
+  if (includeTop) fixed.push(iconButton('top', 'navigation-top-button', '返回顶部', returnToTop));
   fixed.push(iconButton(mode === 'date' ? 'alphabet' : 'calendar', 'mode-toggle-button', mode === 'date' ? '切换到字母排序' : '切换到日期排序', () => {
     switchCollectionMode(collection, section).catch(displayError);
   }));
@@ -1222,9 +1336,12 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
     entryChunkData.set(chunk, { items, collection, domain, globalIndexById });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
     const estimatedHeight = slice.reduce((total, entry) => {
-      const kind = entryLayoutKind(entry);
+      const kind = entryLayoutKind(entry, displayGlossForEntry(entry, collection, domain));
       const rowHeight = kind === 'phrase-extreme' ? 102 : kind === 'phrase-two-line' ? 84 : ENTRY_ROW_ESTIMATE;
-      return total + rowHeight;
+      const relationHeight = expandedRelations.has(relationExpansionKey(collection.id, entry.id))
+        ? Math.max(0, relationItemsForEntry(entry).length * 42 + 8)
+        : 0;
+      return total + rowHeight + relationHeight;
     }, 0);
     chunk.style.minHeight = `${estimatedHeight}px`;
     fragment.append(chunk);
@@ -1331,19 +1448,21 @@ function renderEntryList(collection, domain, entries) {
   collectionRenderContext = null;
   const mode = getViewMode(collection.id);
   const sections = new Map();
+  let renderedOrder = entries;
   if (isCompositeCollection(collection)) {
     const words = [];
     const phrases = [];
     for (const entry of entries) (entry.kind === 'phrase' ? phrases : words).push(entry);
     sections.set('word', createSectionContext('word', words, collection, mode));
     sections.set('phrase', createSectionContext('phrase', phrases, collection, mode));
+    renderedOrder = [...words, ...phrases];
   } else {
     const section = isPhraseCollection(collection) ? 'phrase' : 'word';
     sections.set(section, createSectionContext(section, entries, collection, mode));
   }
   const firstSection = sections.keys().next().value;
   if (!sections.has(activeSection)) activeSection = firstSection;
-  const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
+  const globalIndexById = new Map(renderedOrder.map((entry, index) => [entry.id, index + 1]));
   const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById };
   collectionRenderContext = context;
 
@@ -1352,7 +1471,7 @@ function renderEntryList(collection, domain, entries) {
   elements['letter-nav'].classList.remove('hidden');
   elements['letter-nav'].dataset.section = firstSection;
   elements['letter-nav'].setAttribute('aria-label', `${firstSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引`);
-  populateNavigationBar(elements['letter-nav'], navigationControls(collection, firstSection, firstContext, mode, otherFirst));
+  populateNavigationBar(elements['letter-nav'], navigationControls(collection, firstSection, firstContext, mode, otherFirst, { includeTop: true }));
 
   const output = [];
   if (mode === 'date') output.push(calendarForSection(collection, firstSection, firstContext.dates));
@@ -1368,6 +1487,8 @@ function renderEntryList(collection, domain, entries) {
     output.push(mode === 'date' ? renderDateContent(context, secondContext) : renderAlphabetContent(context, secondContext));
   }
   elements['entry-list'].replaceChildren(...output);
+  updateBackToTopVisibility();
+  updateOverlayLayout();
 }
 
 function setLetterSectionOpen(section, letter, open) {
@@ -1411,6 +1532,7 @@ function normalDestinationsForEntries(entries, { preferredCollectionId = '', dom
       const collection = state.collectionById.get(membership.collectionId);
       if (!collection || collection.type !== 'normal' || collection.hidden) continue;
       if (domainId && collection.domainId !== domainId) continue;
+      if (!state.visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)) continue;
       const key = `${collection.id}\u0000${entry.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1600,7 +1722,7 @@ function displayGlossForRelationItem(item) {
 
 function renderRelationPanel(entry, items = null) {
   const relationItems = items || relationItemsForEntry(entry);
-  if (!relationItems.length || !expandedRelations.has(entry.id)) return null;
+  if (!relationItems.length || !expandedRelations.has(relationExpansionKey(currentCollectionId, entry.id))) return null;
   return el('div', { className: 'relation-panel' }, relationItems.map((item) => {
     const gloss = displayGlossForRelationItem(item);
     return el('div', { className: 'relation-item' }, [
@@ -1636,8 +1758,9 @@ function indexesForRenderedEntry(context, entry) {
 
 function toggleEntryRelations(entryId) {
   closeQueryMenu();
-  if (expandedRelations.has(entryId)) expandedRelations.delete(entryId);
-  else expandedRelations.add(entryId);
+  const key = relationExpansionKey(currentCollectionId, entryId);
+  if (expandedRelations.has(key)) expandedRelations.delete(key);
+  else expandedRelations.add(key);
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
   const current = document.getElementById(`entry-${entryId}`);
@@ -1647,14 +1770,13 @@ function toggleEntryRelations(entryId) {
 
 async function toggleEntryPin(entry, collection, sourceButton = null) {
   closeQueryMenu();
-  const wasPinned = getState().pinByEntry.has(entry.id);
+  const existingPin = getState().pinByEntry.get(entry.id) || null;
+  const wasPinned = existingPin?.contextCollectionId === collection.id;
   sourceButton?.classList.toggle('active', !wasPinned);
   sourceButton?.setAttribute('aria-pressed', wasPinned ? 'false' : 'true');
-  suppressNextMutationRender = true;
   try {
     await togglePin(entry.id, collection.id);
   } catch (error) {
-    suppressNextMutationRender = false;
     sourceButton?.classList.toggle('active', wasPinned);
     sourceButton?.setAttribute('aria-pressed', wasPinned ? 'true' : 'false');
     throw error;
@@ -1664,7 +1786,7 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
   const current = document.getElementById(`entry-${entry.id}`);
   if (context && current) current.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
   renderPinBar(collection);
-  showToast(wasPinned ? 'PIN 已取消' : 'PIN 已设置');
+  showToast(wasPinned ? 'PIN 已取消' : existingPin ? 'PIN 已移到当前词表' : 'PIN 已设置');
 }
 
 function displayGlossForEntry(entry, collection, domain) {
@@ -1690,8 +1812,6 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   if (mode === 'date') {
     pendingJumpEntryId = entry.id;
     pendingJumpReason = 'study-date';
-  } else {
-    suppressNextMutationRender = true;
   }
   sourceButton?.classList.add('updating');
   try {
@@ -1703,7 +1823,6 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
       showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
     }
   } catch (error) {
-    suppressNextMutationRender = false;
     pendingJumpEntryId = '';
     throw error;
   } finally {
@@ -1738,49 +1857,83 @@ function estimatedTextUnits(text) {
   return units;
 }
 
-function entryLayoutKind(entry) {
+function entryLayoutKind(entry, gloss = '') {
   if (entry.kind !== 'phrase') return 'word-normal';
-  const units = estimatedTextUnits(entry.text);
-  if (units <= 13.5) return 'phrase-normal';
-  if (units <= 28) return 'phrase-two-line';
+  const phraseUnits = estimatedTextUnits(entry.text);
+  const glossUnits = estimatedTextUnits(gloss);
+  if (phraseUnits <= 13.5 && glossUnits <= 18) return 'phrase-normal';
+  if (phraseUnits <= 28 && glossUnits <= 24) return 'phrase-two-line';
   return 'phrase-extreme';
 }
 
-function handleEntryPrimaryAction(entry, collection, annotation) {
-  if (performance.now() - lastTextScrollAt < 180) return;
-  if (annotation) startAnnotationReview(collection.id, entry.id);
+function handleEntryPrimaryAction(entry, collection, annotationRecord) {
+  if (annotationRecord) startAnnotationReview(collection.id, annotationRecord.sourceEntryId);
   else copyEntry(entry, collection);
 }
 
-function createTextViewport(entry, collection, gloss, annotation, layoutKind) {
+function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind) {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
+  let pointerStart = null;
+  let suppressClick = false;
   const viewport = el('div', {
     className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}`,
     role: 'button', tabindex: 0,
-    'aria-label': annotation ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
+    'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
   });
   const content = el('div', { className: 'entry-text-content' }, [
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
   ]);
   viewport.append(content);
-  if (isScrollable) viewport.addEventListener('scroll', () => { lastTextScrollAt = performance.now(); }, { passive: true });
-  viewport.addEventListener('click', () => handleEntryPrimaryAction(entry, collection, annotation));
+  const updateOverflowState = () => {
+    if (!isScrollable) return;
+    const overflow = viewport.scrollWidth > viewport.clientWidth + 1;
+    viewport.classList.toggle('has-overflow', overflow);
+    viewport.classList.toggle('at-scroll-start', !overflow || viewport.scrollLeft <= 1);
+    viewport.classList.toggle('at-scroll-end', !overflow || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1);
+  };
+  if (isScrollable) {
+    viewport.addEventListener('pointerdown', (event) => {
+      pointerStart = { x: event.clientX, y: event.clientY };
+      suppressClick = false;
+    }, { passive: true });
+    viewport.addEventListener('pointermove', (event) => {
+      if (!pointerStart) return;
+      const dx = Math.abs(event.clientX - pointerStart.x);
+      const dy = Math.abs(event.clientY - pointerStart.y);
+      if (dx > 7 && dx > dy * 1.15) suppressClick = true;
+    }, { passive: true });
+    viewport.addEventListener('pointerup', () => { pointerStart = null; }, { passive: true });
+    viewport.addEventListener('pointercancel', () => { pointerStart = null; suppressClick = true; }, { passive: true });
+    viewport.addEventListener('scroll', () => {
+      suppressClick = true;
+      updateOverflowState();
+      clearTimeout(viewport._scrollEndTimer);
+      viewport._scrollEndTimer = setTimeout(() => { suppressClick = false; }, 120);
+    }, { passive: true });
+    requestAnimationFrame(updateOverflowState);
+  }
+  viewport.addEventListener('click', () => {
+    if (suppressClick) { suppressClick = false; return; }
+    handleEntryPrimaryAction(entry, collection, annotationRecord);
+  });
   viewport.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    handleEntryPrimaryAction(entry, collection, annotation);
+    handleEntryPrimaryAction(entry, collection, annotationRecord);
   });
   return viewport;
 }
 
-function closeQueryMenu() {
+function closeQueryMenu({ restoreFocus = false } = {}) {
   if (!activeQueryMenu) return;
+  const source = activeQueryMenu.source;
   elements['query-menu'].classList.add('hidden');
   elements['query-menu'].classList.remove('below');
   elements['query-menu'].replaceChildren();
   activeQueryMenu.source?.setAttribute('aria-expanded', 'false');
   activeQueryMenu = null;
+  if (restoreFocus && source?.isConnected) source.focus({ preventScroll: true });
 }
 
 function positionQueryMenu() {
@@ -1836,7 +1989,10 @@ function openQueryMenu(entry, collection, source) {
   chatgpt.setAttribute('role', 'menuitem');
   elements['query-menu'].replaceChildren(oxford, chatgpt);
   elements['query-menu'].classList.remove('hidden');
-  requestAnimationFrame(positionQueryMenu);
+  requestAnimationFrame(() => {
+    positionQueryMenu();
+    oxford.focus({ preventScroll: true });
+  });
 }
 
 function entryActionButtons(entry, collection, pinned, studyStamp) {
@@ -1856,23 +2012,25 @@ function entryActionButtons(entry, collection, pinned, studyStamp) {
 
 function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, globalIndex: 0 }) {
   const state = getState();
-  const pinned = state.pinByEntry.has(entry.id);
-  const annotation = state.annotationByEntry.get(entry.id);
+  const pinRecord = state.pinByEntry.get(entry.id) || null;
+  const pinned = pinRecord?.contextCollectionId === collection.id;
+  const annotationRecord = annotationRecordForEntry(entry, collection);
+  const annotation = annotationRecord?.annotation || null;
   const numberMode = state.settings.numberMode || 'global';
   const indexText = numberMode === 'group' ? `${indexes.groupIndex}` : numberMode === 'global' ? `${indexes.globalIndex}` : '';
-  const expanded = expandedRelations.has(entry.id);
+  const expanded = expandedRelations.has(relationExpansionKey(collection.id, entry.id));
   const relations = expanded ? relationItemsForEntry(entry) : null;
   const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
   const studyStamp = getStudyStamp(entry, collection.id);
-  const layoutKind = entryLayoutKind(entry);
+  const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
     className: `entry-row ${layoutKind}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
-  const textViewport = createTextViewport(entry, collection, gloss, annotation, layoutKind);
+  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind);
   const indexBadge = indexText ? el('span', { className: 'entry-index-badge', text: indexText, 'aria-hidden': 'true' }) : null;
   let primary;
   if (layoutKind === 'phrase-extreme') {
@@ -1900,6 +2058,13 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
       }),
       el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, [actions.refresh, actions.pin, actions.query, actions.more]),
     ]);
+  }
+  if (annotationRecord) {
+    primary.addEventListener('click', (event) => {
+      if (event.target.closest('button, .entry-text-viewport')) return;
+      startAnnotationReview(collection.id, annotationRecord.sourceEntryId);
+    });
+    primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
   }
   const relationRail = el('div', { className: 'entry-relation-rail', 'aria-hidden': hasRelations ? 'false' : 'true' });
   if (hasRelations) {
@@ -1973,7 +2138,7 @@ async function copyEntry(entry, collection) {
     const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
     setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
       .then(() => {
-        lastPersistedEntryId = entry.id;
+        lastPersistedPositionKey = `${positionDomainId(collection)}\u0000${collection.id}\u0000${mode}\u0000${section}\u0000${entry.id}`;
         if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
       })
       .catch((error) => console.warn('复制后的浏览位置保存失败', error));
@@ -2019,12 +2184,16 @@ function readingViewportBounds() {
   const viewportTop = viewport?.offsetTop || 0;
   const viewportHeight = viewport?.height || window.innerHeight;
   const viewportBottom = viewportTop + viewportHeight;
-  const candidates = [document.querySelector('.topbar'), elements['pin-bar'], elements['annotation-review-bar'], elements['letter-nav'], document.querySelector('.section-letter-nav')];
+  const rects = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .context-bar, .letter-nav')]
+    .filter((candidate) => candidate && !candidate.classList.contains('hidden'))
+    .map((candidate) => candidate.getBoundingClientRect())
+    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportBottom)
+    .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
   let top = viewportTop;
-  for (const candidate of candidates) {
-    if (!candidate || candidate.classList.contains('hidden')) continue;
-    const rect = candidate.getBoundingClientRect();
-    if (rect.height > 0 && rect.bottom > top && rect.top < viewportBottom) top = rect.bottom;
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const rect of rects) {
+      if (rect.bottom > top && rect.top <= top + 14) top = rect.bottom;
+    }
   }
   return { top: Math.max(viewportTop, top + 8), bottom: viewportBottom - 12 };
 }
@@ -2035,6 +2204,13 @@ function positionHeadingBelowChrome(target) {
   const bounds = readingViewportBounds();
   const targetY = Math.max(0, window.scrollY + rect.top - bounds.top);
   window.scrollTo({ top: targetY, behavior: 'auto' });
+  requestAnimationFrame(() => {
+    if (!target.isConnected) return;
+    const nextRect = target.getBoundingClientRect();
+    const nextBounds = readingViewportBounds();
+    const correction = nextRect.top - nextBounds.top;
+    if (Math.abs(correction) > 1) window.scrollBy({ top: correction, behavior: 'auto' });
+  });
   return true;
 }
 
@@ -2150,17 +2326,19 @@ function persistScrollPosition() {
     const entry = entryId ? state.entryById.get(entryId) : null;
     const collection = state.collectionById.get(currentCollectionId);
     const isVisibleContext = entry && collection && (collection.virtual || entry.domainId === collection.domainId);
-    if (isVisibleContext && entry.id !== lastPersistedEntryId) {
+    if (isVisibleContext) {
       const mode = getViewMode(collection.id);
       const section = sectionForEntry(entry);
+      const positionKey = `${positionDomainId(collection)}\u0000${collection.id}\u0000${mode}\u0000${section}\u0000${entry.id}`;
+      if (positionKey === lastPersistedPositionKey) return;
       const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
-      lastPersistedEntryId = entry.id;
+      lastPersistedPositionKey = positionKey;
       setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
         .then(() => {
           if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
         })
         .catch((error) => {
-          lastPersistedEntryId = '';
+          lastPersistedPositionKey = '';
           console.warn('浏览位置保存失败', error);
         });
     }
@@ -2170,9 +2348,11 @@ function persistScrollPosition() {
 function updateBackToTopVisibility() {
   const button = elements['back-to-top'];
   if (!button) return;
-  button.classList.toggle('hidden', !currentCollectionId);
-  button.classList.toggle('at-top', window.scrollY < 24);
-  button.setAttribute('aria-disabled', window.scrollY < 24 ? 'true' : 'false');
+  button.classList.add('hidden');
+  elements['collection-view']?.querySelectorAll('.navigation-top-button').forEach((control) => {
+    control.classList.toggle('at-top', window.scrollY < 24);
+    control.setAttribute('aria-label', window.scrollY < 24 ? '已在顶部' : '返回顶部');
+  });
 }
 
 function returnToTop() {
@@ -2240,7 +2420,7 @@ function openAddEntryDialog(collectionId) {
     body,
     onSubmit: async () => {
       const entry = await addEntry(collectionId, text.value, { gloss: gloss.value });
-      pendingJumpEntryId = entry.id;
+      requestAnimationFrame(() => jumpToEntry(entry.id, { collectionId, reason: 'new-entry' }));
     },
   });
 }
@@ -2387,6 +2567,20 @@ function openImportDialog(collectionId) {
     submitText: '执行导入',
     onSubmit: async () => {
       if (!parsed || parsed.kind !== 'entries') throw new Error('请选择有效文件');
+      if (mode.value === 'replace') {
+        const entriesToImport = parsed.entries;
+        closeDialog({ all: true });
+        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
+          title: '确认替换当前词表',
+          description: '确认后将以导入文件替换当前词表范围。',
+          submitText: '确认替换',
+          onSubmit: async () => {
+            await importEntries(collectionId, entriesToImport, { mode: 'replace' });
+            showToast(`已替换导入 ${entriesToImport.length} 项`);
+          },
+        }), { title: '替换前是否下载备份？' }));
+        return;
+      }
       await importEntries(collectionId, parsed.entries, { mode: mode.value });
       showToast(`已导入 ${parsed.entries.length} 项`);
     },
@@ -2394,53 +2588,55 @@ function openImportDialog(collectionId) {
 }
 
 function confirmDeleteCollection(collectionId) {
-  closeDialog();
   const collection = getState().collectionById.get(collectionId);
-  openConfirmDialog({
-    title: '删除词表',
-    description: `将删除“${collection.name}”的来源关系；仍有其他来源的词汇会自动回落。`,
-    body: el('div', { className: 'warning-box', text: '该操作可以立即撤销，但建议在大规模修改前先导出完整 JSON。' }),
-    submitText: '确认删除',
-    onSubmit: async () => {
-      await deleteCollection(collectionId);
-      if (currentCollectionId === collectionId) { closeActionDialog(); closeDialog({ all: true }); goHome(); }
-      else currentDialogMeta.onRestore?.();
-    },
-  });
+  closeDialog({ all: true });
+  requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
+      title: '删除词表',
+      description: `将删除“${collection.name}”的来源关系；仍有其他来源的词汇会自动回落。`,
+      body: el('div', { className: 'warning-box', text: '确认后执行。该操作仍可通过撤销恢复。' }),
+      submitText: '确认删除',
+      onSubmit: async () => {
+        await deleteCollection(collectionId);
+        if (currentCollectionId === collectionId) { closeActionDialog(); goHome(); }
+        else renderApp();
+      },
+    }), { title: '删除词表前是否下载备份？' }));
 }
 
 function confirmDeleteDomain(domainId) {
-  closeDialog();
   const domain = getState().domainById.get(domainId);
-  openConfirmDialog({
-    title: '删除整个词域',
-    description: `将删除“${domain.name}”及其中全部词表、内容、PIN 和标注。`,
-    body: el('div', { className: 'warning-box', text: '这是大范围操作。请确认已有完整 JSON 备份。' }),
-    submitText: '确认删除词域',
-    onSubmit: async () => { await deleteDomain(domainId); currentDialogMeta.onRestore?.(); goHome(); },
-  });
+  closeDialog({ all: true });
+  requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
+      title: '删除整个词域',
+      description: `将删除“${domain.name}”及其中全部词表、内容、PIN、标注和学习日期。`,
+      body: el('div', { className: 'warning-box', text: '这是大范围操作。确认后执行。' }),
+      submitText: '确认删除词域',
+      onSubmit: async () => { await deleteDomain(domainId); goHome(); },
+    }), { title: '删除词域前是否下载备份？' }));
 }
 
 function confirmRemoveSource(entryId, collectionId) {
   const entry = getState().entryById.get(entryId);
-  openConfirmDialog({
-    title: '从当前词表移除',
-    description: `从当前词表移除 “${entry.text}”。`,
-    body: el('p', { className: 'help-text', text: '若它仍属于其他词表，将自动显示在优先级最高的剩余词表；普通词失去全部来源后会被删除。' }),
-    submitText: '移除',
-    onSubmit: async () => { await removeEntryFromCollection(entryId, collectionId); closeActionDialog(); },
-  });
+  closeActionDialog();
+  requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
+      title: '从当前词表移除',
+      description: `从当前词表移除 “${entry.text}”。`,
+      body: el('p', { className: 'help-text', text: '若它仍属于其他词表，将自动显示在优先级最高的剩余词表；普通词失去全部来源后会被删除。' }),
+      submitText: '移除',
+      onSubmit: async () => { await removeEntryFromCollection(entryId, collectionId); },
+    }), { title: '移除前是否下载备份？' }));
 }
 
 function confirmDeleteEntry(entryId) {
   const entry = getState().entryById.get(entryId);
-  openConfirmDialog({
-    title: '删除',
-    description: `删除 “${entry.text}” 及其全部来源、PIN、标注和短语索引。`,
-    body: el('div', { className: 'warning-box', text: '该操作可以通过撤销恢复。' }),
-    submitText: '彻底删除',
-    onSubmit: async () => { await deleteEntry(entryId); closeActionDialog(); },
-  });
+  closeActionDialog();
+  requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
+      title: '删除',
+      description: `删除 “${entry.text}” 及其全部来源、PIN、标注、学习日期和短语索引。`,
+      body: el('div', { className: 'warning-box', text: '确认后执行。该操作仍可通过撤销恢复。' }),
+      submitText: '彻底删除',
+      onSubmit: async () => { await deleteEntry(entryId); },
+    }), { title: '删除内容前是否下载备份？' }));
 }
 
 async function openAiAddDialog(collectionId) {
@@ -2500,22 +2696,43 @@ async function startAiCheck(collectionId) {
   const entries = getVisibleEntries(collectionId).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
   if (!entries.length) return;
   const controller = new AiCheckController();
-  activeTask = { controller, paused: false, completed: 0, total: 1, collectionId, status: '准备 AI 核查…' };
+  const task = { controller, paused: false, completed: 0, total: 1, collectionId, status: '准备 AI 核查…' };
+  activeTask = task;
   taskPanelExpanded = true;
   renderTaskPanel('准备 AI 核查…');
   try {
     const result = await checkEntries(entries, {
       controller,
       onProgress: (progress) => {
-        activeTask.completed = progress.completed;
-        activeTask.total = progress.total;
+        if (activeTask !== task) return;
+        task.completed = progress.completed;
+        task.total = progress.total;
         renderTaskPanel(`批次 ${Math.min(progress.completed + 1, progress.total)} / ${progress.total}`);
       },
-      onBatch: async (issues, batch) => { await replaceAnnotations(batch.map((entry) => entry.id), issues); },
+      onBatch: async (issues, batch) => {
+        if (activeTask !== task || controller.cancelled) return;
+        const expectedRevision = getState().revision;
+        await replaceAnnotations(batch.map((entry) => entry.id), issues, {
+          expectedEntries: batch.map((entry) => ({ id: entry.id, updatedAt: entry.updatedAt, normalizedText: entry.normalizedText })),
+          expectedRevision,
+        });
+      },
     });
-    showToast(result.cancelled ? '核查已取消；已完成批次的标注已保留' : 'AI 核查完成');
-  } catch (error) { displayError(error); }
-  finally { activeTask = null; renderTaskPanel(''); renderApp(); }
+    if (activeTask === task) showToast(result.cancelled ? '核查已取消；已完成批次的标注已保留' : 'AI 核查完成');
+  } catch (error) { if (activeTask === task) displayError(error); }
+  finally {
+    if (activeTask === task) activeTask = null;
+    renderTaskPanel('');
+  }
+}
+
+function cancelActiveTaskForDataChange() {
+  if (!activeTask) return;
+  const task = activeTask;
+  task.controller.cancel();
+  activeTask = null;
+  renderTaskPanel('');
+  showToast('数据即将变更，AI 核查已取消');
 }
 
 function renderTaskPanel(status) {
@@ -2546,10 +2763,25 @@ function renderTaskPanel(status) {
 
 function annotationReviewIds(collectionId = '') {
   const state = getState();
-  const entries = collectionId ? getVisibleEntries(collectionId) : state.entries;
-  return [...entries]
-    .filter((entry) => state.annotationByEntry.has(entry.id))
+  if (!collectionId) return [...state.annotations]
+    .map((item) => state.entryById.get(item.entryId))
+    .filter(Boolean)
     .sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'))
+    .map((entry) => entry.id);
+  if (!isGlobalCollection(collectionId)) {
+    const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
+    return [...state.annotations]
+      .filter((item) => visible.has(item.entryId))
+      .map((item) => state.entryById.get(item.entryId))
+      .filter(Boolean)
+      .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'))
+      .map((entry) => entry.id);
+  }
+  const visibleKeys = new Set(getVisibleEntries(collectionId).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
+  return [...state.annotations]
+    .map((item) => state.entryById.get(item.entryId))
+    .filter((entry) => entry && visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`))
+    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.domainId.localeCompare(b.domainId))
     .map((entry) => entry.id);
 }
 
@@ -2559,7 +2791,8 @@ function startAnnotationReview(collectionId = '', startEntryId = '') {
   const requestedIndex = startEntryId ? ids.indexOf(startEntryId) : 0;
   review = { ids, index: requestedIndex >= 0 ? requestedIndex : 0, collectionId };
   renderReviewBar();
-  jumpToEntry(review.ids[review.index], { reason: 'annotation' });
+  const displayId = reviewDisplayEntryId(review.ids[review.index], collectionId) || review.ids[review.index];
+  jumpToEntry(displayId, { collectionId: collectionId || projectionCollectionForEntry(displayId), reason: 'annotation' });
 }
 
 function syncReview() {
@@ -2575,6 +2808,7 @@ function syncReview() {
 async function clearCurrentReviewAnnotations() {
   const collectionId = review.collectionId || currentCollectionId;
   if (!collectionId) return;
+  cancelActiveTaskForDataChange();
   await clearAnnotationsForCollection(collectionId);
   review = { ids: [], index: 0, collectionId: '' };
   renderReviewBar();
@@ -2589,6 +2823,7 @@ function renderReviewBar() {
       const collection = getState().collectionById.get(currentCollectionId);
       if (collection) renderPinBar(collection);
     }
+    updateOverlayLayout();
     return;
   }
   const state = getState();
@@ -2596,9 +2831,10 @@ function renderReviewBar() {
   const entry = state.entryById.get(entryId);
   const annotation = state.annotationByEntry.get(entryId);
   if (!entry || !annotation) { if (syncReview()) renderReviewBar(); return; }
-  const targetCollectionId = projectionCollectionForEntry(entryId);
+  const displayEntryId = reviewDisplayEntryId(entryId, review.collectionId) || entryId;
+  const targetCollectionId = review.collectionId || projectionCollectionForEntry(entryId);
   if (targetCollectionId && targetCollectionId !== currentCollectionId) {
-    navigateCollection(targetCollectionId, entryId);
+    navigateCollection(targetCollectionId, displayEntryId);
     return;
   }
   elements['pin-bar'].classList.add('hidden');
@@ -2607,7 +2843,8 @@ function renderReviewBar() {
   elements.app.classList.add('has-review');
   const previous = iconButton('chevron', 'review-nav review-prev', '上一个标注', () => navigateReview(-1));
   const next = iconButton('chevron', 'review-nav review-next', '下一个标注', () => navigateReview(1));
-  const edit = button('编辑', 'review-edit', () => openEditEntryDialog(entryId, targetCollectionId));
+  const editCollectionId = review.collectionId && !isGlobalCollection(review.collectionId) ? review.collectionId : projectionCollectionForEntry(entryId);
+  const edit = button('编辑', 'review-edit', () => openEditEntryDialog(entryId, editCollectionId));
   const dismiss = button('撤销此条', 'review-dismiss', () => dismissCurrentReviewAnnotation());
   const clearCurrent = iconButton('clear', 'review-clear-all', '撤销当前词表全部标注', () => clearCurrentReviewAnnotations().catch(displayError));
   const close = iconButton('close', 'review-close', '退出审阅', closeReview);
@@ -2620,15 +2857,17 @@ function renderReviewBar() {
     next,
     el('div', { className: 'review-actions' }, [edit, dismiss, clearCurrent, close]),
   );
+  updateOverlayLayout();
 }
 
 function navigateReview(direction) {
   if (!review.ids.length) return;
   review.index = (review.index + direction + review.ids.length) % review.ids.length;
   const entryId = review.ids[review.index];
-  const targetCollectionId = projectionCollectionForEntry(entryId);
-  if (targetCollectionId !== currentCollectionId) navigateCollection(targetCollectionId, entryId);
-  else { renderReviewBar(); jumpToEntry(entryId, { reason: 'annotation' }); }
+  const displayEntryId = reviewDisplayEntryId(entryId, review.collectionId) || entryId;
+  const targetCollectionId = review.collectionId || projectionCollectionForEntry(entryId);
+  if (targetCollectionId !== currentCollectionId) navigateCollection(targetCollectionId, displayEntryId);
+  else { renderReviewBar(); jumpToEntry(displayEntryId, { collectionId: targetCollectionId, reason: 'annotation' }); }
 }
 
 async function dismissCurrentReviewAnnotation() {
@@ -2640,7 +2879,9 @@ async function dismissCurrentReviewAnnotation() {
     review.index = oldIndex;
     if (syncReview()) {
       renderReviewBar();
-      jumpToEntry(review.ids[review.index], { reason: 'annotation' });
+      const nextId = review.ids[review.index];
+      const displayId = reviewDisplayEntryId(nextId, review.collectionId) || nextId;
+      jumpToEntry(displayId, { collectionId: review.collectionId || projectionCollectionForEntry(nextId), reason: 'annotation' });
     }
   } catch (error) { displayError(error); }
 }
@@ -2653,6 +2894,7 @@ function closeReview() {
     const collection = getState().collectionById.get(currentCollectionId);
     if (collection) renderPinBar(collection);
   }
+  updateOverlayLayout();
 }
 
 
@@ -2818,29 +3060,14 @@ function openSettingsDialog() {
   openDialog({ title: '设置', body, submitText: '保存', onSubmit: async () => { setApiKey(key.value); if (model.value) selectModel(model.value); await setNumberMode(numberMode.value); showToast('已保存'); } });
 }
 
-function openRestoreDialog() {
-  const file = el('input', { type: 'file', accept: '.json,application/json' });
-  let backup = null;
-  const preview = el('div', { className: 'preview-list' }, [el('div', { className: 'preview-item muted', text: '选择 2.x 或 3.x 完整 JSON 备份。' })]);
-  file.addEventListener('change', async () => {
-    try {
-      const parsed = await readImportFile(file.files?.[0]);
-      if (parsed.kind !== 'backup') throw new Error('该 JSON 不是完整备份');
-      backup = parsed.backup;
-      preview.replaceChildren(el('div', { className: 'preview-item', text: `${backup.domains.length} · ${backup.collections.length} · ${backup.entries.length.toLocaleString()}` }));
-    } catch (error) { backup = null; preview.replaceChildren(el('div', { className: 'preview-item danger', text: error.message })); }
-  });
-  openDialog({ title: '恢复完整备份', description: '恢复会整体替换当前 3.1 数据并清空撤销历史。', body: [el('div', { className: 'warning-box', text: '先导出当前完整 JSON。请勿在 Safari 与主屏幕 PWA 两个实例中同时执行恢复。' }), field('备份文件', file), preview], submitText: '确认恢复', destructive: true, onSubmit: async () => { if (!backup) throw new Error('请选择有效完整备份'); await restoreBackup(backup); goHome(); showToast('完整备份已恢复'); } });
-}
-
 function showMigrationNotice() {
   const state = getState();
   if (!state.settings.migrationNoticePending) return;
   openDialog({
-    title: '已升级到 3.1',
+    title: '数据模型升级完成',
     description: `已从 ${state.settings.migrationSource || '2.x'} 迁移到词域数据模型。`,
     body: [
-      el('div', { className: 'warning-box', text: '请立即导出一份 3.1 完整 JSON，并在真机验收完成前保留升级前的 2.4.1 JSON。' }),
+      el('div', { className: 'warning-box', text: '建议立即导出一份当前版本完整 JSON，并保留升级前备份直到真机验收完成。' }),
       el('p', { className: 'help-text', text: '旧词性仍保留在数据层；界面已隐藏。每个词域已建立词汇总表与短语总表；普通表可同时包含词汇与短语。' }),
     ],
     submitText: '我已了解',
@@ -2851,6 +3078,7 @@ function showMigrationNotice() {
 export function notifyServiceWorkerUpdate(worker) {
   waitingServiceWorker = worker || null;
   elements['update-banner']?.classList.toggle('hidden', !waitingServiceWorker);
+  updateOverlayLayout();
 }
 
 function applyWaitingServiceWorker() {
@@ -2863,6 +3091,7 @@ function applyWaitingServiceWorker() {
 
 function dismissUpdateBanner() {
   elements['update-banner'].classList.add('hidden');
+  updateOverlayLayout();
 }
 
 async function handleConfirmSubmit(event) {
@@ -2874,7 +3103,7 @@ async function handleConfirmSubmit(event) {
     submit.disabled = true;
     submit.textContent = '处理中…';
     await confirmSubmitHandler();
-    closeConfirmDialog();
+    closeConfirmDialog({ force: true });
   } catch (error) {
     displayError(error);
   } finally {
@@ -2894,7 +3123,13 @@ function renderApp() {
   const previousCollectionId = currentCollectionId;
   if (!route.collectionId && previousCollectionId) restoreHomeScrollPending = true;
   currentCollectionId = route.collectionId;
-  pendingJumpEntryId = route.entryId || '';
+  if (route.entryId) {
+    pendingJumpEntryId = route.entryId;
+    pendingJumpReason = 'route';
+  } else if (route.collectionId !== previousCollectionId) {
+    pendingJumpEntryId = '';
+    pendingJumpReason = 'jump';
+  }
   closeQueryMenu();
   if (currentCollectionId) renderCollection(); else renderHome();
   if (review.ids.length) { syncReview(); renderReviewBar(); }
@@ -2909,9 +3144,56 @@ async function handleDialogSubmit(event) {
     if (submit) { submit.disabled = true; submit.dataset.oldText = submit.textContent; submit.textContent = '处理中…'; }
     await activeHandler();
     if (dialogSubmitHandler === activeHandler) closeDialog();
-    renderApp();
   } catch (error) { displayError(error); }
   finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = submit.dataset.oldText || '保存'; } }
+}
+
+function scheduleRouteRender() {
+  if (routeRenderFrame) return;
+  routeRenderFrame = requestAnimationFrame(() => {
+    routeRenderFrame = 0;
+    renderApp();
+  });
+}
+
+function refreshVisibleEntryRows(entryIds = []) {
+  if (!currentCollectionId || !collectionRenderContext) return;
+  const changed = new Set(entryIds);
+  const state = getState();
+  for (const row of elements['entry-list'].querySelectorAll('.entry-row[data-entry-id]')) {
+    const entry = state.entryById.get(row.dataset.entryId);
+    if (!entry) continue;
+    let affected = changed.has(entry.id);
+    if (!affected && isGlobalCollection(currentCollectionId)) {
+      const candidates = entry.kind === 'phrase'
+        ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [])
+        : (state.wordsByNormalizedText.get(entry.normalizedText) || []);
+      affected = candidates.some((candidate) => changed.has(candidate.id));
+    }
+    if (affected) row.replaceWith(renderEntryRow(entry, collectionRenderContext.collection, collectionRenderContext.domain, indexesForRenderedEntry(collectionRenderContext, entry)));
+  }
+}
+
+function handleStoreEvent({ type, detail }) {
+  if (type === 'calendar-month') return;
+  if (type === 'mutation' && detail?.kind === 'pin') return;
+  if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
+    const collection = getState().collectionById.get(currentCollectionId);
+    if (collection && getViewMode(collection.id) === 'alphabet') return;
+  }
+  if (type === 'annotation-change') {
+    refreshVisibleEntryRows(detail?.entryIds || []);
+    if (currentCollectionId) {
+      const collection = getState().collectionById.get(currentCollectionId);
+      if (collection) renderCollectionToolbar(collection);
+    } else renderHomeAnnotationBanner();
+    if (review.ids.length) {
+      syncReview();
+      renderReviewBar();
+    }
+    return;
+  }
+  renderApp();
 }
 
 function handleWindowScroll() {
@@ -2939,7 +3221,7 @@ export async function initializeUI() {
   elements['dialog-close'].addEventListener('click', closeDialog);
   elements['action-close'].addEventListener('click', closeActionDialog);
   elements['search-close'].addEventListener('click', closeSearchDialog);
-  elements['confirm-cancel'].addEventListener('click', closeConfirmDialog);
+  elements['confirm-cancel'].addEventListener('click', handleConfirmCancel);
   elements['app-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['app-dialog'], closeDialog));
   elements['action-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['action-dialog'], closeActionDialog));
   elements['search-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['search-dialog'], closeSearchDialog));
@@ -2963,8 +3245,8 @@ export async function initializeUI() {
   });
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
-  window.addEventListener('hashchange', renderApp);
-  window.addEventListener('popstate', renderApp);
+  window.addEventListener('hashchange', scheduleRouteRender);
+  window.addEventListener('popstate', scheduleRouteRender);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
   window.visualViewport?.addEventListener('scroll', updateVisualViewportVars, { passive: true });
   window.addEventListener('resize', updateVisualViewportVars, { passive: true });
@@ -2974,19 +3256,28 @@ export async function initializeUI() {
     if (elements['query-menu'].contains(event.target) || activeQueryMenu.source?.contains(event.target)) return;
     closeQueryMenu();
   }, { capture: true });
+  elements['query-menu']?.addEventListener('keydown', (event) => {
+    const options = [...elements['query-menu'].querySelectorAll('[role="menuitem"]')];
+    if (!options.length) return;
+    const index = Math.max(0, options.indexOf(document.activeElement));
+    if (['ArrowLeft', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      options[(index - 1 + options.length) % options.length].focus();
+    } else if (['ArrowRight', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      options[(index + 1) % options.length].focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeQueryMenu({ restoreFocus: true });
+    }
+  });
   const preventGestureZoom = (event) => {
     if (document.documentElement.classList.contains('standalone-pwa')) event.preventDefault();
   };
   document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
   document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
   if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
-  subscribe(({ type }) => {
-    if (suppressNextMutationRender && ['mutation', 'calendar-month'].includes(type)) {
-      suppressNextMutationRender = false;
-      return;
-    }
-    renderApp();
-  });
+  subscribe(handleStoreEvent);
   await initializeStore();
   updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');

@@ -1,4 +1,4 @@
-# Vocabulary Index 3.2.0 数据报告
+# Vocabulary Index 3.3.0 数据报告
 
 数据源：`data/seed.json`。机器可读报告：`data/seed-report.json`。
 

@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 4,
-    appVersion: '3.2.0',
+    appVersion: '3.3.0',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -37,7 +37,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.2.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.3.0', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -849,6 +849,12 @@ export async function clearAnnotationsForCollection(collectionId) {
   return mutate('清空词表 AI 标注', (draft) => {
     const visibleIds = new Set((buildProjection(draft).get(collectionId) || []).map((item) => item.id));
     draft.annotations = draft.annotations.filter((item) => !visibleIds.has(item.entryId));
+  });
+}
+
+export async function clearAllAnnotations() {
+  return mutate('清空全部 AI 标注', (draft) => {
+    draft.annotations = [];
   });
 }
 

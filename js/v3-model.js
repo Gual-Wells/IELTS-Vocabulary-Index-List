@@ -1523,7 +1523,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.2.0',
+    appVersion: '3.3.0',
     exportedAt: timestamp,
     domains,
     collections,
@@ -1598,7 +1598,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.2.0'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.3.0'),
     exportedAt: timestamp,
     domains,
     collections,

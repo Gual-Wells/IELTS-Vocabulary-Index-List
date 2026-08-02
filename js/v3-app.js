@@ -1,7 +1,7 @@
 import { initializeUI, notifyServiceWorkerUpdate } from './v3-ui.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
-const MODULE_VERSION = '3.2.0';
+const MODULE_VERSION = '3.3.0';
 let reloadingForServiceWorker = false;
 
 const viewportMeta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="viewport"]'));
@@ -31,7 +31,7 @@ function recoverStandaloneViewportIfNeeded() {
       rememberHealthyViewport();
       return;
     }
-    const canonical = 'width=device-width,initial-scale=1,viewport-fit=cover';
+    const canonical = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';
     viewportMeta.content = 'width=device-width,initial-scale=1';
     requestAnimationFrame(() => {
       viewportMeta.content = canonical;

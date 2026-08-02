@@ -1,6 +1,6 @@
 import {
   acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
-  clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
+  clearAllAnnotations, clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getPhraseComponents, getRelatedPhrases, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, replaceAnnotations, resetToSeed, restoreBackup,
@@ -17,10 +17,12 @@ import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollection
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
+  'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
+  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'back-to-top', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog', 'dialog-form', 'dialog-title', 'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions',
@@ -54,15 +56,18 @@ let navigationRevision = 0;
 const expandedRelations = new Set();
 const dialogStack = [];
 let currentDialogMeta = { onRestore: null };
-let lockedScrollY = 0;
 let openModalCount = 0;
+let homeScrollY = 0;
+let restoreHomeScrollPending = false;
+let activeQueryMenu = null;
+let lastTextScrollAt = 0;
 let scrollUiFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
 const entryChunkByEntryId = new Map();
 const iconTemplateCache = new Map();
 const ENTRY_CHUNK_SIZE = 42;
-const ENTRY_ROW_ESTIMATE = 96;
+const ENTRY_ROW_ESTIMATE = 68;
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -86,27 +91,34 @@ function button(text, className, handler, options = {}) {
 }
 
 const ICONS = {
-  back: '<path d="m15 18-6-6 6-6"></path>',
-  search: '<circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path>',
-  target: '<circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path>',
-  relation: '<circle cx="7" cy="8" r="2.25"></circle><circle cx="17" cy="8" r="2.25"></circle><circle cx="12" cy="17" r="2.25"></circle><path d="M9 8h6M8.5 10l2.3 4.7M15.5 10l-2.3 4.7"></path>',
-  jump: '<path d="M13 5h6v6M19 5l-8 8"></path><path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"></path>',
-  pin: '<path d="M9 3h6l-1 5 3 3v2h-4v7l-1 2-1-2v-7H7v-2l3-3-1-5z"></path>',
-  more: '<circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"></circle>',
-  chevron: '<path d="m8 10 4 4 4-4"></path>',
-  enter: '<path d="M19 5v7H7"></path><path d="m10 9-3 3 3 3"></path>',
-  refresh: '<path d="M20 11a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v7h-7"></path>',
-  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M7 3v4M17 3v4M3 10h18"></path>',
-  alphabet: '<path d="M5 19 10 5l5 14M7 14h6"></path><path d="M17 8h3l-3 4h3"></path>',
-  phrase: '<path d="M4 6h16M4 12h12M4 18h16"></path>',
-  word: '<path d="M5 5h14M12 5v14M8 19h8"></path>',
-  unmarked: '<circle cx="12" cy="12" r="8"></circle><path d="M9.5 9.5a2.7 2.7 0 1 1 4.1 2.3c-1 .6-1.6 1.1-1.6 2.2M12 17h.01"></path>',
-  top: '<path d="m6 14 6-6 6 6"></path><path d="M12 8v12M5 4h14"></path>',
-  intra: '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M7 12h9M13 9l3 3-3 3"></path>',
-  external: '<rect x="3" y="5" width="7" height="14" rx="1.5"></rect><rect x="14" y="5" width="7" height="14" rx="1.5"></rect><path d="M9 12h7M13 9l3 3-3 3"></path>',
-  globalDown: '<path d="M5 5h14M7 9h10"></path><path d="M12 9v8M9 14l3 3 3-3"></path><rect x="6" y="18" width="12" height="3" rx="1"></rect>',
-  dictionary: '<path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v17H7.5A3.5 3.5 0 0 0 4 22z"></path><path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v17h4.5A3.5 3.5 0 0 1 20 22z"></path><path d="M7 7h2.5M14.5 7H17M7 11h2.5M14.5 11H17"></path>',
-  aiChat: '<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path><circle cx="9" cy="10.5" r="1.2"></circle><circle cx="15" cy="10.5" r="1.2"></circle><path d="M10.2 10.5h3.6"></path>',
+  back: '<path d="M14.8 5.4 8.2 12l6.6 6.6"></path>',
+  search: '<circle cx="10.7" cy="10.7" r="6.2"></circle><path d="m15.4 15.4 4.4 4.4"></path>',
+  target: '<circle cx="12" cy="12" r="6.4"></circle><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4"></path>',
+  relation: '<path d="M8 7.2h8M8.2 16.8h7.6"></path><circle cx="6" cy="7.2" r="2"></circle><circle cx="18" cy="7.2" r="2"></circle><circle cx="6" cy="16.8" r="2"></circle><circle cx="18" cy="16.8" r="2"></circle>',
+  disclosure: '<path d="M8.8 5.7c0-.75.86-1.18 1.46-.72l7.1 5.55c.88.68.88 2.01 0 2.7l-7.1 5.55c-.6.46-1.46.03-1.46-.72V5.7Z" fill="currentColor" stroke="none"></path>',
+  jump: '<path d="M13.5 5.2h4.2c.6 0 1.1.5 1.1 1.1v4.2"></path><path d="m18.4 5.6-7.1 7.1"></path><path d="M17.8 13.3v4.4c0 .6-.5 1.1-1.1 1.1H6.3c-.6 0-1.1-.5-1.1-1.1V7.3c0-.6.5-1.1 1.1-1.1h4.4"></path>',
+  pin: '<path d="M9.1 3.8h5.8l-.75 4.4 2.8 2.75v1.75h-3.65v6.25L12 21l-1.3-2.05V12.7H7.05v-1.75l2.8-2.75-.75-4.4Z"></path>',
+  more: '<circle cx="5.2" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="18.8" cy="12" r="1.35" fill="currentColor" stroke="none"></circle>',
+  chevron: '<path d="m8.4 9.3 3.6 3.6 3.6-3.6"></path>',
+  enter: '<path d="M18.8 5.2v6.9H7.1"></path><path d="m10.1 9.1-3 3 3 3"></path>',
+  refresh: '<rect x="4.1" y="5.8" width="15.8" height="14.1" rx="2.4"></rect><path d="M8 3.5v4.1M16 3.5v4.1M4.1 10.1h15.8"></path><path d="M15.9 13.5a3.7 3.7 0 1 1-1.05-1.55"></path><path d="M15.9 11.4v2.4h-2.4"></path>',
+  calendar: '<rect x="3.8" y="5.4" width="16.4" height="15" rx="2.4"></rect><path d="M8 3.4v4M16 3.4v4M3.8 9.9h16.4"></path>',
+  alphabet: '<path d="M4.8 19 9.6 5l4.8 14M6.7 14h5.8"></path><path d="M16.6 8.1h3.2l-3.2 4.1h3.2"></path>',
+  phrase: '<path d="M4.5 6.5h15M4.5 12h11.2M4.5 17.5h15"></path>',
+  word: '<path d="M5.2 5.1h13.6M12 5.1v13.8M8.2 18.9h7.6"></path>',
+  unmarked: '<circle cx="12" cy="12" r="8.1"></circle><path d="M9.5 9.5a2.75 2.75 0 1 1 4.15 2.35c-1.05.62-1.65 1.16-1.65 2.25M12 17.3h.01"></path>',
+  top: '<path d="m6.3 13.8 5.7-5.7 5.7 5.7"></path><path d="M12 8.4v11.1M5.1 4.5h13.8"></path>',
+  intra: '<rect x="4.2" y="5.2" width="15.6" height="13.6" rx="2.4"></rect><path d="M7.4 12h8.5M13.1 9.2 15.9 12l-2.8 2.8"></path>',
+  external: '<rect x="3.3" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><rect x="14.1" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><path d="M9.6 12h6.1M13.2 9.4l2.6 2.6-2.6 2.6"></path>',
+  globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
+  dictionary: '<path d="M4.3 6.2A3.2 3.2 0 0 1 7.5 3H12v16.7H7.5a3.2 3.2 0 0 0-3.2 3.2V6.2Z"></path><path d="M19.7 6.2A3.2 3.2 0 0 0 16.5 3H12v16.7h4.5a3.2 3.2 0 0 1 3.2 3.2V6.2Z"></path><path d="M7.2 7.4h2.1M14.7 7.4h2.1M7.2 11h2.1M14.7 11h2.1"></path>',
+  aiChat: '<path d="M5.1 4.2h13.8a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2h-7.5l-5.5 4.1v-4.1h-.8a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2Z"></path><path d="m12 7.1.72 1.68 1.68.72-1.68.72L12 11.9l-.72-1.68-1.68-.72 1.68-.72L12 7.1Z" fill="currentColor" stroke="none"></path>',
+  query: '<circle cx="9.4" cy="10.2" r="5.2"></circle><path d="m13.3 14.1 3.8 3.8"></path><path d="m17.4 5.2.55 1.28 1.28.55-1.28.55-.55 1.28-.55-1.28-1.28-.55 1.28-.55.55-1.28Z" fill="currentColor" stroke="none"></path>',
+  warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
+  clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
+  close: '<path d="m7 7 10 10M17 7 7 17"></path>',
+  grip: '<circle cx="8" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="17" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="17" r="1.15" fill="currentColor" stroke="none"></circle>',
+  add: '<path d="M12 5v14M5 12h14"></path>',
 };
 
 function svgIcon(name, className = '') {
@@ -163,20 +175,26 @@ let viewportUpdateFrame = 0;
 function updateVisualViewportVars() {
   cancelAnimationFrame(viewportUpdateFrame);
   viewportUpdateFrame = requestAnimationFrame(() => {
-    const height = window.visualViewport?.height || window.innerHeight;
+    const viewport = window.visualViewport;
+    const height = viewport?.height || window.innerHeight;
+    const top = viewport?.offsetTop || 0;
+    const left = viewport?.offsetLeft || 0;
+    const bottom = Math.max(0, window.innerHeight - top - height);
     document.documentElement.style.setProperty('--visual-height', `${Math.round(height)}px`);
+    document.documentElement.style.setProperty('--visual-top', `${Math.round(top)}px`);
+    document.documentElement.style.setProperty('--visual-left', `${Math.round(left)}px`);
+    document.documentElement.style.setProperty('--visual-bottom', `${Math.round(bottom)}px`);
+    const keyboardVisible = height < window.innerHeight - 120;
+    document.documentElement.classList.toggle('keyboard-visible', keyboardVisible);
+    elements['search-dialog']?.classList.toggle('keyboard-visible', keyboardVisible);
+    if (activeQueryMenu) positionQueryMenu();
   });
 }
 
 function lockPageForModal() {
   openModalCount += 1;
   if (openModalCount !== 1) return;
-  lockedScrollY = window.scrollY;
-  document.body.style.position = 'fixed';
-  document.body.style.top = `-${lockedScrollY}px`;
-  document.body.style.left = '0';
-  document.body.style.right = '0';
-  document.body.style.width = '100%';
+  document.documentElement.classList.add('modal-open');
   document.body.classList.add('modal-open');
   updateVisualViewportVars();
 }
@@ -184,14 +202,8 @@ function lockPageForModal() {
 function unlockPageForModal() {
   openModalCount = Math.max(0, openModalCount - 1);
   if (openModalCount) return;
+  document.documentElement.classList.remove('modal-open');
   document.body.classList.remove('modal-open');
-  document.body.style.position = '';
-  document.body.style.top = '';
-  document.body.style.left = '';
-  document.body.style.right = '';
-  document.body.style.width = '';
-  const targetY = lockedScrollY;
-  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, targetY)));
 }
 
 function snapshotAppDialog() {
@@ -221,7 +233,7 @@ function closeDialog({ all = false } = {}) {
   if (!all && dialogStack.length) {
     const frame = dialogStack.pop();
     restoreAppDialog(frame);
-    queueMicrotask(() => /** @type {HTMLElement | null} */ (elements['dialog-body'].querySelector('input,textarea,select,button'))?.focus());
+    queueMicrotask(() => elements['dialog-close']?.focus({ preventScroll: true }));
     return;
   }
   dialogStack.length = 0;
@@ -255,7 +267,7 @@ function openDialog({
     lockPageForModal();
     elements['app-dialog'].showModal();
   }
-  queueMicrotask(() => /** @type {HTMLElement | null} */ (elements['dialog-body'].querySelector('input,textarea,select,button'))?.focus());
+  queueMicrotask(() => elements['dialog-close']?.focus({ preventScroll: true }));
 }
 
 function closeActionDialog() {
@@ -274,7 +286,7 @@ function openActionDialog({ title, description = '', body = [] }) {
     lockPageForModal();
     elements['action-dialog'].showModal();
   }
-  queueMicrotask(() => /** @type {HTMLElement | null} */ (elements['action-body'].querySelector('button,input'))?.focus());
+  queueMicrotask(() => elements['action-close']?.focus({ preventScroll: true }));
 }
 
 function closeSearchDialog() {
@@ -318,6 +330,8 @@ function parseRoute() {
 }
 
 function navigateCollection(collectionId, entryId = '', reason = 'jump') {
+  if (!currentCollectionId) homeScrollY = window.scrollY;
+  closeQueryMenu();
   const hash = collectionRoute(collectionId, entryId);
   if (location.hash !== hash) history.pushState(null, '', hash);
   currentCollectionId = collectionId;
@@ -328,6 +342,8 @@ function navigateCollection(collectionId, entryId = '', reason = 'jump') {
 
 function goHome() {
   closeReview();
+  closeQueryMenu();
+  restoreHomeScrollPending = Boolean(currentCollectionId);
   if (location.hash) history.pushState(null, '', location.pathname + location.search);
   currentCollectionId = '';
   renderApp();
@@ -502,7 +518,7 @@ function libraryManagerBody() {
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const section = el('section', { className: 'manager-domain', dataset: { sortId: domain.id } });
     const domainHeader = el('div', { className: 'manager-domain-header' }, [
-      button('☰', 'drag-handle', () => {}, { title: '拖动词域' }),
+      iconButton('grip', 'drag-handle', '拖动词域', () => {}),
       el('strong', { text: domain.name }),
       iconButton('more', 'manager-more', '词域操作', () => openDomainMenu(domain.id)),
     ]);
@@ -521,19 +537,19 @@ function libraryManagerBody() {
     const list = el('div', { className: 'manager-list' });
     for (const collection of normalCollections) {
       list.append(el('div', { className: 'manager-row', dataset: { sortId: collection.id } }, [
-        button('☰', 'drag-handle', () => {}, { title: '拖动词表' }),
+        iconButton('grip', 'drag-handle', '拖动词表', () => {}),
         el('span', { className: 'manager-name', text: collection.name }),
         el('span', { className: 'manager-count', text: getVisibleEntries(collection.id).length.toLocaleString() }),
         iconButton('more', 'manager-more', '词表操作', () => openCollectionMenu(collection.id)),
       ]));
     }
-    list.append(button('＋', 'manager-add', () => openAddCollectionDialog(domain.id), { title: '新建词表' }));
+    list.append(iconButton('add', 'manager-add', '新建词表', () => openAddCollectionDialog(domain.id)));
     section.append(domainHeader, fixed, list);
     domainList.append(section);
     makeSortableList(list, (ids) => reorderCollections(domain.id, ids));
   }
   makeSortableList(domainList, reorderDomains);
-  root.append(domainList, button('＋ 新建词域', 'secondary-button manager-add-domain', openAddDomainDialog));
+  root.append(domainList, el('button', { type: 'button', className: 'secondary-button manager-add-domain', on: { click: openAddDomainDialog } }, [svgIcon('add'), el('span', { text: '新建词域' })]));
   return root;
 }
 
@@ -641,6 +657,20 @@ function openDataExchangePreview(file, selection, initialPlan) {
       const finalPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
       const recovery = await exportFullBackup();
       downloadText(`vocabulary-index-recovery-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
+      if (selection.mode === 'replace') {
+        closeDialog({ all: true });
+        requestAnimationFrame(() => openConfirmDialog({
+          title: '确认完整替换',
+          description: '恢复备份下载已发起。确认后将替换所选范围。',
+          submitText: '确认替换',
+          onSubmit: async () => {
+            await restoreBackup(finalPlan.nextBackup);
+            goHome();
+            showToast('内容 JSON 已替换');
+          },
+        }));
+        return;
+      }
       await restoreBackup(finalPlan.nextBackup);
       closeDialog({ all: true });
       goHome();
@@ -671,10 +701,6 @@ function openDataExchangeDialog() {
   ]);
   const file = el('input', { type: 'file', accept: '.json,application/json' });
   const status = el('p', { className: 'help-text exchange-status', text: '' });
-  const seedConfirm = el('input', { type: 'checkbox' });
-  const seedConfirmField = el('label', { className: 'inline-field exchange-seed-confirm hidden' }, [
-    el('span', { text: '确认还原初始数据' }), seedConfirm,
-  ]);
   const scopeField = field('范围', scope);
   const domainField = field('独立域', domain);
   const collectionField = field('词表', collection);
@@ -707,7 +733,6 @@ function openDataExchangeDialog() {
     collectionField.classList.toggle('hidden', !contentOperation || scope.value !== 'collection');
     modeField.classList.toggle('hidden', !importing);
     fileField.classList.toggle('hidden', !importing && operation.value !== 'restore-backup');
-    seedConfirmField.classList.toggle('hidden', operation.value !== 'reset-seed');
     if (operation.value === 'export-backup') status.textContent = '包含内容、PIN、位置、标注和设置。';
     else if (operation.value === 'restore-backup') status.textContent = '恢复会整体替换当前应用状态。';
     else if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置、标注与显示设置；执行前自动导出完整备份。';
@@ -723,27 +748,43 @@ function openDataExchangeDialog() {
 
   openDialog({
     title: '数据交换',
-    body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, seedConfirmField, status])],
+    body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, status])],
     submitText: '执行',
     onSubmit: async () => {
       if (operation.value === 'export-backup') { await exportBackupNow(); return; }
       if (operation.value === 'reset-seed') {
-        if (!seedConfirm.checked) throw new Error('请先确认还原初始数据');
         const recovery = await exportFullBackup();
-        downloadText(`vocabulary-index-recovery-before-seed-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
-        await resetToSeed();
+        downloadText(`vocabulary-index-recovery-before-seed-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}
+`);
         closeDialog({ all: true });
-        goHome();
-        showToast('已还原到当前版本 Seed');
+        requestAnimationFrame(() => openConfirmDialog({
+          title: '还原到当前版本 Seed',
+          description: '完整备份下载已发起。确认后将替换全部本地内容和个人状态。',
+          submitText: '确认还原',
+          onSubmit: async () => {
+            await resetToSeed();
+            goHome();
+            showToast('已还原到当前版本 Seed');
+          },
+        }));
         return;
       }
       if (operation.value === 'restore-backup') {
         const parsed = await readImportFile(file.files?.[0]);
         if (parsed.kind !== 'backup') throw new Error('该文件不是完整备份');
-        await restoreBackup(parsed.backup);
+        const recovery = await exportFullBackup();
+        downloadText(`vocabulary-index-recovery-before-restore-${APP_VERSION}-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.json`, `${JSON.stringify(recovery, null, 2)}\n`);
         closeDialog({ all: true });
-        goHome();
-        showToast('完整备份已恢复');
+        requestAnimationFrame(() => openConfirmDialog({
+          title: '确认恢复完整备份',
+          description: '当前状态备份下载已发起。确认后将整体替换本机应用状态。',
+          submitText: '确认恢复',
+          onSubmit: async () => {
+            await restoreBackup(parsed.backup);
+            goHome();
+            showToast('完整备份已恢复');
+          },
+        }));
         return;
       }
       const selection = {
@@ -777,6 +818,31 @@ async function performRedo() {
   catch (error) { displayError(error); }
 }
 
+function renderLargeTitle({ eyebrow = '', title = '', subtitle = '' } = {}) {
+  elements['large-title-eyebrow'].textContent = eyebrow;
+  elements['large-title-eyebrow'].classList.toggle('hidden', !eyebrow);
+  elements['large-title-heading'].textContent = title;
+  elements['large-title-subtitle'].textContent = subtitle;
+  elements['large-title-subtitle'].classList.toggle('hidden', !subtitle);
+}
+
+async function clearAllAnnotationsFromHome() {
+  await clearAllAnnotations();
+  showToast('全部标注已撤销');
+}
+
+function renderHomeAnnotationBanner() {
+  const total = getState().annotations.length;
+  if (!total || currentCollectionId) {
+    elements['home-annotation-banner'].classList.add('hidden');
+    return;
+  }
+  elements['home-annotation-icon'].replaceChildren(svgIcon('warning'));
+  elements['home-annotation-text'].textContent = `${total.toLocaleString()} 条待处理标注`;
+  elements['clear-all-annotations'].replaceChildren(svgIcon('clear'), el('span', { text: '全部撤销' }));
+  elements['home-annotation-banner'].classList.remove('hidden');
+}
+
 function renderHome() {
   const state = getState();
   currentCollectionId = '';
@@ -788,13 +854,12 @@ function renderHome() {
   elements['pin-bar'].classList.add('hidden');
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
-  elements['page-subtitle'].textContent = getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString();
+  elements['page-subtitle'].textContent = 'Vocabulary Index';
+  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
-  const annotationTotal = state.annotations.length;
   const homeActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
-  if (annotationTotal) homeActions.unshift(button(`${annotationTotal}`, 'secondary-button compact-button annotation-count-button', () => startAnnotationReview(''), { title: '待核查' }));
 
   const sections = [el('section', { className: 'index-scope global-scope' }, [
     el('header', { className: 'scope-heading' }, [
@@ -821,6 +886,11 @@ function renderHome() {
     ]));
   }
   elements['home-view'].replaceChildren(...sections);
+  renderHomeAnnotationBanner();
+  if (restoreHomeScrollPending) {
+    restoreHomeScrollPending = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo({ top: homeScrollY, behavior: 'auto' })));
+  }
 }
 
 function renderCollection() {
@@ -842,6 +912,7 @@ function renderCollection() {
   elements['home-view'].classList.add('hidden');
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
+  elements['home-annotation-banner'].classList.add('hidden');
   elements['page-title'].textContent = collection.name;
   let words = 0;
   let phrases = 0;
@@ -852,12 +923,15 @@ function renderCollection() {
   const countText = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
     : entries.length.toLocaleString();
-  elements['page-subtitle'].textContent = [countText, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
+  const collectionSubtitle = [countText, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
+  elements['page-subtitle'].textContent = collectionSubtitle;
+  renderLargeTitle({ eyebrow: domain?.name || (globalSystemView ? '全局索引' : ''), title: collection.name, subtitle: collectionSubtitle });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '更多');
   renderCollectionToolbar(collection);
   renderPinBar(collection);
   renderEntryList(collection, domain, entries);
+  elements['back-to-top']?.classList.remove('hidden');
   updateBackToTopVisibility();
   if (pendingJumpEntryId) queueMicrotask(() => jumpToEntry(pendingJumpEntryId, { collectionId: collection.id, reason: pendingJumpReason }));
 }
@@ -865,9 +939,12 @@ function renderCollection() {
 function renderCollectionToolbar(collection) {
   const annotationCount = annotationCountForCollection(collection.id);
   if (annotationCount) {
-    elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [
-      button(`${annotationCount}`, 'secondary-button compact-button annotation-count-button', () => startAnnotationReview(collection.id), { title: '待核查' }),
-    ]));
+    const reviewButton = el('button', {
+      type: 'button', className: 'secondary-button compact-button annotation-count-button',
+      title: '进入当前词表标注审阅', 'aria-label': `当前词表有 ${annotationCount} 条待核查标注`,
+      on: { click: () => startAnnotationReview(collection.id) },
+    }, [svgIcon('warning'), el('span', { text: annotationCount.toLocaleString() })]);
+    elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [reviewButton]));
   } else elements['collection-toolbar'].replaceChildren();
 }
 
@@ -955,7 +1032,8 @@ function dateAnchorId(section, dateKey) {
 function formatStudyDate(dateKey) {
   if (!dateKey) return '';
   const [year, month, day] = dateKey.split('-').map(Number);
-  return `${year}·${month}·${day}`;
+  const currentYear = new Date().getFullYear();
+  return year === currentYear ? `${month}·${day}` : `${String(year).slice(-2)}·${month}·${day}`;
 }
 
 function currentSectionEntries(section) {
@@ -970,7 +1048,7 @@ function jumpToSection(section) {
   if (!target) return;
   activeSection = section;
   suppressScrollPersistence(500);
-  positionElementAtReadingAnchor(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
+  positionHeadingBelowChrome(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
 }
 
 async function switchCollectionMode(collection, section) {
@@ -1016,7 +1094,7 @@ function calendarForSection(collection, section, dates) {
       if (!target) return;
       activeSection = section;
       suppressScrollPersistence(500);
-      positionElementAtReadingAnchor(target);
+      positionHeadingBelowChrome(target);
     }, { disabled: !enabled, title: enabled ? `跳到 ${dateKey}` : '该日没有记录' }));
   }
   const calendar = el('section', { className: 'study-calendar', dataset: { section, month: monthKey }, 'aria-label': `${year} 年 ${month} 月学习日期` }, [
@@ -1042,22 +1120,23 @@ function calendarForSection(collection, section, dates) {
 }
 
 function navigationControls(collection, section, sectionContext, mode, otherSection = '') {
-  const controls = [lastPositionButton(collection, section, mode)];
-  controls.push(iconButton(mode === 'date' ? 'alphabet' : 'calendar', 'mode-toggle-button', mode === 'date' ? '切换到字母排序' : '切换到日期排序', () => {
+  const fixed = [lastPositionButton(collection, section, mode)];
+  fixed.push(iconButton(mode === 'date' ? 'alphabet' : 'calendar', 'mode-toggle-button', mode === 'date' ? '切换到字母排序' : '切换到日期排序', () => {
     switchCollectionMode(collection, section).catch(displayError);
   }));
   if (otherSection) {
     const otherEntries = currentSectionEntries(otherSection);
-    controls.push(iconButton(otherSection === 'phrase' ? 'phrase' : 'word', 'section-jump-button', otherSection === 'phrase' ? '跳到短语区' : '跳到词汇区', () => jumpToSection(otherSection), { disabled: !otherEntries.length }));
+    fixed.push(iconButton(otherSection === 'phrase' ? 'phrase' : 'word', 'section-jump-button', otherSection === 'phrase' ? '跳到短语区' : '跳到词汇区', () => jumpToSection(otherSection), { disabled: !otherEntries.length }));
   }
+  const track = [];
   if (mode === 'date') {
     const hasUnmarked = sectionContext.entries.some((entry) => !getStudyStamp(entry, collection.id));
-    controls.push(iconButton('unmarked', 'unmarked-jump-button', '跳到未标注条目', () => {
+    fixed.push(iconButton('unmarked', 'unmarked-jump-button', '跳到未标注条目', () => {
       const target = document.getElementById(`unmarked-${section}`);
       if (target) {
         activeSection = section;
         suppressScrollPersistence(500);
-        positionElementAtReadingAnchor(target);
+        positionHeadingBelowChrome(target.querySelector('.date-unmarked-heading') || target);
       }
     }, { disabled: !hasUnmarked }));
   } else {
@@ -1071,15 +1150,22 @@ function navigationControls(collection, section, sectionContext, mode, otherSect
         if (target) {
           activeSection = section;
           suppressScrollPersistence(450);
-          positionElementAtReadingAnchor(target.querySelector('.letter-heading') || target);
+          positionHeadingBelowChrome(target.querySelector('.letter-heading') || target);
         }
       }, { disabled: !enabled });
       control.dataset.letter = letter;
       control.dataset.section = section;
-      controls.push(control);
+      track.push(control);
     }
   }
-  return controls;
+  return { fixed, track };
+}
+
+function populateNavigationBar(nav, controls) {
+  const fixed = el('div', { className: 'letter-nav-fixed' }, controls.fixed);
+  const track = el('div', { className: 'letter-nav-track' }, controls.track);
+  nav.replaceChildren(fixed, track);
+  nav.classList.toggle('no-track', !controls.track.length);
 }
 
 function createSectionContext(section, entries, collection, mode) {
@@ -1135,7 +1221,12 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
     const items = slice.map((entry, index) => ({ entry, groupIndex: startIndex + offset + index }));
     entryChunkData.set(chunk, { items, collection, domain, globalIndexById });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
-    chunk.style.minHeight = `${slice.length * ENTRY_ROW_ESTIMATE}px`;
+    const estimatedHeight = slice.reduce((total, entry) => {
+      const kind = entryLayoutKind(entry);
+      const rowHeight = kind === 'phrase-extreme' ? 102 : kind === 'phrase-two-line' ? 84 : ENTRY_ROW_ESTIMATE;
+      return total + rowHeight;
+    }, 0);
+    chunk.style.minHeight = `${estimatedHeight}px`;
     fragment.append(chunk);
     if (renderFirst && offset === 0) materializeEntryChunk(chunk);
     else {
@@ -1261,7 +1352,7 @@ function renderEntryList(collection, domain, entries) {
   elements['letter-nav'].classList.remove('hidden');
   elements['letter-nav'].dataset.section = firstSection;
   elements['letter-nav'].setAttribute('aria-label', `${firstSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引`);
-  elements['letter-nav'].replaceChildren(...navigationControls(collection, firstSection, firstContext, mode, otherFirst));
+  populateNavigationBar(elements['letter-nav'], navigationControls(collection, firstSection, firstContext, mode, otherFirst));
 
   const output = [];
   if (mode === 'date') output.push(calendarForSection(collection, firstSection, firstContext.dates));
@@ -1270,7 +1361,8 @@ function renderEntryList(collection, domain, entries) {
   if (isCompositeCollection(collection)) {
     const secondSection = firstSection === 'word' ? 'phrase' : 'word';
     const secondContext = sections.get(secondSection);
-    const secondaryNav = el('nav', { className: 'letter-nav section-letter-nav', dataset: { section: secondSection }, 'aria-label': `${secondSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引` }, navigationControls(collection, secondSection, secondContext, mode, firstSection));
+    const secondaryNav = el('nav', { className: 'letter-nav section-letter-nav', dataset: { section: secondSection }, 'aria-label': `${secondSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引` });
+    populateNavigationBar(secondaryNav, navigationControls(collection, secondSection, secondContext, mode, firstSection));
     output.push(secondaryNav);
     if (mode === 'date') output.push(calendarForSection(collection, secondSection, secondContext.dates));
     output.push(mode === 'date' ? renderDateContent(context, secondContext) : renderAlphabetContent(context, secondContext));
@@ -1515,7 +1607,7 @@ function renderRelationPanel(entry, items = null) {
       el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { className: 'relation-text', text: item.text })]),
       gloss ? el('span', { className: 'relation-gloss', text: gloss, title: gloss }) : el('span', { className: 'relation-gloss empty', 'aria-hidden': 'true' }),
       item.destinations?.length ? iconButton(
-        item.navigationKind === 'external' ? 'external' : item.navigationKind === 'global' ? 'globalDown' : 'intra',
+        'jump',
         `relation-jump ${item.navigationKind || 'intra'}`,
         item.navigationKind === 'external' ? `跳到其他独立域中的 ${item.text}` : item.navigationKind === 'global' ? `从全局下钻到 ${item.text}` : `跳到当前独立域中的 ${item.text}`,
         () => jumpToRelation(item),
@@ -1543,6 +1635,7 @@ function indexesForRenderedEntry(context, entry) {
 }
 
 function toggleEntryRelations(entryId) {
+  closeQueryMenu();
   if (expandedRelations.has(entryId)) expandedRelations.delete(entryId);
   else expandedRelations.add(entryId);
   const context = collectionRenderContext;
@@ -1553,6 +1646,7 @@ function toggleEntryRelations(entryId) {
 }
 
 async function toggleEntryPin(entry, collection, sourceButton = null) {
+  closeQueryMenu();
   const wasPinned = getState().pinByEntry.has(entry.id);
   sourceButton?.classList.toggle('active', !wasPinned);
   sourceButton?.setAttribute('aria-pressed', wasPinned ? 'false' : 'true');
@@ -1591,6 +1685,7 @@ function displayGlossForEntry(entry, collection, domain) {
 }
 
 async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
+  closeQueryMenu();
   const mode = getViewMode(collection.id);
   if (mode === 'date') {
     pendingJumpEntryId = entry.id;
@@ -1631,44 +1726,190 @@ function openChatGPTEntryQuery(entry, collection) {
   window.location.assign(buildChatGPTShortcutUrl(prompt));
 }
 
+function estimatedTextUnits(text) {
+  let units = 0;
+  for (const char of String(text || '')) {
+    if (/\s/.test(char)) units += 0.42;
+    else if (/[ilI1'.,:;|]/.test(char)) units += 0.48;
+    else if (/[mwMW@%&]/.test(char)) units += 1.28;
+    else if (/[^\x00-\x7F]/.test(char)) units += 1.05;
+    else units += 0.86;
+  }
+  return units;
+}
+
+function entryLayoutKind(entry) {
+  if (entry.kind !== 'phrase') return 'word-normal';
+  const units = estimatedTextUnits(entry.text);
+  if (units <= 13.5) return 'phrase-normal';
+  if (units <= 28) return 'phrase-two-line';
+  return 'phrase-extreme';
+}
+
+function handleEntryPrimaryAction(entry, collection, annotation) {
+  if (performance.now() - lastTextScrollAt < 180) return;
+  if (annotation) startAnnotationReview(collection.id, entry.id);
+  else copyEntry(entry, collection);
+}
+
+function createTextViewport(entry, collection, gloss, annotation, layoutKind) {
+  const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
+  const viewport = el('div', {
+    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}`,
+    role: 'button', tabindex: 0,
+    'aria-label': annotation ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
+  });
+  const content = el('div', { className: 'entry-text-content' }, [
+    el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
+    gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
+  ]);
+  viewport.append(content);
+  if (isScrollable) viewport.addEventListener('scroll', () => { lastTextScrollAt = performance.now(); }, { passive: true });
+  viewport.addEventListener('click', () => handleEntryPrimaryAction(entry, collection, annotation));
+  viewport.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handleEntryPrimaryAction(entry, collection, annotation);
+  });
+  return viewport;
+}
+
+function closeQueryMenu() {
+  if (!activeQueryMenu) return;
+  elements['query-menu'].classList.add('hidden');
+  elements['query-menu'].classList.remove('below');
+  elements['query-menu'].replaceChildren();
+  activeQueryMenu.source?.setAttribute('aria-expanded', 'false');
+  activeQueryMenu = null;
+}
+
+function positionQueryMenu() {
+  if (!activeQueryMenu || elements['query-menu'].classList.contains('hidden')) return;
+  if (!activeQueryMenu.source?.isConnected) { closeQueryMenu(); return; }
+  const sourceRect = activeQueryMenu.source.getBoundingClientRect();
+  const menu = elements['query-menu'];
+  const menuRect = menu.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportLeft = viewport?.offsetLeft || 0;
+  const viewportWidth = viewport?.width || window.innerWidth;
+  const viewportHeight = viewport?.height || window.innerHeight;
+  const viewportRight = viewportLeft + viewportWidth;
+  const viewportBottom = viewportTop + viewportHeight;
+  const chromeBottom = Math.max(viewportTop + 8, document.querySelector('.topbar')?.getBoundingClientRect().bottom || viewportTop);
+  const gap = 9;
+  let top = sourceRect.top - menuRect.height - gap;
+  let below = false;
+  if (top < chromeBottom + 8) {
+    top = sourceRect.bottom + gap;
+    below = true;
+  }
+  top = Math.max(viewportTop + 8, Math.min(top, viewportBottom - menuRect.height - 8));
+  const left = Math.min(
+    Math.max(viewportLeft + 8, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2),
+    viewportRight - menuRect.width - 8,
+  );
+  const arrowX = Math.min(menuRect.width - 16, Math.max(16, sourceRect.left + sourceRect.width / 2 - left));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.setProperty('--query-arrow-x', `${Math.round(arrowX)}px`);
+  menu.classList.toggle('below', below);
+}
+
+function openQueryMenu(entry, collection, source) {
+  if (activeQueryMenu?.entryId === entry.id && activeQueryMenu.source === source) {
+    closeQueryMenu();
+    return;
+  }
+  closeQueryMenu();
+  activeQueryMenu = { entryId: entry.id, source };
+  source.setAttribute('aria-expanded', 'true');
+  const oxford = iconButton('dictionary', 'query-menu-option oxford-option', `在牛津英汉辞书中查询 ${entry.text}`, () => {
+    closeQueryMenu();
+    try { openOxfordLookup(entry); } catch (error) { displayError(error); }
+  });
+  oxford.setAttribute('role', 'menuitem');
+  const chatgpt = iconButton('aiChat', 'query-menu-option chatgpt-option', `交给 ChatGPT 新建查询：${entry.text}`, () => {
+    closeQueryMenu();
+    try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
+  });
+  chatgpt.setAttribute('role', 'menuitem');
+  elements['query-menu'].replaceChildren(oxford, chatgpt);
+  elements['query-menu'].classList.remove('hidden');
+  requestAnimationFrame(positionQueryMenu);
+}
+
+function entryActionButtons(entry, collection, pinned, studyStamp) {
+  const refresh = iconButton('refresh', 'entry-study-refresh', studyStamp ? '刷新学习日期' : '标注今天为学习日期', (event) => refreshEntryStudyDate(entry, collection, event.currentTarget).catch(displayError));
+  const pin = el('button', {
+    type: 'button', className: `entry-pin${pinned ? ' active' : ''}`,
+    title: pinned ? '取消 PIN' : '设置 PIN', 'aria-label': pinned ? '取消 PIN' : '设置 PIN',
+    'aria-pressed': pinned ? 'true' : 'false',
+    on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) },
+  }, [svgIcon('pin')]);
+  const query = iconButton('query', 'entry-query', '选择查询方式', (event) => openQueryMenu(entry, collection, event.currentTarget));
+  query.setAttribute('aria-haspopup', 'menu');
+  query.setAttribute('aria-expanded', 'false');
+  const more = iconButton('more', 'entry-more', '更多', () => openEntryActions(entry.id, collection.id));
+  return { refresh, pin, query, more };
+}
+
 function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, globalIndex: 0 }) {
   const state = getState();
   const pinned = state.pinByEntry.has(entry.id);
   const annotation = state.annotationByEntry.get(entry.id);
   const numberMode = state.settings.numberMode || 'global';
-  const indexText = numberMode === 'group' ? `${indexes.groupIndex}.` : numberMode === 'global' ? `${indexes.globalIndex}.` : '';
+  const indexText = numberMode === 'group' ? `${indexes.groupIndex}` : numberMode === 'global' ? `${indexes.globalIndex}` : '';
   const expanded = expandedRelations.has(entry.id);
   const relations = expanded ? relationItemsForEntry(entry) : null;
   const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
   const studyStamp = getStudyStamp(entry, collection.id);
-  const row = el('article', { className: `entry-row${expanded ? ' relations-open' : ''}`, id: `entry-${entry.id}`, dataset: { entryId: entry.id, section: sectionForEntry(entry) } });
-  const info = el('div', { className: 'entry-info' }, [
-    el('button', { type: 'button', className: 'copy-entry', on: { click: () => copyEntry(entry, collection) } }, [
-      indexText ? el('span', { className: 'entry-index', text: indexText }) : null,
-      el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
-    ]),
-    gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : el('span', { className: 'entry-gloss empty', 'aria-hidden': 'true' }),
-    el('span', {
-      className: `entry-study-date${studyStamp ? ' marked' : ''}`,
-      text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '',
-      'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期',
-    }),
-  ]);
-  const actions = el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, [
-    iconButton('refresh', 'entry-study-refresh', studyStamp ? '刷新学习日期' : '标注今天为学习日期', (event) => refreshEntryStudyDate(entry, collection, event.currentTarget).catch(displayError)),
-    annotation ? button('•', 'entry-annotation', () => startAnnotationReview(collection.id, entry.id), { title: '待核查' }) : el('span', { className: 'entry-action-placeholder', 'aria-hidden': 'true' }),
-    hasRelations ? iconButton('relation', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)) : el('span', { className: 'entry-action-placeholder entry-relations-placeholder', 'aria-hidden': 'true' }),
-    el('button', { type: 'button', className: `entry-pin${pinned ? ' active' : ''}`, title: pinned ? '取消 PIN' : '设置 PIN', 'aria-label': pinned ? '取消 PIN' : '设置 PIN', 'aria-pressed': pinned ? 'true' : 'false', on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) } }, [svgIcon('pin')]),
-    iconButton('more', 'entry-more', '更多', () => openEntryActions(entry.id, collection.id)),
-    iconButton('dictionary', 'entry-oxford', `在牛津英汉辞书中查询 ${entry.text}`, () => {
-      try { openOxfordLookup(entry); } catch (error) { displayError(error); }
-    }),
-    iconButton('aiChat', 'entry-chatgpt', `交给 ChatGPT 新建查询：${entry.text}`, () => {
-      try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
-    }),
-  ]);
-  row.append(el('div', { className: 'entry-line' }, [info, actions]));
+  const layoutKind = entryLayoutKind(entry);
+  const row = el('article', {
+    className: `entry-row ${layoutKind}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}`,
+    id: `entry-${entry.id}`,
+    dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
+  });
+  const actions = entryActionButtons(entry, collection, pinned, studyStamp);
+  const textViewport = createTextViewport(entry, collection, gloss, annotation, layoutKind);
+  const indexBadge = indexText ? el('span', { className: 'entry-index-badge', text: indexText, 'aria-hidden': 'true' }) : null;
+  let primary;
+  if (layoutKind === 'phrase-extreme') {
+    const functionalItems = [];
+    if (studyStamp) functionalItems.push(el('span', {
+      className: 'entry-study-date marked', text: formatStudyDate(studyStamp.reviewDateKey),
+      'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
+    }));
+    functionalItems.push(actions.refresh, actions.pin, actions.query, actions.more);
+    const extremeFunctions = el('div', { className: 'entry-extreme-functions' }, functionalItems);
+    extremeFunctions.style.setProperty('--visible-items', String(functionalItems.length));
+    primary = el('div', { className: 'entry-line entry-line-extreme' }, [
+      indexBadge,
+      textViewport,
+      extremeFunctions,
+    ]);
+  } else {
+    primary = el('div', { className: 'entry-line' }, [
+      indexBadge,
+      textViewport,
+      el('span', {
+        className: `entry-study-date${studyStamp ? ' marked' : ''}`,
+        text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '',
+        'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期',
+      }),
+      el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, [actions.refresh, actions.pin, actions.query, actions.more]),
+    ]);
+  }
+  const relationRail = el('div', { className: 'entry-relation-rail', 'aria-hidden': hasRelations ? 'false' : 'true' });
+  if (hasRelations) {
+    relationRail.append(el('button', {
+      type: 'button', className: `entry-relation-tab${expanded ? ' active' : ''}`,
+      'aria-label': expanded ? '收起关联' : '展开关联', 'aria-expanded': expanded ? 'true' : 'false',
+      on: { click: () => toggleEntryRelations(entry.id) },
+    }, [svgIcon('disclosure', 'relation-disclosure')]));
+  }
+  row.append(el('div', { className: 'entry-primary-shell' }, [primary, relationRail]));
   const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
   if (relationPanel) row.append(relationPanel);
   return row;
@@ -1774,15 +2015,27 @@ function clearPersistentJump() {
 }
 
 function readingViewportBounds() {
-  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportHeight = viewport?.height || window.innerHeight;
+  const viewportBottom = viewportTop + viewportHeight;
   const candidates = [document.querySelector('.topbar'), elements['pin-bar'], elements['annotation-review-bar'], elements['letter-nav'], document.querySelector('.section-letter-nav')];
-  let top = 0;
+  let top = viewportTop;
   for (const candidate of candidates) {
     if (!candidate || candidate.classList.contains('hidden')) continue;
     const rect = candidate.getBoundingClientRect();
-    if (rect.height > 0 && rect.bottom > top && rect.top < viewportHeight) top = rect.bottom;
+    if (rect.height > 0 && rect.bottom > top && rect.top < viewportBottom) top = rect.bottom;
   }
-  return { top: Math.max(0, top + 8), bottom: viewportHeight - 12 };
+  return { top: Math.max(viewportTop, top + 8), bottom: viewportBottom - 12 };
+}
+
+function positionHeadingBelowChrome(target) {
+  if (!target) return false;
+  const rect = target.getBoundingClientRect();
+  const bounds = readingViewportBounds();
+  const targetY = Math.max(0, window.scrollY + rect.top - bounds.top);
+  window.scrollTo({ top: targetY, behavior: 'auto' });
+  return true;
 }
 
 function positionElementAtReadingAnchor(target) {
@@ -1915,8 +2168,11 @@ function persistScrollPosition() {
 }
 
 function updateBackToTopVisibility() {
-  const visible = Boolean(currentCollectionId) && window.scrollY > Math.max(window.innerHeight * 0.9, 560);
-  elements['back-to-top']?.classList.toggle('hidden', !visible);
+  const button = elements['back-to-top'];
+  if (!button) return;
+  button.classList.toggle('hidden', !currentCollectionId);
+  button.classList.toggle('at-top', window.scrollY < 24);
+  button.setAttribute('aria-disabled', window.scrollY < 24 ? 'true' : 'false');
 }
 
 function returnToTop() {
@@ -2316,6 +2572,15 @@ function syncReview() {
   return true;
 }
 
+async function clearCurrentReviewAnnotations() {
+  const collectionId = review.collectionId || currentCollectionId;
+  if (!collectionId) return;
+  await clearAnnotationsForCollection(collectionId);
+  review = { ids: [], index: 0, collectionId: '' };
+  renderReviewBar();
+  showToast('当前词表标注已全部撤销');
+}
+
 function renderReviewBar() {
   if (!review.ids.length) {
     elements['annotation-review-bar'].classList.add('hidden');
@@ -2340,16 +2605,20 @@ function renderReviewBar() {
   elements.app.classList.remove('has-pin');
   elements['annotation-review-bar'].classList.remove('hidden');
   elements.app.classList.add('has-review');
+  const previous = iconButton('chevron', 'review-nav review-prev', '上一个标注', () => navigateReview(-1));
+  const next = iconButton('chevron', 'review-nav review-next', '下一个标注', () => navigateReview(1));
+  const edit = button('编辑', 'review-edit', () => openEditEntryDialog(entryId, targetCollectionId));
+  const dismiss = button('撤销此条', 'review-dismiss', () => dismissCurrentReviewAnnotation());
+  const clearCurrent = iconButton('clear', 'review-clear-all', '撤销当前词表全部标注', () => clearCurrentReviewAnnotations().catch(displayError));
+  const close = iconButton('close', 'review-close', '退出审阅', closeReview);
   elements['annotation-review-bar'].replaceChildren(
-    button('‹', '', () => navigateReview(-1), { title: '上一个标注' }),
+    previous,
     el('div', { className: 'review-text' }, [
       el('strong', { text: `${review.index + 1}/${review.ids.length} · ${entry.text}` }),
       el('span', { text: `${annotation.spelling.suggestion ? `建议 ${annotation.spelling.suggestion}` : '需检查'}${annotation.reason ? ` · ${annotation.reason}` : ''}` }),
     ]),
-    button('›', '', () => navigateReview(1), { title: '下一个标注' }),
-    button('编辑', 'review-edit', () => openEditEntryDialog(entryId, targetCollectionId)),
-    button('取消', 'review-dismiss', () => dismissCurrentReviewAnnotation()),
-    button('×', '', closeReview, { title: '退出审阅' }),
+    next,
+    el('div', { className: 'review-actions' }, [edit, dismiss, clearCurrent, close]),
   );
 }
 
@@ -2622,8 +2891,11 @@ function closeDialogFromBackdrop(event, dialog, close) {
 
 function renderApp() {
   const route = parseRoute();
+  const previousCollectionId = currentCollectionId;
+  if (!route.collectionId && previousCollectionId) restoreHomeScrollPending = true;
   currentCollectionId = route.collectionId;
   pendingJumpEntryId = route.entryId || '';
+  closeQueryMenu();
   if (currentCollectionId) renderCollection(); else renderHome();
   if (review.ids.length) { syncReview(); renderReviewBar(); }
 }
@@ -2643,9 +2915,11 @@ async function handleDialogSubmit(event) {
 }
 
 function handleWindowScroll() {
+  if (activeQueryMenu) closeQueryMenu();
   if (!scrollUiFrame) {
     scrollUiFrame = requestAnimationFrame(() => {
       scrollUiFrame = 0;
+      elements.app.classList.toggle('large-title-collapsed', window.scrollY > 44);
       updateBackToTopVisibility();
     });
   }
@@ -2656,6 +2930,10 @@ export async function initializeUI() {
   elements['back-button']?.replaceChildren(svgIcon('back'));
   elements['search-button']?.replaceChildren(svgIcon('search'));
   elements['back-to-top']?.replaceChildren(svgIcon('top'));
+  elements['dialog-close']?.replaceChildren(svgIcon('close'));
+  elements['action-close']?.replaceChildren(svgIcon('close'));
+  elements['search-close']?.replaceChildren(svgIcon('close'));
+  elements['update-later-button']?.replaceChildren(svgIcon('close'));
   elements['dialog-form'].addEventListener('submit', handleDialogSubmit);
   elements['confirm-form'].addEventListener('submit', handleConfirmSubmit);
   elements['dialog-close'].addEventListener('click', closeDialog);
@@ -2672,6 +2950,7 @@ export async function initializeUI() {
   elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
   elements['back-button'].addEventListener('click', goHome);
   elements['back-to-top']?.addEventListener('click', returnToTop);
+  elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', () => {
     if (currentCollectionId) openCollectionActions(currentCollectionId);
@@ -2687,7 +2966,19 @@ export async function initializeUI() {
   window.addEventListener('hashchange', renderApp);
   window.addEventListener('popstate', renderApp);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
+  window.visualViewport?.addEventListener('scroll', updateVisualViewportVars, { passive: true });
+  window.addEventListener('resize', updateVisualViewportVars, { passive: true });
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
+  document.addEventListener('pointerdown', (event) => {
+    if (!activeQueryMenu) return;
+    if (elements['query-menu'].contains(event.target) || activeQueryMenu.source?.contains(event.target)) return;
+    closeQueryMenu();
+  }, { capture: true });
+  const preventGestureZoom = (event) => {
+    if (document.documentElement.classList.contains('standalone-pwa')) event.preventDefault();
+  };
+  document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
+  document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
   if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
   subscribe(({ type }) => {
     if (suppressNextMutationRender && ['mutation', 'calendar-month'].includes(type)) {
@@ -2697,6 +2988,7 @@ export async function initializeUI() {
     renderApp();
   });
   await initializeStore();
+  updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');
   renderApp();

@@ -2,16 +2,16 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="format-detection" content="telephone=no">
   <meta name="theme-color" content="#f5f1e8">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="词汇索引">
-  <meta name="application-version" content="3.2.0">
+  <meta name="application-version" content="3.3.0">
   <meta name="description" content="本地优先、按词域组织的英语词汇与短语索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Vocabulary Index 3.2.0</title>
+  <title>Vocabulary Index 3.3.0</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
@@ -28,24 +28,37 @@
 
   <div id="app" class="app hidden">
     <header class="topbar">
-      <button id="back-button" class="icon-button hidden" type="button" aria-label="返回首页">←</button>
+      <button id="back-button" class="icon-button hidden" type="button" aria-label="返回首页"></button>
       <div class="brand-block">
         <h1 id="page-title">词汇索引</h1>
         <p id="page-subtitle">Vocabulary Index 3.2</p>
       </div>
       <div class="topbar-actions">
-        <button id="search-button" class="icon-button" type="button" aria-label="搜索">⌕</button>
-        <button id="settings-button" class="icon-button" type="button" aria-label="设置">⚙</button>
+        <button id="search-button" class="icon-button" type="button" aria-label="搜索"></button>
+        <button id="settings-button" class="icon-button" type="button" aria-label="设置"></button>
       </div>
     </header>
 
     <div id="update-banner" class="update-banner hidden" role="status">
       <span>新版本已准备好。</span>
       <button id="update-now-button" class="compact-button" type="button">立即更新</button>
-      <button id="update-later-button" class="icon-button compact" type="button" aria-label="稍后更新">×</button>
+      <button id="update-later-button" class="icon-button compact" type="button" aria-label="稍后更新"></button>
     </div>
 
+    <aside id="home-annotation-banner" class="home-annotation-banner hidden" aria-live="polite">
+      <div class="annotation-warning-copy">
+        <span id="home-annotation-icon" class="annotation-warning-icon" aria-hidden="true"></span>
+        <span id="home-annotation-text"></span>
+      </div>
+      <button id="clear-all-annotations" class="annotation-clear-button" type="button">全部撤销</button>
+    </aside>
+
     <main id="main-content" tabindex="-1">
+      <header id="large-title" class="large-title" aria-labelledby="large-title-heading">
+        <p id="large-title-eyebrow" class="large-title-eyebrow"></p>
+        <h2 id="large-title-heading"></h2>
+        <p id="large-title-subtitle" class="large-title-subtitle"></p>
+      </header>
       <section id="home-view" class="view" aria-label="词表首页"></section>
       <section id="collection-view" class="view hidden" aria-labelledby="page-title">
         <div id="collection-toolbar" class="collection-toolbar"></div>
@@ -56,11 +69,12 @@
       </section>
     </main>
 
-    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="返回顶部">↑</button>
+    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="返回顶部"></button>
 
     <button id="task-capsule" class="task-capsule hidden" type="button" aria-label="打开 AI 核查任务"></button>
     <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div id="query-menu" class="query-menu hidden" role="menu" aria-label="选择查询方式"></div>
   </div>
 
   <dialog id="app-dialog" class="app-dialog form-dialog">
@@ -70,7 +84,7 @@
           <h2 id="dialog-title"></h2>
           <p id="dialog-description" class="muted"></p>
         </div>
-        <button id="dialog-close" class="icon-button" type="button" aria-label="关闭">×</button>
+        <button id="dialog-close" class="icon-button" type="button" aria-label="关闭"></button>
       </header>
       <div id="dialog-body" class="dialog-body"></div>
       <footer id="dialog-actions" class="dialog-actions"></footer>
@@ -84,7 +98,7 @@
           <h2 id="action-title"></h2>
           <p id="action-description" class="muted"></p>
         </div>
-        <button id="action-close" class="icon-button" type="button" aria-label="关闭">×</button>
+        <button id="action-close" class="icon-button" type="button" aria-label="关闭"></button>
       </header>
       <div id="action-body" class="dialog-body"></div>
     </div>
@@ -96,7 +110,7 @@
         <div>
           <h2>搜索词汇</h2>
         </div>
-        <button id="search-close" class="icon-button" type="button" aria-label="关闭">×</button>
+        <button id="search-close" class="icon-button" type="button" aria-label="关闭"></button>
       </header>
       <div id="search-body" class="dialog-body"></div>
     </div>

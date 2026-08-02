@@ -1,4 +1,4 @@
-# Vocabulary Index 3.2.0 本地架构
+# Vocabulary Index 3.3.0 本地架构
 
 ## 目标
 
@@ -9,7 +9,7 @@
 - `v3-app.js`：版本校验、Service Worker、standalone 检测、viewport 恢复；
 - `v3-db.js`：IndexedDB Schema 4、备份和事务；
 - `v3-store.js`：内存状态、索引、可见 ID 集合、局部写入；
-- `v3-ui.js`：首页、双行表项、长列表分块、日期模式、关联和弹窗；
+- `v3-ui.js`：固定动态顶部、紧凑一级表项、覆盖层、长列表分块、日期模式、关联和弹窗；
 - `v3-exchange.js`：VIX 内容包；
 - `v3-integrations.js`：Oxford 与 ChatGPT 快捷指令；
 - `v3-data-worker.js`：大型 JSON 预检；
@@ -18,6 +18,8 @@
 ## 渲染
 
 - 首页与列表均由内存 Store 投影；
+- 固定紧凑导航与滚动大标题分离；
+- PIN、标注审阅和首页警告使用不参与文档流的覆盖层；
 - 一级表项按 42 行分块；
 - 首块同步生成，后续块接近视口时生成；
 - Entry ID 映射到所在块，保证程序化跳转；

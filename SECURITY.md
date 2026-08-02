@@ -1,4 +1,4 @@
-# Vocabulary Index 3.2.0 安全说明
+# Vocabulary Index 3.3.0 安全说明
 
 - 业务数据默认仅保存在当前 iPhone Web App 的 IndexedDB；
 - 不建立账户、云同步或远程业务数据库；

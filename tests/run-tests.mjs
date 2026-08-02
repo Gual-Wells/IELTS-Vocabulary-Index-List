@@ -56,7 +56,7 @@ const legacy = {
 };
 const backup = migrateLegacyBackup(legacy, { timestamp });
 assert.equal(backup.schemaVersion, 5);
-assert.equal(backup.appVersion, '3.4.0');
+assert.equal(backup.appVersion, '3.5.0');
 assert.equal(backup.domains.length, 1);
 assert.equal(backup.collections.filter((item) => item.type === 'normal').length, 2);
 assert.equal(backup.collections.find((item) => item.type === 'system-phrases').name, '短语总表');
@@ -72,8 +72,23 @@ assert.deepEqual(relatedPhrases(backup, thread.id).map((item) => item.id), [phra
 assert.deepEqual(phraseComponents(backup, phrase.id).map((item) => item.entry?.text || null), ['thread', null]);
 const projection = buildProjection(backup);
 const awlId = backup.collections.find((item) => item.name === 'AWL').id;
+const a1Id = backup.collections.find((item) => item.name === 'A1').id;
 assert.ok(projection.get(awlId).some((item) => item.kind === 'word'));
 assert.ok(projection.get(awlId).some((item) => item.kind === 'phrase'), '普通表必须同时投影词汇和短语');
+assert.equal(projection.get(a1Id).some((item) => item.id === access.id), true, '多归属词汇应由最高优先级词表占有');
+assert.equal(projection.get(awlId).some((item) => item.id === access.id), false, '低优先级词表不得重复显示同一普通词汇');
+const prioritySwapped = canonicalizeBackup({
+  ...backup,
+  pins: [],
+  settings: { ...backup.settings, lastPositions: {} },
+  collections: backup.collections.map((collection) => collection.id === a1Id
+    ? { ...collection, order: 10 }
+    : collection.id === awlId ? { ...collection, order: -1 } : collection),
+});
+const swappedProjection = buildProjection(prioritySwapped);
+assert.equal(swappedProjection.get(a1Id).some((item) => item.id === access.id), false);
+assert.equal(swappedProjection.get(awlId).some((item) => item.id === access.id), true, '调整优先级必须重新分配普通词汇显示归属');
+assert.equal(prioritySwapped.entries.find((item) => item.id === access.id).id, access.id, '优先级变化不得改写具体 Entry');
 assert.ok(projection.get(systemPhraseCollectionId(backup.domains[0].id)).every((item) => item.kind === 'phrase'));
 assert.ok(projection.get(systemDomainWordsCollectionId(backup.domains[0].id)).every((item) => item.kind === 'word'));
 assert.ok(projection.get(SYSTEM_GLOBAL_WORDS_ID).every((item) => item.kind === 'word'));
@@ -179,11 +194,11 @@ assert.equal(parseImportContent(JSON.stringify(v307Backup), 'backup.json').kind,
 assert.equal(parseRetryAfter('2'), 2000);
 assert.ok(createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({ id: `e${index}`, text: `word-${index}` }))).every((batch) => batch.length <= 32));
 
-// Complete 3.4.0 seed contract.
+// Complete 3.5.0 seed contract.
 const rawSeed = JSON.parse(fs.readFileSync(path.join(root, 'data/seed.json'), 'utf8'));
 const seed = migrateLegacyBackup(rawSeed, { timestamp });
 assert.equal(seed.schemaVersion, 5);
-assert.equal(seed.appVersion, '3.4.0');
+assert.equal(seed.appVersion, '3.5.0');
 assert.equal(seed.settings.builtInSeedRevision, 3);
 assert.equal(seed.studyStamps.length, 0);
 assert.equal(seed.domains.length, 2);

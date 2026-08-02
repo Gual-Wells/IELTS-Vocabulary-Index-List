@@ -1,9 +1,9 @@
 import {
   acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
-  clearAllAnnotations, clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
+  clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getPhraseComponents, getRelatedPhrases, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationHistory, replaceAnnotations, resetToSeed, restoreBackup,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
 } from './v3-store.js';
 import {
@@ -17,14 +17,14 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.5.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
-  'back-to-top', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
+  'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog', 'dialog-form', 'dialog-title', 'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions',
   'action-dialog', 'action-title', 'action-description', 'action-close', 'action-body',
   'search-dialog', 'search-close', 'search-body',
@@ -33,6 +33,7 @@ const elements = Object.fromEntries([
 ].map((id) => [id, document.getElementById(id)]));
 
 let currentCollectionId = '';
+let currentViewKind = 'word';
 const expandedLettersByCollection = new Map();
 let pendingJumpEntryId = '';
 let pendingJumpReason = 'jump';
@@ -40,7 +41,7 @@ let persistentJumpEntryId = '';
 let pinIndex = 0;
 let pinCollectionId = '';
 let activeTask = null;
-let review = { ids: [], index: 0, collectionId: '' };
+let review = { ids: [], index: 0, collectionId: '', viewKind: '' };
 let dialogSubmitHandler = null;
 let confirmSubmitHandler = null;
 let confirmCancelHandler = null;
@@ -58,20 +59,26 @@ const expandedRelations = new Set();
 const dialogStack = [];
 let currentDialogMeta = { onRestore: null };
 let openModalCount = 0;
+let modalScrollY = 0;
+let modalTouchY = 0;
+let appNavigationDepth = 0;
+let pendingPageSnapshot = null;
+let pageTransitionTimer = 0;
+let renderRevision = 0;
+const viewStateSnapshots = new Map();
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
 let activeQueryMenu = null;
 let activeRelationTargetMenu = null;
 let scrollUiFrame = 0;
 let letterTrackInteractionUntil = 0;
-const forcedExtremeEntryKeys = new Set();
 let routeRenderFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
 const entryChunkByEntryId = new Map();
 const iconTemplateCache = new Map();
 const ENTRY_CHUNK_SIZE = 42;
-const ENTRY_ROW_ESTIMATE = 68;
+const ENTRY_ROW_ESTIMATE = 56;
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -116,8 +123,8 @@ const ICONS = {
   external: '<rect x="3.3" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><rect x="14.1" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><path d="M9.6 12h6.1M13.2 9.4l2.6 2.6-2.6 2.6"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<path d="M4.3 6.2A3.2 3.2 0 0 1 7.5 3H12v16.7H7.5a3.2 3.2 0 0 0-3.2 3.2V6.2Z"></path><path d="M19.7 6.2A3.2 3.2 0 0 0 16.5 3H12v16.7h4.5a3.2 3.2 0 0 1 3.2 3.2V6.2Z"></path><path d="M7.2 7.4h2.1M14.7 7.4h2.1M7.2 11h2.1M14.7 11h2.1"></path>',
-  aiChat: '<path d="M5.1 4.2h13.8a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2h-7.5l-5.5 4.1v-4.1h-.8a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2Z"></path><path d="m12 7.1.72 1.68 1.68.72-1.68.72L12 11.9l-.72-1.68-1.68-.72 1.68-.72L12 7.1Z" fill="currentColor" stroke="none"></path>',
+  dictionary: '<path d="M5.2 4.8h5.1c1.05 0 1.7.35 1.7 1.25v13.1c0-.9-.65-1.25-1.7-1.25H5.2V4.8Z"></path><path d="M18.8 4.8h-5.1c-1.05 0-1.7.35-1.7 1.25v13.1c0-.9.65-1.25 1.7-1.25h5.1V4.8Z"></path><path d="M7.4 8h2.2M14.4 8h2.2M7.4 11h2.2M14.4 11h2.2"></path>',
+  aiChat: '<path d="M5.1 5.2h13.8a1.9 1.9 0 0 1 1.9 1.9v8a1.9 1.9 0 0 1-1.9 1.9h-7.2l-4.4 3.1V17H5.1a1.9 1.9 0 0 1-1.9-1.9v-8a1.9 1.9 0 0 1 1.9-1.9Z"></path><path d="M8 10.9h.01M12 10.9h.01M16 10.9h.01"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
   clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
@@ -221,16 +228,53 @@ function updateOverlayLayout() {
 function lockPageForModal() {
   openModalCount += 1;
   if (openModalCount !== 1) return;
+  modalScrollY = window.scrollY;
+  const body = document.body;
+  body.style.position = 'fixed';
+  body.style.top = `-${modalScrollY}px`;
+  body.style.left = '0';
+  body.style.right = '0';
+  body.style.width = '100%';
   document.documentElement.classList.add('modal-open');
-  document.body.classList.add('modal-open');
+  body.classList.add('modal-open');
   updateVisualViewportVars();
 }
 
 function unlockPageForModal() {
   openModalCount = Math.max(0, openModalCount - 1);
   if (openModalCount) return;
+  const body = document.body;
   document.documentElement.classList.remove('modal-open');
-  document.body.classList.remove('modal-open');
+  body.classList.remove('modal-open');
+  body.style.position = '';
+  body.style.top = '';
+  body.style.left = '';
+  body.style.right = '';
+  body.style.width = '';
+  window.scrollTo({ top: modalScrollY, behavior: 'auto' });
+}
+
+function modalScrollableTarget(target) {
+  const node = target instanceof Element ? target.closest('.dialog-body, .dialog-card, #dialog-form, #confirm-form') : null;
+  if (!node) return null;
+  return node.scrollHeight > node.clientHeight + 1 ? node : null;
+}
+
+function handleModalTouchStart(event) {
+  if (!openModalCount || !event.touches?.length) return;
+  modalTouchY = event.touches[0].clientY;
+}
+
+function handleModalTouchMove(event) {
+  if (!openModalCount || !event.touches?.length) return;
+  const scroller = modalScrollableTarget(event.target);
+  if (!scroller) { event.preventDefault(); return; }
+  const nextY = event.touches[0].clientY;
+  const delta = nextY - modalTouchY;
+  modalTouchY = nextY;
+  const atTop = scroller.scrollTop <= 0;
+  const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+  if ((atTop && delta > 0) || (atBottom && delta < 0)) event.preventDefault();
 }
 
 function snapshotAppDialog() {
@@ -358,36 +402,155 @@ function handleConfirmCancel() {
   if (handler) Promise.resolve().then(handler).catch(displayError);
 }
 
-function collectionRoute(collectionId, entryId = '') {
+function collectionRoute(collectionId, entryId = '', viewKind = '') {
   const query = new URLSearchParams();
   query.set('collection', collectionId);
+  if (viewKind) query.set('view', viewKind);
   if (entryId) query.set('entry', entryId);
   return `#${query}`;
 }
 
 function parseRoute() {
   const query = new URLSearchParams(location.hash.replace(/^#/, ''));
-  return { collectionId: query.get('collection') || '', entryId: query.get('entry') || '' };
+  return {
+    collectionId: query.get('collection') || '',
+    entryId: query.get('entry') || '',
+    viewKind: ['word', 'phrase'].includes(query.get('view')) ? query.get('view') : '',
+  };
 }
 
-function navigateCollection(collectionId, entryId = '', reason = 'jump') {
+function viewKindForCollection(collection, entry = null, requested = '') {
+  if (!collection) return 'word';
+  if (collection.type === 'normal') {
+    if (['word', 'phrase'].includes(requested)) return requested;
+    if (entry?.kind === 'phrase') return 'phrase';
+    if (entry?.kind === 'word') return 'word';
+    return 'word';
+  }
+  return isPhraseCollection(collection) ? 'phrase' : 'word';
+}
+
+function currentSnapshot() {
+  if (!currentCollectionId) return { type: 'home', scrollY: window.scrollY };
+  const collection = getState().collectionById.get(currentCollectionId);
+  if (!collection) return null;
+  const section = currentViewKind;
+  return {
+    type: 'collection', collectionId: currentCollectionId, viewKind: section,
+    scrollY: window.scrollY,
+    expandedLetters: [...expandedLettersFor(currentCollectionId, section)],
+    expandedRelations: [...expandedRelations].filter((key) => key.startsWith(`${currentCollectionId}\u0000${section}\u0000`)),
+    activeSection,
+  };
+}
+
+function persistCurrentHistorySnapshot() {
+  const snapshot = currentSnapshot();
+  const state = { ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: snapshot };
+  history.replaceState(state, '', location.href);
+  if (snapshot?.type === 'collection') viewStateSnapshots.set(`${snapshot.collectionId}:${snapshot.viewKind}`, snapshot);
+}
+
+function applySnapshotBeforeRender(snapshot, collection, viewKind) {
+  if (!snapshot || snapshot.type !== 'collection' || snapshot.collectionId !== collection.id || snapshot.viewKind !== viewKind) return;
+  const expanded = expandedLettersFor(collection.id, viewKind);
+  expanded.clear();
+  for (const letter of snapshot.expandedLetters || []) expanded.add(letter);
+  for (const key of [...expandedRelations]) if (key.startsWith(`${collection.id}\u0000${viewKind}\u0000`)) expandedRelations.delete(key);
+  for (const key of snapshot.expandedRelations || []) expandedRelations.add(key);
+  activeSection = snapshot.activeSection || viewKind;
+}
+
+function restoreSnapshotAfterRender(snapshot, token = renderRevision) {
+  if (!snapshot) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (token !== renderRevision) return;
+    window.scrollTo({ top: Math.max(0, Number(snapshot.scrollY || 0)), behavior: 'auto' });
+    syncActiveAlphabetHeading();
+    updateBackToTopVisibility();
+  }));
+}
+
+function clearExpandedRelationsForView(collectionId, viewKind) {
+  const prefix = `${collectionId}\u0000${viewKind}\u0000`;
+  for (const key of [...expandedRelations]) if (key.startsWith(prefix)) expandedRelations.delete(key);
+}
+
+function prepareTargetExpansion(collection, entry, viewKind, reason) {
+  const expanded = expandedLettersFor(collection.id, viewKind);
+  if (reason === 'home') {
+    expanded.clear();
+    clearExpandedRelationsForView(collection.id, viewKind);
+    return;
+  }
+  if (entry && ['search', 'relation', 'route', 'annotation'].includes(reason)) {
+    expanded.clear();
+    clearExpandedRelationsForView(collection.id, viewKind);
+    expanded.add(letterForEntry(entry));
+  }
+}
+
+function performPageTransition(callback, enabled = true) {
+  clearTimeout(pageTransitionTimer);
+  if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { callback(); return; }
+  elements['collection-view']?.classList.add('page-transition-out');
+  pageTransitionTimer = window.setTimeout(() => {
+    callback();
+    requestAnimationFrame(() => {
+      elements['collection-view']?.classList.remove('page-transition-out');
+      elements['collection-view']?.classList.add('page-transition-in');
+      requestAnimationFrame(() => elements['collection-view']?.classList.remove('page-transition-in'));
+    });
+  }, 70);
+}
+
+function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
+  const state = getState();
+  const collection = state.collectionById.get(collectionId);
+  const entry = entryId ? state.entryById.get(entryId) : null;
+  if (!collection) return;
+  const nextView = viewKindForCollection(collection, entry, requestedView);
+  const pageChanged = currentCollectionId !== collectionId || currentViewKind !== nextView;
+  persistCurrentHistorySnapshot();
   if (!currentCollectionId) homeScrollY = window.scrollY;
   closeQueryMenu();
-  const hash = collectionRoute(collectionId, entryId);
-  if (location.hash !== hash) history.pushState(null, '', hash);
+  closeRelationTargetMenu();
+  prepareTargetExpansion(collection, entry, nextView, reason);
+  const depth = appNavigationDepth + 1;
+  const hash = collectionRoute(collectionId, entryId, collection.type === 'normal' ? nextView : '');
+  history.pushState({ vix: true, depth }, '', hash);
+  appNavigationDepth = depth;
   currentCollectionId = collectionId;
+  currentViewKind = nextView;
   pendingJumpEntryId = entryId;
   pendingJumpReason = reason;
-  renderApp();
+  pendingPageSnapshot = null;
+  performPageTransition(renderApp, pageChanged);
+}
+
+function navigateBack() {
+  persistCurrentHistorySnapshot();
+  if (appNavigationDepth > 0) history.back();
+  else goHome();
 }
 
 function goHome() {
   closeReview();
   closeQueryMenu();
+  closeRelationTargetMenu();
   restoreHomeScrollPending = Boolean(currentCollectionId);
   pendingJumpEntryId = '';
-  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  pendingPageSnapshot = null;
   currentCollectionId = '';
+  currentViewKind = 'word';
+  appNavigationDepth = 0;
+  history.replaceState({ vix: true, depth: 0, pageSnapshot: { type: 'home', scrollY: homeScrollY } }, '', location.pathname + location.search);
+  renderApp();
+}
+
+function handleHistoryNavigation(event) {
+  appNavigationDepth = Number(event.state?.depth || 0);
+  pendingPageSnapshot = event.state?.pageSnapshot || null;
   renderApp();
 }
 
@@ -409,8 +572,8 @@ function isGlobalCollection(collectionOrId) {
   return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(id);
 }
 
-function relationExpansionKey(collectionId, entryId) {
-  return `${collectionId}\u0000${entryId}`;
+function relationExpansionKey(collectionId, entryId, viewKind = currentViewKind) {
+  return `${collectionId}\u0000${viewKind}\u0000${entryId}`;
 }
 
 function annotationRecordForEntry(entry, collection) {
@@ -427,9 +590,22 @@ function reviewDisplayEntryId(entryId, collectionId) {
   return getState().visibleEntryIdsByCollection.get(collectionId)?.has(entryId) ? entryId : '';
 }
 
-function annotationCountForCollection(collectionId) {
+function entriesForCollectionView(collectionId, viewKind = '') {
   const state = getState();
-  const visible = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
+  const collection = state.collectionById.get(collectionId);
+  const entries = state.projection.get(collectionId) || [];
+  if (collection?.type !== 'normal') return entries;
+  const kind = ['word', 'phrase'].includes(viewKind) ? viewKind : currentViewKind;
+  return entries.filter((entry) => entry.kind === kind);
+}
+
+function entryIdsForCollectionView(collectionId, viewKind = '') {
+  return entriesForCollectionView(collectionId, viewKind).map((entry) => entry.id);
+}
+
+function annotationCountForCollection(collectionId, viewKind = '') {
+  const state = getState();
+  const visible = new Set(entryIdsForCollectionView(collectionId, viewKind));
   return state.annotations.filter((item) => visible.has(item.entryId)).length;
 }
 
@@ -533,7 +709,7 @@ function collectionCard(collection) {
   return el('button', {
     type: 'button',
     className: classes,
-    on: { click: () => navigateCollection(collection.id) },
+    on: { click: () => navigateCollection(collection.id, '', 'home') },
   }, [
     el('div', { className: 'collection-card-title' }, [
       el('h3', { text: collection.name }),
@@ -669,8 +845,8 @@ async function downloadRecoveryBackup(prefix = 'recovery') {
 }
 
 function offerOptionalBackup(onContinue, { title = '是否下载完整备份？', description = '本次操作会修改或覆盖数据。是否先下载当前完整备份？' } = {}) {
-  const advance = () => {
-    cancelActiveTaskForDataChange();
+  const advance = async () => {
+    await cancelActiveTaskForDataChange();
     requestAnimationFrame(() => onContinue());
   };
   openConfirmDialog({
@@ -682,9 +858,9 @@ function offerOptionalBackup(onContinue, { title = '是否下载完整备份？'
     onSubmit: async () => {
       try { await downloadRecoveryBackup('recovery-before-change'); }
       catch (error) { displayError(error); }
-      finally { advance(); }
+      finally { await advance(); }
     },
-    onCancel: advance,
+    onCancel: async () => { await advance(); },
     choiceRequired: true,
     destructive: false,
   });
@@ -814,7 +990,7 @@ function openDataExchangePreview(file, selection, initialPlan) {
               showToast('数据已变化，已重新生成导入预检');
               return;
             }
-            cancelActiveTaskForDataChange();
+            await cancelActiveTaskForDataChange();
             await restoreBackup(finalPlan.nextBackup);
             goHome();
             showToast('内容 JSON 已替换');
@@ -828,10 +1004,10 @@ function openDataExchangePreview(file, selection, initialPlan) {
         showToast('数据已变化，已重新生成导入预检');
         return;
       }
-      cancelActiveTaskForDataChange();
-      restoreBackup(finalPlan.nextBackup)
-        .then(() => { goHome(); showToast('内容 JSON 已导入'); })
-        .catch(displayError);
+      await cancelActiveTaskForDataChange();
+      await restoreBackup(finalPlan.nextBackup);
+      goHome();
+      showToast('内容 JSON 已导入');
     },
   });
 }
@@ -961,12 +1137,12 @@ function openDataExchangeDialog() {
 }
 
 async function performUndo() {
-  try { cancelActiveTaskForDataChange(); if (!(await undo())) showToast('没有可撤销操作'); }
+  try { await cancelActiveTaskForDataChange(); if (!(await undo())) showToast('没有可撤销操作'); }
   catch (error) { displayError(error); }
 }
 
 async function performRedo() {
-  try { cancelActiveTaskForDataChange(); if (!(await redo())) showToast('没有可重做操作'); }
+  try { await cancelActiveTaskForDataChange(); if (!(await redo())) showToast('没有可重做操作'); }
   catch (error) { displayError(error); }
 }
 
@@ -979,7 +1155,7 @@ function renderLargeTitle({ eyebrow = '', title = '', subtitle = '' } = {}) {
 }
 
 async function clearAllAnnotationsFromHome() {
-  cancelActiveTaskForDataChange();
+  await cancelActiveTaskForDataChange();
   await clearAllAnnotations();
   showToast('全部标注已撤销');
 }
@@ -998,14 +1174,17 @@ function renderHomeAnnotationBanner() {
   updateOverlayLayout();
 }
 
-function renderHome() {
+function renderHome(token = renderRevision) {
   const state = getState();
   currentCollectionId = '';
   elements.app.classList.remove('is-collection', 'has-pin', 'has-review');
   elements['collection-view'].classList.remove('system-collection-view', 'global-system-view', 'domain-system-view');
+  elements['collection-view'].classList.remove('has-letter-nav');
   elements['home-view'].classList.remove('hidden');
   elements['collection-view'].classList.add('hidden');
   elements['back-button'].classList.add('hidden');
+  elements['search-button'].classList.remove('hidden');
+  elements['bottom-toolbar'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
@@ -1044,16 +1223,26 @@ function renderHome() {
   renderHomeAnnotationBanner();
   if (restoreHomeScrollPending) {
     restoreHomeScrollPending = false;
-    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo({ top: homeScrollY, behavior: 'auto' })));
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (token === renderRevision) window.scrollTo({ top: homeScrollY, behavior: 'auto' }); }));
   }
 }
 
-function renderCollection() {
+function renderCollection(token = renderRevision) {
   const state = getState();
   const collection = state.collectionById.get(currentCollectionId);
   if (!collection) { goHome(); return; }
   const domain = state.domainById.get(collection.domainId);
-  const entries = getVisibleEntries(collection.id);
+  const allEntries = getVisibleEntries(collection.id);
+  const route = parseRoute();
+  const routedEntry = route.entryId ? state.entryById.get(route.entryId) : null;
+  const snapshotView = pendingPageSnapshot?.collectionId === collection.id ? pendingPageSnapshot.viewKind : '';
+  currentViewKind = viewKindForCollection(collection, routedEntry, route.viewKind || snapshotView || currentViewKind);
+  activeSection = currentViewKind;
+  applySnapshotBeforeRender(pendingPageSnapshot, collection, currentViewKind);
+  if (pendingJumpEntryId) prepareTargetExpansion(collection, state.entryById.get(pendingJumpEntryId), currentViewKind, pendingJumpReason);
+  const entries = collection.type === 'normal'
+    ? allEntries.filter((entry) => entry.kind === currentViewKind)
+    : allEntries;
   const globalSystemView = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collection.id);
   const domainSystemView = !globalSystemView && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
@@ -1063,43 +1252,113 @@ function renderCollection() {
   elements['collection-view'].classList.toggle('system-collection-view', globalSystemView || domainSystemView);
   elements['collection-view'].classList.toggle('global-system-view', globalSystemView);
   elements['collection-view'].classList.toggle('domain-system-view', domainSystemView);
+  elements['collection-view'].dataset.viewKind = currentViewKind;
   elements.app.classList.add('is-collection');
   elements['home-view'].classList.add('hidden');
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
   elements['home-annotation-banner'].classList.add('hidden');
+  elements['search-button'].classList.add('hidden');
+  elements['bottom-toolbar'].classList.remove('hidden');
   elements['page-title'].textContent = collection.name;
   let words = 0;
   let phrases = 0;
-  for (const entry of entries) {
+  for (const entry of allEntries) {
     if (entry.kind === 'phrase') phrases += 1;
     else words += 1;
   }
   const countText = collection.type === 'normal'
     ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
-    : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : entries.length).toLocaleString();
-  const collectionSubtitle = [countText, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
+    : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : allEntries.length).toLocaleString();
+  const viewLabel = collection.type === 'normal' ? (currentViewKind === 'phrase' ? '短语视图' : '词汇视图') : '';
+  const collectionSubtitle = [countText, viewLabel, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
   elements['page-subtitle'].textContent = collectionSubtitle;
   renderLargeTitle({ eyebrow: domain?.name || (globalSystemView ? '全局索引' : ''), title: collection.name, subtitle: collectionSubtitle });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '更多');
   renderCollectionToolbar(collection);
+  renderEntryList(collection, domain, entries, currentViewKind);
   renderPinBar(collection);
-  renderEntryList(collection, domain, entries);
-  elements['back-to-top']?.classList.add('hidden');
-  if (pendingJumpEntryId) queueMicrotask(() => jumpToEntry(pendingJumpEntryId, { collectionId: collection.id, reason: pendingJumpReason }));
+  renderBottomToolbar(collection, currentViewKind);
+  const jumpEntryId = pendingJumpEntryId;
+  const jumpReason = pendingJumpReason;
+  const restoreSnapshot = pendingPageSnapshot;
+  if (jumpEntryId) queueMicrotask(() => {
+    if (token === renderRevision) jumpToEntry(jumpEntryId, { collectionId: collection.id, reason: jumpReason });
+  });
+  else if (restoreSnapshot) restoreSnapshotAfterRender(restoreSnapshot, token);
+  else if (jumpReason === 'home') requestAnimationFrame(() => {
+    if (token === renderRevision) window.scrollTo({ top: 0, behavior: 'auto' });
+  });
+  pendingPageSnapshot = null;
+  if (!jumpEntryId) pendingJumpReason = 'jump';
 }
 
 function renderCollectionToolbar(collection) {
-  const annotationCount = annotationCountForCollection(collection.id);
+  const annotationCount = annotationCountForCollection(collection.id, currentViewKind);
   if (annotationCount) {
     const reviewButton = el('button', {
       type: 'button', className: 'secondary-button compact-button annotation-count-button',
       title: '进入当前词表标注审阅', 'aria-label': `当前词表有 ${annotationCount} 条待核查标注`,
-      on: { click: () => startAnnotationReview(collection.id) },
+      on: { click: () => startAnnotationReview(collection.id, '', currentViewKind) },
     }, [svgIcon('warning'), el('span', { text: annotationCount.toLocaleString() })]);
     elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [reviewButton]));
   } else elements['collection-toolbar'].replaceChildren();
+}
+
+function currentMode(collection, section = currentViewKind) {
+  return getViewMode(collection.id, section);
+}
+
+function renderBottomToolbar(collection, section = currentViewKind) {
+  const mode = currentMode(collection, section);
+  const last = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+  const lastButton = elements['bottom-last-position'];
+  lastButton.replaceChildren(svgIcon('target'));
+  lastButton.disabled = !last;
+  lastButton.title = last ? '继续当前视图的上次浏览位置' : '当前视图尚无上次位置';
+  lastButton.setAttribute('aria-label', lastButton.title);
+  lastButton.onclick = () => {
+    const target = getLastPosition(positionDomainId(collection), collection.id, { mode: currentMode(collection, section), section });
+    if (target) jumpToEntry(target, { collectionId: collection.id, reason: 'last' });
+  };
+
+  elements['back-to-top'].classList.remove('hidden');
+  elements['back-to-top'].replaceChildren(svgIcon('top'));
+  elements['back-to-top'].onclick = returnToTop;
+
+  const modeButton = elements['bottom-mode'];
+  modeButton.replaceChildren(svgIcon(mode === 'date' ? 'alphabet' : 'calendar'));
+  modeButton.title = mode === 'date' ? '切换到字母排序' : '切换到日期排序';
+  modeButton.setAttribute('aria-label', modeButton.title);
+  modeButton.onclick = () => switchCollectionMode(collection, section).catch(displayError);
+
+  const switchButton = elements['bottom-view-switch'];
+  const canSwitch = collection.type === 'normal';
+  const nextKind = section === 'word' ? 'phrase' : 'word';
+  switchButton.replaceChildren(svgIcon(nextKind === 'phrase' ? 'phrase' : 'word'));
+  switchButton.disabled = !canSwitch;
+  switchButton.title = canSwitch ? `切换到${nextKind === 'phrase' ? '短语' : '词汇'}视图` : '系统总表已按内容类型固定';
+  switchButton.setAttribute('aria-label', switchButton.title);
+  switchButton.onclick = canSwitch ? () => switchCollectionView(collection, nextKind) : null;
+
+  elements['bottom-search'].replaceChildren(svgIcon('search'));
+  elements['bottom-search'].onclick = openSearchDialog;
+  updateBackToTopVisibility();
+}
+
+function switchCollectionView(collection, nextKind) {
+  if (collection.type !== 'normal' || !['word', 'phrase'].includes(nextKind) || nextKind === currentViewKind) return;
+  persistCurrentHistorySnapshot();
+  const snapshot = viewStateSnapshots.get(`${collection.id}:${nextKind}`) || null;
+  currentViewKind = nextKind;
+  activeSection = nextKind;
+  pendingPageSnapshot = snapshot;
+  pendingJumpEntryId = '';
+  pendingJumpReason = snapshot ? 'return' : 'home';
+  const nextHash = collectionRoute(collection.id, '', nextKind);
+  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: snapshot }, '', nextHash);
+  performPageTransition(renderApp, true);
 }
 
 function sectionForEntry(entry) {
@@ -1114,7 +1373,7 @@ function isPhraseCollection(collection) {
   return collection?.type === 'system-phrases' || collection?.type === 'system-global-phrases';
 }
 
-function lastPositionButton(collection, section = 'main', mode = getViewMode(collection.id)) {
+function lastPositionButton(collection, section = currentViewKind, mode = getViewMode(collection.id, section)) {
   const entryId = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
   const target = iconButton('target', 'last-position-button', '继续当前模式的上次位置', () => {
     const current = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
@@ -1127,14 +1386,24 @@ function lastPositionButton(collection, section = 'main', mode = getViewMode(col
 
 function updateLastPositionButton(collection) {
   elements['collection-view'].querySelectorAll('.last-position-button').forEach((target) => {
-    const section = target.dataset.section || 'main';
-    const mode = target.dataset.mode || getViewMode(collection.id);
+    const section = target.dataset.section || currentViewKind;
+    const mode = target.dataset.mode || getViewMode(collection.id, section);
     target.disabled = !getLastPosition(positionDomainId(collection), collection.id, { mode, section });
   });
+  if (elements['bottom-last-position'] && !elements['bottom-toolbar'].classList.contains('hidden')) {
+    const section = currentViewKind;
+    const mode = getViewMode(collection.id, section);
+    elements['bottom-last-position'].disabled = !getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+  }
 }
 
 function syncPinIndexForEntry(collectionId, entryId) {
-  const pins = getPinsForCollection(collectionId);
+  const state = getState();
+  const collection = state.collectionById.get(collectionId);
+  const pins = getPinsForCollection(collectionId).filter((pin) => {
+    const entry = state.entryById.get(pin.entryId);
+    return collection?.type !== 'normal' || entry?.kind === currentViewKind;
+  });
   if (pinCollectionId !== collectionId) {
     pinCollectionId = collectionId;
     pinIndex = 0;
@@ -1146,7 +1415,10 @@ function syncPinIndexForEntry(collectionId, entryId) {
 
 function renderPinBar(collection) {
   const state = getState();
-  const pins = getPinsForCollection(collection.id);
+  const pins = getPinsForCollection(collection.id).filter((pin) => {
+    const entry = state.entryById.get(pin.entryId);
+    return collection.type !== 'normal' || entry?.kind === currentViewKind;
+  });
   if (pinCollectionId !== collection.id) {
     pinCollectionId = collection.id;
     pinIndex = 0;
@@ -1211,20 +1483,20 @@ function jumpToSection(section) {
   positionHeadingBelowChrome(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
 }
 
-async function switchCollectionMode(collection, section) {
-  const currentMode = getViewMode(collection.id);
-  const nextMode = currentMode === 'date' ? 'alphabet' : 'date';
+async function switchCollectionMode(collection, section = currentViewKind) {
+  const currentModeValue = getViewMode(collection.id, section);
+  const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
   const first = firstVisibleEntryId();
   const state = getState();
   const currentEntry = first ? state.entryById.get(first) : null;
-  if (currentEntry) {
-    const currentSection = sectionForEntry(currentEntry);
-    await setLastPosition(positionDomainId(collection, currentEntry), collection.id, currentEntry.id, { mode: currentMode, section: currentSection });
+  if (currentEntry && sectionForEntry(currentEntry) === section) {
+    await setLastPosition(positionDomainId(collection, currentEntry), collection.id, currentEntry.id, { mode: currentModeValue, section });
   }
   const target = getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode, section });
   pendingJumpEntryId = target || '';
-  pendingJumpReason = 'mode';
-  await setViewMode(collection.id, nextMode);
+  pendingJumpReason = target ? 'mode' : 'home';
+  if (!target) expandedLettersFor(collection.id, section).clear();
+  await setViewMode(collection.id, nextMode, section);
 }
 
 function monthShift(monthKey, delta) {
@@ -1277,30 +1549,11 @@ function calendarForSection(collection, section, dates) {
   return calendar;
 }
 
-function navigationControls(collection, section, sectionContext, mode, otherSection = '', { includeTop = false } = {}) {
-  const fixed = [lastPositionButton(collection, section, mode)];
-  if (includeTop) fixed.push(iconButton('top', 'navigation-top-button', '返回顶部', returnToTop));
-  fixed.push(iconButton(mode === 'date' ? 'alphabet' : 'calendar', 'mode-toggle-button', mode === 'date' ? '切换到字母排序' : '切换到日期排序', () => {
-    switchCollectionMode(collection, section).catch(displayError);
-  }));
-  if (otherSection) {
-    const otherEntries = currentSectionEntries(otherSection);
-    fixed.push(iconButton(otherSection === 'phrase' ? 'phrase' : 'word', 'section-jump-button', otherSection === 'phrase' ? '跳到短语区' : '跳到词汇区', () => jumpToSection(otherSection), { disabled: !otherEntries.length }));
-  }
+function navigationControls(collection, section, sectionContext, mode) {
   const track = [];
-  if (mode === 'date') {
-    const hasUnmarked = sectionContext.entries.some((entry) => !getStudyStamp(entry, collection.id));
-    fixed.push(iconButton('unmarked', 'unmarked-jump-button', '跳到未标注条目', () => {
-      const target = document.getElementById(`unmarked-${section}`);
-      if (target) {
-        activeSection = section;
-        suppressScrollPersistence(500);
-        positionHeadingBelowChrome(target.querySelector('.date-unmarked-heading') || target);
-      }
-    }, { disabled: !hasUnmarked }));
-  } else {
-    const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
-    for (const letter of letters) {
+  if (mode === 'alphabet') {
+    elements['collection-view'].classList.add('has-letter-nav');
+    for (const letter of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#']) {
       const enabled = sectionContext.grouped.has(letter);
       const control = button(letter, enabled ? '' : 'empty', () => {
         if (!enabled) return;
@@ -1308,7 +1561,7 @@ function navigationControls(collection, section, sectionContext, mode, otherSect
         const target = sectionContext.sectionByKey.get(letter);
         if (target) {
           activeSection = section;
-          suppressScrollPersistence(450);
+          suppressScrollPersistence(300);
           positionHeadingBelowChrome(target.querySelector('.letter-heading') || target);
         }
       }, { disabled: !enabled });
@@ -1317,18 +1570,17 @@ function navigationControls(collection, section, sectionContext, mode, otherSect
       track.push(control);
     }
   }
-  return { fixed, track };
+  return { fixed: [], track };
 }
 
 function populateNavigationBar(nav, controls) {
-  const fixed = el('div', { className: 'letter-nav-fixed' }, controls.fixed);
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
-  const markTrackInteraction = (duration = 700) => { letterTrackInteractionUntil = Date.now() + duration; };
-  track.addEventListener('pointerdown', () => markTrackInteraction(900), { passive: true });
-  track.addEventListener('pointerup', () => markTrackInteraction(450), { passive: true });
-  track.addEventListener('pointercancel', () => markTrackInteraction(300), { passive: true });
-  track.addEventListener('scroll', () => markTrackInteraction(320), { passive: true });
-  nav.replaceChildren(fixed, track);
+  const markTrackInteraction = (duration = 500) => { letterTrackInteractionUntil = Date.now() + duration; };
+  track.addEventListener('pointerdown', () => markTrackInteraction(800), { passive: true });
+  track.addEventListener('pointerup', () => { markTrackInteraction(180); requestAnimationFrame(syncActiveAlphabetHeading); }, { passive: true });
+  track.addEventListener('pointercancel', () => markTrackInteraction(120), { passive: true });
+  track.addEventListener('scroll', () => markTrackInteraction(180), { passive: true });
+  nav.replaceChildren(track);
   nav.classList.toggle('no-track', !controls.track.length);
 }
 
@@ -1343,6 +1595,7 @@ function createSectionContext(section, entries, collection, mode) {
       grouped.set(letter, list);
     }
   } else {
+    elements['collection-view'].classList.remove('has-letter-nav');
     for (const entry of entries) {
       const dateKey = getStudyStamp(entry, collection.id)?.reviewDateKey;
       if (dateKey) dates.add(dateKey);
@@ -1357,9 +1610,23 @@ function resetEntryChunking() {
   entryChunkByEntryId.clear();
 }
 
-function materializeEntryChunk(chunk) {
+function captureScrollAnchor() {
+  const top = readingViewportBounds().top + 1;
+  const candidates = [...elements['entry-list'].querySelectorAll('.letter-heading, .date-day-title, .date-unmarked-heading, .entry-row')];
+  const anchor = candidates.find((node) => node.getBoundingClientRect().bottom > top) || null;
+  return anchor ? { node: anchor, top: anchor.getBoundingClientRect().top } : null;
+}
+
+function restoreScrollAnchor(anchor) {
+  if (!anchor?.node?.isConnected) return;
+  const delta = anchor.node.getBoundingClientRect().top - anchor.top;
+  if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+}
+
+function materializeEntryChunk(chunk, { anchor = null, restore = true } = {}) {
   const data = entryChunkData.get(chunk);
-  if (!data || chunk.dataset.rendered === 'true') return;
+  if (!data || data.renderToken !== renderRevision || chunk.dataset.rendered === 'true') return false;
+  const capturedAnchor = anchor || (chunk.isConnected ? captureScrollAnchor() : null);
   chunk.dataset.rendered = 'true';
   const rows = data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
     groupIndex,
@@ -1368,28 +1635,24 @@ function materializeEntryChunk(chunk) {
   chunk.replaceChildren(...rows);
   chunk.style.minHeight = '';
   entryChunkObserver?.unobserve(chunk);
-  requestAnimationFrame(() => {
-    for (const row of rows) {
-      if (!row.isConnected || !row.classList.contains('phrase-two-line')) continue;
-      const viewport = row.querySelector('.entry-text-viewport');
-      const content = row.querySelector('.entry-text-content');
-      if (!viewport || !content || (content.scrollHeight <= viewport.clientHeight + 1 && content.scrollWidth <= viewport.clientWidth + 1)) continue;
-      const entry = getState().entryById.get(row.dataset.entryId);
-      if (!entry) continue;
-      forcedExtremeEntryKeys.add(`${data.collection.id}\u0000${entry.id}`);
-      const record = data.items.find((item) => item.entry.id === entry.id);
-      row.replaceWith(renderEntryRow(entry, data.collection, data.domain, {
-        groupIndex: record?.groupIndex || 1,
-        globalIndex: data.globalIndexById.get(entry.id) || record?.groupIndex || 1,
-      }));
-    }
+  if (restore && capturedAnchor) requestAnimationFrame(() => {
+    if (data.renderToken === renderRevision) restoreScrollAnchor(capturedAnchor);
   });
+  return true;
 }
 
 function ensureEntryChunkObserver() {
   if (entryChunkObserver || !('IntersectionObserver' in window)) return entryChunkObserver;
   entryChunkObserver = new IntersectionObserver((records) => {
-    for (const record of records) if (record.isIntersecting) materializeEntryChunk(record.target);
+    const chunks = records.filter((record) => record.isIntersecting).map((record) => record.target);
+    if (!chunks.length) return;
+    const token = renderRevision;
+    const anchor = captureScrollAnchor();
+    let changed = false;
+    for (const chunk of chunks) changed = materializeEntryChunk(chunk, { anchor, restore: false }) || changed;
+    if (changed && anchor) requestAnimationFrame(() => {
+      if (token === renderRevision) restoreScrollAnchor(anchor);
+    });
   }, { rootMargin: '960px 0px 960px' });
   return entryChunkObserver;
 }
@@ -1400,11 +1663,11 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
     const slice = entries.slice(offset, offset + ENTRY_CHUNK_SIZE);
     const chunk = el('div', { className: 'entry-chunk', dataset: { rendered: 'false' } });
     const items = slice.map((entry, index) => ({ entry, groupIndex: groupIndexById?.get(entry.id) || startIndex + offset + index }));
-    entryChunkData.set(chunk, { items, collection, domain, globalIndexById });
+    entryChunkData.set(chunk, { items, collection, domain, globalIndexById, renderToken: renderRevision });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
     const estimatedHeight = slice.reduce((total, entry) => {
       const kind = entryLayoutKind(entry, displayGlossForEntry(entry, collection, domain));
-      const rowHeight = kind === 'phrase-extreme' ? 102 : kind === 'phrase-two-line' ? 84 : ENTRY_ROW_ESTIMATE;
+      const rowHeight = kind === 'phrase-extreme' ? 88 : kind === 'phrase-two-line' ? 72 : ENTRY_ROW_ESTIMATE;
       const relationHeight = expandedRelations.has(relationExpansionKey(collection.id, entry.id))
         ? Math.max(0, relationItemsForEntry(entry).length * 42 + 8)
         : 0;
@@ -1448,7 +1711,6 @@ function renderAlphabetContent(context, sectionContext) {
   const section = sectionContext.section;
   const expandedLetters = expandedLettersFor(collection.id, section);
   const root = el('section', { className: `content-section ${section}-content`, id: `content-${section}`, dataset: { section } });
-  if (isCompositeCollection(collection)) root.append(el('h2', { className: 'content-section-title', text: section === 'word' ? '词汇' : '短语' }));
   if (!sectionContext.entries.length) {
     root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
     sectionContext.root = root;
@@ -1466,11 +1728,16 @@ function renderAlphabetContent(context, sectionContext) {
       el('span', { className: 'letter-indicator' }, [svgIcon('chevron')]),
     );
     sectionNode.append(heading);
+    if (expandedLetters.has(letter)) {
+      const body = el('div', { className: 'letter-body' });
+      const groupEntries = sectionContext.grouped.get(letter);
+      body.append(renderEntryChunks(groupEntries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(groupEntries, collection) }));
+      sectionNode.append(body);
+    }
     sectionContext.sectionByKey.set(letter, sectionNode);
     root.append(sectionNode);
   }
   sectionContext.root = root;
-  for (const letter of expandedLetters) if (sectionContext.grouped.has(letter)) setTimeout(() => setLetterSectionOpen(section, letter, true), 0);
   return root;
 }
 
@@ -1478,7 +1745,6 @@ function renderDateContent(context, sectionContext) {
   const { collection, domain, globalIndexById } = context;
   const section = sectionContext.section;
   const root = el('section', { className: `content-section date-content ${section}-content`, id: `content-${section}`, dataset: { section } });
-  if (isCompositeCollection(collection)) root.append(el('h2', { className: 'content-section-title', text: section === 'word' ? '词汇' : '短语' }));
   const stampedByDate = new Map();
   const unmarked = [];
   for (const entry of sectionContext.entries) {
@@ -1531,50 +1797,31 @@ function renderDateContent(context, sectionContext) {
   return root;
 }
 
-function renderEntryList(collection, domain, entries) {
+function renderEntryList(collection, domain, entries, section = currentViewKind) {
   resetEntryChunking();
-  forcedExtremeEntryKeys.clear();
   collectionRenderContext = null;
-  const mode = getViewMode(collection.id);
+  const mode = getViewMode(collection.id, section);
   const sections = new Map();
-  let renderedOrder = entries;
-  if (isCompositeCollection(collection)) {
-    const words = [];
-    const phrases = [];
-    for (const entry of entries) (entry.kind === 'phrase' ? phrases : words).push(entry);
-    sections.set('word', createSectionContext('word', words, collection, mode));
-    sections.set('phrase', createSectionContext('phrase', phrases, collection, mode));
-    renderedOrder = [...words, ...phrases];
-  } else {
-    const section = isPhraseCollection(collection) ? 'phrase' : 'word';
-    sections.set(section, createSectionContext(section, entries, collection, mode));
-  }
-  const firstSection = sections.keys().next().value;
-  if (!sections.has(activeSection)) activeSection = firstSection;
-  const globalIndexById = groupedNumberIndex(renderedOrder, collection);
-  const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById };
+  const sectionContext = createSectionContext(section, entries, collection, mode);
+  sections.set(section, sectionContext);
+  activeSection = section;
+  const globalIndexById = groupedNumberIndex(entries, collection);
+  const context = { collection, domain, entries, mode, sections, firstSection: section, globalIndexById };
   collectionRenderContext = context;
 
-  const firstContext = sections.get(firstSection);
-  const otherFirst = isCompositeCollection(collection) ? (firstSection === 'word' ? 'phrase' : 'word') : '';
-  elements['letter-nav'].classList.remove('hidden');
-  elements['letter-nav'].dataset.section = firstSection;
-  elements['letter-nav'].setAttribute('aria-label', `${firstSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引`);
-  populateNavigationBar(elements['letter-nav'], navigationControls(collection, firstSection, firstContext, mode, otherFirst, { includeTop: true }));
+  if (mode === 'alphabet') {
+    elements['letter-nav'].classList.remove('hidden');
+    elements['letter-nav'].dataset.section = section;
+    elements['letter-nav'].setAttribute('aria-label', `${section === 'word' ? '词汇' : '短语'}字母索引`);
+    populateNavigationBar(elements['letter-nav'], navigationControls(collection, section, sectionContext, mode));
+  } else {
+    elements['letter-nav'].classList.add('hidden');
+    elements['letter-nav'].replaceChildren();
+  }
 
   const output = [];
-  if (mode === 'date') output.push(calendarForSection(collection, firstSection, firstContext.dates));
-  output.push(mode === 'date' ? renderDateContent(context, firstContext) : renderAlphabetContent(context, firstContext));
-
-  if (isCompositeCollection(collection)) {
-    const secondSection = firstSection === 'word' ? 'phrase' : 'word';
-    const secondContext = sections.get(secondSection);
-    const secondaryNav = el('nav', { className: 'letter-nav section-letter-nav', dataset: { section: secondSection }, 'aria-label': `${secondSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引` });
-    populateNavigationBar(secondaryNav, navigationControls(collection, secondSection, secondContext, mode, firstSection));
-    output.push(secondaryNav);
-    if (mode === 'date') output.push(calendarForSection(collection, secondSection, secondContext.dates));
-    output.push(mode === 'date' ? renderDateContent(context, secondContext) : renderAlphabetContent(context, secondContext));
-  }
+  if (mode === 'date') output.push(calendarForSection(collection, section, sectionContext.dates));
+  output.push(mode === 'date' ? renderDateContent(context, sectionContext) : renderAlphabetContent(context, sectionContext));
   elements['entry-list'].replaceChildren(...output);
   updateBackToTopVisibility();
   updateOverlayLayout();
@@ -1600,11 +1847,21 @@ function setLetterSectionOpen(section, letter, open) {
     }
   } else {
     expandedLetters.delete(letter);
-    body?.remove();
+    if (body) {
+      for (const chunk of body.querySelectorAll('.entry-chunk')) {
+        entryChunkObserver?.unobserve(chunk);
+        const data = entryChunkData.get(chunk);
+        for (const item of data?.items || []) {
+          if (entryChunkByEntryId.get(item.entry.id) === chunk) entryChunkByEntryId.delete(item.entry.id);
+        }
+      }
+      body.remove();
+    }
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (indicator) indicator.classList.toggle('open', open);
   updateActiveLetter(section, letter);
+  persistCurrentHistorySnapshot();
   return true;
 }
 
@@ -1637,12 +1894,14 @@ function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}
     if (!active || !ensureVisible || Date.now() < letterTrackInteractionUntil) return;
     const track = item.closest('.letter-nav-track');
     if (!track) return;
+    if (letter === 'A') { track.scrollLeft = 0; return; }
+    if (letter === '#') { track.scrollLeft = track.scrollWidth - track.clientWidth; return; }
     const itemRect = item.getBoundingClientRect();
     const trackRect = track.getBoundingClientRect();
     let nextLeft = track.scrollLeft;
-    if (itemRect.left < trackRect.left + 4) nextLeft += itemRect.left - trackRect.left - 8;
-    else if (itemRect.right > trackRect.right - 4) nextLeft += itemRect.right - trackRect.right + 8;
-    if (Math.abs(nextLeft - track.scrollLeft) > 1) track.scrollTo({ left: Math.max(0, nextLeft), behavior: 'smooth' });
+    if (itemRect.left < trackRect.left + 2) nextLeft += itemRect.left - trackRect.left - 6;
+    else if (itemRect.right > trackRect.right - 2) nextLeft += itemRect.right - trackRect.right + 6;
+    if (Math.abs(nextLeft - track.scrollLeft) > 1) track.scrollTo({ left: Math.max(0, nextLeft), behavior: 'auto' });
   });
 }
 
@@ -1697,8 +1956,6 @@ function normalDestinationsForEntries(entries, { preferredCollectionId = '', dom
     }
   }
   return destinations.sort((a, b) => {
-    if (a.collectionId === preferredCollectionId && b.collectionId !== preferredCollectionId) return -1;
-    if (b.collectionId === preferredCollectionId && a.collectionId !== preferredCollectionId) return 1;
     const domainA = Number(state.domainById.get(a.domainId)?.order || 0);
     const domainB = Number(state.domainById.get(b.domainId)?.order || 0);
     if (domainA !== domainB) return domainA - domainB;
@@ -1718,9 +1975,6 @@ function hasRelationsForEntry(entry) {
 
 function relationItemsForEntry(entry) {
   const state = getState();
-  const sourceCollection = state.collectionById.get(currentCollectionId);
-  const preferredCollectionId = sourceCollection?.type === 'normal' ? sourceCollection.id : '';
-
   if (entry.kind === 'word') {
     const byText = new Map();
     for (const relatedPhrase of getRelatedPhrases(entry.id)) {
@@ -1738,7 +1992,7 @@ function relationItemsForEntry(entry) {
     }
     return [...byText.values()].map((item) => ({
       ...item,
-      destinations: normalDestinationsForEntries(item.targetEntries, { preferredCollectionId }),
+      destinations: normalDestinationsForEntries(item.targetEntries),
     })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   }
 
@@ -1759,7 +2013,7 @@ function relationItemsForEntry(entry) {
   }
   return [...byToken.values()].map((item) => ({
     ...item,
-    destinations: normalDestinationsForEntries(item.targetEntries, { preferredCollectionId }),
+    destinations: normalDestinationsForEntries(item.targetEntries),
   })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
 }
 
@@ -1780,7 +2034,7 @@ async function copyText(text) {
 function navigateRelationDestination(destination) {
   closeRelationTargetMenu();
   closeActionDialog();
-  navigateCollection(destination.collectionId, destination.entry.id, 'relation');
+  navigateCollection(destination.collectionId, destination.entry.id, 'relation', destination.entry.kind);
 }
 
 function relationNavigationMode(sourceEntry, destinations) {
@@ -1922,7 +2176,14 @@ function toggleEntryRelations(entryId) {
   const entry = getState().entryById.get(entryId);
   const current = document.getElementById(`entry-${entryId}`);
   if (!context || !entry || !current) return;
-  current.replaceWith(renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry)));
+  const beforeTop = current.getBoundingClientRect().top;
+  const next = renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry));
+  current.replaceWith(next);
+  requestAnimationFrame(() => {
+    const delta = next.getBoundingClientRect().top - beforeTop;
+    if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+    persistCurrentHistorySnapshot();
+  });
 }
 
 async function toggleEntryPin(entry, collection, sourceButton = null) {
@@ -1955,7 +2216,8 @@ function displayGlossForEntry(entry, collection, domain) {
 
 async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   closeQueryMenu();
-  const mode = getViewMode(collection.id);
+  const section = sectionForEntry(entry);
+  const mode = getViewMode(collection.id, section);
   if (mode === 'date') {
     pendingJumpEntryId = entry.id;
     pendingJumpReason = 'study-date';
@@ -1985,7 +2247,7 @@ function openChatGPTEntryQuery(entry, collection) {
   const state = getState();
   const context = createEntryContext(state, entry, collection.id, {
     appVersion: APP_VERSION,
-    viewMode: getViewMode(collection.id),
+    viewMode: getViewMode(collection.id, sectionForEntry(entry)),
     section: sectionForEntry(entry),
   });
   const prompt = buildChatGPTPrompt(context);
@@ -2018,21 +2280,24 @@ function handleEntryPrimaryAction(entry, collection, annotationRecord) {
   else copyEntry(entry, collection);
 }
 
-function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, sourceDomainLabel = '') {
+function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText = '') {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
   let pointerStart = null;
   let suppressClick = false;
   const viewport = el('div', {
-    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}`,
+    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}${gloss ? ' has-gloss' : ' no-gloss'}`,
     role: 'button', tabindex: 0,
     'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
   });
-  const content = el('div', { className: 'entry-text-content' }, [
+  const primaryLine = el('div', { className: 'entry-primary-text-line' }, [
+    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
+  ]);
+  const content = el('div', { className: 'entry-text-content' }, [
+    primaryLine,
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
   ]);
   viewport.append(content);
-  if (sourceDomainLabel) viewport.append(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
   const updateOverflowState = () => {
     if (!isScrollable) return;
     const overflow = viewport.scrollWidth > viewport.clientWidth + 1;
@@ -2041,6 +2306,7 @@ function createTextViewport(entry, collection, gloss, annotationRecord, layoutKi
     viewport.classList.toggle('at-scroll-end', !overflow || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1);
   };
   if (isScrollable) {
+    viewport.scrollLeft = 0;
     viewport.addEventListener('pointerdown', (event) => {
       pointerStart = { x: event.clientX, y: event.clientY };
       suppressClick = false;
@@ -2175,43 +2441,28 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
     : '';
   const studyStamp = getStudyStamp(entry, collection.id);
-  const layoutKey = `${collection.id}\u0000${entry.id}`;
-  const layoutKind = forcedExtremeEntryKeys.has(layoutKey) ? 'phrase-extreme' : entryLayoutKind(entry, gloss);
+  const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
-  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, sourceDomainLabel);
-  const indexBadge = indexText ? el('span', { className: 'entry-index-badge', text: indexText, 'aria-hidden': 'true' }) : null;
-  let primary;
-  if (layoutKind === 'phrase-extreme') {
-    const functionalItems = [];
-    if (studyStamp) functionalItems.push(el('span', {
-      className: 'entry-study-date marked', text: formatStudyDate(studyStamp.reviewDateKey),
-      'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
-    }));
-    functionalItems.push(actions.refresh, actions.pin, actions.query, actions.more);
-    const extremeFunctions = el('div', { className: 'entry-extreme-functions' }, functionalItems);
-    extremeFunctions.style.setProperty('--visible-items', String(functionalItems.length));
-    primary = el('div', { className: 'entry-line entry-line-extreme' }, [
-      indexBadge,
-      textViewport,
-      extremeFunctions,
-    ]);
-  } else {
-    primary = el('div', { className: 'entry-line' }, [
-      indexBadge,
-      textViewport,
-      el('span', {
-        className: `entry-study-date${studyStamp ? ' marked' : ''}`,
-        text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '',
-        'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期',
-      }),
-      el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, [actions.refresh, actions.pin, actions.query, actions.more]),
-    ]);
+  const actionItems = [];
+  if (hasRelations) {
+    actionItems.push(iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)));
+    actionItems[0].setAttribute('aria-expanded', expanded ? 'true' : 'false');
   }
+  actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
+  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText);
+  const lineChildren = [textViewport];
+  if (studyStamp) lineChildren.push(el('span', {
+    className: 'entry-study-date marked',
+    text: formatStudyDate(studyStamp.reviewDateKey),
+    'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
+  }));
+  lineChildren.push(el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, actionItems));
+  const primary = el('div', { className: 'entry-line' }, lineChildren);
   if (annotationRecord) {
     primary.addEventListener('click', (event) => {
       if (event.target.closest('button, .entry-text-viewport')) return;
@@ -2219,15 +2470,9 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     });
     primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
   }
-  const relationRail = el('div', { className: 'entry-relation-rail', 'aria-hidden': hasRelations ? 'false' : 'true' });
-  if (hasRelations) {
-    relationRail.append(el('button', {
-      type: 'button', className: `entry-relation-tab${expanded ? ' active' : ''}`,
-      'aria-label': expanded ? '收起关联' : '展开关联', 'aria-expanded': expanded ? 'true' : 'false',
-      on: { click: () => toggleEntryRelations(entry.id) },
-    }, [svgIcon('disclosure', 'relation-disclosure')]));
-  }
-  row.append(el('div', { className: 'entry-primary-shell' }, [primary, relationRail]));
+  const shell = el('div', { className: 'entry-primary-shell' }, [primary]);
+  if (sourceDomainLabel) shell.append(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
+  row.append(shell);
   const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
   if (relationPanel) row.append(relationPanel);
   return row;
@@ -2271,8 +2516,8 @@ async function copyEntry(entry, collection) {
     }
     clearPersistentJump();
     showToast(`已复制：${entry.text}`);
-    const mode = getViewMode(collection.id);
     const section = sectionForEntry(entry);
+    const mode = getViewMode(collection.id, section);
     const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
     setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
       .then(() => {
@@ -2322,18 +2567,22 @@ function readingViewportBounds() {
   const viewportTop = viewport?.offsetTop || 0;
   const viewportHeight = viewport?.height || window.innerHeight;
   const viewportBottom = viewportTop + viewportHeight;
-  const rects = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .context-bar, .letter-nav')]
+  const topRects = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .letter-nav')]
     .filter((candidate) => candidate && !candidate.classList.contains('hidden'))
     .map((candidate) => candidate.getBoundingClientRect())
-    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportBottom)
+    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
     .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
   let top = viewportTop;
   for (let pass = 0; pass < 2; pass += 1) {
-    for (const rect of rects) {
-      if (rect.bottom > top && rect.top <= top + 14) top = rect.bottom;
-    }
+    for (const rect of topRects) if (rect.bottom > top && rect.top <= top + 14) top = rect.bottom;
   }
-  return { top: Math.max(viewportTop, top + 8), bottom: viewportBottom - 12 };
+  const bottomRects = [...document.querySelectorAll('.bottom-toolbar, .pin-bar, .review-bar')]
+    .filter((candidate) => candidate && !candidate.classList.contains('hidden'))
+    .map((candidate) => candidate.getBoundingClientRect())
+    .filter((rect) => rect.height > 0 && rect.bottom > viewportBottom - 140);
+  let bottom = viewportBottom - 8;
+  for (const rect of bottomRects) bottom = Math.min(bottom, rect.top - 8);
+  return { top: Math.max(viewportTop, top + 6), bottom: Math.max(top + 80, bottom) };
 }
 
 function positionHeadingBelowChrome(target) {
@@ -2386,8 +2635,10 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
     showToast('该位置已失效');
     return false;
   }
-  if (targetCollectionId !== currentCollectionId) {
-    navigateCollection(targetCollectionId, entryId, reason);
+  const targetCollection = state.collectionById.get(targetCollectionId);
+  const targetViewKind = viewKindForCollection(targetCollection, entry, entry.kind);
+  if (targetCollectionId !== currentCollectionId || (targetCollection?.type === 'normal' && targetViewKind !== currentViewKind)) {
+    navigateCollection(targetCollectionId, entryId, reason, targetViewKind);
     return true;
   }
   const token = ++navigationRevision;
@@ -2395,7 +2646,7 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   syncPinIndexForEntry(currentCollectionId, entryId);
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
-  if (location.hash.includes('entry=')) history.replaceState(null, '', collectionRoute(currentCollectionId));
+  if (location.hash.includes('entry=')) history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth }, '', collectionRoute(currentCollectionId, '', getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentViewKind : ''));
   const collection = state.collectionById.get(currentCollectionId);
   if (collection) renderPinBar(collection);
   const row = ensureEntryRendered(entryId);
@@ -2417,7 +2668,10 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
 function jumpPinned(collectionId, direction = 1) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
-  const pins = getPinsForCollection(collectionId);
+  const pins = getPinsForCollection(collectionId).filter((pin) => {
+    const entry = state.entryById.get(pin.entryId);
+    return collection?.type !== 'normal' || entry?.kind === currentViewKind;
+  });
   if (!collection || !pins.length) return;
   if (pinCollectionId !== collectionId) {
     pinCollectionId = collectionId;
@@ -2465,8 +2719,8 @@ function persistScrollPosition() {
     const collection = state.collectionById.get(currentCollectionId);
     const isVisibleContext = entry && collection && (collection.virtual || entry.domainId === collection.domainId);
     if (isVisibleContext) {
-      const mode = getViewMode(collection.id);
       const section = sectionForEntry(entry);
+      const mode = getViewMode(collection.id, section);
       const positionKey = `${positionDomainId(collection)}\u0000${collection.id}\u0000${mode}\u0000${section}\u0000${entry.id}`;
       if (positionKey === lastPersistedPositionKey) return;
       const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
@@ -2480,17 +2734,17 @@ function persistScrollPosition() {
           console.warn('浏览位置保存失败', error);
         });
     }
-  }, 520);
+    persistCurrentHistorySnapshot();
+  }, 320);
 }
 
 function updateBackToTopVisibility() {
   const button = elements['back-to-top'];
   if (!button) return;
-  button.classList.add('hidden');
-  elements['collection-view']?.querySelectorAll('.navigation-top-button').forEach((control) => {
-    control.classList.toggle('at-top', window.scrollY < 24);
-    control.setAttribute('aria-label', window.scrollY < 24 ? '已在顶部' : '返回顶部');
-  });
+  const atTop = window.scrollY < 24;
+  button.disabled = atTop;
+  button.classList.toggle('at-top', atTop);
+  button.setAttribute('aria-label', atTop ? '已在顶部' : '返回顶部');
 }
 
 function returnToTop() {
@@ -2500,8 +2754,8 @@ function returnToTop() {
   const entry = entryId ? state.entryById.get(entryId) : null;
   const collection = state.collectionById.get(currentCollectionId);
   if (entry && collection) {
-    const mode = getViewMode(collection.id);
     const section = sectionForEntry(entry);
+    const mode = getViewMode(collection.id, section);
     setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section }).catch((error) => console.warn('返回顶部前保存位置失败', error));
   }
   suppressScrollPersistence(900);
@@ -2612,13 +2866,13 @@ function openCollectionActions(collectionId) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
   if (!collection) return;
-  const entries = getVisibleEntries(collectionId);
-  const annotationCount = annotationCountForCollection(collectionId);
+  const entries = entriesForCollectionView(collectionId, currentViewKind);
+  const annotationCount = annotationCountForCollection(collectionId, currentViewKind);
   if (collection.virtual) {
     openActionDialog({ title: collection.name, body: [
       el('div', { className: 'action-list' }, [
         button('导出 CSV', '', () => { exportCollectionCsv(collection.id); closeActionDialog(); }),
-        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id); }) : null,
+        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id, '', currentViewKind); }) : null,
         button('应用设置与备份', '', () => openSettingsDialog()),
       ].filter(Boolean)),
     ] });
@@ -2636,7 +2890,7 @@ function openCollectionActions(collectionId) {
       el('p', { className: 'action-group-title', text: 'AI' }),
       el('div', { className: 'action-list' }, [
         button('AI 核查', '', () => openAiCheckDialog(collection.id), { disabled: Boolean(activeTask) || !entries.length }),
-        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id); }) : null,
+        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id, '', currentViewKind); }) : null,
       ].filter(Boolean)),
     ]),
     el('div', { className: 'action-group' }, [
@@ -2666,7 +2920,9 @@ function openCollectionMenu(collectionId) {
   const name = el('input', { value: collection.name, required: true, maxlength: 40 });
   const label = el('input', { value: collection.label || '', maxlength: 80 });
   const body = [field('名称', name), field('副标题', label)];
-  if (annotationCountForCollection(collectionId)) body.push(button('清空标注', 'secondary-button', async () => { await clearAnnotationsForCollection(collectionId); }));
+  if (annotationCountForCollection(collectionId, currentViewKind)) body.push(button('清空当前视图标注', 'secondary-button', async () => {
+    await clearAnnotationsForEntries(entryIdsForCollectionView(collectionId, currentViewKind));
+  }));
   body.push(button('删除词表', 'danger-button', () => confirmDeleteCollection(collectionId)));
   openDialog({ title: collection.name, body, onSubmit: async () => { await renameCollection(collectionId, name.value, label.value); } });
 }
@@ -2674,7 +2930,7 @@ function openCollectionMenu(collectionId) {
 function exportCollectionCsv(collectionId) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
-  const entries = getVisibleEntries(collectionId);
+  const entries = entriesForCollectionView(collectionId, currentViewKind);
   const memberships = state.membershipsByCollection.get(collectionId) || [];
   downloadText(`${collection.name}-${new Date().toISOString().slice(0, 10)}.csv`, entriesToCsv(entries, memberships), 'text/csv;charset=utf-8');
   showToast('CSV 已导出');
@@ -2806,7 +3062,8 @@ async function openAiAddDialog(collectionId) {
 function openAiCheckDialog(collectionId) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
-  const entries = getVisibleEntries(collectionId).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
+  const viewKind = collection?.type === 'normal' ? currentViewKind : viewKindForCollection(collection);
+  const entries = entriesForCollectionView(collectionId, viewKind).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
   if (!collection || !entries.length) { showToast('当前词表没有可核查内容'); return; }
   const batches = createAiCheckBatches(entries);
   const model = getSelectedModel();
@@ -2824,19 +3081,26 @@ function openAiCheckDialog(collectionId) {
     onSubmit: async () => {
       if (!getApiKey()) throw new Error('请先在设置中配置 Groq API Key');
       if (!getSelectedModel()) throw new Error('请先刷新并选择 Groq 模型');
-      setTimeout(() => startAiCheck(collectionId), 0);
+      setTimeout(() => startAiCheck(collectionId, viewKind), 0);
     },
   });
 }
 
-async function startAiCheck(collectionId) {
+async function startAiCheck(collectionId, requestedViewKind = currentViewKind) {
   if (activeTask) return;
-  const entries = getVisibleEntries(collectionId).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
+  const collection = getState().collectionById.get(collectionId);
+  const viewKind = collection?.type === 'normal' ? requestedViewKind : viewKindForCollection(collection);
+  const entries = entriesForCollectionView(collectionId, viewKind).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
   if (!entries.length) return;
   const controller = new AiCheckController();
   const entryIds = entries.map((entry) => entry.id);
-  const startAnnotations = getState().annotations.filter((item) => entryIds.includes(item.entryId)).map((item) => structuredClone(item));
-  const task = { controller, paused: false, completed: 0, total: 1, collectionId, status: '准备 AI 核查…', entryIds, startAnnotations, suppressHistory: false };
+  let resolveCompletion;
+  const task = {
+    controller, paused: false, completed: 0, total: 1, collectionId, viewKind,
+    status: '准备 AI 核查…', entryIds,
+    aiChanges: new Map(), manualAnnotationEntryIds: new Set(), cancelledForDataChange: false,
+    completion: new Promise((resolve) => { resolveCompletion = resolve; }),
+  };
   activeTask = task;
   taskPanelExpanded = true;
   renderTaskPanel('准备 AI 核查…');
@@ -2851,34 +3115,45 @@ async function startAiCheck(collectionId) {
       },
       onBatch: async (issues, batch) => {
         if (activeTask !== task || controller.cancelled) return;
+        const eligibleBatch = batch.filter((entry) => !task.manualAnnotationEntryIds.has(entry.id));
+        if (!eligibleBatch.length) return;
+        const eligibleIds = new Set(eligibleBatch.map((entry) => entry.id));
+        const before = new Map(eligibleBatch.map((entry) => [entry.id, structuredClone(getState().annotationByEntry.get(entry.id) || null)]));
         const expectedRevision = getState().revision;
-        await replaceAnnotations(batch.map((entry) => entry.id), issues, {
-          expectedEntries: batch.map((entry) => ({ id: entry.id, updatedAt: entry.updatedAt, normalizedText: entry.normalizedText })),
+        await replaceAnnotations(eligibleBatch.map((entry) => entry.id), issues.filter((item) => eligibleIds.has(item.entryId)), {
+          expectedEntries: eligibleBatch.map((entry) => ({ id: entry.id, updatedAt: entry.updatedAt, normalizedText: entry.normalizedText })),
           expectedRevision,
         });
+        for (const entry of eligibleBatch) {
+          const left = before.get(entry.id) || null;
+          const right = structuredClone(getState().annotationByEntry.get(entry.id) || null);
+          if (JSON.stringify(left) === JSON.stringify(right)) continue;
+          const existing = task.aiChanges.get(entry.id);
+          task.aiChanges.set(entry.id, { entryId: entry.id, before: existing?.before ?? left, after: right });
+        }
       },
     });
-    if (!task.suppressHistory) await recordAiAnnotationHistory(task.startAnnotations, task.entryIds, `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId}`);
-    if (activeTask === task) showToast(result.cancelled ? '核查已取消；已完成批次可整体撤销' : 'AI 核查完成');
+    await recordAiAnnotationChanges([...task.aiChanges.values()], `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId} · ${viewKind === 'phrase' ? '短语' : '词汇'}`);
+    if (activeTask === task && !task.cancelledForDataChange) showToast(result.cancelled ? '核查已取消；已完成批次可整体撤销' : 'AI 核查完成');
   } catch (error) {
-    if (!task.suppressHistory) {
-      try { await recordAiAnnotationHistory(task.startAnnotations, task.entryIds, `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId}`); } catch {}
-    }
+    try { await recordAiAnnotationChanges([...task.aiChanges.values()], `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId} · ${viewKind === 'phrase' ? '短语' : '词汇'}`); } catch {}
     if (activeTask === task && error?.name !== 'AbortError') displayError(error);
   }
   finally {
     if (activeTask === task) activeTask = null;
     renderTaskPanel('');
+    resolveCompletion?.();
   }
 }
 
-function cancelActiveTaskForDataChange() {
+async function cancelActiveTaskForDataChange() {
   if (!activeTask) return;
   const task = activeTask;
-  task.suppressHistory = true;
+  task.cancelledForDataChange = true;
   task.controller.cancel();
-  activeTask = null;
-  renderTaskPanel('');
+  task.status = '正在停止 AI 核查…';
+  renderTaskPanel(task.status);
+  await task.completion;
   showToast('数据即将变更，AI 核查已取消');
 }
 
@@ -2908,10 +3183,10 @@ function renderTaskPanel(status) {
   ]), progress);
 }
 
-function annotationReviewIds(collectionId = '') {
+function annotationReviewIds(collectionId = '', viewKind = '') {
   const state = getState();
   const annotated = new Set(state.annotations.map((item) => item.entryId));
-  if (collectionId) return (state.projection.get(collectionId) || []).filter((entry) => annotated.has(entry.id)).map((entry) => entry.id);
+  if (collectionId) return entriesForCollectionView(collectionId, viewKind).filter((entry) => annotated.has(entry.id)).map((entry) => entry.id);
   const domainOrder = new Map(state.domains.map((domain, index) => [domain.id, index]));
   return [...state.annotations]
     .map((item) => state.entryById.get(item.entryId))
@@ -2921,11 +3196,14 @@ function annotationReviewIds(collectionId = '') {
     .map((entry) => entry.id);
 }
 
-function startAnnotationReview(collectionId = '', startEntryId = '') {
-  const ids = annotationReviewIds(collectionId);
+function startAnnotationReview(collectionId = '', startEntryId = '', requestedViewKind = currentViewKind) {
+  const state = getState();
+  const collection = collectionId ? state.collectionById.get(collectionId) : null;
+  const viewKind = collection?.type === 'normal' ? requestedViewKind : (collection ? viewKindForCollection(collection) : '');
+  const ids = annotationReviewIds(collectionId, viewKind);
   if (!ids.length) { showToast(collectionId ? '当前词表没有待核查标注' : '没有待核查标注'); return; }
   const requestedIndex = startEntryId ? ids.indexOf(startEntryId) : 0;
-  review = { ids, index: requestedIndex >= 0 ? requestedIndex : 0, collectionId };
+  review = { ids, index: requestedIndex >= 0 ? requestedIndex : 0, collectionId, viewKind };
   renderReviewBar();
   const displayId = reviewDisplayEntryId(review.ids[review.index], collectionId) || review.ids[review.index];
   jumpToEntry(displayId, { collectionId: collectionId || projectionCollectionForEntry(displayId), reason: 'annotation' });
@@ -2933,7 +3211,7 @@ function startAnnotationReview(collectionId = '', startEntryId = '') {
 
 function syncReview() {
   const currentId = review.ids[review.index] || '';
-  const ids = annotationReviewIds(review.collectionId);
+  const ids = annotationReviewIds(review.collectionId, review.viewKind);
   if (!ids.length) { closeReview(); return false; }
   const currentIndex = currentId ? ids.indexOf(currentId) : -1;
   review.index = currentIndex >= 0 ? currentIndex : Math.min(review.index, ids.length - 1);
@@ -2944,9 +3222,9 @@ function syncReview() {
 async function clearCurrentReviewAnnotations() {
   const collectionId = review.collectionId || currentCollectionId;
   if (!collectionId) return;
-  cancelActiveTaskForDataChange();
-  await clearAnnotationsForCollection(collectionId);
-  review = { ids: [], index: 0, collectionId: '' };
+  await cancelActiveTaskForDataChange();
+  await clearAnnotationsForEntries(entryIdsForCollectionView(collectionId, review.viewKind || currentViewKind));
+  review = { ids: [], index: 0, collectionId: '', viewKind: '' };
   renderReviewBar();
   showToast('当前词表标注已全部撤销');
 }
@@ -3027,7 +3305,7 @@ async function dismissCurrentReviewAnnotation() {
 }
 
 function closeReview() {
-  review = { ids: [], index: 0, collectionId: '' };
+  review = { ids: [], index: 0, collectionId: '', viewKind: '' };
   elements['annotation-review-bar'].classList.add('hidden');
   elements.app.classList.remove('has-review');
   if (currentCollectionId) {
@@ -3075,7 +3353,11 @@ function openSearchDialog() {
       const domainId = value.slice('domain:'.length);
       allowedIds = new Set(state.entries.filter((entry) => entry.domainId === domainId).map((entry) => entry.id));
     } else if (value.startsWith('collection:')) {
-      allowedIds = new Set(getVisibleEntries(value.slice('collection:'.length)).map((entry) => entry.id));
+      const collectionId = value.slice('collection:'.length);
+      const targetCollection = state.collectionById.get(collectionId);
+      allowedIds = new Set((targetCollection?.type === 'normal' && collectionId === currentCollectionId
+        ? entriesForCollectionView(collectionId, currentViewKind)
+        : getVisibleEntries(collectionId)).map((entry) => entry.id));
     } else allowedIds = new Set();
     return allowedIds;
   };
@@ -3259,21 +3541,29 @@ function closeDialogFromBackdrop(event, dialog, close) {
 }
 
 function renderApp() {
+  const token = ++renderRevision;
   const route = parseRoute();
   const previousCollectionId = currentCollectionId;
   if (!route.collectionId && previousCollectionId) restoreHomeScrollPending = true;
   currentCollectionId = route.collectionId;
+  if (route.viewKind) currentViewKind = route.viewKind;
   if (route.entryId) {
     pendingJumpEntryId = route.entryId;
-    pendingJumpReason = 'route';
-  } else if (route.collectionId !== previousCollectionId) {
+    if (!['search', 'relation', 'annotation', 'last', 'mode', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
+  } else if (route.collectionId !== previousCollectionId && !pendingPageSnapshot) {
     pendingJumpEntryId = '';
-    pendingJumpReason = 'jump';
+    if (pendingJumpReason !== 'home') pendingJumpReason = 'jump';
   }
   closeQueryMenu();
-  if (currentCollectionId) renderCollection(); else renderHome();
+  closeRelationTargetMenu();
+  if (currentCollectionId) renderCollection(token); else renderHome(token);
   if (review.ids.length) { syncReview(); renderReviewBar(); }
-  requestAnimationFrame(() => { updateLargeTitleState(); syncActiveAlphabetHeading(); updateOverlayLayout(); });
+  requestAnimationFrame(() => {
+    if (token !== renderRevision) return;
+    updateLargeTitleState();
+    syncActiveAlphabetHeading();
+    updateOverlayLayout();
+  });
 }
 
 async function handleDialogSubmit(event) {
@@ -3314,9 +3604,12 @@ function handleStoreEvent({ type, detail }) {
   if (type === 'mutation' && detail?.kind === 'pin') return;
   if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
     const collection = getState().collectionById.get(currentCollectionId);
-    if (collection && getViewMode(collection.id) === 'alphabet') return;
+    if (collection && getViewMode(collection.id, currentViewKind) === 'alphabet') return;
   }
   if (type === 'annotation-change') {
+    if (activeTask && detail?.kind !== 'batch') {
+      for (const entryId of detail?.entryIds || []) activeTask.manualAnnotationEntryIds?.add(entryId);
+    }
     refreshVisibleEntryRows(detail?.entryIds || []);
     if (currentCollectionId) {
       const collection = getState().collectionById.get(currentCollectionId);
@@ -3367,8 +3660,7 @@ export async function initializeUI() {
   elements['action-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeActionDialog(); });
   elements['search-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeSearchDialog(); });
   elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
-  elements['back-button'].addEventListener('click', goHome);
-  elements['back-to-top']?.addEventListener('click', returnToTop);
+  elements['back-button'].addEventListener('click', navigateBack);
   elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', () => {
@@ -3382,8 +3674,8 @@ export async function initializeUI() {
   });
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
-  window.addEventListener('hashchange', scheduleRouteRender);
-  window.addEventListener('popstate', scheduleRouteRender);
+  window.addEventListener('hashchange', () => { if (!history.state?.vix) scheduleRouteRender(); });
+  window.addEventListener('popstate', handleHistoryNavigation);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
   window.visualViewport?.addEventListener('scroll', updateVisualViewportVars, { passive: true });
   window.addEventListener('resize', updateVisualViewportVars, { passive: true });
@@ -3427,9 +3719,14 @@ export async function initializeUI() {
   };
   document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
   document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
+  document.addEventListener('touchstart', handleModalTouchStart, { passive: true, capture: true });
+  document.addEventListener('touchmove', handleModalTouchMove, { passive: false, capture: true });
   if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
   subscribe(handleStoreEvent);
   await initializeStore();
+  const initialDepth = Number(history.state?.depth || 0);
+  appNavigationDepth = Number.isFinite(initialDepth) ? initialDepth : 0;
+  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: history.state?.pageSnapshot || null }, '', location.href);
   updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');

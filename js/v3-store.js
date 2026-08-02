@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 5,
-    appVersion: '3.4.0',
+    appVersion: '3.5.0',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -37,7 +37,7 @@ function backupFromState() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 5, appVersion: '3.4.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 5, appVersion: '3.5.0', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -259,17 +259,24 @@ function normalizeSoftReferences(backup) {
     if (!entry) return [];
     let collectionId = pin.contextCollectionId;
     if (!(projection.get(collectionId) || []).some((item) => item.id === entry.id)) {
-      if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
-        const representative = (projection.get(collectionId) || [])
-          .find((item) => item.kind === entry.kind && item.normalizedText === entry.normalizedText);
-        if (representative) entry = representative;
-      }
-      if (!(projection.get(collectionId) || []).some((item) => item.id === entry.id)) {
-        collectionId = [...projection.entries()].find(([id, list]) => {
+      const previousCollection = collectionById.get(collectionId);
+      const candidates = [...projection.entries()]
+        .filter(([id, list]) => {
           const collection = collectionById.get(id);
           return collection?.domainId === entry.domainId && list.some((item) => item.id === entry.id);
-        })?.[0] || '';
-      }
+        })
+        .map(([id]) => collectionById.get(id))
+        .filter(Boolean)
+        .sort((left, right) => {
+          // Normal-table priority is an intentional ownership rule. When a
+          // priority change moves a word, keep its PIN attached to the new
+          // highest-priority normal projection instead of a system total.
+          const leftNormal = left.type === 'normal' ? 0 : 1;
+          const rightNormal = right.type === 'normal' ? 0 : 1;
+          if (previousCollection?.type === 'normal' && leftNormal !== rightNormal) return leftNormal - rightNormal;
+          return Number(left.order || 0) - Number(right.order || 0) || left.id.localeCompare(right.id);
+        });
+      collectionId = candidates[0]?.id || '';
     }
     if (!collectionId) return [];
     return [{ ...pin, id: safeId('pin', entry.id), entryId: entry.id, domainId: entry.domainId, contextCollectionId: collectionId }];
@@ -280,20 +287,15 @@ function normalizeSoftReferences(backup) {
     const parts = key.split(':');
     const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
     if ((projection.get(collectionId) || []).some((item) => item.id === entryId)) continue;
-    const oldEntry = entryById.get(entryId);
-    if (oldEntry && [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
-      const representative = (projection.get(collectionId) || [])
-        .find((item) => item.kind === oldEntry.kind && item.normalizedText === oldEntry.normalizedText);
-      if (representative) {
-        lastPositions[key] = representative.id;
-        continue;
-      }
-    }
+    // A missing concrete Entry must never migrate to a cross-domain homograph/homophrase.
     delete lastPositions[key];
   }
   const validCollectionIds = new Set(projection.keys());
   const viewModes = Object.fromEntries(Object.entries(backup.settings?.viewModes || {})
-    .filter(([collectionId]) => validCollectionIds.has(collectionId)));
+    .filter(([key]) => {
+      const match = /^(.*):(word|phrase|main)$/.exec(key);
+      return validCollectionIds.has(match ? match[1] : key);
+    }));
   const calendarMonths = Object.fromEntries(Object.entries(backup.settings?.calendarMonths || {})
     .filter(([key]) => validCollectionIds.has(key.slice(0, key.lastIndexOf(':')))));
   backup.settings = { ...backup.settings, lastPositions, viewModes, calendarMonths };
@@ -405,7 +407,7 @@ export async function moveCollection(collectionId, direction) {
 
 
 export async function reorderCollections(domainId, orderedIds) {
-  return mutate('调整词表顺序', (draft) => {
+  return mutate('调整词表优先级', (draft) => {
     const siblings = draft.collections.filter((item) => item.domainId === domainId && item.type === 'normal' && !item.hidden);
     const expected = new Set(siblings.map((item) => item.id));
     const order = [...orderedIds].filter((id) => expected.has(id));
@@ -755,16 +757,19 @@ export function getLastPosition(domainId, collectionId, { mode = 'alphabet', sec
   return entryId;
 }
 
-export function getViewMode(collectionId) {
-  return state.settings.viewModes?.[collectionId] === 'date' ? 'date' : 'alphabet';
+export function getViewMode(collectionId, section = 'main') {
+  const key = `${collectionId}:${section}`;
+  const value = state.settings.viewModes?.[key] ?? state.settings.viewModes?.[collectionId];
+  return value === 'date' ? 'date' : 'alphabet';
 }
 
-export async function setViewMode(collectionId, mode) {
+export async function setViewMode(collectionId, mode, section = 'main') {
   if (!['alphabet', 'date'].includes(mode)) throw new Error('无效浏览模式');
-  const next = { ...(state.settings.viewModes || {}), [collectionId]: mode };
+  const key = `${collectionId}:${section}`;
+  const next = { ...(state.settings.viewModes || {}), [key]: mode };
   await setSettings({ viewModes: next });
   state.settings.viewModes = next;
-  emit('view-mode', { collectionId, mode });
+  emit('view-mode', { collectionId, section, mode });
   return mode;
 }
 
@@ -920,16 +925,27 @@ export async function replaceAnnotations(entryIds, annotations, { expectedEntrie
   return commitAnnotationSet(next, '保存 AI 标注', { kind: 'batch' }, true, expectedRevision, false);
 }
 
-export async function recordAiAnnotationHistory(startAnnotations, entryIds, label = 'AI 核查') {
-  const target = new Set(entryIds);
-  const before = new Map((startAnnotations || []).filter((item) => target.has(item.entryId)).map((item) => [item.entryId, item]));
-  const after = new Map(state.annotations.filter((item) => target.has(item.entryId)).map((item) => [item.entryId, item]));
-  const ids = new Set([...before.keys(), ...after.keys()]);
+/**
+ * Records one aggregate AI undo item without rewriting annotations. Only AI-owned
+ * changes that are still present are admitted, so a later manual review is never
+ * absorbed into the AI history item.
+ * @param {{entryId:string,before:any,after:any}[]} aiChanges
+ * @param {string} label
+ */
+export async function recordAiAnnotationChanges(aiChanges, label = 'AI 核查') {
   const changes = [];
-  for (const entryId of ids) {
-    const left = before.get(entryId) || null;
-    const right = after.get(entryId) || null;
-    if (!jsonEqual(left, right)) changes.push({ store: 'annotations', key: entryId, before: left ? clone(left) : null, after: right ? clone(right) : null });
+  for (const item of aiChanges || []) {
+    const entryId = String(item?.entryId || '');
+    if (!entryId) continue;
+    const before = item.before || null;
+    const after = item.after || null;
+    const current = state.annotationByEntry.get(entryId) || null;
+    if (!jsonEqual(current, after) || jsonEqual(before, after)) continue;
+    changes.push({
+      store: 'annotations', key: entryId,
+      before: before ? clone(before) : null,
+      after: after ? clone(after) : null,
+    });
   }
   if (!changes.length) return false;
   const revision = await recordHistoryOnly(changes, { label, expectedRevision: state.revision });
@@ -943,17 +959,14 @@ export async function dismissAnnotation(entryId) {
   return commitAnnotationSet(state.annotations.filter((item) => item.entryId !== entryId), '取消 AI 标注', { kind: 'dismiss' });
 }
 
-export async function clearAnnotationsForCollection(collectionId) {
-  const visibleEntries = state.projection.get(collectionId) || [];
-  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
-    const visibleKeys = new Set(visibleEntries.map((entry) => `${entry.kind}\u0000${entry.normalizedText}`));
-    return commitAnnotationSet(state.annotations.filter((item) => {
-      const entry = state.entryById.get(item.entryId);
-      return !entry || !visibleKeys.has(`${entry.kind}\u0000${entry.normalizedText}`);
-    }), '清空词表 AI 标注', { kind: 'clear-collection', collectionId });
-  }
-  const visibleIds = state.visibleEntryIdsByCollection.get(collectionId) || new Set();
-  return commitAnnotationSet(state.annotations.filter((item) => !visibleIds.has(item.entryId)), '清空词表 AI 标注', { kind: 'clear-collection', collectionId });
+export async function clearAnnotationsForEntries(entryIds, label = '清空当前视图 AI 标注') {
+  const target = new Set(entryIds || []);
+  if (!target.size) return state;
+  return commitAnnotationSet(
+    state.annotations.filter((item) => !target.has(item.entryId)),
+    label,
+    { kind: 'clear-view', entryIds: [...target] },
+  );
 }
 
 export async function clearAllAnnotations() {

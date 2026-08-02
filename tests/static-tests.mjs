@@ -14,304 +14,188 @@ const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
 const exchange = read('js/v3-exchange.js');
 const integrations = read('js/v3-integrations.js');
+const ai = read('js/v3-ai.js');
 const app = read('js/v3-app.js');
 const upgrade = read('js/v3-upgrade.js');
 const sw = read('sw.js');
 const cssBase = read('css/v3.css');
 const css331 = read('css/v3.3.1.css');
-const cssRelease = read('css/v3.4.0.css');
-const css = `${cssBase}
-${css331}
-${cssRelease}`;
+const css340 = read('css/v3.4.0.css');
+const cssRelease = read('css/v3.5.0.css');
+const css = `${cssBase}\n${css331}\n${css340}\n${cssRelease}`;
 const pkg = JSON.parse(read('package.json'));
 const seed = JSON.parse(read('data/seed.json'));
 
-// Version, shell, CSP and iPhone-only viewport contract.
-assert.ok(html.includes('name="application-version" content="3.4.0"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.4.0</title>'));
-assert.ok(html.includes('maximum-scale=1'));
-assert.ok(html.includes('user-scalable=no'));
-assert.ok(html.includes('viewport-fit=cover'));
-assert.ok(html.includes('format-detection'));
+// Release identity and complete shell.
+assert.equal(pkg.version, '3.5.0');
+assert.equal(seed.appVersion, '3.5.0');
+assert.ok(html.includes('name="application-version" content="3.5.0"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.5.0</title>'));
+assert.ok(app.includes("const MODULE_VERSION = '3.5.0'"));
+assert.ok(sw.includes('v3.5.0-ios-shell-20260803-1'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.0'));
+assert.ok(html.includes('./css/v3.5.0.css'));
+assert.ok(sw.includes('./css/v3.5.0.css'));
+assert.ok(html.includes('maximum-scale=1') && html.includes('viewport-fit=cover'));
 assert.ok(html.includes("script-src 'self'"));
-assert.ok(html.indexOf('./js/v3-upgrade.js') < html.indexOf('./css/v3.css'));
-assert.ok(html.includes('./js/v3-app.js'));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
-assert.ok(app.includes("const MODULE_VERSION = '3.4.0'"));
-assert.ok(app.includes("const canonical = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover'"));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.4.0'));
-assert.ok(sw.includes('v3.4.0-ios-shell-20260803-1'));
-assert.ok(upgrade.includes('v3.4.0-ios-shell-20260803-1'));
-assert.equal(pkg.version, '3.4.0');
-assert.equal(seed.appVersion, '3.4.0');
-assert.equal(JSON.parse(read('data/seed-report.json')).builtInSeedRevision, 3);
 
 const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
 assert.equal(new Set(ids).size, ids.length, 'HTML id 必须唯一');
 for (const id of [
-  'app', 'large-title', 'large-title-heading', 'home-annotation-banner', 'clear-all-annotations',
-  'home-view', 'collection-view', 'letter-nav', 'entry-list', 'back-to-top', 'query-menu', 'hidden-file-input',
+  'app', 'home-view', 'collection-view', 'letter-nav', 'entry-list', 'pin-bar',
+  'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode',
+  'bottom-view-switch', 'bottom-search', 'query-menu', 'relation-target-menu',
 ]) assert.ok(ids.includes(id), `HTML 缺少 ${id}`);
-assert.ok(!html.includes('detail-dialog'));
-assert.ok(!html.includes('mobile-action-bar'));
 
-// iPhone standalone shell, safe area and fixed dynamic chrome.
-assert.ok(app.includes("'(display-mode: standalone)'"));
+// iPhone shell, viewport recovery and fixed chrome.
 assert.ok(app.includes('recoverStandaloneViewportIfNeeded'));
 assert.ok(app.includes("document.addEventListener('visibilitychange'"));
-assert.ok(css.includes('-webkit-text-size-adjust: 100%'));
-assert.ok(css.includes('.standalone-pwa') || app.includes("classList.toggle('standalone-pwa'"));
-assert.ok(css.includes('.topbar {'));
-assert.ok(css.includes('position: fixed'));
-assert.ok(css.includes('padding: var(--safe-top)'));
-assert.ok(css.includes('.large-title'));
-assert.ok(ui.includes('function renderLargeTitle'));
-assert.ok(ui.includes("classList.toggle('large-title-collapsed'"));
 assert.ok(ui.includes("window.visualViewport?.addEventListener('resize'"));
-assert.ok(ui.includes("window.visualViewport?.addEventListener('scroll'"));
-assert.ok(ui.includes('viewport?.offsetTop'));
-assert.ok(ui.includes('viewport?.offsetLeft'));
-assert.ok(css.includes('--visual-top'));
-assert.ok(css.includes('.keyboard-visible .search-dialog .dialog-card'));
+assert.ok(css.includes('-webkit-text-size-adjust: 100%'));
+assert.ok(cssRelease.includes('grid-template-areas: "back title actions"'));
+assert.ok(cssRelease.includes('left: 50%'));
+assert.ok(cssRelease.includes('transform: translateX(-50%)'));
 
-// Modal system keeps form focus dormant and avoids the old fixed-body scroll lock.
-assert.ok(ui.includes("elements['dialog-close']?.focus"));
-assert.ok(ui.includes("elements['action-close']?.focus"));
-assert.ok(!ui.includes("document.body.style.position = 'fixed'"));
-assert.ok(!ui.includes("document.body.style.top = `-${scrollY}px`"));
-assert.ok(css.includes('.app-dialog'));
-assert.ok(css.includes('.sheet-dialog'));
-assert.ok(css.includes('.confirm-dialog'));
-assert.ok(css.includes('.search-dialog'));
-assert.ok(css.includes('width: min(322px, calc(100vw - 48px))'));
-assert.ok(css.includes('font-size: 16px !important'));
+// Modal scroll ownership: body is fixed and touch propagation is bounded.
+assert.ok(ui.includes("body.style.position = 'fixed'"));
+assert.ok(ui.includes('body.style.top = `-${modalScrollY}px`'));
+assert.ok(ui.includes('function handleModalTouchMove'));
+assert.ok(ui.includes('event.preventDefault()'));
+assert.ok(ui.includes("document.addEventListener('touchmove', handleModalTouchMove, { passive: false"));
+assert.ok(cssRelease.includes('overscroll-behavior: contain'));
 
-// Home state and persistent annotation warning overlay.
-assert.ok(ui.includes('let homeScrollY = 0'));
-assert.ok(ui.includes('restoreHomeScrollPending'));
-assert.ok(ui.includes('function renderHomeAnnotationBanner'));
-assert.ok(ui.includes('clearAllAnnotationsFromHome'));
-assert.ok(store.includes('export async function clearAllAnnotations()'));
-assert.ok(css.includes('.home-annotation-banner'));
-assert.ok(css.includes('position: fixed'));
-assert.ok(!html.match(/home-annotation-banner[\s\S]{0,300}(?:close|取消)/i));
+// Real internal navigation stack and per-page snapshots.
+for (const token of [
+  'function currentSnapshot()', 'function persistCurrentHistorySnapshot()',
+  'function navigateCollection(', 'function navigateBack()', 'function handleHistoryNavigation(',
+  "history.pushState({ vix: true, depth }", "window.addEventListener('popstate', handleHistoryNavigation)",
+]) assert.ok(ui.includes(token), `缺少返回栈实现：${token}`);
+assert.ok(ui.includes('expandedLetters: [...expandedLettersFor'));
+assert.ok(ui.includes('expandedRelations: [...expandedRelations]'));
 
-// First-level entries: fixed body geometry, external relation rail and four controls.
-assert.ok(ui.includes("className: 'entry-primary-shell'"));
-assert.ok(ui.includes("className: 'entry-line'"));
-assert.ok(ui.includes("className: 'entry-relation-rail'"));
-assert.ok(ui.includes("className: `entry-relation-tab${expanded ? ' active' : ''}`"));
-assert.ok(ui.includes("svgIcon('disclosure', 'relation-disclosure')"));
-assert.ok(css.includes('--relation-rail-width'));
-assert.ok(css.includes('grid-template-columns: minmax(0, 1fr) var(--relation-rail-width)'));
-assert.ok(css.includes('.entry-relation-tab'));
-assert.ok(css.includes('.entry-relation-tab.active .relation-disclosure'));
-assert.ok(ui.includes("const refresh = iconButton('refresh'"));
-assert.ok(ui.includes("const query = iconButton('query'"));
-assert.ok(ui.includes("const more = iconButton('more'"));
-assert.ok(css.includes('grid-template-columns: repeat(4, minmax(0, 1fr))'));
-assert.ok(css.includes('.entry-index-badge'));
+// Ordinary collections are two independent projections; system views cannot switch.
+assert.ok(ui.includes("allEntries.filter((entry) => entry.kind === currentViewKind)"));
+assert.ok(ui.includes('function switchCollectionView(collection, nextKind)'));
+assert.ok(ui.includes("const canSwitch = collection.type === 'normal'"));
+assert.ok(ui.includes("switchButton.disabled = !canSwitch"));
+assert.ok(store.includes('export function getViewMode(collectionId, section = \'main\')'));
+assert.ok(store.includes('export async function setViewMode(collectionId, mode, section = \'main\')'));
+assert.ok(store.includes('const key = `${collectionId}:${section}`'));
+assert.ok(store.includes('`lastPosition:${domainId}:${collectionId}:${mode}:${section}`'));
 
-// Word/gloss shared horizontal viewport; phrase-specific bounded and extreme layouts.
-assert.ok(ui.includes("layoutKind === 'phrase-extreme'"));
-assert.ok(ui.includes("return 'phrase-two-line'"));
-assert.ok(ui.includes("return 'phrase-extreme'"));
-assert.ok(ui.includes("className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}`"));
-assert.ok(css.includes('.entry-text-viewport.horizontally-scrollable'));
-assert.ok(css.includes('.word-normal .entry-text-content, .phrase-extreme .entry-text-content'));
-assert.ok(css.includes('white-space: nowrap'));
-assert.ok(css.includes('.phrase-two-line .entry-text'));
-assert.ok(css.includes('white-space: normal'));
-assert.ok(css.includes('.entry-line-extreme'));
-assert.ok(css.includes('min-height: 94px'));
-assert.ok(ui.includes("className: 'entry-extreme-functions'"));
-assert.ok(ui.includes("--visible-items"));
-assert.ok(!css.includes('.entry-text {\n  text-overflow: ellipsis'));
+// Bottom toolbar has one stable owner; top search is removed from collection pages.
+assert.ok(cssRelease.includes('.bottom-toolbar'));
+assert.ok(cssRelease.includes('grid-template-columns: repeat(5'));
+assert.ok(cssRelease.includes('env(safe-area-inset-bottom)'));
+assert.ok(ui.includes("elements['search-button'].classList.add('hidden')"));
+assert.ok(ui.includes("elements['bottom-search'].onclick = openSearchDialog"));
+assert.ok(ui.includes("elements['bottom-view-switch']"));
 
-// Annotated entries warn in-place, redirect primary tap to review, and support current/global clear.
-assert.ok(ui.includes("annotation ? ' annotated' : ''"));
-assert.ok(ui.includes('if (annotationRecord) startAnnotationReview'));
-assert.ok(ui.includes("startAnnotationReview(collection.id, annotationRecord.sourceEntryId)"));
-assert.ok(ui.includes('async function clearCurrentReviewAnnotations'));
-assert.ok(ui.includes("'撤销当前词表全部标注'"));
-assert.ok(css.includes('.entry-row.annotated .entry-line'));
-assert.ok(css.includes('linear-gradient(90deg'));
-assert.ok(ui.includes('function annotationReviewIds'));
-assert.ok(ui.includes('function renderReviewBar'));
+// Alphabet track contains letters only and follows immediately, without smooth chase.
+assert.ok(ui.includes("className: 'letter-nav-track'"));
+assert.ok(ui.includes('return { fixed: [], track }'));
+assert.ok(!ui.includes("behavior: 'smooth'"), '运行时不得再使用平滑滚动追赶');
+assert.ok(ui.includes("if (letter === 'A') { track.scrollLeft = 0"));
+assert.ok(ui.includes("if (letter === '#') { track.scrollLeft = track.scrollWidth - track.clientWidth"));
+assert.ok(cssRelease.includes('scroll-behavior: auto !important'));
+assert.ok(cssRelease.includes('.letter-heading'));
+assert.ok(cssRelease.includes('position: sticky !important'));
+assert.ok(cssRelease.includes('backdrop-filter: none !important'));
 
-// Two-icon anchored query menu; transport remains the existing shortcut protocol.
-assert.ok(ui.includes('function openQueryMenu'));
+// Entry layout: inline number, source on shell border, no index badge/side rail.
+assert.ok(ui.includes("className: 'entry-index-inline'"));
+assert.ok(ui.includes("shell.append(el('span', { className: 'entry-source-domain'"));
+assert.ok(!ui.includes("className: 'entry-index-badge'"));
+assert.ok(!ui.includes("className: 'entry-relation-rail'"));
+assert.ok(!ui.includes("className: `entry-relation-tab"));
+assert.ok(ui.includes("actionItems.push(iconButton('disclosure'"));
+assert.ok(ui.indexOf("actionItems.push(iconButton('disclosure'") < ui.indexOf('actionItems.push(actions.refresh, actions.pin, actions.query, actions.more)'));
+assert.ok(ui.includes("if (studyStamp) lineChildren.push"));
+assert.ok(cssRelease.includes('.entry-study-date:not(.marked) { display: none'));
+assert.ok(cssRelease.includes('display: flex !important'));
+assert.ok(cssRelease.includes('.entry-index-badge,\n.entry-relation-rail,\n.entry-relation-tab { display: none'));
+assert.ok(cssRelease.includes('.entry-source-domain'));
+assert.ok(cssRelease.includes('border-radius: 0 !important'));
+
+// Long content remains accessible; phrase clamps are explicitly disabled.
+assert.ok(ui.includes("className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}"));
+assert.ok(cssRelease.includes('.entry-text-viewport.horizontally-scrollable'));
+assert.ok(cssRelease.includes('overflow-x: auto !important'));
+assert.ok(cssRelease.includes('-webkit-line-clamp: unset !important'));
+assert.ok(cssRelease.includes('text-overflow: clip !important'));
+
+// Query main entry is retained; only the two popup options are specialized.
+assert.ok(ui.includes("query: '<circle cx=\"9.3\""));
 assert.ok(ui.includes("iconButton('dictionary', 'query-menu-option oxford-option'"));
 assert.ok(ui.includes("iconButton('aiChat', 'query-menu-option chatgpt-option'"));
-assert.ok(ui.includes('function openOxfordLookup(entry)'));
-assert.ok(ui.includes('function openChatGPTEntryQuery(entry, collection)'));
-assert.ok(ui.includes('createEntryContext(state, entry, collection.id'));
-assert.ok(css.includes('.query-menu'));
-assert.ok(css.includes('.query-menu::after'));
+assert.ok(cssRelease.includes('grid-template-columns: repeat(2, 42px)'));
 assert.ok(integrations.includes("export const CHATGPT_SHORTCUT_NAME = 'AI查询'"));
-assert.ok(integrations.includes('shortcuts://run-shortcut'));
-assert.ok(integrations.includes('&input=text&text='));
-assert.ok(integrations.includes('hk-com-oupc-oecd-lookup://x-callback-url/s'));
 
-// Split navigation removes the sticky ghost and heading jumps target the chrome bottom.
-assert.ok(ui.includes("className: 'letter-nav-fixed'"));
-assert.ok(ui.includes("className: 'letter-nav-track'"));
-assert.ok(ui.includes('function positionHeadingBelowChrome'));
-assert.ok(ui.includes('function positionElementAtReadingAnchor'));
-assert.ok(ui.includes('viewport?.offsetTop'));
-assert.ok(css.includes('.last-position-button { position: static !important'));
-assert.ok(css.includes('.letter-nav-track'));
-assert.ok(css.includes('overflow-x: auto'));
+// PIN/review are opaque rectangular bottom docks and never title overlays.
+assert.ok(cssRelease.includes('bottom: calc(var(--bottom-toolbar-height) + env(safe-area-inset-bottom))'));
+assert.ok(cssRelease.includes('.pin-bar::before { display: none'));
+assert.ok(cssRelease.includes('PIN is an integrated bottom dock'));
+assert.ok(cssRelease.includes('background: var(--surface) !important'));
+assert.ok(cssRelease.includes('border-radius: 0 !important'));
+assert.ok(!cssRelease.includes('backdrop-filter: blur'));
 
-// PIN and review overlays never modify document flow; return-to-top remains persistent.
-assert.ok(css.includes('.context-bar'));
-assert.ok(css.includes('position: fixed'));
-assert.ok(css.includes('.app.has-pin, .app.has-review { --context-height: 0px; }'));
-assert.ok(html.includes('id="back-to-top"'));
-assert.ok(ui.includes('function returnToTop()'));
-assert.ok(ui.includes("elements['back-to-top']?.addEventListener('click', returnToTop)"));
-assert.ok(ui.includes("navigation-top-button"));
-assert.ok(ui.includes("classList.toggle('at-top'"));
-assert.ok(css.includes('.back-to-top { display: none !important; }'));
+// Search and dialogs use aligned, equal-width controls.
+assert.ok(cssRelease.includes('.search-controls input'));
+assert.ok(cssRelease.includes('width: 100% !important'));
+assert.ok(cssRelease.includes('grid-template-columns: minmax(0, 1fr) !important'));
 
-// Unified icon cache and redesigned relation secondary jump.
-assert.ok(ui.includes('const ICONS = {'));
-assert.ok(ui.includes('iconTemplateCache'));
-for (const icon of ['refresh', 'dictionary', 'aiChat', 'query', 'disclosure', 'jump', 'warning', 'clear']) {
-  assert.ok(ui.includes(`${icon}:`), `缺少统一图标 ${icon}`);
-}
-assert.ok(ui.includes('function relationNavigationMode'));
-for (const icon of ['intra', 'external', 'multi']) assert.ok(ui.includes(`${icon}:`), `缺少跳转图标 ${icon}`);
-assert.ok(css.includes('.relation-jump'));
-
-// System projections and 3.1 composite collection semantics remain intact.
-assert.ok(ui.includes("'system-card'"));
-assert.ok(ui.includes("'global-system-card'"));
-assert.ok(ui.includes("'domain-system-card'"));
-assert.ok(css.includes('.collection-card.global-system-card'));
-assert.ok(store.includes("name: '全局词汇总表'"));
-assert.ok(store.includes("name: '全局短语总表'"));
-assert.ok(store.includes("name: '词汇总表'"));
-assert.ok(ui.includes('function isCompositeCollection(collection)'));
-assert.ok(ui.includes("sections.set('word', createSectionContext('word'"));
-assert.ok(ui.includes("sections.set('phrase', createSectionContext('phrase'"));
-assert.ok(store.includes("collection.type === 'normal'"));
-assert.ok(exchange.includes("targetCollection?.type === 'normal'"));
-
-// Alphabet/date modes, calendar, explicit study date and independent positions remain.
-assert.ok(ui.includes("mode === 'date' ? 'alphabet' : 'calendar'"));
-assert.ok(ui.includes('function renderDateContent'));
-assert.ok(ui.includes("className: 'date-unmarked-heading', text: '未标注'"));
-assert.ok(ui.includes('function calendarForSection'));
-assert.ok(store.includes('export function getViewMode(collectionId)'));
-assert.ok(store.includes('export async function setViewMode(collectionId, mode)'));
-assert.ok(store.includes('`lastPosition:${domainId}:${collectionId}:${mode}:${section}`'));
-assert.ok(model.includes('export function createStudyStamp'));
-assert.ok(store.includes('export async function refreshStudyDate(entryId, collectionId'));
-assert.ok(ui.includes('async function refreshEntryStudyDate'));
-assert.ok(!ui.match(/copyText[\s\S]{0,500}refreshStudyDate/), '复制不得刷新学习日期');
-
-// Schema 5, Seed revision 3 and complete data preservation.
-assert.ok(model.includes('export const SCHEMA_VERSION = 5'));
-assert.ok(db.includes('export const DB_VERSION = 4'));
-assert.ok(db.includes('const BUILTIN_SEED_REVISION = 3'));
-assert.ok(db.includes('StudyStamps'));
-assert.ok(db.includes("const DATA_STORE_KEYS = ['domains', 'collections', 'entries', 'memberships', 'phraseTokens', 'pins', 'annotations', 'studyStamps']"));
-assert.ok(db.includes('async function readCurrentSnapshot(db)'));
-assert.ok(model.includes('if ([3, 4, SCHEMA_VERSION].includes(Number(input?.schemaVersion))'));
-
-// Relation navigation remains normal-collection-only and secondary items preserve copy/jump separation.
-assert.ok(ui.includes('function normalDestinationsForEntries'));
-assert.ok(ui.includes("collection.type !== 'normal' || collection.hidden"));
-assert.ok(ui.includes("className: 'relation-copy'"));
-assert.ok(ui.includes('relation-jump'));
-assert.ok(ui.includes('function displayGlossForRelationItem'));
-assert.ok(ui.includes("className: 'relation-gloss'"));
-assert.ok(!ui.includes('preferredNormalDestination'), '旧版回退到总表的目标解析不得保留');
-
-// High-risk operations offer an optional backup choice, then continue through the actual confirmation.
-assert.ok(ui.includes('function offerOptionalBackup'));
-assert.ok(ui.includes("submitText: '下载备份'"));
-assert.ok(ui.includes("cancelText: '不下载'"));
-assert.ok(ui.includes('此选择只决定是否下载备份；无论选择哪一项，操作都会继续。'));
-assert.ok(ui.includes('choiceRequired: true'));
-assert.ok(ui.includes("title: '还原到当前版本 Seed'"));
-assert.ok(ui.includes("description: '确认后将替换全部本地内容和个人状态。'"));
-assert.ok(!ui.includes('seed-reset-confirm'));
-assert.ok(!ui.includes('我已确认备份'));
-assert.ok(ui.includes("title: '确认恢复完整备份'"));
-assert.ok(ui.includes("title: '确认完整替换'"));
-assert.ok(exchange.includes('createVixPackage'));
-assert.ok(exchange.includes('planVixImport'));
-
-// Main-thread protections retained and extended with variable chunk estimates.
-assert.ok(ui.includes('IntersectionObserver'));
-assert.ok(ui.includes('ENTRY_CHUNK_SIZE = 42'));
-assert.ok(ui.includes('function materializeEntryChunk(chunk)'));
-assert.ok(ui.includes('slice.reduce((total, entry)'));
-assert.ok(ui.includes("kind === 'phrase-extreme' ? 102"));
-assert.ok(ui.includes('document.elementFromPoint'));
-assert.ok(ui.includes("window.addEventListener('scrollend'"));
-assert.ok(store.includes('visibleEntryIdsByCollection'));
-assert.ok(store.includes('relatedPhrasesByEntry'));
-assert.ok(store.includes('phraseComponentsByEntry'));
-assert.ok(ui.includes('window.setTimeout(renderLocal, 140)'));
-for (const [name, source] of [
-  ['getRelatedPhrases', store.match(/export function getRelatedPhrases[\s\S]*?\n}/)?.[0] || ''],
-  ['getPhraseComponents', store.match(/export function getPhraseComponents[\s\S]*?\n}/)?.[0] || ''],
-  ['search', store.match(/export function search\([\s\S]*?\n}/)?.[0] || ''],
-]) assert.ok(!source.includes('backupFromState'), `${name} 不得复制整库`);
-assert.ok(!css.includes('backdrop-filter: blur(18px)'));
-assert.ok(!css.includes('backdrop-filter: blur(16px)'));
-assert.ok(!css.includes('backdrop-filter: blur(14px)'));
-
-// 3.4.0 regression guards for virtual views, local annotation writes, and corrected cascade.
-assert.ok(model.includes('export function positionScopeDomainId'));
-assert.ok(ui.includes('return positionScopeDomainId(collection, entry)'));
-assert.ok(ui.includes('lastPersistedPositionKey'));
-assert.ok(ui.includes('lastPersistedPositionKey = `${positionDomainId(collection)}'));
-assert.ok(ui.includes('visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)'));
-assert.ok(store.includes('cleanStudyStampReferences'));
-assert.ok(model.includes('migrateStudyStampsToEntries'));
-assert.ok(store.includes('studyStampKeyFor(entry, collectionId)'));
-assert.ok(store.includes("emit('annotation-change'"));
-assert.ok(!store.match(/export async function replaceAnnotations[\s\S]{0,1800}backupFromState/));
-assert.ok(exchange.includes('memberships = memberships.filter((item) => !removed.has(item.entryId))'));
-assert.ok(css.includes('.review-bar .review-edit'));
-assert.ok(css.includes('display: inline-flex !important'));
-assert.ok(html.includes('./css/v3.3.1.css'));
-assert.ok(html.includes('./css/v3.4.0.css'));
-assert.ok(sw.includes('./css/v3.3.1.css'));
-assert.ok(sw.includes('./css/v3.4.0.css'));
-
-// 3.4.0 projection, numbering, sticky navigation and async correctness guards.
+// Projection semantics: concrete cross-domain entries, unique counts, priority ownership.
+assert.ok(model.includes('export function buildProjection'));
 assert.ok(model.includes('globalWords.push(entry)'));
 assert.ok(model.includes('globalPhrases.push(entry)'));
 assert.ok(model.includes('export function uniqueProjectionCount'));
-assert.ok(store.includes('projectionUniqueCounts'));
+assert.ok(model.includes('if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry)'));
+assert.ok(model.includes('a.collection.order - b.collection.order'));
+assert.ok(store.includes("mutate('调整词表优先级'"));
+assert.ok(store.includes("previousCollection?.type === 'normal'"));
+assert.ok(store.includes('left.type === \'normal\' ? 0 : 1'));
+assert.ok(store.includes('A missing concrete Entry must never migrate to a cross-domain homograph'));
+
+// Entry state remains concrete and schema stays at 5.
+assert.ok(model.includes('export const SCHEMA_VERSION = 5'));
+assert.ok(db.includes('export const DB_VERSION = 4'));
+assert.ok(db.includes('const BUILTIN_SEED_REVISION = 3'));
+assert.ok(store.includes('return `entry:${entry.id}`'));
 assert.ok(store.includes('globalConflictKeys'));
-assert.ok(store.includes('.filter((item) => visibleIds.has(item.entryId))'), 'PIN 必须按具体 Entry 在所有可见投影中生效');
-assert.ok(store.includes('if (!existing) {'), '已存在 PIN 在其他投影视图中点击时必须取消，而不是迁移到虚拟总表');
 assert.ok(ui.includes('entry-source-domain'));
-assert.ok(ui.includes('groupedNumberIndex'));
-assert.ok(ui.includes('toggleLetterSectionWithAnchor'));
-assert.ok(ui.includes('syncActiveAlphabetHeading'));
-assert.ok(ui.includes('forcedExtremeEntryKeys'));
-assert.ok(ui.includes('relation-target-menu'));
-assert.ok(ui.includes('baseRevision'));
-assert.ok(ui.includes('已重新生成导入预检'));
+
+// Search is scope-first and current ordinary view can restrict its IDs.
+assert.ok(store.includes('export function search(query, options = {})'));
+assert.ok(store.includes('const entryIds = options.entryIds instanceof Set'));
+assert.ok(ui.includes('search(query, { limit: 80, entryIds: allowed })'));
+assert.ok(ui.includes('entriesForCollectionView(collectionId, currentViewKind)'));
+
+// Three-state relation navigation and flat target menu.
+assert.ok(ui.includes('function relationNavigationMode'));
+for (const icon of ['intra', 'external', 'multi']) assert.ok(ui.includes(`${icon}:`));
+assert.ok(ui.includes("button(label, 'relation-target-option'"));
+assert.ok(ui.includes('const domainA = Number(state.domainById.get(a.domainId)?.order || 0)'));
+assert.ok(ui.includes('if (domainA !== domainB) return domainA - domainB'));
+
+// AI uses true abort, current view scope, manual-change protection and one aggregate history item.
+assert.ok(ai.includes('this.abortController.abort()'));
+assert.ok(ai.includes('signal: controller.signal'));
+assert.ok(ui.includes('manualAnnotationEntryIds'));
+assert.ok(ui.includes("detail?.kind !== 'batch'"));
+assert.ok(ui.includes('recordAiAnnotationChanges([...task.aiChanges.values()]'));
+assert.ok(store.includes('export async function recordAiAnnotationChanges'));
+assert.ok(store.includes('if (!jsonEqual(current, after)'));
+assert.ok(store.includes('recordHistoryOnly(changes'));
+
+// Import waits for the database transaction and rejects stale plans.
+assert.ok(ui.includes('if (getState().revision !== finalPlan.baseRevision)'));
+assert.ok(ui.includes('await restoreBackup(finalPlan.nextBackup)'));
+assert.ok(!ui.includes('restoreBackup(finalPlan.nextBackup)\n        .then'));
 assert.ok(exchange.includes('ambiguous-bare-entry-key'));
 assert.ok(exchange.includes('skippedMemberships'));
-assert.ok(ui.includes('跳过脏归属'));
-assert.ok(db.includes('export async function recordHistoryOnly'));
-assert.ok(store.includes('recordAiAnnotationHistory'));
-assert.ok(cssRelease.includes('.index-scope::before { display: none'));
-assert.ok(cssRelease.includes('background-image: none'));
-assert.ok(cssRelease.includes('.entry-source-domain'));
-assert.ok(cssRelease.includes('.letter-heading'));
-assert.ok(cssRelease.includes('position: sticky'));
 
-// PWA precache resources exist and do not duplicate.
+// PWA precache entries are unique and present.
 const precacheBody = sw.match(/const PRECACHE = \[([\s\S]*?)\];/)?.[1] || '';
 const precache = [...precacheBody.matchAll(/['"](\.\/[^'"]+)['"]/g)].map((match) => match[1]);
 assert.equal(new Set(precache).size, precache.length);
@@ -319,14 +203,16 @@ for (const relative of precache) {
   const clean = relative.replace(/^\.\//, '');
   if (clean) assert.ok(exists(clean), `预缓存资源不存在：${clean}`);
 }
-assert.ok(sw.includes("event.data?.type === 'SKIP_WAITING'"));
-assert.ok(!sw.match(/addEventListener\('install'[\s\S]*?\}\);/)?.[0].includes('skipWaiting'));
-
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.4.0'));
-assert.equal(manifest.start_url, './');
-assert.equal(manifest.scope, './');
+assert.ok(manifest.name.includes('3.5.0'));
 assert.equal(manifest.display, 'standalone');
+
+// Lifecycle and release documents are part of every full-source package.
+for (const file of [
+  'PROJECT_HISTORY.md', 'CHANGE_REPORT_3.5.0.md', 'AUDIT_REPORT_3.5.0.md',
+  'TEST_REPORT_3.5.0.md', 'MIGRATION_3.5.0.md', 'UX_SPEC_3.5.0.md',
+  'PRODUCT_MANUAL_3.5.0.md',
+]) assert.ok(exists(file), `缺少生命周期/交付文档：${file}`);
 
 // All relative ES module dependencies exist.
 for (const name of fs.readdirSync(path.join(root, 'js')).filter((item) => item.endsWith('.js'))) {

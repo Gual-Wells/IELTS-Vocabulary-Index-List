@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="format-detection" content="telephone=no">
-  <meta name="theme-color" content="#f5f1e8">
+  <meta name="theme-color" content="#fafafa">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="词汇索引">
-  <meta name="application-version" content="3.4.0">
+  <meta name="application-version" content="3.5.0">
   <meta name="description" content="本地优先、按词域组织的英语词汇与短语索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Vocabulary Index 3.4.0</title>
+  <title>Vocabulary Index 3.5.0</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
   <link rel="icon" href="./assets/icons/icon-192.png" sizes="192x192">
@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="./css/v3.css">
   <link rel="stylesheet" href="./css/v3.3.1.css">
   <link rel="stylesheet" href="./css/v3.4.0.css">
+  <link rel="stylesheet" href="./css/v3.5.0.css">
 </head>
 <body>
   <noscript>此工具需要 JavaScript 才能运行。</noscript>
@@ -33,7 +34,7 @@
       <button id="back-button" class="icon-button hidden" type="button" aria-label="返回首页"></button>
       <div class="brand-block">
         <h1 id="page-title">词汇索引</h1>
-        <p id="page-subtitle">Vocabulary Index 3.4.0</p>
+        <p id="page-subtitle">Vocabulary Index 3.5.0</p>
       </div>
       <div class="topbar-actions">
         <button id="search-button" class="icon-button" type="button" aria-label="搜索"></button>
@@ -71,7 +72,13 @@
       </section>
     </main>
 
-    <button id="back-to-top" class="back-to-top hidden" type="button" aria-label="返回顶部"></button>
+    <nav id="bottom-toolbar" class="bottom-toolbar hidden" aria-label="词表工具栏">
+      <button id="bottom-last-position" type="button" aria-label="继续上次浏览位置"></button>
+      <button id="back-to-top" type="button" aria-label="返回顶部"></button>
+      <button id="bottom-mode" type="button" aria-label="切换排序模式"></button>
+      <button id="bottom-view-switch" type="button" aria-label="切换词汇或短语视图"></button>
+      <button id="bottom-search" type="button" aria-label="搜索"></button>
+    </nav>
 
     <button id="task-capsule" class="task-capsule hidden" type="button" aria-label="打开 AI 核查任务"></button>
     <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>

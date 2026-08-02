@@ -1,9 +1,9 @@
 import { migrateLegacyBackup, canonicalizeBackup, SCHEMA_VERSION } from './v3-model.js';
 
 export const DB_NAME = 'gual-vocabulary-index';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const HISTORY_LIMIT = 100;
-export const BUILTIN_SEED_REVISION = 2;
+export const BUILTIN_SEED_REVISION = 3;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 
 const PREFIX = 'v3';
@@ -15,10 +15,11 @@ export const STORES = Object.freeze({
   phraseTokens: `${PREFIX}PhraseTokens`,
   pins: `${PREFIX}Pins`,
   annotations: `${PREFIX}Annotations`,
+  studyStamps: `${PREFIX}StudyStamps`,
   settings: `${PREFIX}Settings`,
   history: `${PREFIX}History`,
 });
-const DATA_STORE_KEYS = ['domains', 'collections', 'entries', 'memberships', 'phraseTokens', 'pins', 'annotations'];
+const DATA_STORE_KEYS = ['domains', 'collections', 'entries', 'memberships', 'phraseTokens', 'pins', 'annotations', 'studyStamps'];
 let databasePromise = null;
 /** @type {Promise<unknown>} */
 let writeTail = Promise.resolve();
@@ -79,6 +80,9 @@ export function openDatabase() {
       ]);
       createStore(db, STORES.pins, { keyPath: 'id' }, [['entryId', 'entryId', { unique: true }]]);
       createStore(db, STORES.annotations, { keyPath: 'entryId' }, [['domainId', 'domainId', { unique: false }]]);
+      createStore(db, STORES.studyStamps, { keyPath: 'key' }, [
+        ['entryId', 'entryId', { unique: false }], ['reviewDateKey', 'reviewDateKey', { unique: false }],
+      ]);
       createStore(db, STORES.settings, { keyPath: 'key' });
       createStore(db, STORES.history, { keyPath: 'sequence' });
     };
@@ -110,6 +114,28 @@ export function openDatabase() {
 
 async function getAllFromTransaction(tx, storeName) {
   return requestPromise(tx.objectStore(storeName).getAll());
+}
+
+async function readCurrentSnapshot(db) {
+  const required = DATA_STORE_KEYS.filter((key) => db.objectStoreNames.contains(STORES[key]));
+  if (!required.includes('domains') || !required.includes('collections') || !required.includes('entries')) return null;
+  const storeNames = [...required.map((key) => STORES[key]), STORES.settings].filter((name) => db.objectStoreNames.contains(name));
+  const tx = db.transaction(storeNames, 'readonly');
+  const completion = transactionPromise(tx);
+  const result = {};
+  await Promise.all(DATA_STORE_KEYS.map(async (key) => {
+    result[key] = db.objectStoreNames.contains(STORES[key]) ? await getAllFromTransaction(tx, STORES[key]) : [];
+  }));
+  const settingRecords = db.objectStoreNames.contains(STORES.settings) ? await getAllFromTransaction(tx, STORES.settings) : [];
+  result.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
+  await completion;
+  if (!(result.domains || []).length) return null;
+  return {
+    schemaVersion: Number(result.settings.schemaVersion || 3),
+    appVersion: result.settings.appVersion || '3.0.x',
+    exportedAt: new Date().toISOString(),
+    ...result,
+  };
 }
 
 async function readLegacySnapshot(db) {
@@ -151,7 +177,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.7',
+    appVersion: '3.1.1',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -164,32 +190,40 @@ async function loadCanonicalSeed() {
 export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
   const base = canonicalizeBackup(baseBackup);
   const seed = canonicalizeBackup(seedBackup);
-  const seedDomain = seed.domains.find((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID);
-  if (!seedDomain) throw new Error('内置词库缺少计算机术语词域');
-  const domainExists = base.domains.some((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID);
-  const domains = domainExists ? [...base.domains] : [...base.domains, seedDomain];
+  if (!seed.domains.some((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID)) throw new Error('内置词库缺少计算机术语词域');
 
-  const collectionById = new Map(base.collections.map((item) => [item.id, item]));
-  const collections = [...base.collections];
-  for (const collection of seed.collections.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID)) {
-    if (!collectionById.has(collection.id)) {
-      collectionById.set(collection.id, collection);
-      collections.push(collection);
+  const domains = [...base.domains];
+  const domainById = new Map(domains.map((item) => [item.id, item]));
+  for (const domain of seed.domains) {
+    if (!domainById.has(domain.id)) {
+      domains.push(domain);
+      domainById.set(domain.id, domain);
     }
   }
 
-  const baseEntries = [...base.entries];
-  const entryById = new Map(baseEntries.map((item) => [item.id, item]));
-  const entryByText = new Map(baseEntries.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID).map((item) => [item.normalizedText, item]));
+  const collections = [...base.collections];
+  const collectionById = new Map(collections.map((item) => [item.id, item]));
+  for (const seedCollection of seed.collections) {
+    const existing = collectionById.get(seedCollection.id);
+    if (!existing) {
+      collections.push(seedCollection);
+      collectionById.set(seedCollection.id, seedCollection);
+    } else if (seedCollection.type === 'system-phrases') {
+      Object.assign(existing, { name: '短语总表', order: 1, hidden: false, updatedAt: seedCollection.updatedAt });
+    }
+  }
+
+  const entries = [...base.entries];
+  const entryByDomainText = new Map(entries.map((item) => [`${item.domainId}\u0000${item.normalizedText}`, item]));
   const seedEntryToActualId = new Map();
-  for (const entry of seed.entries.filter((item) => item.domainId === BUILTIN_COMPUTER_DOMAIN_ID)) {
-    const existing = entryById.get(entry.id) || entryByText.get(entry.normalizedText);
-    if (existing) seedEntryToActualId.set(entry.id, existing.id);
+  for (const seedEntry of seed.entries) {
+    const key = `${seedEntry.domainId}\u0000${seedEntry.normalizedText}`;
+    const existing = entryByDomainText.get(key);
+    if (existing) seedEntryToActualId.set(seedEntry.id, existing.id);
     else {
-      baseEntries.push(entry);
-      entryById.set(entry.id, entry);
-      entryByText.set(entry.normalizedText, entry);
-      seedEntryToActualId.set(entry.id, entry.id);
+      entries.push(seedEntry);
+      entryByDomainText.set(key, seedEntry);
+      seedEntryToActualId.set(seedEntry.id, seedEntry.id);
     }
   }
 
@@ -200,16 +234,16 @@ export function mergeBuiltInDomainBackup(baseBackup, seedBackup) {
     if (!entryId || !collectionById.has(membership.collectionId)) continue;
     const pair = `${entryId}\u0000${membership.collectionId}`;
     if (membershipPairs.has(pair)) continue;
-    memberships.push({ ...membership, id: membership.id, entryId });
+    memberships.push({ ...membership, entryId });
     membershipPairs.add(pair);
   }
 
   return canonicalizeBackup({
     ...base,
-    appVersion: '3.0.7',
+    appVersion: '3.1.1',
     domains,
     collections,
-    entries: baseEntries,
+    entries,
     memberships,
     settings: {
       ...base.settings,
@@ -233,7 +267,7 @@ async function ensureBuiltInSeedRevision(db) {
     const settingRecords = await getAllFromTransaction(readTx, STORES.settings);
     snapshot.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
     await readCompletion;
-    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.0.7', exportedAt: new Date().toISOString(), ...snapshot });
+    const current = canonicalizeBackup({ schemaVersion: SCHEMA_VERSION, appVersion: '3.1.1', exportedAt: new Date().toISOString(), ...snapshot });
     const merged = mergeBuiltInDomainBackup(current, await loadCanonicalSeed());
     const revision = Math.max(Date.now(), Number(snapshot.settings?.dataRevision || 0) + 1);
     const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
@@ -259,8 +293,9 @@ export async function initializeDatabase() {
   return enqueueWrite(async () => {
     const recheck = await getSetting('schemaVersion', null);
     if (Number(recheck) === SCHEMA_VERSION) return { migrated: false };
-    const legacy = await readLegacySnapshot(db);
-    const source = legacy || await loadLegacySeed();
+    const currentSnapshot = await readCurrentSnapshot(db);
+    const legacy = currentSnapshot ? null : await readLegacySnapshot(db);
+    const source = currentSnapshot || legacy || await loadLegacySeed();
     let backup = migrateLegacyBackup(source);
     if (!backup.domains.some((item) => item.id === BUILTIN_COMPUTER_DOMAIN_ID)) {
       backup = mergeBuiltInDomainBackup(backup, await loadCanonicalSeed());
@@ -271,11 +306,11 @@ export async function initializeDatabase() {
     putBackupIntoTransaction(tx, backup, {
       dataRevision: Date.now(), historyPointer: 0, historySequence: 0,
       builtInSeedRevision: BUILTIN_SEED_REVISION,
-      migrationNoticePending: Boolean(legacy), migrationSource: source.appVersion || '2.x',
+      migrationNoticePending: Boolean(legacy), migrationSource: source.appVersion || (currentSnapshot ? '3.0.x' : '2.x'),
     });
     tx.objectStore(STORES.history).clear();
     await completion;
-    return { migrated: Boolean(legacy), sourceVersion: source.appVersion || '2.x', builtInSeedRevision: BUILTIN_SEED_REVISION };
+    return { migrated: Boolean(legacy || currentSnapshot), sourceVersion: source.appVersion || (currentSnapshot ? '3.0.x' : '2.x'), builtInSeedRevision: BUILTIN_SEED_REVISION };
   });
 }
 
@@ -373,7 +408,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.7',
+    appVersion: '3.1.1',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });

@@ -1,12 +1,12 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v3.0.7-navigation-20260801-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v3.1.1-entry-integrations-20260802-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest', './css/v3.css',
   './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-store.js', './js/v3-db.js',
-  './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-data-worker.js',
+  './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
   './data/seed.json', './data/seed-report.json',
   './assets/icons/apple-touch-icon.png', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
 ];

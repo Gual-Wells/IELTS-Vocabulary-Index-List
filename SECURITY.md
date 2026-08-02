@@ -1,26 +1,20 @@
-# 安全与隐私
+# Vocabulary Index 3.1.1 安全说明
 
-- 词汇、释义、PIN、标注和设置保存在浏览器 IndexedDB。
-- Groq API Key 只保存在 localStorage，不进入完整备份或 VIX JSON。
-- 仅 AI 操作向 `https://api.groq.com` 发送用户明确选择的词汇、短语或指令。
-- 运行时不包含 GitHub PAT、GitHub Contents API、自动云同步或第三方分析脚本。
-- CSP 限制脚本、样式、连接、对象和表单来源。
-- 动态 UI 使用 DOM API，不把用户内容注入 `innerHTML`。
+- 默认数据仅保存在浏览器 IndexedDB；
+- 内容导入先在 Worker 中解析和预检，确认后以事务写入；
+- 完整替换与 Seed 恢复前生成完整备份；
+- VIX 内容 JSON 不携带学习日期、PIN、标注、浏览位置或 API Key；
+- Groq API Key 使用独立本地安全存储；
+- Content Security Policy 限制脚本、样式和连接来源；
+- Service Worker 升级桥只清理旧缓存，不触碰业务数据库；
+- 全局总表没有独立内容所有权，不能直接删除跨域聚合内容。
 
-## 数据交换
+用户仍应定期导出完整备份，并在执行全局替换或 Seed 恢复前确认下载结果。
 
-- 单个导入文件上限 64 MB。
-- VIX JSON 在模块 Web Worker 中解析并计算差异，预检完成前不修改 IndexedDB。
-- JSON Schema、英文规范化、ID、域内唯一性、Collection 类型和 Membership 关系均需校验。
-- 普通词表不得接收短语，短语表不得生成普通 Membership。
-- 增量合并不执行隐式删除。
-- 完整替换只作用于用户选定范围，并在提交前自动下载恢复备份。
-- 导入提交采用一次完整事务；失败时不得留下半套数据。
-- 文件声明目标与面板目标冲突时不得静默写入。
-- PIN、标注和浏览位置在替换后重新校验；无法映射的状态会被安全移除。
+## 外部查询边界
 
-## 多实例与更新
-
-- 多实例写入使用修订号检查；检测到其他标签页更新时重新读取并重试一次。
-- Service Worker 按同一缓存代提供 HTML、CSS 和 JavaScript，避免新旧文件混装。
-- 任何破坏性恢复或全局替换前，都应保存应用自动生成的恢复备份。
+- 牛津控件会把当前条目的英文纯文本交给已安装的牛津英汉辞书 App；
+- ChatGPT 控件会把当前条目的上下文 JSON 交给名为 `AI查询` 的 iOS 快捷指令；
+- 两种传输都必须由用户逐项点击触发，不在后台自动执行；
+- ChatGPT 快照排除 Groq API Key、无关词条、应用全局设置、撤销历史和无关浏览位置；
+- 自定义 URL Scheme 是否成功打开目标 App 由 iOS 和目标 App 决定，应用无法读取目标 App 的查询结果。

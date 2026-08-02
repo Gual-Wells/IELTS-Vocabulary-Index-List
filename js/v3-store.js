@@ -1,6 +1,6 @@
 import {
   buildPhraseTokens, buildProjection, canonicalizeBackup, createCollection, createDomain, createEntry,
-  createMembership, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
+  createMembership, createStudyStamp, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
   safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, tokenizeEnglish,
 } from './v3-model.js';
 import {
@@ -21,8 +21,8 @@ function clone(value) {
 function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
-    schemaVersion: 3,
-    appVersion: '3.0.7',
+    schemaVersion: 4,
+    appVersion: '3.1.1',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -31,12 +31,13 @@ function backupFromState() {
     phraseTokens: clone(state.phraseTokens),
     pins: clone(state.pins),
     annotations: clone(state.annotations),
+    studyStamps: clone(state.studyStamps),
     settings: clone(state.settings),
   };
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 3, appVersion: '3.0.7', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 4, appVersion: '3.1.1', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -87,10 +88,10 @@ function buildState(snapshot) {
     })));
   }
   const collectionById = new Map(collections.map((item) => [item.id, item]));
-  collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局总表', label: '', type: 'system-global-words', order: -2, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
-  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语表', label: '', type: 'system-global-phrases', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局词汇总表', label: '', type: 'system-global-words', order: -2, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语总表', label: '', type: 'system-global-phrases', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
-    collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '总词表', label: '', type: 'system-domain-words', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+    collectionById.set(systemDomainWordsCollectionId(domain.id), { id: systemDomainWordsCollectionId(domain.id), domainId: domain.id, name: '词汇总表', label: '', type: 'system-domain-words', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   }
   return {
     ...backup,
@@ -110,6 +111,7 @@ function buildState(snapshot) {
     membershipsByCollection: groupBy(backup.memberships, (item) => item.collectionId),
     pinByEntry: new Map(backup.pins.map((item) => [item.entryId, item])),
     annotationByEntry: new Map(backup.annotations.map((item) => [item.entryId, item])),
+    studyStampByKey: new Map(backup.studyStamps.map((item) => [item.key, item])),
   };
 }
 
@@ -230,6 +232,7 @@ function diffBackup(before, after) {
     ...diffArray('phraseTokens', before.phraseTokens, after.phraseTokens),
     ...diffArray('pins', before.pins, after.pins),
     ...diffArray('annotations', before.annotations, after.annotations, 'entryId'),
+    ...diffArray('studyStamps', before.studyStamps, after.studyStamps, 'key'),
     ...diffSettings(before.settings, after.settings),
   ];
 }
@@ -255,7 +258,7 @@ function normalizeSoftReferences(backup) {
   const lastPositions = { ...(backup.settings?.lastPositions || {}) };
   for (const [key, entryId] of Object.entries(lastPositions)) {
     const parts = key.split(':');
-    const collectionId = parts.slice(2).join(':');
+    const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
     if (!(projection.get(collectionId) || []).some((item) => item.id === entryId)) delete lastPositions[key];
   }
   backup.settings = { ...backup.settings, lastPositions };
@@ -296,7 +299,7 @@ export async function addDomain(name, { glossEnabled = false } = {}) {
     const domain = createDomain({ name, glossEnabled, order: nextOrder(draft.domains) });
     draft.domains.push(domain);
     draft.collections.push(createCollection({
-      domainId: domain.id, name: '短语', type: 'system-phrases', order: Number.MAX_SAFE_INTEGER,
+      domainId: domain.id, name: '短语总表', type: 'system-phrases', order: Number.MAX_SAFE_INTEGER,
     }));
   });
 }
@@ -432,6 +435,7 @@ export async function deleteDomain(domainId) {
     draft.memberships = draft.memberships.filter((item) => !entryIds.has(item.entryId));
     draft.pins = draft.pins.filter((item) => !entryIds.has(item.entryId));
     draft.annotations = draft.annotations.filter((item) => !entryIds.has(item.entryId));
+    draft.studyStamps = draft.studyStamps.filter((item) => item.scope === 'global' || !entryIds.has(item.entryId));
   });
 }
 
@@ -455,7 +459,7 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
     entry.glossSource = normalizeDisplayText(item?.glossSource || 'import');
     entry.updatedAt = new Date().toISOString();
   }
-  if (collection.type === 'normal' && entry.kind === 'word') {
+  if (collection.type === 'normal') {
     let membership = draft.memberships.find((candidate) => candidate.entryId === entry.id && candidate.collectionId === collection.id);
     if (!membership) {
       membership = createMembership({
@@ -534,9 +538,6 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
     if (collection.type === 'system-phrases' && !isPhraseText(text)) {
       throw new Error('短语表只能新增短语');
     }
-    if (collection.type === 'normal' && isPhraseText(text)) {
-      throw new Error('普通词表只新增词汇；请在短语表新增短语');
-    }
     let entry = draft.entries.find((item) => item.domainId === collection.domainId && item.normalizedText === normalized);
     if (!entry) {
       entry = createEntry({
@@ -552,7 +553,7 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
       entry.updatedAt = new Date().toISOString();
     }
     resultingId = entry.id;
-    if (collection.type === 'normal' && entry.kind === 'word') {
+    if (collection.type === 'normal') {
       const existing = draft.memberships.find((item) => item.entryId === entry.id && item.collectionId === collection.id);
       if (!existing) {
         const sourceOrder = nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id));
@@ -566,13 +567,17 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
   return getState().entryById.get(resultingId);
 }
 
-export async function addPhraseForWord(entryId, phraseText, options = {}) {
-  const word = getState().entryById.get(entryId);
+export async function addPhraseForWord(entryId, phraseText, options = {}, collectionId = '') {
+  const current = getState();
+  const word = current.entryById.get(entryId);
   if (!word || word.kind !== 'word') throw new Error('目标普通词不存在');
   const containsWord = tokenizeEnglish(phraseText).some((token) => normalizeEnglish(token) === word.normalizedText);
   if (!containsWord) throw new Error('短语必须包含当前词的精确词元');
-  const phraseCollectionId = systemPhraseCollectionId(word.domainId);
-  return addEntry(phraseCollectionId, phraseText, options);
+  const collection = current.collectionById.get(collectionId);
+  const targetCollectionId = collection?.type === 'normal' && collection.domainId === word.domainId
+    ? collection.id
+    : systemPhraseCollectionId(word.domainId);
+  return addEntry(targetCollectionId, phraseText, options);
 }
 
 export async function editEntry(entryId, updates, expectedUpdatedAt) {
@@ -617,7 +622,6 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
       glossSource: nextGloss ? normalizeDisplayText(updates.glossSource || entry.glossSource || 'manual') : '',
       updatedAt: new Date().toISOString(),
     });
-    if (collection.type === 'normal' && candidate.kind !== 'word') throw new Error('普通词表只包含词汇');
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
     if (collision) throw new Error('同一词域内已有该内容');
     const textChanged = candidate.normalizedText !== entry.normalizedText;
@@ -648,6 +652,7 @@ export async function deleteEntry(entryId) {
     draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
     draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
     draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
+    draft.studyStamps = draft.studyStamps.filter((item) => item.scope === 'global' || item.entryId !== entryId);
   });
 }
 
@@ -688,19 +693,109 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
   }
 }
 
-export async function setLastPosition(domainId, collectionId, entryId) {
-  const key = `lastPosition:${domainId}:${collectionId}`;
+export async function setLastPosition(domainId, collectionId, entryId, { mode = 'alphabet', section = 'main' } = {}) {
   const visible = state.projection.get(collectionId) || [];
   if (!visible.some((item) => item.id === entryId)) return false;
+  const key = `lastPosition:${domainId}:${collectionId}:${mode}:${section}`;
   const next = await setLastPositionSetting(key, entryId);
   state.settings.lastPositions = next;
   return true;
 }
 
-export function getLastPosition(domainId, collectionId) {
-  const entryId = state.settings.lastPositions?.[`lastPosition:${domainId}:${collectionId}`] || null;
+export function getLastPosition(domainId, collectionId, { mode = 'alphabet', section = 'main' } = {}) {
+  const positions = state.settings.lastPositions || {};
+  const key = `lastPosition:${domainId}:${collectionId}:${mode}:${section}`;
+  const legacyKey = `lastPosition:${domainId}:${collectionId}`;
+  const entryId = positions[key] || (mode === 'alphabet' && section === 'main' ? positions[legacyKey] : null) || null;
   if (!entryId) return null;
-  return (state.projection.get(collectionId) || []).some((item) => item.id === entryId) ? entryId : null;
+  const entry = state.entryById.get(entryId);
+  if (!entry || !(state.projection.get(collectionId) || []).some((item) => item.id === entryId)) return null;
+  if (section === 'word' && entry.kind !== 'word') return null;
+  if (section === 'phrase' && entry.kind !== 'phrase') return null;
+  return entryId;
+}
+
+export function getViewMode(collectionId) {
+  return state.settings.viewModes?.[collectionId] === 'date' ? 'date' : 'alphabet';
+}
+
+export async function setViewMode(collectionId, mode) {
+  if (!['alphabet', 'date'].includes(mode)) throw new Error('无效浏览模式');
+  const next = { ...(state.settings.viewModes || {}), [collectionId]: mode };
+  await setSettings({ viewModes: next });
+  state.settings.viewModes = next;
+  emit('view-mode', { collectionId, mode });
+  return mode;
+}
+
+export function getCalendarMonth(collectionId, section = 'main') {
+  const key = `${collectionId}:${section}`;
+  return state.settings.calendarMonths?.[key] || '';
+}
+
+export async function setCalendarMonth(collectionId, section, month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('日历月份无效');
+  const key = `${collectionId}:${section}`;
+  const next = { ...(state.settings.calendarMonths || {}), [key]: month };
+  await setSettings({ calendarMonths: next });
+  state.settings.calendarMonths = next;
+  emit('calendar-month', { collectionId, section, month });
+  return month;
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function studyStampKeyFor(entry, collectionId) {
+  if (!entry) return '';
+  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) return `global:${entry.kind}:${entry.normalizedText}`;
+  return `entry:${entry.id}`;
+}
+
+export function getStudyStamp(entry, collectionId) {
+  return state.studyStampByKey.get(studyStampKeyFor(entry, collectionId)) || null;
+}
+
+export async function refreshStudyDate(entryId, collectionId, retry = true) {
+  const entry = state.entryById.get(entryId);
+  if (!entry || !(state.projection.get(collectionId) || []).some((item) => item.id === entryId)) throw new Error('内容不可见');
+  const key = studyStampKeyFor(entry, collectionId);
+  const existing = state.studyStampByKey.get(key) || null;
+  const scope = key.startsWith('global:') ? 'global' : 'entry';
+  const after = createStudyStamp({
+    key,
+    scope,
+    entryId: scope === 'entry' ? entry.id : '',
+    kind: scope === 'global' ? entry.kind : '',
+    normalizedText: scope === 'global' ? entry.normalizedText : '',
+    reviewDateKey: localDateKey(),
+    reviewedAt: new Date().toISOString(),
+    revision: Number(existing?.revision || 0) + 1,
+  });
+  try {
+    const revision = await commitChanges([{ store: 'studyStamps', key, before: existing ? clone(existing) : null, after: clone(after) }], {
+      label: '刷新学习日期', expectedRevision: state.revision,
+    });
+    state.studyStamps = existing
+      ? state.studyStamps.map((item) => item.key === key ? after : item)
+      : [...state.studyStamps, after];
+    state.studyStampByKey.set(key, after);
+    state.revision = revision;
+    state.settings.dataRevision = revision;
+    emit('mutation', { kind: 'study-date', entryId, collectionId, key });
+    broadcast(revision);
+    return after;
+  } catch (error) {
+    if (retry && String(error?.message || error).includes('另一实例')) {
+      await reloadStore('sync');
+      return refreshStudyDate(entryId, collectionId, false);
+    }
+    throw error;
+  }
 }
 
 export function getPinsForCollection(collectionId) {

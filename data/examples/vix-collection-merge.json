@@ -1,21 +1,56 @@
 {
   "format": "vix-json",
   "version": 1,
-  "target": { "scope": "collection", "domainKey": "domain_computer_terms", "collectionKey": "collection_computer_artificial_intelligence" },
+  "target": {
+    "scope": "collection",
+    "domainKey": "domain_computer_terms",
+    "collectionKey": "collection_computer_artificial_intelligence"
+  },
   "mode": "merge",
   "data": {
     "domains": [
-      { "key": "domain_computer_terms", "name": "计算机术语", "glossEnabled": true }
+      {
+        "key": "domain_computer_terms",
+        "name": "计算机术语",
+        "glossEnabled": true
+      }
     ],
     "collections": [
-      { "key": "collection_computer_artificial_intelligence", "domainKey": "domain_computer_terms", "name": "人工智能", "kind": "normal", "order": 5 }
+      {
+        "key": "collection_computer_artificial_intelligence",
+        "domainKey": "domain_computer_terms",
+        "name": "人工智能",
+        "kind": "normal",
+        "order": 5
+      }
     ],
     "entries": [
-      { "key": "entry_agentic", "domainKey": "domain_computer_terms", "text": "agentic", "glossHans": "智能体式", "glossHant": "智能體式" },
-      { "key": "entry_agentic_workflow", "domainKey": "domain_computer_terms", "text": "agentic workflow", "glossHans": "智能体工作流", "glossHant": "智能體工作流" }
+      {
+        "key": "entry_agentic",
+        "domainKey": "domain_computer_terms",
+        "text": "agentic",
+        "glossHans": "智能体式",
+        "glossHant": "智能體式"
+      },
+      {
+        "key": "entry_agentic_workflow",
+        "domainKey": "domain_computer_terms",
+        "text": "agentic workflow",
+        "glossHans": "智能体工作流",
+        "glossHant": "智能體工作流"
+      }
     ],
     "memberships": [
-      { "entryKey": "entry_agentic", "collectionKey": "collection_computer_artificial_intelligence", "sourceOrder": 0 }
+      {
+        "entryKey": "entry_agentic",
+        "collectionKey": "collection_computer_artificial_intelligence",
+        "sourceOrder": 0
+      },
+      {
+        "entryKey": "entry_agentic_workflow",
+        "collectionKey": "collection_computer_artificial_intelligence",
+        "sourceOrder": 1
+      }
     ]
   },
   "sources": []

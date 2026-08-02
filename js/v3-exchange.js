@@ -247,9 +247,13 @@ function normalizePersonalReferences(backup) {
     return [{ ...pin, domainId: entry.domainId, contextCollectionId: fallback }];
   });
   backup.annotations = array(backup.annotations).filter((item) => entryById.has(item.entryId));
+  backup.studyStamps = array(backup.studyStamps).filter((item) => item.scope === 'global'
+    ? backup.entries.some((entry) => entry.kind === item.kind && entry.normalizedText === item.normalizedText)
+    : entryById.has(item.entryId));
   const lastPositions = { ...object(backup.settings?.lastPositions) };
   for (const [key, entryId] of Object.entries(lastPositions)) {
-    const collectionId = key.split(':').slice(2).join(':');
+    const parts = key.split(':');
+    const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
     if (!(projection.get(collectionId) || []).some((item) => item.id === entryId)) delete lastPositions[key];
   }
   backup.settings = { ...backup.settings, lastPositions };
@@ -377,7 +381,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const domainId of new Set(domainMap.values())) {
     const phraseId = systemPhraseCollectionId(domainId);
     if (!collections.some((item) => item.id === phraseId)) {
-      collections.push(createCollection({ id: phraseId, domainId, name: '短语', type: 'system-phrases', order: 1, timestamp }));
+      collections.push(createCollection({ id: phraseId, domainId, name: '短语总表', type: 'system-phrases', order: 1, timestamp }));
     }
   }
 
@@ -424,7 +428,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   const membershipSet = new Set(memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
   const addMembership = (entry, collectionId, sourceLabel = '', sourceOrder = 0) => {
     const collection = collections.find((item) => item.id === collectionId);
-    if (!entry || entry.kind !== 'word' || !collection || collection.type !== 'normal') return;
+    if (!entry || !collection || collection.type !== 'normal') return;
     const key = `${entry.id}\u0000${collectionId}`;
     if (membershipSet.has(key)) { skippedDuplicates += 1; return; }
     memberships.push(createMembership({ entryId: entry.id, collectionId, sourceLabel, sourceOrder, timestamp }));
@@ -442,7 +446,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     let order = 0;
     for (const incoming of pkg.data.entries) {
       const entry = entryByPackageKey.get(incoming.key);
-      if (entry?.kind === 'word') addMembership(entry, targetCollection.id, incoming.glossSource, order++);
+      if (entry) addMembership(entry, targetCollection.id, incoming.glossSource, order++);
     }
   }
 
@@ -475,7 +479,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '3.0.7',
+    appVersion: '3.1.1',
     exportedAt: timestamp,
     domains,
     collections,

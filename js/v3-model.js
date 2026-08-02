@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const DEFAULT_DOMAIN_ID = 'domain_general_english';
 export const DEFAULT_DOMAIN_NAME = '通用英语';
 export const SYSTEM_PHRASE_SUFFIX = '__phrases';
@@ -149,6 +149,30 @@ export function createMembership({ id = null, entryId, collectionId, sourceLabel
     sourceOrder: Number.isFinite(sourceOrder) ? sourceOrder : 0,
     createdAt: String(createdAt || timestamp),
     updatedAt: String(updatedAt || createdAt || timestamp),
+  };
+}
+
+export function createStudyStamp({ key = '', scope = 'entry', entryId = '', kind = '', normalizedText = '', reviewDateKey = '', reviewedAt = nowIso(), revision = 1 }) {
+  const cleanScope = scope === 'global' ? 'global' : 'entry';
+  const cleanEntryId = cleanScope === 'entry' ? String(entryId || '') : '';
+  const cleanKind = cleanScope === 'global' && ['word', 'phrase'].includes(kind) ? kind : '';
+  const cleanNormalizedText = cleanScope === 'global' ? normalizeEnglish(normalizedText) : '';
+  const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(reviewDateKey || '')) ? String(reviewDateKey) : '';
+  if (!cleanDate) throw new Error('学习日期格式无效');
+  if (cleanScope === 'entry' && !cleanEntryId) throw new Error('学习日期缺少内容 ID');
+  if (cleanScope === 'global' && (!cleanKind || !cleanNormalizedText)) throw new Error('全局学习日期缺少聚合键');
+  const resolvedKey = key || (cleanScope === 'global'
+    ? `global:${cleanKind}:${cleanNormalizedText}`
+    : `entry:${cleanEntryId}`);
+  return {
+    key: resolvedKey,
+    scope: cleanScope,
+    entryId: cleanEntryId,
+    kind: cleanKind,
+    normalizedText: cleanNormalizedText,
+    reviewDateKey: cleanDate,
+    reviewedAt: String(reviewedAt || nowIso()),
+    revision: Math.max(1, Number(revision || 1)),
   };
 }
 
@@ -1337,8 +1361,8 @@ function legacyWord(entry) {
 }
 
 export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
-  if (Number(input?.schemaVersion) === SCHEMA_VERSION && Array.isArray(input?.domains)) {
-    return canonicalizeBackup(input);
+  if ([3, SCHEMA_VERSION].includes(Number(input?.schemaVersion)) && Array.isArray(input?.domains)) {
+    return canonicalizeBackup({ ...input, schemaVersion: SCHEMA_VERSION, studyStamps: array(input?.studyStamps) });
   }
 
   const categories = array(input?.categories);
@@ -1366,7 +1390,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
   }
   collections.push(createCollection({
     domainId: DEFAULT_DOMAIN_ID,
-    name: '短语',
+    name: '短语总表',
     type: 'system-phrases',
     order: Number.MAX_SAFE_INTEGER,
     timestamp,
@@ -1499,7 +1523,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.0.7',
+    appVersion: '3.1.1',
     exportedAt: timestamp,
     domains,
     collections,
@@ -1547,8 +1571,10 @@ export function canonicalizeBackup(input) {
     createdAt: item?.createdAt || timestamp,
     updatedAt: item?.updatedAt || timestamp,
   })).filter((item) => item.spelling.incorrect || item.reason);
+  const studyStamps = array(input?.studyStamps).map((item) => createStudyStamp(item));
   pins.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.contextCollectionId.localeCompare(b.contextCollectionId) || a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.entryId.localeCompare(b.entryId));
   annotations.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
+  studyStamps.sort((a, b) => a.key.localeCompare(b.key));
 
   const settingsInput = object(input?.settings);
   const lastPositions = Object.fromEntries(Object.entries(object(settingsInput.lastPositions))
@@ -1556,6 +1582,8 @@ export function canonicalizeBackup(input) {
   const settings = {
     numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
     lastPositions,
+    viewModes: Object.fromEntries(Object.entries(object(settingsInput.viewModes)).filter(([, value]) => ['alphabet', 'date'].includes(value))),
+    calendarMonths: Object.fromEntries(Object.entries(object(settingsInput.calendarMonths)).filter(([, value]) => /^\d{4}-\d{2}$/.test(String(value)))),
     migrationComplete: Boolean(settingsInput.migrationComplete),
     migrationSource: normalizeDisplayText(settingsInput.migrationSource || ''),
     migrationNoticePending: Boolean(settingsInput.migrationNoticePending),
@@ -1570,7 +1598,7 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.0.7'),
+    appVersion: normalizeDisplayText(input?.appVersion || '3.1.1'),
     exportedAt: timestamp,
     domains,
     collections,
@@ -1579,6 +1607,7 @@ export function canonicalizeBackup(input) {
     phraseTokens: rebuiltTokens,
     pins,
     annotations,
+    studyStamps,
     settings,
   };
   validateBackup(backup);
@@ -1586,7 +1615,7 @@ export function canonicalizeBackup(input) {
 }
 
 export function validateBackup(backup) {
-  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 3');
+  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 4');
   const domains = array(backup.domains);
   const collections = array(backup.collections);
   const entries = array(backup.entries);
@@ -1594,6 +1623,7 @@ export function validateBackup(backup) {
   const tokens = array(backup.phraseTokens);
   const pins = array(backup.pins);
   const annotations = array(backup.annotations);
+  const studyStamps = array(backup.studyStamps);
   const contentSources = array(backup.settings?.contentSources);
 
   const unique = (items, getKey, message) => {
@@ -1615,6 +1645,7 @@ export function validateBackup(backup) {
   unique(tokens, (item) => item.id, '短语词元 ID 重复');
   unique(pins, (item) => item.entryId, '同一内容存在多个 PIN');
   unique(annotations, (item) => item.entryId, '同一内容存在多个 AI 标注');
+  unique(studyStamps, (item) => item.key, '学习日期键为空或重复');
   unique(contentSources, (item) => item.key, '内容来源键为空或重复');
   for (const source of contentSources) {
     if (source.key.length > 120 || source.title.length > 240 || source.publisher.length > 160 || source.url.length > 1000 || source.retrievedAt.length > 40) {
@@ -1684,7 +1715,7 @@ export function validateBackup(backup) {
   }
   for (const [key, entryId] of Object.entries(object(backup.settings?.lastPositions))) {
     const parts = key.split(':');
-    const collectionId = parts.slice(2).join(':');
+    const collectionId = parts.length >= 5 ? parts.slice(2, -2).join(':') : parts.slice(2).join(':');
     if (!visible.has(collectionId) || !(visible.get(collectionId) || []).some((item) => item.id === entryId)) {
       throw new Error('上次位置指向不可见内容');
     }
@@ -1692,6 +1723,15 @@ export function validateBackup(backup) {
   for (const annotation of annotations) {
     const entry = entryById.get(annotation.entryId);
     if (!entry || annotation.domainId !== entry.domainId) throw new Error('AI 标注关联无效');
+  }
+  for (const stamp of studyStamps) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(stamp.reviewDateKey) || !stamp.reviewedAt) throw new Error('学习日期记录无效');
+    if (stamp.scope === 'entry') {
+      if (!entryById.has(stamp.entryId) || stamp.key !== `entry:${stamp.entryId}`) throw new Error('学习日期关联无效');
+    } else if (stamp.scope === 'global') {
+      if (!['word', 'phrase'].includes(stamp.kind) || !stamp.normalizedText || stamp.key !== `global:${stamp.kind}:${stamp.normalizedText}`) throw new Error('全局学习日期关联无效');
+      if (!entries.some((entry) => entry.kind === stamp.kind && entry.normalizedText === stamp.normalizedText)) throw new Error('全局学习日期没有对应聚合内容');
+    } else throw new Error('学习日期作用域无效');
   }
   return true;
 }
@@ -1717,24 +1757,29 @@ export function buildProjection(backup) {
   const globalByText = new Map();
   const globalPhrasesByText = new Map();
   for (const entry of entries) {
+    const candidates = (membershipsByEntry.get(entry.id) || [])
+      .map((membership) => ({ membership, collection: collectionById.get(membership.collectionId) }))
+      .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden)
+      .sort((a, b) => a.collection.order - b.collection.order
+        || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
+        || a.collection.name.localeCompare(b.collection.name));
+
     if (entry.kind === 'phrase') {
       projection.get(systemPhraseCollectionId(entry.domainId))?.push(entry);
+      for (const candidate of candidates) projection.get(candidate.collection.id)?.push(entry);
       const currentPhrase = globalPhrasesByText.get(entry.normalizedText);
       if (!currentPhrase || (domainOrder.get(entry.domainId) ?? Number.MAX_SAFE_INTEGER) < (domainOrder.get(currentPhrase.domainId) ?? Number.MAX_SAFE_INTEGER)) {
         globalPhrasesByText.set(entry.normalizedText, entry);
       }
       continue;
     }
+
     projection.get(systemDomainWordsCollectionId(entry.domainId))?.push(entry);
     const current = globalByText.get(entry.normalizedText);
     if (!current || (domainOrder.get(entry.domainId) ?? Number.MAX_SAFE_INTEGER) < (domainOrder.get(current.domainId) ?? Number.MAX_SAFE_INTEGER)) {
       globalByText.set(entry.normalizedText, entry);
     }
-    const candidates = (membershipsByEntry.get(entry.id) || [])
-      .map((membership) => collectionById.get(membership.collectionId))
-      .filter((collection) => collection?.type === 'normal' && !collection.hidden)
-      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-    if (candidates[0]) projection.get(candidates[0].id)?.push(entry);
+    if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
   }
   projection.set(SYSTEM_GLOBAL_WORDS_ID, [...globalByText.values()]);
   projection.set(SYSTEM_GLOBAL_PHRASES_ID, [...globalPhrasesByText.values()]);

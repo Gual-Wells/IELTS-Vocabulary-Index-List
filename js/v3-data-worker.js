@@ -1,6 +1,7 @@
 import { planVixImport } from './v3-exchange.js';
 
-self.addEventListener('message', (event) => {
+/** @param {MessageEvent<any>} event */
+function handleMessage(event) {
   const { id, content, currentBackup, selection, conflictPolicy } = event.data || {};
   try {
     const parsed = JSON.parse(String(content || ''));
@@ -9,4 +10,6 @@ self.addEventListener('message', (event) => {
   } catch (error) {
     self.postMessage({ id, ok: false, error: error?.message || String(error) });
   }
-});
+}
+
+self.addEventListener('message', handleMessage);

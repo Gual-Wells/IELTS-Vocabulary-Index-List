@@ -2,9 +2,9 @@ import {
   acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
   clearAnnotationsForCollection, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getPhraseComponents, getRelatedPhrases, getState,
-  getPinsForCollection, getVisibleEntries, importEntries, initializeStore, moveCollection, redo,
+  getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, replaceAnnotations, resetToSeed, restoreBackup,
-  search, setDomainGlossEnabled, setLastPosition, setNumberMode, subscribe, togglePin, undo,
+  refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
 } from './v3-store.js';
 import {
   AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog, getModelCatalogUpdatedAt,
@@ -15,13 +15,14 @@ import {
 } from './v3-import.js';
 import { normalizeEnglish, systemPhraseCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
+import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.0.7';
+const APP_VERSION = '3.1.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
-  'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
+  'back-to-top', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog', 'dialog-form', 'dialog-title', 'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions',
   'action-dialog', 'action-title', 'action-description', 'action-close', 'action-body',
   'search-dialog', 'search-close', 'search-body',
@@ -48,6 +49,8 @@ let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
 let lastPersistedEntryId = '';
 let suppressNextMutationRender = false;
+let activeSection = 'main';
+let navigationRevision = 0;
 const expandedRelations = new Set();
 const dialogStack = [];
 let currentDialogMeta = { onRestore: null };
@@ -83,6 +86,18 @@ const ICONS = {
   more: '<circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"></circle>',
   chevron: '<path d="m8 10 4 4 4-4"></path>',
   enter: '<path d="M19 5v7H7"></path><path d="m10 9-3 3 3 3"></path>',
+  refresh: '<path d="M20 11a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v7h-7"></path>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M7 3v4M17 3v4M3 10h18"></path>',
+  alphabet: '<path d="M5 19 10 5l5 14M7 14h6"></path><path d="M17 8h3l-3 4h3"></path>',
+  phrase: '<path d="M4 6h16M4 12h12M4 18h16"></path>',
+  word: '<path d="M5 5h14M12 5v14M8 19h8"></path>',
+  unmarked: '<circle cx="12" cy="12" r="8"></circle><path d="M9.5 9.5a2.7 2.7 0 1 1 4.1 2.3c-1 .6-1.6 1.1-1.6 2.2M12 17h.01"></path>',
+  top: '<path d="m6 14 6-6 6 6"></path><path d="M12 8v12M5 4h14"></path>',
+  intra: '<rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M7 12h9M13 9l3 3-3 3"></path>',
+  external: '<rect x="3" y="5" width="7" height="14" rx="1.5"></rect><rect x="14" y="5" width="7" height="14" rx="1.5"></rect><path d="M9 12h7M13 9l3 3-3 3"></path>',
+  globalDown: '<path d="M5 5h14M7 9h10"></path><path d="M12 9v8M9 14l3 3 3-3"></path><rect x="6" y="18" width="12" height="3" rx="1"></rect>',
+  dictionary: '<path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v17H7.5A3.5 3.5 0 0 0 4 22z"></path><path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v17h4.5A3.5 3.5 0 0 1 20 22z"></path><path d="M7 7h2.5M14.5 7H17M7 11h2.5M14.5 11H17"></path>',
+  aiChat: '<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path><circle cx="9" cy="10.5" r="1.2"></circle><circle cx="15" cy="10.5" r="1.2"></circle><path d="M10.2 10.5h3.6"></path>',
 };
 
 function svgIcon(name, className = '') {
@@ -323,11 +338,12 @@ function annotationCountForCollection(collectionId) {
 }
 
 
-function expandedLettersFor(collectionId) {
-  let set = expandedLettersByCollection.get(collectionId);
+function expandedLettersFor(collectionId, section = 'main') {
+  const key = `${collectionId}:${section}`;
+  let set = expandedLettersByCollection.get(key);
   if (!set) {
     set = new Set();
-    expandedLettersByCollection.set(collectionId, set);
+    expandedLettersByCollection.set(key, set);
   }
   return set;
 }
@@ -378,11 +394,16 @@ function displayCollectionLabel(collection) {
 }
 
 function collectionCard(collection) {
-  const count = getVisibleEntries(collection.id).length;
+  const entries = getVisibleEntries(collection.id);
   const label = displayCollectionLabel(collection);
+  const words = entries.filter((entry) => entry.kind === 'word').length;
+  const phrases = entries.filter((entry) => entry.kind === 'phrase').length;
+  const count = collection.type === 'normal'
+    ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
+    : entries.length.toLocaleString();
   return el('button', {
     type: 'button',
-    className: 'collection-card',
+    className: `collection-card${collection.type === 'normal' ? ' composite-card' : ''}`,
     on: { click: () => navigateCollection(collection.id) },
   }, [
     el('div', { className: 'collection-card-title' }, [
@@ -390,7 +411,7 @@ function collectionCard(collection) {
       el('span', { className: 'arrow' }, [svgIcon('jump')]),
     ]),
     label ? el('div', { className: 'label', text: label }) : null,
-    el('div', { className: 'count', text: count.toLocaleString() }),
+    el('div', { className: 'count', text: count }),
   ]);
 }
 
@@ -457,7 +478,7 @@ function libraryManagerBody() {
     const fixed = el('div', { className: 'manager-fixed-list' }, [
       el('div', { className: 'manager-row fixed' }, [
         el('span', { className: 'manager-lock', text: '1' }),
-        el('span', { className: 'manager-name', text: '总词表' }),
+        el('span', { className: 'manager-name', text: '词汇总表' }),
         el('span', { className: 'manager-count', text: getVisibleEntries(systemDomainWordsCollectionId(domain.id)).length.toLocaleString() }),
       ]),
       el('div', { className: 'manager-row fixed' }, [
@@ -733,6 +754,7 @@ function renderHome() {
   elements['collection-view'].classList.add('hidden');
   elements['back-button'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
+  elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = '词汇索引';
   elements['page-subtitle'].textContent = `${getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).length.toLocaleString()} · 本地保存`;
   elements['settings-button'].replaceChildren(svgIcon('more'));
@@ -784,12 +806,18 @@ function renderCollection() {
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
   elements['page-title'].textContent = collection.name;
-  elements['page-subtitle'].textContent = [entries.length.toLocaleString(), displayCollectionLabel(collection)].filter(Boolean).join(' · ');
+  const words = entries.filter((entry) => entry.kind === 'word').length;
+  const phrases = entries.filter((entry) => entry.kind === 'phrase').length;
+  const countText = collection.type === 'normal'
+    ? `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`
+    : entries.length.toLocaleString();
+  elements['page-subtitle'].textContent = [countText, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '更多');
   renderCollectionToolbar(collection);
   renderPinBar(collection);
   renderEntryList(collection, domain, entries);
+  updateBackToTopVisibility();
   if (pendingJumpEntryId) queueMicrotask(() => jumpToEntry(pendingJumpEntryId, { collectionId: collection.id, reason: pendingJumpReason }));
 }
 
@@ -802,18 +830,35 @@ function renderCollectionToolbar(collection) {
   } else elements['collection-toolbar'].replaceChildren();
 }
 
-function lastPositionButton(collection) {
-  const entryId = getLastPosition(positionDomainId(collection), collection.id);
-  return iconButton('target', 'last-position-button', '继续上次位置', () => {
-    const current = getLastPosition(positionDomainId(collection), collection.id);
+function sectionForEntry(entry) {
+  return entry?.kind === 'phrase' ? 'phrase' : 'word';
+}
+
+function isCompositeCollection(collection) {
+  return collection?.type === 'normal';
+}
+
+function isPhraseCollection(collection) {
+  return collection?.type === 'system-phrases' || collection?.type === 'system-global-phrases';
+}
+
+function lastPositionButton(collection, section = 'main', mode = getViewMode(collection.id)) {
+  const entryId = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+  const target = iconButton('target', 'last-position-button', '继续当前模式的上次位置', () => {
+    const current = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
     if (current) jumpToEntry(current, { collectionId: collection.id, reason: 'last' });
-  }, { disabled: !entryId, title: entryId ? '继续上次位置' : '尚无上次位置' });
+  }, { disabled: !entryId, title: entryId ? '继续当前模式的上次位置' : '当前模式尚无上次位置' });
+  target.dataset.section = section;
+  target.dataset.mode = mode;
+  return target;
 }
 
 function updateLastPositionButton(collection) {
-  const target = elements['letter-nav'].querySelector('.last-position-button');
-  if (!target) return;
-  target.disabled = !getLastPosition(positionDomainId(collection), collection.id);
+  elements['collection-view'].querySelectorAll('.last-position-button').forEach((target) => {
+    const section = target.dataset.section || 'main';
+    const mode = target.dataset.mode || getViewMode(collection.id);
+    target.disabled = !getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+  });
 }
 
 function syncPinIndexForEntry(collectionId, entryId) {
@@ -862,30 +907,141 @@ function letterForEntry(entry) {
   return /^[A-Z]$/.test(letter) ? letter : '#';
 }
 
-function isPhraseCollection(collection) {
-  return collection.type === 'system-phrases' || collection.type === 'system-global-phrases';
+function dateAnchorId(section, dateKey) {
+  return `date-${section}-${dateKey}`;
 }
 
-function renderEntryList(collection, domain, entries) {
-  collectionRenderContext = null;
-  if (isPhraseCollection(collection)) {
-    elements['letter-nav'].classList.remove('hidden');
-    elements['letter-nav'].replaceChildren(lastPositionButton(collection));
-    const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
-    collectionRenderContext = { collection, domain, entries, grouped: new Map(), globalIndexById, sectionByLetter: new Map(), flat: true };
-    elements['entry-list'].replaceChildren(el('section', { className: 'letter-section flat-section' }, [
-      el('div', { className: 'letter-body flat-body' }, entries.map((entry, index) => renderEntryRow(entry, collection, domain, { groupIndex: index + 1, globalIndex: index + 1 }))),
-    ]));
-    return;
-  }
-  if (!entries.length) {
-    elements['letter-nav'].classList.remove('hidden');
-    elements['letter-nav'].replaceChildren(lastPositionButton(collection));
-    elements['entry-list'].replaceChildren(el('div', { className: 'empty-state', text: '暂无内容' }));
-    return;
-  }
+function formatStudyDate(dateKey) {
+  if (!dateKey) return '';
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return `${year}·${month}·${day}`;
+}
 
-  const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
+function currentSectionEntries(section) {
+  return collectionRenderContext?.sections?.get(section)?.entries || [];
+}
+
+function jumpToSection(section) {
+  const context = collectionRenderContext;
+  if (!context?.sections?.has(section)) return;
+  const sectionContext = context.sections.get(section);
+  const target = sectionContext.root || sectionContext.sectionByKey.values().next().value || null;
+  if (!target) return;
+  activeSection = section;
+  suppressScrollPersistence(500);
+  positionElementAtReadingAnchor(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
+}
+
+async function switchCollectionMode(collection, section) {
+  const currentMode = getViewMode(collection.id);
+  const nextMode = currentMode === 'date' ? 'alphabet' : 'date';
+  const first = firstVisibleEntryId();
+  const state = getState();
+  const currentEntry = first ? state.entryById.get(first) : null;
+  if (currentEntry) {
+    const currentSection = sectionForEntry(currentEntry);
+    await setLastPosition(positionDomainId(collection, currentEntry), collection.id, currentEntry.id, { mode: currentMode, section: currentSection });
+  }
+  const target = getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode, section });
+  pendingJumpEntryId = target || '';
+  pendingJumpReason = 'mode';
+  await setViewMode(collection.id, nextMode);
+}
+
+function monthShift(monthKey, delta) {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey || '');
+  const base = match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : new Date();
+  base.setMonth(base.getMonth() + delta);
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function calendarForSection(collection, section, dates) {
+  const sortedDates = [...dates].sort().reverse();
+  const initial = getCalendarMonth(collection.id, section) || sortedDates[0]?.slice(0, 7)
+    || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const monthKey = initial;
+  const [year, month] = monthKey.split('-').map(Number);
+  const first = new Date(year, month - 1, 1);
+  const days = new Date(year, month, 0).getDate();
+  const offset = (first.getDay() + 6) % 7;
+  const available = new Set(sortedDates.filter((date) => date.startsWith(`${monthKey}-`)));
+  const grid = [];
+  for (let index = 0; index < offset; index += 1) grid.push(el('span', { className: 'calendar-empty', 'aria-hidden': 'true' }));
+  for (let day = 1; day <= days; day += 1) {
+    const dateKey = `${monthKey}-${String(day).padStart(2, '0')}`;
+    const enabled = available.has(dateKey);
+    grid.push(button(String(day), enabled ? 'calendar-day active' : 'calendar-day', () => {
+      const target = document.getElementById(dateAnchorId(section, dateKey));
+      if (!target) return;
+      activeSection = section;
+      suppressScrollPersistence(500);
+      positionElementAtReadingAnchor(target);
+    }, { disabled: !enabled, title: enabled ? `跳到 ${dateKey}` : '该日没有记录' }));
+  }
+  const calendar = el('section', { className: 'study-calendar', dataset: { section, month: monthKey }, 'aria-label': `${year} 年 ${month} 月学习日期` }, [
+    el('header', { className: 'calendar-header' }, [
+      iconButton('chevron', 'calendar-prev', '上个月', async () => {
+        const next = monthShift(monthKey, -1);
+        suppressNextMutationRender = true;
+        await setCalendarMonth(collection.id, section, next);
+        calendar.replaceWith(calendarForSection(collection, section, dates));
+      }),
+      el('strong', { text: `${year} 年 ${month} 月` }),
+      iconButton('chevron', 'calendar-next', '下个月', async () => {
+        const next = monthShift(monthKey, 1);
+        suppressNextMutationRender = true;
+        await setCalendarMonth(collection.id, section, next);
+        calendar.replaceWith(calendarForSection(collection, section, dates));
+      }),
+    ]),
+    el('div', { className: 'calendar-weekdays', 'aria-hidden': 'true' }, ['一', '二', '三', '四', '五', '六', '日'].map((text) => el('span', { text }))),
+    el('div', { className: 'calendar-grid' }, grid),
+  ]);
+  return calendar;
+}
+
+function navigationControls(collection, section, sectionContext, mode, otherSection = '') {
+  const controls = [lastPositionButton(collection, section, mode)];
+  controls.push(iconButton(mode === 'date' ? 'alphabet' : 'calendar', 'mode-toggle-button', mode === 'date' ? '切换到字母排序' : '切换到日期排序', () => {
+    switchCollectionMode(collection, section).catch(displayError);
+  }));
+  if (otherSection) {
+    const otherEntries = currentSectionEntries(otherSection);
+    controls.push(iconButton(otherSection === 'phrase' ? 'phrase' : 'word', 'section-jump-button', otherSection === 'phrase' ? '跳到短语区' : '跳到词汇区', () => jumpToSection(otherSection), { disabled: !otherEntries.length }));
+  }
+  if (mode === 'date') {
+    const hasUnmarked = sectionContext.entries.some((entry) => !getStudyStamp(entry, collection.id));
+    controls.push(iconButton('unmarked', 'unmarked-jump-button', '跳到未标注条目', () => {
+      const target = document.getElementById(`unmarked-${section}`);
+      if (target) {
+        activeSection = section;
+        suppressScrollPersistence(500);
+        positionElementAtReadingAnchor(target);
+      }
+    }, { disabled: !hasUnmarked }));
+  } else {
+    const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
+    for (const letter of letters) {
+      const enabled = sectionContext.grouped.has(letter);
+      const control = button(letter, enabled ? '' : 'empty', () => {
+        if (!enabled) return;
+        setLetterSectionOpen(section, letter, true);
+        const target = sectionContext.sectionByKey.get(letter);
+        if (target) {
+          activeSection = section;
+          suppressScrollPersistence(450);
+          positionElementAtReadingAnchor(target.querySelector('.letter-heading') || target);
+        }
+      }, { disabled: !enabled });
+      control.dataset.letter = letter;
+      control.dataset.section = section;
+      controls.push(control);
+    }
+  }
+  return controls;
+}
+
+function createSectionContext(section, entries, collection) {
   const grouped = new Map();
   for (const entry of entries) {
     const letter = letterForEntry(entry);
@@ -893,56 +1049,163 @@ function renderEntryList(collection, domain, entries) {
     list.push(entry);
     grouped.set(letter, list);
   }
-  const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
-  const expandedLetters = expandedLettersFor(collection.id);
-  const sectionByLetter = new Map();
-  collectionRenderContext = { collection, domain, entries, grouped, globalIndexById, sectionByLetter };
+  return {
+    section,
+    entries,
+    grouped,
+    sectionByKey: new Map(),
+    root: null,
+    dates: new Set(entries.map((entry) => getStudyStamp(entry, collection.id)?.reviewDateKey).filter(Boolean)),
+  };
+}
 
-  elements['letter-nav'].classList.remove('hidden');
-  elements['letter-nav'].replaceChildren(lastPositionButton(collection), ...letters.map((letter) => {
-    const control = button(letter, grouped.has(letter) ? '' : 'empty', () => {
-      if (!grouped.has(letter)) return;
-      setLetterSectionOpen(letter, true);
-      const section = sectionByLetter.get(letter);
-      if (section) {
-        suppressScrollPersistence(450);
-        positionElementAtReadingAnchor(section.querySelector('.letter-heading') || section);
-      }
-    }, { disabled: !grouped.has(letter) });
-    control.dataset.letter = letter;
-    return control;
-  }));
-
-  const sections = [];
-  for (const letter of letters.filter((item) => grouped.has(item))) {
-    const section = el('section', {
-      className: 'letter-section', id: `letter-${letter === '#' ? 'other' : letter}`, dataset: { letter },
+function renderAlphabetContent(context, sectionContext) {
+  const { collection, domain, globalIndexById } = context;
+  const section = sectionContext.section;
+  const expandedLetters = expandedLettersFor(collection.id, section);
+  const root = el('section', { className: `content-section ${section}-content`, id: `content-${section}`, dataset: { section } });
+  if (isCompositeCollection(collection)) root.append(el('h2', { className: 'content-section-title', text: section === 'word' ? '词汇' : '短语' }));
+  if (!sectionContext.entries.length) {
+    root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
+    sectionContext.root = root;
+    return root;
+  }
+  for (const letter of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'].filter((item) => sectionContext.grouped.has(item))) {
+    const sectionNode = el('section', {
+      className: 'letter-section', id: `letter-${section}-${letter === '#' ? 'other' : letter}`, dataset: { letter, section },
     });
-    const heading = button('', 'letter-heading', () => setLetterSectionOpen(letter, !expandedLetters.has(letter)));
+    const heading = button('', 'letter-heading', () => setLetterSectionOpen(section, letter, !expandedLetters.has(letter)));
     heading.setAttribute('aria-expanded', expandedLetters.has(letter) ? 'true' : 'false');
     heading.append(
       el('span', { className: 'letter-title', text: letter }),
-      el('span', { className: 'letter-count', text: grouped.get(letter).length.toLocaleString() }),
+      el('span', { className: 'letter-count', text: sectionContext.grouped.get(letter).length.toLocaleString() }),
       el('span', { className: 'letter-indicator' }, [svgIcon('chevron')]),
     );
-    section.append(heading);
-    sectionByLetter.set(letter, section);
-    sections.push(section);
+    sectionNode.append(heading);
+    sectionContext.sectionByKey.set(letter, sectionNode);
+    root.append(sectionNode);
   }
-  elements['entry-list'].replaceChildren(...sections);
-  for (const letter of expandedLetters) if (grouped.has(letter)) setLetterSectionOpen(letter, true);
+  sectionContext.root = root;
+  for (const letter of expandedLetters) if (sectionContext.grouped.has(letter)) setTimeout(() => setLetterSectionOpen(section, letter, true), 0);
+  return root;
 }
 
-function setLetterSectionOpen(letter, open) {
+function renderDateContent(context, sectionContext) {
+  const { collection, domain, globalIndexById } = context;
+  const section = sectionContext.section;
+  const root = el('section', { className: `content-section date-content ${section}-content`, id: `content-${section}`, dataset: { section } });
+  if (isCompositeCollection(collection)) root.append(el('h2', { className: 'content-section-title', text: section === 'word' ? '词汇' : '短语' }));
+  const stamped = [];
+  const unmarked = [];
+  for (const entry of sectionContext.entries) {
+    const stamp = getStudyStamp(entry, collection.id);
+    if (stamp) stamped.push({ entry, stamp });
+    else unmarked.push(entry);
+  }
+  stamped.sort((a, b) => b.stamp.reviewDateKey.localeCompare(a.stamp.reviewDateKey) || a.entry.normalizedText.localeCompare(b.entry.normalizedText, 'en'));
+  unmarked.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  let currentYear = '';
+  let currentMonth = '';
+  let currentDay = '';
+  let dayBody = null;
+  let dayIndex = 0;
+  for (const item of stamped) {
+    const [year, month, day] = item.stamp.reviewDateKey.split('-');
+    if (year !== currentYear) {
+      currentYear = year;
+      currentMonth = '';
+      currentDay = '';
+      root.append(el('h2', { className: 'date-year-title', text: year }));
+    }
+    if (month !== currentMonth) {
+      currentMonth = month;
+      currentDay = '';
+      root.append(el('h3', { className: 'date-month-title', text: `${Number(month)} 月` }));
+    }
+    if (day !== currentDay) {
+      currentDay = day;
+      dayIndex = 0;
+      const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, item.stamp.reviewDateKey), dataset: { date: item.stamp.reviewDateKey, section } }, [
+        el('h4', { className: 'date-day-title', text: `${Number(day)} 日` }),
+      ]);
+      dayBody = el('div', { className: 'letter-body date-day-body' });
+      daySection.append(dayBody);
+      root.append(daySection);
+      sectionContext.sectionByKey.set(item.stamp.reviewDateKey, daySection);
+    }
+    dayIndex += 1;
+    dayBody.append(renderEntryRow(item.entry, collection, domain, {
+      groupIndex: dayIndex,
+      globalIndex: globalIndexById.get(item.entry.id) || dayIndex,
+    }));
+  }
+  if (unmarked.length) {
+    const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [
+      el('h2', { className: 'date-unmarked-heading', text: '未标注' }),
+      el('div', { className: 'letter-body unmarked-body' }, unmarked.map((entry, index) => renderEntryRow(entry, collection, domain, {
+        groupIndex: index + 1,
+        globalIndex: globalIndexById.get(entry.id) || index + 1,
+      }))),
+    ]);
+    root.append(unmarkedSection);
+    sectionContext.sectionByKey.set('unmarked', unmarkedSection);
+  }
+  if (!stamped.length && !unmarked.length) root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
+  sectionContext.root = root;
+  return root;
+}
+
+function renderEntryList(collection, domain, entries) {
+  collectionRenderContext = null;
+  const mode = getViewMode(collection.id);
+  const sections = new Map();
+  if (isCompositeCollection(collection)) {
+    sections.set('word', createSectionContext('word', entries.filter((entry) => entry.kind === 'word'), collection));
+    sections.set('phrase', createSectionContext('phrase', entries.filter((entry) => entry.kind === 'phrase'), collection));
+  } else {
+    const section = isPhraseCollection(collection) ? 'phrase' : 'word';
+    sections.set(section, createSectionContext(section, entries, collection));
+  }
+  const firstSection = sections.keys().next().value;
+  if (!sections.has(activeSection)) activeSection = firstSection;
+  const globalIndexById = new Map(entries.map((entry, index) => [entry.id, index + 1]));
+  const entrySection = new Map(entries.map((entry) => [entry.id, sectionForEntry(entry)]));
+  const context = { collection, domain, entries, mode, sections, firstSection, globalIndexById, entrySection };
+  collectionRenderContext = context;
+
+  const firstContext = sections.get(firstSection);
+  const otherFirst = isCompositeCollection(collection) ? (firstSection === 'word' ? 'phrase' : 'word') : '';
+  elements['letter-nav'].classList.remove('hidden');
+  elements['letter-nav'].dataset.section = firstSection;
+  elements['letter-nav'].setAttribute('aria-label', `${firstSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引`);
+  elements['letter-nav'].replaceChildren(...navigationControls(collection, firstSection, firstContext, mode, otherFirst));
+
+  const output = [];
+  if (mode === 'date') output.push(calendarForSection(collection, firstSection, firstContext.dates));
+  output.push(mode === 'date' ? renderDateContent(context, firstContext) : renderAlphabetContent(context, firstContext));
+
+  if (isCompositeCollection(collection)) {
+    const secondSection = firstSection === 'word' ? 'phrase' : 'word';
+    const secondContext = sections.get(secondSection);
+    const secondaryNav = el('nav', { className: 'letter-nav section-letter-nav', dataset: { section: secondSection }, 'aria-label': `${secondSection === 'word' ? '词汇' : '短语'}${mode === 'date' ? '日期' : '字母'}索引` }, navigationControls(collection, secondSection, secondContext, mode, firstSection));
+    output.push(secondaryNav);
+    if (mode === 'date') output.push(calendarForSection(collection, secondSection, secondContext.dates));
+    output.push(mode === 'date' ? renderDateContent(context, secondContext) : renderAlphabetContent(context, secondContext));
+  }
+  elements['entry-list'].replaceChildren(...output);
+}
+
+function setLetterSectionOpen(section, letter, open) {
   const context = collectionRenderContext;
-  if (!context || context.collection.id !== currentCollectionId) return false;
-  const section = context.sectionByLetter.get(letter);
-  const entries = context.grouped.get(letter);
-  if (!section || !entries) return false;
-  const expandedLetters = expandedLettersFor(currentCollectionId);
-  const heading = section.querySelector('.letter-heading');
-  const indicator = section.querySelector('.letter-indicator');
-  let body = section.querySelector('.letter-body');
+  if (!context || context.collection.id !== currentCollectionId || context.mode !== 'alphabet') return false;
+  const sectionContext = context.sections.get(section);
+  const sectionNode = sectionContext?.sectionByKey.get(letter);
+  const entries = sectionContext?.grouped.get(letter);
+  if (!sectionNode || !entries) return false;
+  const expandedLetters = expandedLettersFor(currentCollectionId, section);
+  const heading = sectionNode.querySelector('.letter-heading');
+  const indicator = sectionNode.querySelector('.letter-indicator');
+  let body = sectionNode.querySelector('.letter-body');
   if (open) {
     expandedLetters.add(letter);
     if (!body) {
@@ -950,7 +1213,7 @@ function setLetterSectionOpen(letter, open) {
         groupIndex: index + 1,
         globalIndex: context.globalIndexById.get(entry.id) || index + 1,
       })));
-      section.append(body);
+      sectionNode.append(body);
     }
   } else {
     expandedLetters.delete(letter);
@@ -958,72 +1221,139 @@ function setLetterSectionOpen(letter, open) {
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (indicator) indicator.classList.toggle('open', open);
-  updateActiveLetter(letter);
+  updateActiveLetter(section, letter);
   return true;
 }
 
-function updateActiveLetter(letter = '') {
-  elements['letter-nav'].querySelectorAll('[data-letter]').forEach((item) => item.classList.toggle('active', Boolean(letter) && item.dataset.letter === letter));
+function updateActiveLetter(section, letter = '') {
+  elements['collection-view'].querySelectorAll(`.letter-nav[data-section="${section}"] [data-letter]`).forEach((item) => item.classList.toggle('active', Boolean(letter) && item.dataset.letter === letter));
 }
 
-function preferredNormalDestination(entry) {
-  if (!entry) return null;
+function normalDestinationsForEntries(entries, { preferredCollectionId = '', domainId = '' } = {}) {
   const state = getState();
-  const candidates = (state.membershipsByEntry.get(entry.id) || [])
-    .map((membership) => ({ membership, collection: state.collectionById.get(membership.collectionId) }))
-    .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden)
-    .sort((a, b) => Number(a.collection.order || 0) - Number(b.collection.order || 0)
-      || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
-      || a.collection.name.localeCompare(b.collection.name));
-  return candidates[0]
-    ? { entry, collectionId: candidates[0].collection.id, label: candidates[0].collection.name, domainId: entry.domainId }
-    : { entry, collectionId: systemDomainWordsCollectionId(entry.domainId), label: '总词表', domainId: entry.domainId };
-}
-
-function globalPhraseRepresentative(normalizedText) {
-  return getState().globalPhraseByNormalizedText.get(normalizedText) || null;
+  const seen = new Set();
+  const destinations = [];
+  for (const entry of entries.filter(Boolean)) {
+    for (const membership of state.membershipsByEntry.get(entry.id) || []) {
+      const collection = state.collectionById.get(membership.collectionId);
+      if (!collection || collection.type !== 'normal' || collection.hidden) continue;
+      if (domainId && collection.domainId !== domainId) continue;
+      if (!(state.projection.get(collection.id) || []).some((candidate) => candidate.id === entry.id)) continue;
+      const key = `${collection.id}\u0000${entry.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      destinations.push({
+        entry,
+        collectionId: collection.id,
+        label: `${collection.name} · ${entry.kind === 'phrase' ? '短语区' : '词汇区'}`,
+        domainId: collection.domainId,
+      });
+    }
+  }
+  return destinations.sort((a, b) => {
+    if (a.collectionId === preferredCollectionId && b.collectionId !== preferredCollectionId) return -1;
+    if (b.collectionId === preferredCollectionId && a.collectionId !== preferredCollectionId) return 1;
+    const domainA = Number(state.domainById.get(a.domainId)?.order || 0);
+    const domainB = Number(state.domainById.get(b.domainId)?.order || 0);
+    if (domainA !== domainB) return domainA - domainB;
+    const collectionA = state.collectionById.get(a.collectionId);
+    const collectionB = state.collectionById.get(b.collectionId);
+    return Number(collectionA?.order || 0) - Number(collectionB?.order || 0)
+      || String(collectionA?.name || '').localeCompare(String(collectionB?.name || ''));
+  });
 }
 
 function relationItemsForEntry(entry) {
   const state = getState();
+  const sourceCollection = state.collectionById.get(currentCollectionId);
+  const isGlobal = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(currentCollectionId);
+  const sourceDomainId = isGlobal ? '' : (sourceCollection?.domainId || entry.domainId);
+  const preferredCollectionId = sourceCollection?.type === 'normal' ? sourceCollection.id : '';
+
   if (entry.kind === 'word') {
-    const sourceWords = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID
-      ? (state.wordsByNormalizedText.get(entry.normalizedText) || [entry])
-      : [entry];
-    const phrases = new Map();
-    for (const word of sourceWords) {
-      for (const phrase of getRelatedPhrases(word.id)) phrases.set(`${phrase.domainId}:${phrase.normalizedText}`, phrase);
-    }
-    const byText = new Map();
-    for (const phrase of phrases.values()) {
-      const item = byText.get(phrase.normalizedText) || { text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', destinations: [] };
-      const targetEntry = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID ? globalPhraseRepresentative(phrase.normalizedText) : phrase;
-      const targetCollectionId = currentCollectionId === SYSTEM_GLOBAL_WORDS_ID ? SYSTEM_GLOBAL_PHRASES_ID : systemPhraseCollectionId(phrase.domainId);
-      if (targetEntry && !item.destinations.some((destination) => destination.collectionId === targetCollectionId && destination.entry.id === targetEntry.id)) {
-        item.destinations.push({ entry: targetEntry, collectionId: targetCollectionId, label: state.collectionById.get(targetCollectionId)?.name || '短语', domainId: phrase.domainId });
+    if (isGlobal) {
+      const byText = new Map();
+      for (const word of state.wordsByNormalizedText.get(entry.normalizedText) || [entry]) {
+        for (const phrase of getRelatedPhrases(word.id)) {
+          const item = byText.get(phrase.normalizedText) || {
+            text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', targetEntries: [], navigationKind: 'global',
+          };
+          if (!item.targetEntries.some((candidate) => candidate.id === phrase.id)) item.targetEntries.push(phrase);
+          byText.set(phrase.normalizedText, item);
+        }
       }
-      byText.set(phrase.normalizedText, item);
+      return [...byText.values()].map((item) => ({
+        ...item,
+        destinations: normalDestinationsForEntries(item.targetEntries),
+      })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
     }
-    return [...byText.values()].sort((a, b) => normalizeEnglish(a.text).localeCompare(normalizeEnglish(b.text), 'en'));
+
+    const localPhrases = getRelatedPhrases(entry.id);
+    if (localPhrases.length) {
+      return localPhrases.map((phrase) => ({
+        text: phrase.text,
+        normalizedText: phrase.normalizedText,
+        kind: 'phrase',
+        navigationKind: 'intra',
+        destinations: normalDestinationsForEntries([phrase], { preferredCollectionId, domainId: sourceDomainId }),
+      })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+    }
+
+    const byText = new Map();
+    for (const externalWord of state.wordsByNormalizedText.get(entry.normalizedText) || []) {
+      if (externalWord.domainId === sourceDomainId) continue;
+      for (const phrase of getRelatedPhrases(externalWord.id)) {
+        const item = byText.get(phrase.normalizedText) || {
+          text: phrase.text, normalizedText: phrase.normalizedText, kind: 'phrase', targetEntries: [], navigationKind: 'external',
+        };
+        if (!item.targetEntries.some((candidate) => candidate.id === phrase.id)) item.targetEntries.push(phrase);
+        byText.set(phrase.normalizedText, item);
+      }
+    }
+    return [...byText.values()].map((item) => ({
+      ...item,
+      destinations: normalDestinationsForEntries(item.targetEntries),
+    })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   }
 
-  const sourcePhrases = currentCollectionId === SYSTEM_GLOBAL_PHRASES_ID
-    ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [entry])
-    : [entry];
-  const byToken = new Map();
-  for (const phrase of sourcePhrases) {
-    for (const component of getPhraseComponents(phrase.id)) {
-      const key = normalizeEnglish(component.token);
-      if (!key) continue;
-      const item = byToken.get(key) || { text: component.token, normalizedText: key, kind: 'word', destinations: [] };
-      const destination = preferredNormalDestination(component.entry);
-      if (destination && !item.destinations.some((candidate) => candidate.collectionId === destination.collectionId && candidate.entry.id === destination.entry.id)) {
-        item.destinations.push(destination);
+  if (isGlobal) {
+    const byToken = new Map();
+    for (const phrase of state.phrasesByNormalizedText.get(entry.normalizedText) || [entry]) {
+      for (const component of getPhraseComponents(phrase.id)) {
+        const key = normalizeEnglish(component.token);
+        if (!key) continue;
+        const item = byToken.get(key) || { text: component.token, normalizedText: key, kind: 'word', targetEntries: [], navigationKind: 'global' };
+        if (component.entry && !item.targetEntries.some((candidate) => candidate.id === component.entry.id)) item.targetEntries.push(component.entry);
+        byToken.set(key, item);
       }
-      byToken.set(key, item);
     }
+    return [...byToken.values()].map((item) => ({
+      ...item,
+      destinations: normalDestinationsForEntries(item.targetEntries),
+    })).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   }
-  return [...byToken.values()].sort((a, b) => normalizeEnglish(a.text).localeCompare(normalizeEnglish(b.text), 'en'));
+
+  return getPhraseComponents(entry.id).map((component) => {
+    const key = normalizeEnglish(component.token);
+    if (component.entry) {
+      return {
+        text: component.token,
+        normalizedText: key,
+        kind: 'word',
+        navigationKind: 'intra',
+        destinations: normalDestinationsForEntries([component.entry], { preferredCollectionId, domainId: sourceDomainId }),
+      };
+    }
+    const externalWords = (state.wordsByNormalizedText.get(key) || []).filter((candidate) => candidate.domainId !== sourceDomainId);
+    return {
+      text: component.token,
+      normalizedText: key,
+      kind: 'word',
+      navigationKind: externalWords.length ? 'external' : 'none',
+      destinations: normalDestinationsForEntries(externalWords),
+    };
+  }).filter((item) => item.normalizedText)
+    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
 }
 
 async function copyText(text) {
@@ -1088,9 +1418,32 @@ function renderRelationPanel(entry) {
     return el('div', { className: 'relation-item' }, [
       el('button', { type: 'button', className: 'relation-copy', on: { click: () => copyText(item.text).catch(displayError) } }, [el('span', { className: 'relation-text', text: item.text })]),
       gloss ? el('span', { className: 'relation-gloss', text: gloss, title: gloss }) : el('span', { className: 'relation-gloss empty', 'aria-hidden': 'true' }),
-      item.destinations?.length ? iconButton('jump', 'relation-jump', `跳转到 ${item.text}`, () => jumpToRelation(item)) : el('span', { className: 'relation-jump-placeholder', 'aria-hidden': 'true' }),
+      item.destinations?.length ? iconButton(
+        item.navigationKind === 'external' ? 'external' : item.navigationKind === 'global' ? 'globalDown' : 'intra',
+        `relation-jump ${item.navigationKind || 'intra'}`,
+        item.navigationKind === 'external' ? `跳到其他独立域中的 ${item.text}` : item.navigationKind === 'global' ? `从全局下钻到 ${item.text}` : `跳到当前独立域中的 ${item.text}`,
+        () => jumpToRelation(item),
+      ) : el('span', { className: 'relation-jump-placeholder', 'aria-hidden': 'true' }),
     ]);
   }));
+}
+
+function indexesForRenderedEntry(context, entry) {
+  const globalIndex = context.entries.findIndex((item) => item.id === entry.id) + 1;
+  const section = sectionForEntry(entry);
+  const sectionContext = context.sections.get(section);
+  if (!sectionContext) return { groupIndex: 1, globalIndex: Math.max(1, globalIndex) };
+  if (context.mode === 'alphabet') {
+    const group = sectionContext.grouped.get(letterForEntry(entry)) || [];
+    return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex: Math.max(1, globalIndex) };
+  }
+  const stamp = getStudyStamp(entry, context.collection.id);
+  const group = stamp
+    ? sectionContext.entries.filter((item) => getStudyStamp(item, context.collection.id)?.reviewDateKey === stamp.reviewDateKey)
+      .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'))
+    : sectionContext.entries.filter((item) => !getStudyStamp(item, context.collection.id))
+      .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  return { groupIndex: Math.max(1, group.findIndex((item) => item.id === entry.id) + 1), globalIndex: Math.max(1, globalIndex) };
 }
 
 function toggleEntryRelations(entryId) {
@@ -1100,10 +1453,7 @@ function toggleEntryRelations(entryId) {
   const entry = getState().entryById.get(entryId);
   const current = document.getElementById(`entry-${entryId}`);
   if (!context || !entry || !current) return;
-  const index = context.entries.findIndex((item) => item.id === entryId) + 1;
-  const group = context.grouped.get(letterForEntry(entry)) || [];
-  const groupIndex = group.findIndex((item) => item.id === entryId) + 1;
-  current.replaceWith(renderEntryRow(entry, context.collection, context.domain, { groupIndex, globalIndex: index }));
+  current.replaceWith(renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry)));
 }
 
 async function toggleEntryPin(entry, collection, sourceButton = null) {
@@ -1122,12 +1472,7 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
   syncPinIndexForEntry(collection.id, entry.id);
   const context = collectionRenderContext;
   const current = document.getElementById(`entry-${entry.id}`);
-  if (context && current) {
-    const index = context.entries.findIndex((item) => item.id === entry.id) + 1;
-    const group = context.grouped.get(letterForEntry(entry)) || [];
-    const groupIndex = group.findIndex((item) => item.id === entry.id) + 1;
-    current.replaceWith(renderEntryRow(entry, collection, context.domain, { groupIndex, globalIndex: index }));
-  }
+  if (context && current) current.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
   renderPinBar(collection);
   showToast(wasPinned ? 'PIN 已取消' : 'PIN 已设置');
 }
@@ -1149,6 +1494,47 @@ function displayGlossForEntry(entry, collection, domain) {
   return domain?.glossEnabled ? entry.glossHant || '' : '';
 }
 
+async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
+  const mode = getViewMode(collection.id);
+  if (mode === 'date') {
+    pendingJumpEntryId = entry.id;
+    pendingJumpReason = 'study-date';
+  } else {
+    suppressNextMutationRender = true;
+  }
+  sourceButton?.classList.add('updating');
+  try {
+    const stamp = await refreshStudyDate(entry.id, collection.id);
+    if (mode === 'alphabet') {
+      const context = collectionRenderContext;
+      const row = document.getElementById(`entry-${entry.id}`);
+      if (context && row) row.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
+      showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
+    }
+  } catch (error) {
+    suppressNextMutationRender = false;
+    pendingJumpEntryId = '';
+    throw error;
+  } finally {
+    sourceButton?.classList.remove('updating');
+  }
+}
+
+function openOxfordLookup(entry) {
+  window.location.assign(buildOxfordLookupUrl(entry.text));
+}
+
+function openChatGPTEntryQuery(entry, collection) {
+  const state = getState();
+  const context = createEntryContext(state, entry, collection.id, {
+    appVersion: APP_VERSION,
+    viewMode: getViewMode(collection.id),
+    section: sectionForEntry(entry),
+  });
+  const prompt = buildChatGPTPrompt(context);
+  window.location.assign(buildChatGPTShortcutUrl(prompt));
+}
+
 function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, globalIndex: 0 }) {
   const state = getState();
   const pinned = state.pinByEntry.has(entry.id);
@@ -1158,17 +1544,28 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const relations = relationItemsForEntry(entry);
   const expanded = expandedRelations.has(entry.id);
   const gloss = displayGlossForEntry(entry, collection, domain);
-  const row = el('article', { className: `entry-row${expanded ? ' relations-open' : ''}`, id: `entry-${entry.id}`, dataset: { entryId: entry.id } });
+  const studyStamp = getStudyStamp(entry, collection.id);
+  const row = el('article', { className: `entry-row${expanded ? ' relations-open' : ''}`, id: `entry-${entry.id}`, dataset: { entryId: entry.id, section: sectionForEntry(entry) } });
   const line = el('div', { className: 'entry-line' }, [
     el('button', { type: 'button', className: 'copy-entry', on: { click: () => copyEntry(entry, collection) } }, [
       indexText ? el('span', { className: 'entry-index', text: indexText }) : null,
       el('span', { className: 'entry-text', text: entry.text }),
     ]),
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : el('span', { className: 'entry-gloss empty', 'aria-hidden': 'true' }),
+    el('span', { className: `entry-study${studyStamp ? ' marked' : ''}` }, [
+      el('span', { className: 'entry-study-date', text: studyStamp ? formatStudyDate(studyStamp.reviewDateKey) : '', 'aria-label': studyStamp ? `最近学习日期 ${studyStamp.reviewDateKey}` : '尚未标注学习日期' }),
+      iconButton('refresh', 'entry-study-refresh', studyStamp ? '刷新学习日期' : '标注今天为学习日期', (event) => refreshEntryStudyDate(entry, collection, event.currentTarget).catch(displayError)),
+    ]),
     annotation ? button('•', 'entry-annotation', () => startAnnotationReview(collection.id, entry.id), { title: '待核查' }) : null,
     relations.length ? iconButton('relation', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)) : el('span', { className: 'entry-relations-placeholder', 'aria-hidden': 'true' }),
     el('button', { type: 'button', className: `entry-pin${pinned ? ' active' : ''}`, title: pinned ? '取消 PIN' : '设置 PIN', 'aria-label': pinned ? '取消 PIN' : '设置 PIN', 'aria-pressed': pinned ? 'true' : 'false', on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) } }, [svgIcon('pin')]),
     iconButton('more', 'entry-more', '更多', () => openEntryActions(entry.id, collection.id)),
+    iconButton('dictionary', 'entry-oxford', `在牛津英汉辞书中查询 ${entry.text}`, () => {
+      try { openOxfordLookup(entry); } catch (error) { displayError(error); }
+    }),
+    iconButton('aiChat', 'entry-chatgpt', `交给 ChatGPT 新建查询：${entry.text}`, () => {
+      try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
+    }),
   ]);
   row.append(line);
   const relationPanel = renderRelationPanel(entry);
@@ -1181,6 +1578,21 @@ function openEntryActions(entryId, collectionId) {
   const entry = state.entryById.get(entryId);
   const collection = state.collectionById.get(collectionId);
   if (!entry || !collection) return;
+  if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) {
+    const candidates = entry.kind === 'phrase'
+      ? (state.phrasesByNormalizedText.get(entry.normalizedText) || [])
+      : (state.wordsByNormalizedText.get(entry.normalizedText) || []);
+    openActionDialog({
+      title: entry.text,
+      description: '全局总表是系统聚合视图。请选择要管理的独立域内容。',
+      body: [el('div', { className: 'action-list' }, [...candidates]
+        .sort((a, b) => Number(state.domainById.get(a.domainId)?.order || 0) - Number(state.domainById.get(b.domainId)?.order || 0))
+        .map((candidate) => button(state.domainById.get(candidate.domainId)?.name || candidate.domainId, '', () => {
+          openEntryActions(candidate.id, candidate.kind === 'phrase' ? systemPhraseCollectionId(candidate.domainId) : systemDomainWordsCollectionId(candidate.domainId));
+        })))],
+    });
+    return;
+  }
   const memberships = state.membershipsByEntry.get(entry.id) || [];
   const annotation = state.annotationByEntry.get(entry.id);
   const normalActions = [
@@ -1189,7 +1601,7 @@ function openEntryActions(entryId, collectionId) {
     annotation ? button('核查标注', '', () => { closeActionDialog(); startAnnotationReview(collection.id, entry.id); }) : null,
   ].filter(Boolean);
   const dangerActions = [];
-  if (entry.kind === 'word' && memberships.some((item) => item.collectionId === collection.id)) {
+  if (memberships.some((item) => item.collectionId === collection.id)) {
     dangerActions.push(button('从当前词表移除', 'danger', () => confirmRemoveSource(entry.id, collection.id)));
   }
   dangerActions.push(button('删除', 'danger', () => confirmDeleteEntry(entry.id)));
@@ -1212,8 +1624,10 @@ async function copyEntry(entry, collection) {
       fallbackInput.select();
       if (!document.execCommand('copy')) throw new Error('浏览器拒绝复制');
     }
-    const firstSavedPosition = !getLastPosition(entry.domainId, collection.id);
-    await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id);
+    const mode = getViewMode(collection.id);
+    const section = sectionForEntry(entry);
+    const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
+    await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
     lastPersistedEntryId = entry.id;
     if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
     clearPersistentJump();
@@ -1231,10 +1645,12 @@ function ensureEntryRendered(entryId) {
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
   if (!context || !entry || context.collection.id !== currentCollectionId) return null;
-  if (context.flat) return document.getElementById(`entry-${entryId}`);
-  const letter = letterForEntry(entry);
-  setLetterSectionOpen(letter, true);
-  updateActiveLetter(letter);
+  const section = sectionForEntry(entry);
+  if (context.mode === 'alphabet') {
+    const letter = letterForEntry(entry);
+    setLetterSectionOpen(section, letter, true);
+    updateActiveLetter(section, letter);
+  }
   row = document.getElementById(`entry-${entryId}`);
   return row;
 }
@@ -1253,7 +1669,7 @@ function clearPersistentJump() {
 
 function readingViewportBounds() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
-  const candidates = [document.querySelector('.topbar'), elements['pin-bar'], elements['annotation-review-bar'], elements['letter-nav']];
+  const candidates = [document.querySelector('.topbar'), elements['pin-bar'], elements['annotation-review-bar'], elements['letter-nav'], document.querySelector('.section-letter-nav')];
   let top = 0;
   for (const candidate of candidates) {
     if (!candidate || candidate.classList.contains('hidden')) continue;
@@ -1302,6 +1718,8 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
     navigateCollection(targetCollectionId, entryId, reason);
     return true;
   }
+  const token = ++navigationRevision;
+  activeSection = sectionForEntry(entry);
   syncPinIndexForEntry(currentCollectionId, entryId);
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
@@ -1310,10 +1728,16 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   if (collection) renderPinBar(collection);
   const row = ensureEntryRendered(entryId);
   if (!row) return false;
-  suppressScrollPersistence(550);
+  suppressScrollPersistence(650);
   requestAnimationFrame(() => {
+    if (token !== navigationRevision || currentCollectionId !== targetCollectionId || !row.isConnected) return;
     positionElementAtReadingAnchor(row);
-    requestAnimationFrame(() => markJumpTarget(row, reason));
+    requestAnimationFrame(() => {
+      if (token === navigationRevision && row.isConnected) {
+        markJumpTarget(row, reason);
+        if (reason === 'study-date') showToast('学习日期已刷新并移到今天');
+      }
+    });
   });
   return true;
 }
@@ -1343,6 +1767,7 @@ function firstVisibleEntryId() {
     const rect = item.getBoundingClientRect();
     return rect.height > 0 && rect.bottom > top;
   });
+  if (row?.dataset.section) activeSection = row.dataset.section;
   return row?.dataset.entryId || null;
 }
 
@@ -1357,10 +1782,13 @@ function persistScrollPosition() {
     const state = getState();
     const entry = entryId ? state.entryById.get(entryId) : null;
     const collection = state.collectionById.get(currentCollectionId);
-    if (entry && collection && entry.domainId === collection.domainId && entry.id !== lastPersistedEntryId) {
-      const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id);
+    const isVisibleContext = entry && collection && (collection.virtual || entry.domainId === collection.domainId);
+    if (isVisibleContext && entry.id !== lastPersistedEntryId) {
+      const mode = getViewMode(collection.id);
+      const section = sectionForEntry(entry);
+      const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
       lastPersistedEntryId = entry.id;
-      setLastPosition(positionDomainId(collection, entry), collection.id, entry.id)
+      setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
         .then(() => {
           if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
         })
@@ -1370,6 +1798,27 @@ function persistScrollPosition() {
         });
     }
   }, 520);
+}
+
+function updateBackToTopVisibility() {
+  const visible = Boolean(currentCollectionId) && window.scrollY > Math.max(window.innerHeight * 0.9, 560);
+  elements['back-to-top']?.classList.toggle('hidden', !visible);
+}
+
+function returnToTop() {
+  if (!currentCollectionId) return;
+  const entryId = firstVisibleEntryId();
+  const state = getState();
+  const entry = entryId ? state.entryById.get(entryId) : null;
+  const collection = state.collectionById.get(currentCollectionId);
+  if (entry && collection) {
+    const mode = getViewMode(collection.id);
+    const section = sectionForEntry(entry);
+    setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section }).catch((error) => console.warn('返回顶部前保存位置失败', error));
+  }
+  suppressScrollPersistence(900);
+  navigationRevision += 1;
+  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 
 function openAddDomainDialog() {
@@ -1411,12 +1860,13 @@ function openAddEntryDialog(collectionId) {
   const collection = state.collectionById.get(collectionId);
   const domain = state.domainById.get(collection.domainId);
   const isPhrase = collection.type === 'system-phrases';
-  const text = el('input', { required: true, maxlength: 160, placeholder: isPhrase ? '例如：thread pool' : '例如：thread' });
+  const isNormal = collection.type === 'normal';
+  const text = el('input', { required: true, maxlength: 160, placeholder: isPhrase ? '例如：thread pool' : isNormal ? '例如：thread 或 thread pool' : '例如：thread' });
   const gloss = el('input', { maxlength: 120, placeholder: '可输入简体或繁体' });
-  const body = [field(isPhrase ? '短语' : '词汇', text)];
+  const body = [field(isPhrase ? '短语' : isNormal ? '词汇或短语' : '词汇', text)];
   if (domain.glossEnabled) body.push(field('繁体释义', gloss));
   openDialog({
-    title: isPhrase ? '新增短语' : '新增词汇',
+    title: isPhrase ? '新增短语' : isNormal ? '新增词汇或短语' : '新增词汇',
     body,
     onSubmit: async () => {
       const entry = await addEntry(collectionId, text.value, { gloss: gloss.value });
@@ -1432,7 +1882,7 @@ function openAddRelatedPhraseDialog(entryId) {
   const gloss = el('input', { maxlength: 120, placeholder: '可输入简体或繁体' });
   const body = [field('英文短语', text)];
   if (domain.glossEnabled) body.push(field('繁体释义', gloss));
-  openDialog({ title: '添加短语', body, onSubmit: async () => { await addPhraseForWord(entryId, text.value, { gloss: gloss.value }); } });
+  openDialog({ title: '添加短语', body, onSubmit: async () => { await addPhraseForWord(entryId, text.value, { gloss: gloss.value }, getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentCollectionId : ''); } });
 }
 
 function openEditEntryDialog(entryId, collectionId = currentCollectionId) {
@@ -1490,7 +1940,7 @@ function openCollectionActions(collectionId) {
     el('div', { className: 'action-group' }, [
       el('p', { className: 'action-group-title', text: '新增' }),
       el('div', { className: 'action-list' }, [
-        button(collection.type === 'system-phrases' ? '新增短语' : '新增词汇', '', () => openAddEntryDialog(collection.id)),
+        button(collection.type === 'system-phrases' ? '新增短语' : collection.type === 'normal' ? '新增词汇或短语' : '新增词汇', '', () => openAddEntryDialog(collection.id)),
         button('AI 新增', '', () => openAiAddDialog(collection.id)),
       ]),
     ]),
@@ -1822,18 +2272,25 @@ function closeReview() {
   }
 }
 
+
+function globalRepresentative(entry) {
+  if (!entry) return null;
+  const collectionId = entry.kind === 'phrase' ? SYSTEM_GLOBAL_PHRASES_ID : SYSTEM_GLOBAL_WORDS_ID;
+  return getVisibleEntries(collectionId).find((candidate) => candidate.normalizedText === entry.normalizedText) || null;
+}
+
 function openSearchDialog() {
   const state = getState();
   const input = el('input', { type: 'search', placeholder: '搜索', autocomplete: 'off', spellcheck: false, inputMode: 'search' });
   const scope = el('select');
   scope.append(el('option', { value: 'all', text: '全部' }));
-  scope.append(el('option', { value: `collection:${SYSTEM_GLOBAL_WORDS_ID}`, text: '全局总表' }));
-  scope.append(el('option', { value: `collection:${SYSTEM_GLOBAL_PHRASES_ID}`, text: '全局短语表' }));
+  scope.append(el('option', { value: `collection:${SYSTEM_GLOBAL_WORDS_ID}`, text: '全局词汇总表' }));
+  scope.append(el('option', { value: `collection:${SYSTEM_GLOBAL_PHRASES_ID}`, text: '全局短语总表' }));
   const domains = [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   for (const domain of domains) {
     scope.append(el('option', { value: `domain:${domain.id}`, text: domain.name }));
     const group = el('optgroup', { label: domain.name });
-    group.append(el('option', { value: `collection:${systemDomainWordsCollectionId(domain.id)}`, text: '总词表' }));
+    group.append(el('option', { value: `collection:${systemDomainWordsCollectionId(domain.id)}`, text: '词汇总表' }));
     const collections = state.collections
       .filter((item) => item.domainId === domain.id && !item.hidden)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
@@ -1864,7 +2321,7 @@ function openSearchDialog() {
     return allowedIds;
   };
   const selectResult = (entry, collectionId) => {
-    const targetEntry = collectionId === SYSTEM_GLOBAL_PHRASES_ID ? (globalPhraseRepresentative(entry.normalizedText) || entry) : entry;
+    const targetEntry = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId) ? (globalRepresentative(entry) || entry) : entry;
     closeSearchDialog();
     requestAnimationFrame(() => requestAnimationFrame(() => navigateCollection(collectionId, targetEntry.id, 'search')));
   };
@@ -1981,7 +2438,7 @@ function openSettingsDialog() {
 function openRestoreDialog() {
   const file = el('input', { type: 'file', accept: '.json,application/json' });
   let backup = null;
-  const preview = el('div', { className: 'preview-list' }, [el('div', { className: 'preview-item muted', text: '选择 2.x 或 3.0 完整 JSON 备份。' })]);
+  const preview = el('div', { className: 'preview-list' }, [el('div', { className: 'preview-item muted', text: '选择 2.x 或 3.x 完整 JSON 备份。' })]);
   file.addEventListener('change', async () => {
     try {
       const parsed = await readImportFile(file.files?.[0]);
@@ -1990,18 +2447,18 @@ function openRestoreDialog() {
       preview.replaceChildren(el('div', { className: 'preview-item', text: `${backup.domains.length} · ${backup.collections.length} · ${backup.entries.length.toLocaleString()}` }));
     } catch (error) { backup = null; preview.replaceChildren(el('div', { className: 'preview-item danger', text: error.message })); }
   });
-  openDialog({ title: '恢复完整备份', description: '恢复会整体替换当前 3.0 数据并清空撤销历史。', body: [el('div', { className: 'warning-box', text: '先导出当前完整 JSON。请勿在 Safari 与主屏幕 PWA 两个实例中同时执行恢复。' }), field('备份文件', file), preview], submitText: '确认恢复', destructive: true, onSubmit: async () => { if (!backup) throw new Error('请选择有效完整备份'); await restoreBackup(backup); goHome(); showToast('完整备份已恢复'); } });
+  openDialog({ title: '恢复完整备份', description: '恢复会整体替换当前 3.1 数据并清空撤销历史。', body: [el('div', { className: 'warning-box', text: '先导出当前完整 JSON。请勿在 Safari 与主屏幕 PWA 两个实例中同时执行恢复。' }), field('备份文件', file), preview], submitText: '确认恢复', destructive: true, onSubmit: async () => { if (!backup) throw new Error('请选择有效完整备份'); await restoreBackup(backup); goHome(); showToast('完整备份已恢复'); } });
 }
 
 function showMigrationNotice() {
   const state = getState();
   if (!state.settings.migrationNoticePending) return;
   openDialog({
-    title: '已升级到 3.0',
+    title: '已升级到 3.1',
     description: `已从 ${state.settings.migrationSource || '2.x'} 迁移到词域数据模型。`,
     body: [
-      el('div', { className: 'warning-box', text: '请立即导出一份 3.0 完整 JSON，并在真机验收完成前保留升级前的 2.4.1 JSON。' }),
-      el('p', { className: 'help-text', text: '旧词性仍保留在数据层；界面已隐藏。每个词域已建立短语表。' }),
+      el('div', { className: 'warning-box', text: '请立即导出一份 3.1 完整 JSON，并在真机验收完成前保留升级前的 2.4.1 JSON。' }),
+      el('p', { className: 'help-text', text: '旧词性仍保留在数据层；界面已隐藏。每个词域已建立词汇总表与短语总表；普通表可同时包含词汇与短语。' }),
     ],
     submitText: '我已了解',
     onSubmit: acknowledgeMigrationNotice,
@@ -2072,6 +2529,7 @@ async function handleDialogSubmit(event) {
 }
 
 export async function initializeUI() {
+  elements['back-to-top']?.replaceChildren(svgIcon('top'));
   elements['dialog-form'].addEventListener('submit', handleDialogSubmit);
   elements['confirm-form'].addEventListener('submit', handleConfirmSubmit);
   elements['dialog-close'].addEventListener('click', closeDialog);
@@ -2087,6 +2545,7 @@ export async function initializeUI() {
   elements['search-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeSearchDialog(); });
   elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
   elements['back-button'].addEventListener('click', goHome);
+  elements['back-to-top']?.addEventListener('click', returnToTop);
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', () => {
     if (currentCollectionId) openCollectionActions(currentCollectionId);
@@ -2102,9 +2561,9 @@ export async function initializeUI() {
   window.addEventListener('hashchange', renderApp);
   window.addEventListener('popstate', renderApp);
   window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
-  window.addEventListener('scroll', persistScrollPosition, { passive: true });
+  window.addEventListener('scroll', () => { persistScrollPosition(); updateBackToTopVisibility(); }, { passive: true });
   subscribe(({ type }) => {
-    if (type === 'mutation' && suppressNextMutationRender) {
+    if (suppressNextMutationRender && ['mutation', 'calendar-month'].includes(type)) {
       suppressNextMutationRender = false;
       return;
     }

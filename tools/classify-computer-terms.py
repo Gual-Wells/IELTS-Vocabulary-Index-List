@@ -53,7 +53,8 @@ if SOURCE in by_id:
  by_id[SOURCE]={**by_id[SOURCE],'order':100,'hidden':True,'updatedAt':ts}
 seed['collections']=list(by_id.values())
 entries=[e for e in seed['entries'] if e['domainId']==D and e['kind']=='word']
-existing=[m for m in seed['memberships'] if m['collectionId'] not in CAT_BY_ID]
+word_ids={e['id'] for e in entries}
+existing=[m for m in seed['memberships'] if not (m['collectionId'] in CAT_BY_ID and m['entryId'] in word_ids)]
 new=[]; audit=[]; counts=collections.Counter(); source_counts=collections.defaultdict(collections.Counter)
 for idx,e in enumerate(sorted(entries,key=lambda x:x['normalizedText'])):
  cid=classify(e); counts[cid]+=1; source_counts[cid][e.get('glossSource','')]+=1
@@ -61,8 +62,8 @@ for idx,e in enumerate(sorted(entries,key=lambda x:x['normalizedText'])):
  new.append({'id':mid,'entryId':e['id'],'collectionId':cid,'sourceLabel':e.get('glossSource',''),'sourceOrder':idx,'createdAt':ts,'updatedAt':ts})
  audit.append({'text':e['text'],'glossHant':e.get('glossHant',''),'source':e.get('glossSource',''),'collectionId':cid,'collectionName':CAT_BY_ID[cid][1]})
 seed['memberships']=existing+new
-seed['appVersion']='3.0.7'; seed['exportedAt']=ts
-seed.setdefault('settings',{})['builtInSeedRevision']=2
+seed['schemaVersion']=4; seed['appVersion']='3.1.0'; seed['exportedAt']=ts
+seed.setdefault('settings',{})['builtInSeedRevision']=3
 seed_path.write_text(json.dumps(seed,ensure_ascii=False,indent=2)+'\n','utf-8')
 report={'generatedAt':ts,'domainId':D,'words':len(entries),'classified':len(new),'counts':{CAT_BY_ID[k][1]:v for k,v in counts.items()},'sourceCounts':{CAT_BY_ID[k][1]:dict(v) for k,v in source_counts.items()},'items':audit}
 (root/'data/computer-terms-classification-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n','utf-8')

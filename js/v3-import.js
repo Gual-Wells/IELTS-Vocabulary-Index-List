@@ -103,7 +103,7 @@ export function parseJsonContent(text) {
   }
   if (parsed && typeof parsed === 'object') {
     if (isVixContentPackage(parsed)) return { kind: 'content-package', package: normalizeVixPackage(parsed), errors: [] };
-    if (Number(parsed.schemaVersion) === 3 || Array.isArray(parsed.domains)) {
+    if ([3, 4].includes(Number(parsed.schemaVersion)) || Array.isArray(parsed.domains)) {
       return { kind: 'backup', backup: canonicalizeBackup(parsed), errors: [] };
     }
     if (Array.isArray(parsed.categories) && Array.isArray(parsed.entries)) {

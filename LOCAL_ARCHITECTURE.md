@@ -43,7 +43,7 @@ PIN、Annotation 和 StudyStamp 均绑定 Entry ID。系统总表只读取和操
 - 只有可见 `phrase-two-line` 行进行真实 DOM 溢出检查；
 - SVG 图标模板按名称缓存；
 - 完整关系只在展开时解析；
-- 滚动结束或限流后持久化上次位置。
+- 页面滚动只更新返回栈快照；浏览锚点仅在用户长按底部靶心按钮时持久化。
 
 ## 搜索
 
@@ -66,3 +66,10 @@ PIN、Annotation 和 StudyStamp 均绑定 Entry ID。系统总表只读取和操
 - 更新桥删除旧壳缓存；
 - 后台恢复检测 WebKit 异常 viewport；
 - 更新和 viewport 修复不清理业务数据库。
+
+
+## 浏览锚点与页面快照
+
+- 页面快照用于应用内部返回，自动记录滚动、展开字母和关系状态；
+- 浏览锚点用于用户长期返回位置，仅长按保存；
+- 两者都按 Collection／ViewKind／Mode 区分，但不得互相覆盖。

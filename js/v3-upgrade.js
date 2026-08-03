@@ -1,8 +1,8 @@
-// One-time compatibility bridge for upgrading from pre-3.5.0 workers.
+// One-time compatibility bridge for upgrading from pre-3.5.1 workers.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v3.5.0-ios-shell-20260803-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:3.5.0';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v3.5.1-ios-shell-20260803-2`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:3.5.1';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

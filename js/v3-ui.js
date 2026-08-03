@@ -17,7 +17,7 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.5.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -52,7 +52,6 @@ let suppressScrollPersistenceUntil = 0;
 let taskPanelExpanded = true;
 let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
-let lastPersistedPositionKey = '';
 let activeSection = 'main';
 let navigationRevision = 0;
 const expandedRelations = new Set();
@@ -72,6 +71,7 @@ let activeQueryMenu = null;
 let activeRelationTargetMenu = null;
 let scrollUiFrame = 0;
 let letterTrackInteractionUntil = 0;
+let letterTrackResyncTimer = 0;
 let routeRenderFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
@@ -111,6 +111,7 @@ const ICONS = {
   pin: '<path d="M9.1 3.8h5.8l-.75 4.4 2.8 2.75v1.75h-3.65v6.25L12 21l-1.3-2.05V12.7H7.05v-1.75l2.8-2.75-.75-4.4Z"></path>',
   more: '<circle cx="5.2" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="18.8" cy="12" r="1.35" fill="currentColor" stroke="none"></circle>',
   chevron: '<path d="m8.4 9.3 3.6 3.6 3.6-3.6"></path>',
+  doubleChevron: '<path d="m6.7 9.3 3.6 3.6 3.6-3.6M11.2 9.3l3.6 3.6 3.6-3.6"></path>',
   enter: '<path d="M18.8 5.2v6.9H7.1"></path><path d="m10.1 9.1-3 3 3 3"></path>',
   refresh: '<rect x="4.2" y="5.4" width="15.6" height="14.4" rx="2.5"></rect><path d="M8 3.5v3.9M16 3.5v3.9M4.2 9.7h15.6"></path><path d="M15.8 13.1a3.55 3.55 0 1 1-1.05-1.2"></path><path d="M15.8 11.15v2.35h-2.35"></path>',
   calendar: '<rect x="3.8" y="5.4" width="16.4" height="15" rx="2.4"></rect><path d="M8 3.4v4M16 3.4v4M3.8 9.9h16.4"></path>',
@@ -483,7 +484,7 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
     clearExpandedRelationsForView(collection.id, viewKind);
     return;
   }
-  if (entry && ['search', 'relation', 'route', 'annotation'].includes(reason)) {
+  if (entry && ['search', 'relation', 'route', 'annotation', 'mode'].includes(reason)) {
     expanded.clear();
     clearExpandedRelationsForView(collection.id, viewKind);
     expanded.add(letterForEntry(entry));
@@ -1310,18 +1311,98 @@ function currentMode(collection, section = currentViewKind) {
   return getViewMode(collection.id, section);
 }
 
+function currentBrowseAnchorEntry(collection, section = currentViewKind) {
+  const entryId = firstVisibleEntryId();
+  const entry = entryId ? getState().entryById.get(entryId) : null;
+  if (!entry || sectionForEntry(entry) !== section) return null;
+  if (!getState().visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)) return null;
+  return entry;
+}
+
+async function saveCurrentBrowseAnchor(collection, section = currentViewKind) {
+  const entry = currentBrowseAnchorEntry(collection, section);
+  if (!entry) {
+    showToast('当前位置没有可保存的词条', 'warning');
+    return false;
+  }
+  const mode = currentMode(collection, section);
+  await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
+  updateLastPositionButton(collection);
+  showToast(`已保存位置：${entry.text}`);
+  return true;
+}
+
+function bindBrowseAnchorButton(target, collection, section = currentViewKind) {
+  let holdTimer = 0;
+  let held = false;
+  let pointerId = null;
+  const clearHold = () => {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = 0;
+  };
+  target.onpointerdown = (event) => {
+    if (event.button !== 0) return;
+    pointerId = event.pointerId;
+    held = false;
+    clearHold();
+    holdTimer = window.setTimeout(async () => {
+      held = true;
+      holdTimer = 0;
+      try {
+        await saveCurrentBrowseAnchor(collection, section);
+        target.title = '短按跳到浏览锚点；长按覆盖保存当前位置';
+        target.setAttribute('aria-label', target.title);
+        navigator.vibrate?.(12);
+      } catch (error) { displayError(error); }
+    }, 520);
+  };
+  target.onpointerup = (event) => {
+    if (pointerId !== event.pointerId) return;
+    clearHold();
+    pointerId = null;
+    if (held) {
+      event.preventDefault();
+      event.stopPropagation();
+      requestAnimationFrame(() => { held = false; });
+    }
+  };
+  target.onpointercancel = () => { clearHold(); pointerId = null; held = false; };
+  target.onpointerleave = (event) => {
+    if (pointerId === event.pointerId && event.buttons === 0) { clearHold(); pointerId = null; }
+  };
+  target.oncontextmenu = async (event) => {
+    event.preventDefault();
+    clearHold();
+    pointerId = null;
+    held = true;
+    try {
+      await saveCurrentBrowseAnchor(collection, section);
+      target.title = '短按跳到浏览锚点；长按覆盖保存当前位置';
+      target.setAttribute('aria-label', target.title);
+      navigator.vibrate?.(12);
+    } catch (error) { displayError(error); }
+  };
+  target.onclick = (event) => {
+    if (held) { event.preventDefault(); held = false; return; }
+    const mode = currentMode(collection, section);
+    const anchor = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+    if (!anchor) {
+      showToast('长按此按钮保存当前位置');
+      return;
+    }
+    jumpToEntry(anchor, { collectionId: collection.id, reason: 'last' });
+  };
+}
+
 function renderBottomToolbar(collection, section = currentViewKind) {
   const mode = currentMode(collection, section);
   const last = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
   const lastButton = elements['bottom-last-position'];
   lastButton.replaceChildren(svgIcon('target'));
-  lastButton.disabled = !last;
-  lastButton.title = last ? '继续当前视图的上次浏览位置' : '当前视图尚无上次位置';
+  lastButton.disabled = false;
+  lastButton.title = last ? '短按跳到浏览锚点；长按覆盖保存当前位置' : '长按保存当前位置';
   lastButton.setAttribute('aria-label', lastButton.title);
-  lastButton.onclick = () => {
-    const target = getLastPosition(positionDomainId(collection), collection.id, { mode: currentMode(collection, section), section });
-    if (target) jumpToEntry(target, { collectionId: collection.id, reason: 'last' });
-  };
+  bindBrowseAnchorButton(lastButton, collection, section);
 
   elements['back-to-top'].classList.remove('hidden');
   elements['back-to-top'].replaceChildren(svgIcon('top'));
@@ -1375,12 +1456,11 @@ function isPhraseCollection(collection) {
 
 function lastPositionButton(collection, section = currentViewKind, mode = getViewMode(collection.id, section)) {
   const entryId = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
-  const target = iconButton('target', 'last-position-button', '继续当前模式的上次位置', () => {
-    const current = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
-    if (current) jumpToEntry(current, { collectionId: collection.id, reason: 'last' });
-  }, { disabled: !entryId, title: entryId ? '继续当前模式的上次位置' : '当前模式尚无上次位置' });
+  const target = iconButton('target', 'last-position-button', entryId ? '短按跳到浏览锚点；长按覆盖保存当前位置' : '长按保存当前位置', () => {});
+  target.disabled = false;
   target.dataset.section = section;
   target.dataset.mode = mode;
+  bindBrowseAnchorButton(target, collection, section);
   return target;
 }
 
@@ -1388,12 +1468,12 @@ function updateLastPositionButton(collection) {
   elements['collection-view'].querySelectorAll('.last-position-button').forEach((target) => {
     const section = target.dataset.section || currentViewKind;
     const mode = target.dataset.mode || getViewMode(collection.id, section);
-    target.disabled = !getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+    target.disabled = false;
   });
   if (elements['bottom-last-position'] && !elements['bottom-toolbar'].classList.contains('hidden')) {
     const section = currentViewKind;
     const mode = getViewMode(collection.id, section);
-    elements['bottom-last-position'].disabled = !getLastPosition(positionDomainId(collection), collection.id, { mode, section });
+    elements['bottom-last-position'].disabled = false;
   }
 }
 
@@ -1486,16 +1566,13 @@ function jumpToSection(section) {
 async function switchCollectionMode(collection, section = currentViewKind) {
   const currentModeValue = getViewMode(collection.id, section);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
-  const first = firstVisibleEntryId();
-  const state = getState();
-  const currentEntry = first ? state.entryById.get(first) : null;
-  if (currentEntry && sectionForEntry(currentEntry) === section) {
-    await setLastPosition(positionDomainId(collection, currentEntry), collection.id, currentEntry.id, { mode: currentModeValue, section });
+  const currentEntry = currentBrowseAnchorEntry(collection, section);
+  pendingJumpEntryId = currentEntry?.id || '';
+  pendingJumpReason = currentEntry ? 'mode' : 'home';
+  if (!currentEntry) {
+    expandedLettersFor(collection.id, section).clear();
+    clearExpandedRelationsForView(collection.id, section);
   }
-  const target = getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode, section });
-  pendingJumpEntryId = target || '';
-  pendingJumpReason = target ? 'mode' : 'home';
-  if (!target) expandedLettersFor(collection.id, section).clear();
   await setViewMode(collection.id, nextMode, section);
 }
 
@@ -1531,14 +1608,24 @@ function calendarForSection(collection, section, dates) {
   }
   const calendar = el('section', { className: 'study-calendar', dataset: { section, month: monthKey }, 'aria-label': `${year} 年 ${month} 月学习日期` }, [
     el('header', { className: 'calendar-header' }, [
-      iconButton('chevron', 'calendar-prev', '上个月', async () => {
+      iconButton('doubleChevron', 'calendar-prev-year', '上一年', async () => {
+        const next = monthShift(monthKey, -12);
+        await setCalendarMonth(collection.id, section, next);
+        calendar.replaceWith(calendarForSection(collection, section, dates));
+      }),
+      iconButton('chevron', 'calendar-prev calendar-prev-month', '上个月', async () => {
         const next = monthShift(monthKey, -1);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
       el('strong', { text: `${year} 年 ${month} 月` }),
-      iconButton('chevron', 'calendar-next', '下个月', async () => {
+      iconButton('chevron', 'calendar-next calendar-next-month', '下个月', async () => {
         const next = monthShift(monthKey, 1);
+        await setCalendarMonth(collection.id, section, next);
+        calendar.replaceWith(calendarForSection(collection, section, dates));
+      }),
+      iconButton('doubleChevron', 'calendar-next-year', '下一年', async () => {
+        const next = monthShift(monthKey, 12);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
@@ -1573,13 +1660,34 @@ function navigationControls(collection, section, sectionContext, mode) {
   return { fixed: [], track };
 }
 
+function scheduleLetterTrackFinalSync(delay = 190) {
+  clearTimeout(letterTrackResyncTimer);
+  letterTrackResyncTimer = window.setTimeout(() => {
+    letterTrackResyncTimer = 0;
+    letterTrackInteractionUntil = 0;
+    syncActiveAlphabetHeading();
+  }, delay);
+}
+
 function populateNavigationBar(nav, controls) {
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
   const markTrackInteraction = (duration = 500) => { letterTrackInteractionUntil = Date.now() + duration; };
-  track.addEventListener('pointerdown', () => markTrackInteraction(800), { passive: true });
-  track.addEventListener('pointerup', () => { markTrackInteraction(180); requestAnimationFrame(syncActiveAlphabetHeading); }, { passive: true });
-  track.addEventListener('pointercancel', () => markTrackInteraction(120), { passive: true });
-  track.addEventListener('scroll', () => markTrackInteraction(180), { passive: true });
+  track.addEventListener('pointerdown', () => {
+    clearTimeout(letterTrackResyncTimer);
+    markTrackInteraction(900);
+  }, { passive: true });
+  track.addEventListener('pointerup', () => {
+    markTrackInteraction(180);
+    scheduleLetterTrackFinalSync(190);
+  }, { passive: true });
+  track.addEventListener('pointercancel', () => {
+    markTrackInteraction(120);
+    scheduleLetterTrackFinalSync(130);
+  }, { passive: true });
+  track.addEventListener('scroll', () => {
+    markTrackInteraction(170);
+    scheduleLetterTrackFinalSync(180);
+  }, { passive: true });
   nav.replaceChildren(track);
   nav.classList.toggle('no-track', !controls.track.length);
 }
@@ -1888,21 +1996,36 @@ function toggleLetterSectionWithAnchor(section, letter, heading) {
 }
 
 function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}) {
-  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
-    const active = item.dataset.section === section && Boolean(letter) && item.dataset.letter === letter;
-    item.classList.toggle('active', active);
-    if (!active || !ensureVisible || Date.now() < letterTrackInteractionUntil) return;
-    const track = item.closest('.letter-nav-track');
-    if (!track) return;
-    if (letter === 'A') { track.scrollLeft = 0; return; }
-    if (letter === '#') { track.scrollLeft = track.scrollWidth - track.clientWidth; return; }
-    const itemRect = item.getBoundingClientRect();
-    const trackRect = track.getBoundingClientRect();
-    let nextLeft = track.scrollLeft;
-    if (itemRect.left < trackRect.left + 2) nextLeft += itemRect.left - trackRect.left - 6;
-    else if (itemRect.right > trackRect.right - 2) nextLeft += itemRect.right - trackRect.right + 6;
-    if (Math.abs(nextLeft - track.scrollLeft) > 1) track.scrollTo({ left: Math.max(0, nextLeft), behavior: 'auto' });
-  });
+  const track = elements['letter-nav'].querySelector('.letter-nav-track');
+  if (!track) return;
+  const buttons = [...track.querySelectorAll('button[data-letter]')];
+  for (const button of buttons) button.classList.toggle('active', button.dataset.letter === letter && button.dataset.section === section);
+  const active = buttons.find((button) => button.dataset.letter === letter && button.dataset.section === section);
+  if (!active || !ensureVisible || Date.now() < letterTrackInteractionUntil) return;
+
+  const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+  if (letter === 'A' || maxScroll <= 1) {
+    if (track.scrollLeft !== 0) track.scrollTo({ left: 0, behavior: 'auto' });
+    return;
+  }
+  if (letter === '#') {
+    if (Math.abs(track.scrollLeft - maxScroll) > 1) track.scrollTo({ left: maxScroll, behavior: 'auto' });
+    return;
+  }
+
+  const trackRect = track.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  const buttonWidth = Math.max(1, activeRect.width || 52);
+  const startGuard = trackRect.left + buttonWidth * 1.15;
+  const endGuard = trackRect.right - buttonWidth * 1.15;
+  let nextLeft = track.scrollLeft;
+  if (activeRect.right >= endGuard) {
+    nextLeft = Math.min(maxScroll, track.scrollLeft + (activeRect.right - endGuard) + buttonWidth * 1.45);
+  } else if (activeRect.left <= startGuard) {
+    nextLeft = Math.max(0, track.scrollLeft - (startGuard - activeRect.left) - buttonWidth * 1.45);
+  } else return;
+  nextLeft = Math.max(0, Math.min(maxScroll, nextLeft));
+  if (Math.abs(nextLeft - track.scrollLeft) > 1) track.scrollTo({ left: nextLeft, behavior: 'auto' });
 }
 
 function syncActiveAlphabetHeading() {
@@ -2289,14 +2412,15 @@ function createTextViewport(entry, collection, gloss, annotationRecord, layoutKi
     role: 'button', tabindex: 0,
     'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
   });
-  const primaryLine = el('div', { className: 'entry-primary-text-line' }, [
-    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
+  const lexemeStack = el('span', { className: 'entry-lexeme-stack' }, [
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
-  ]);
-  const content = el('div', { className: 'entry-text-content' }, [
-    primaryLine,
     gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
   ]);
+  const primaryLine = el('div', { className: 'entry-primary-text-line' }, [
+    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
+    lexemeStack,
+  ]);
+  const content = el('div', { className: 'entry-text-content' }, [primaryLine]);
   viewport.append(content);
   const updateOverflowState = () => {
     if (!isScrollable) return;
@@ -2443,7 +2567,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const studyStamp = getStudyStamp(entry, collection.id);
   const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${(gloss || sourceDomainLabel) ? ' has-meta-row' : ' no-meta-row'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
@@ -2452,7 +2576,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   if (hasRelations) {
     actionItems.push(iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)));
     actionItems[0].setAttribute('aria-expanded', expanded ? 'true' : 'false');
-  }
+  } else actionItems.push(el('span', { className: 'entry-action-placeholder', 'aria-hidden': 'true' }));
   actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
   const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText);
   const lineChildren = [textViewport];
@@ -2462,6 +2586,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
   }));
   lineChildren.push(el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, actionItems));
+  if (sourceDomainLabel) lineChildren.push(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
   const primary = el('div', { className: 'entry-line' }, lineChildren);
   if (annotationRecord) {
     primary.addEventListener('click', (event) => {
@@ -2471,7 +2596,6 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
   }
   const shell = el('div', { className: 'entry-primary-shell' }, [primary]);
-  if (sourceDomainLabel) shell.append(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
   row.append(shell);
   const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
   if (relationPanel) row.append(relationPanel);
@@ -2516,15 +2640,6 @@ async function copyEntry(entry, collection) {
     }
     clearPersistentJump();
     showToast(`已复制：${entry.text}`);
-    const section = sectionForEntry(entry);
-    const mode = getViewMode(collection.id, section);
-    const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
-    setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
-      .then(() => {
-        lastPersistedPositionKey = `${positionDomainId(collection)}\u0000${collection.id}\u0000${mode}\u0000${section}\u0000${entry.id}`;
-        if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
-      })
-      .catch((error) => console.warn('复制后的浏览位置保存失败', error));
   } catch (error) {
     displayError(error);
   } finally {
@@ -2708,34 +2823,11 @@ function firstVisibleEntryId() {
 
 function persistScrollPosition() {
   if (persistentJumpEntryId && Date.now() >= suppressScrollPersistenceUntil) clearPersistentJump();
-  if (!currentCollectionId || Date.now() < suppressScrollPersistenceUntil) return;
   clearTimeout(scrollPersistenceTimer);
   scrollPersistenceTimer = setTimeout(() => {
     scrollPersistenceTimer = 0;
-    if (!currentCollectionId || Date.now() < suppressScrollPersistenceUntil) return;
-    const entryId = firstVisibleEntryId();
-    const state = getState();
-    const entry = entryId ? state.entryById.get(entryId) : null;
-    const collection = state.collectionById.get(currentCollectionId);
-    const isVisibleContext = entry && collection && (collection.virtual || entry.domainId === collection.domainId);
-    if (isVisibleContext) {
-      const section = sectionForEntry(entry);
-      const mode = getViewMode(collection.id, section);
-      const positionKey = `${positionDomainId(collection)}\u0000${collection.id}\u0000${mode}\u0000${section}\u0000${entry.id}`;
-      if (positionKey === lastPersistedPositionKey) return;
-      const firstSavedPosition = !getLastPosition(positionDomainId(collection, entry), collection.id, { mode, section });
-      lastPersistedPositionKey = positionKey;
-      setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section })
-        .then(() => {
-          if (firstSavedPosition && currentCollectionId === collection.id) updateLastPositionButton(collection);
-        })
-        .catch((error) => {
-          lastPersistedPositionKey = '';
-          console.warn('浏览位置保存失败', error);
-        });
-    }
     persistCurrentHistorySnapshot();
-  }, 320);
+  }, 220);
 }
 
 function updateBackToTopVisibility() {
@@ -2749,16 +2841,7 @@ function updateBackToTopVisibility() {
 
 function returnToTop() {
   if (!currentCollectionId) return;
-  const entryId = firstVisibleEntryId();
-  const state = getState();
-  const entry = entryId ? state.entryById.get(entryId) : null;
-  const collection = state.collectionById.get(currentCollectionId);
-  if (entry && collection) {
-    const section = sectionForEntry(entry);
-    const mode = getViewMode(collection.id, section);
-    setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section }).catch((error) => console.warn('返回顶部前保存位置失败', error));
-  }
-  suppressScrollPersistence(900);
+  suppressScrollPersistence(500);
   navigationRevision += 1;
   window.scrollTo({ top: 0, behavior: 'auto' });
 }

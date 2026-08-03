@@ -56,7 +56,7 @@ const legacy = {
 };
 const backup = migrateLegacyBackup(legacy, { timestamp });
 assert.equal(backup.schemaVersion, 5);
-assert.equal(backup.appVersion, '3.5.0');
+assert.equal(backup.appVersion, '3.5.1');
 assert.equal(backup.domains.length, 1);
 assert.equal(backup.collections.filter((item) => item.type === 'normal').length, 2);
 assert.equal(backup.collections.find((item) => item.type === 'system-phrases').name, '短语总表');
@@ -194,11 +194,11 @@ assert.equal(parseImportContent(JSON.stringify(v307Backup), 'backup.json').kind,
 assert.equal(parseRetryAfter('2'), 2000);
 assert.ok(createAiCheckBatches(Array.from({ length: 75 }, (_, index) => ({ id: `e${index}`, text: `word-${index}` }))).every((batch) => batch.length <= 32));
 
-// Complete 3.5.0 seed contract.
+// Complete 3.5.1 seed contract.
 const rawSeed = JSON.parse(fs.readFileSync(path.join(root, 'data/seed.json'), 'utf8'));
 const seed = migrateLegacyBackup(rawSeed, { timestamp });
 assert.equal(seed.schemaVersion, 5);
-assert.equal(seed.appVersion, '3.5.0');
+assert.equal(seed.appVersion, '3.5.1');
 assert.equal(seed.settings.builtInSeedRevision, 3);
 assert.equal(seed.studyStamps.length, 0);
 assert.equal(seed.domains.length, 2);

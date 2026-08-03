@@ -1,4 +1,4 @@
-/* Vocabulary Index 3.5.0 runtime/UI stabilization layer.
+/* Vocabulary Index 3.5.1 iPhone UI/state correction layer.
    Structural surfaces are rectangular, scrolling has one owner, and ordinary
    collections expose word/phrase as separate projections. */
 
@@ -299,7 +299,7 @@ body { background-image: none !important; }
   box-shadow: none !important;
   overflow: visible !important;
 }
-.entry-row.has-gloss .entry-line { min-height: 58px !important; }
+.entry-row.has-meta-row .entry-line { min-height: 58px !important; }
 .entry-row.phrase-two-line .entry-line,
 .entry-row.phrase-extreme .entry-line { min-height: 62px !important; }
 .entry-index-badge,
@@ -307,16 +307,17 @@ body { background-image: none !important; }
 .entry-relation-tab { display: none !important; }
 .entry-source-domain {
   position: absolute !important;
-  top: -7px !important;
   right: 8px !important;
+  bottom: 5px !important;
+  top: auto !important;
   z-index: 4;
-  max-width: 46%;
-  padding: 0 4px;
+  max-width: 42%;
+  padding: 0 !important;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 0 !important;
-  background: var(--surface) !important;
+  background: transparent !important;
   color: var(--muted);
   font-size: 9px;
   line-height: 12px;
@@ -361,10 +362,20 @@ body { background-image: none !important; }
 .entry-primary-text-line {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 7px;
   white-space: nowrap;
 }
+.entry-lexeme-stack {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+.entry-row.has-meta-row .entry-text-viewport,
+.entry-row.has-meta-row .entry-actions,
+.entry-row.has-meta-row .entry-study-date { align-self: flex-start !important; }
 .word-normal .entry-primary-text-line,
 .phrase-extreme .entry-primary-text-line { min-width: max-content; }
 .phrase-normal .entry-primary-text-line,
@@ -486,21 +497,71 @@ body { background-image: none !important; }
 .query-menu-option .ui-icon { width: 18px !important; height: 18px !important; }
 .query-menu::after { display: none !important; }
 
-/* Dialog geometry and form alignment. */
+/* Dialog shell: the native dialog owns viewport width; cards fill it. */
 html.modal-open, body.modal-open { overflow: hidden !important; overscroll-behavior: none !important; }
+.app-dialog,
+.sheet-dialog,
+.confirm-dialog {
+  width: min(520px, calc(100vw - 32px)) !important;
+  max-width: none !important;
+  max-height: min(calc(var(--visual-height) - 32px), 780px) !important;
+  margin: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
 .app-dialog form,
 .sheet-dialog .dialog-card,
 .confirm-dialog .dialog-card {
-  width: min(520px, calc(100vw - 28px)) !important;
-  max-height: min(calc(var(--visual-height) - 36px), 760px) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: min(calc(var(--visual-height) - 32px), 780px) !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
   border-radius: 12px !important;
   background: var(--surface) !important;
   background-image: none !important;
   box-shadow: 0 10px 30px rgb(0 0 0 / 13%) !important;
+  overflow: hidden !important;
   overscroll-behavior: contain;
 }
-.dialog-body { overscroll-behavior: contain; }
-.search-dialog .dialog-card { width: min(500px, calc(100vw - 28px)) !important; }
+.search-dialog { width: min(500px, calc(100vw - 32px)) !important; }
+.dialog-header {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.dialog-header > div { min-width: 0; flex: 1; }
+.dialog-header .icon-button {
+  flex: 0 0 44px !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.dialog-header .icon-button .ui-icon { width: 18px !important; height: 18px !important; }
+.search-dialog .dialog-header {
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) 44px !important;
+  align-items: center !important;
+}
+.search-dialog .dialog-header > div { grid-column: 2 !important; }
+.search-dialog .dialog-header h2 { text-align: center !important; }
+.search-dialog .dialog-header .icon-button { grid-column: 3 !important; }
+.dialog-body,
+.dialog-actions,
+.search-controls,
+.data-exchange-form,
+.action-list,
+.dialog-body > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.dialog-body { overflow-x: hidden !important; overscroll-behavior: contain; }
 .search-controls {
   width: 100%;
   display: grid !important;
@@ -510,14 +571,28 @@ html.modal-open, body.modal-open { overflow: hidden !important; overscroll-behav
 }
 .search-controls input,
 .search-controls select,
-.search-controls .secondary-button {
-  grid-column: 1 !important;
+.search-controls .secondary-button,
+.dialog-body input,
+.dialog-body select,
+.dialog-body textarea,
+.dialog-body .field,
+.dialog-body .action-list,
+.dialog-body .data-exchange-form {
   width: 100% !important;
+  max-width: 100% !important;
   min-width: 0 !important;
-  box-sizing: border-box;
+  box-sizing: border-box !important;
 }
-.dialog-header > div { min-width: 0; flex: 1; }
-.search-dialog .dialog-header h2 { text-align: center; }
+.dialog-actions {
+  width: 100% !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  box-sizing: border-box !important;
+}
+.app-dialog::backdrop,
+.sheet-dialog::backdrop,
+.confirm-dialog::backdrop { background: rgb(28 27 25 / 48%) !important; }
 
 /* Lightweight page opacity transition only; no layout/scroll animation. */
 .collection-view { transition: opacity .09s linear; }
@@ -564,7 +639,7 @@ html.modal-open, body.modal-open { overflow: hidden !important; overscroll-behav
   box-shadow: none !important;
 }
 
-/* 3.5.0 final runtime corrections: remove stale 3.4 projection decoration and
+/* 3.5.1 final runtime corrections: remove stale 3.4 projection decoration and
    make the bottom docks a single opaque rectangular language. */
 #collection-view.system-collection-view,
 #collection-view.global-system-view,
@@ -687,6 +762,23 @@ html.modal-open, body.modal-open { overflow: hidden !important; overscroll-behav
   box-shadow: none !important;
 }
 
-/* Conflict source labels occupy a deliberate top-border lane instead of
-   painting into the preceding entry. */
-.entry-row.has-source-domain { padding-top: 7px !important; }
+/* Conflict source labels share the existing second metadata row. */
+.entry-row.has-source-domain { padding-top: 0 !important; }
+
+/* 3.5.1 calendar navigation: outer year jumps, inner month jumps. */
+.calendar-header {
+  grid-template-columns: 44px 44px minmax(0, 1fr) 44px 44px !important;
+  min-height: 44px !important;
+}
+.calendar-prev-year, .calendar-prev-month, .calendar-next-month, .calendar-next-year {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  border-radius: 0 !important;
+}
+.calendar-prev-year .ui-icon, .calendar-prev-month .ui-icon { transform: rotate(90deg) !important; }
+.calendar-next-month .ui-icon, .calendar-next-year .ui-icon { transform: rotate(-90deg) !important; }
+.calendar-header strong { min-width: 0; text-align: center; }
+
+/* Manual browse anchor is always available for long-press save. */
+#bottom-last-position:disabled { opacity: 1 !important; color: var(--accent-ink) !important; }

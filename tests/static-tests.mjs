@@ -21,21 +21,21 @@ const sw = read('sw.js');
 const cssBase = read('css/v3.css');
 const css331 = read('css/v3.3.1.css');
 const css340 = read('css/v3.4.0.css');
-const cssRelease = read('css/v3.5.0.css');
+const cssRelease = read('css/v3.5.1.css');
 const css = `${cssBase}\n${css331}\n${css340}\n${cssRelease}`;
 const pkg = JSON.parse(read('package.json'));
 const seed = JSON.parse(read('data/seed.json'));
 
 // Release identity and complete shell.
-assert.equal(pkg.version, '3.5.0');
-assert.equal(seed.appVersion, '3.5.0');
-assert.ok(html.includes('name="application-version" content="3.5.0"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.5.0</title>'));
-assert.ok(app.includes("const MODULE_VERSION = '3.5.0'"));
-assert.ok(sw.includes('v3.5.0-ios-shell-20260803-1'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.0'));
-assert.ok(html.includes('./css/v3.5.0.css'));
-assert.ok(sw.includes('./css/v3.5.0.css'));
+assert.equal(pkg.version, '3.5.1');
+assert.equal(seed.appVersion, '3.5.1');
+assert.ok(html.includes('name="application-version" content="3.5.1"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.5.1</title>'));
+assert.ok(app.includes("const MODULE_VERSION = '3.5.1'"));
+assert.ok(sw.includes('v3.5.1-ios-shell-20260803-2'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.1'));
+assert.ok(html.includes('./css/v3.5.1.css'));
+assert.ok(sw.includes('./css/v3.5.1.css'));
 assert.ok(html.includes('maximum-scale=1') && html.includes('viewport-fit=cover'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
@@ -91,13 +91,23 @@ assert.ok(cssRelease.includes('env(safe-area-inset-bottom)'));
 assert.ok(ui.includes("elements['search-button'].classList.add('hidden')"));
 assert.ok(ui.includes("elements['bottom-search'].onclick = openSearchDialog"));
 assert.ok(ui.includes("elements['bottom-view-switch']"));
+assert.ok(ui.includes('function bindBrowseAnchorButton'));
+assert.ok(ui.includes("showToast('长按此按钮保存当前位置')"));
+assert.ok(ui.includes('await saveCurrentBrowseAnchor(collection, section)'));
+assert.ok(!ui.includes('复制后的浏览位置保存失败'));
+assert.ok(!ui.includes('返回顶部前保存位置失败'));
+assert.ok(ui.includes("pendingJumpEntryId = currentEntry?.id || ''"));
+assert.ok(!ui.includes('const target = getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode, section })'));
 
 // Alphabet track contains letters only and follows immediately, without smooth chase.
 assert.ok(ui.includes("className: 'letter-nav-track'"));
 assert.ok(ui.includes('return { fixed: [], track }'));
 assert.ok(!ui.includes("behavior: 'smooth'"), '运行时不得再使用平滑滚动追赶');
-assert.ok(ui.includes("if (letter === 'A') { track.scrollLeft = 0"));
-assert.ok(ui.includes("if (letter === '#') { track.scrollLeft = track.scrollWidth - track.clientWidth"));
+assert.ok(ui.includes("if (letter === 'A' || maxScroll <= 1)"));
+assert.ok(ui.includes("if (letter === '#')"));
+assert.ok(ui.includes('const startGuard = trackRect.left + buttonWidth * 1.15'));
+assert.ok(ui.includes('const endGuard = trackRect.right - buttonWidth * 1.15'));
+assert.ok(ui.includes('scheduleLetterTrackFinalSync'));
 assert.ok(cssRelease.includes('scroll-behavior: auto !important'));
 assert.ok(cssRelease.includes('.letter-heading'));
 assert.ok(cssRelease.includes('position: sticky !important'));
@@ -105,17 +115,21 @@ assert.ok(cssRelease.includes('backdrop-filter: none !important'));
 
 // Entry layout: inline number, source on shell border, no index badge/side rail.
 assert.ok(ui.includes("className: 'entry-index-inline'"));
-assert.ok(ui.includes("shell.append(el('span', { className: 'entry-source-domain'"));
+assert.ok(ui.includes("lineChildren.push(el('span', { className: 'entry-source-domain'"));
 assert.ok(!ui.includes("className: 'entry-index-badge'"));
 assert.ok(!ui.includes("className: 'entry-relation-rail'"));
 assert.ok(!ui.includes("className: `entry-relation-tab"));
 assert.ok(ui.includes("actionItems.push(iconButton('disclosure'"));
+assert.ok(ui.includes("else actionItems.push(el('span', { className: 'entry-action-placeholder'"));
 assert.ok(ui.indexOf("actionItems.push(iconButton('disclosure'") < ui.indexOf('actionItems.push(actions.refresh, actions.pin, actions.query, actions.more)'));
 assert.ok(ui.includes("if (studyStamp) lineChildren.push"));
 assert.ok(cssRelease.includes('.entry-study-date:not(.marked) { display: none'));
 assert.ok(cssRelease.includes('display: flex !important'));
 assert.ok(cssRelease.includes('.entry-index-badge,\n.entry-relation-rail,\n.entry-relation-tab { display: none'));
 assert.ok(cssRelease.includes('.entry-source-domain'));
+assert.ok(cssRelease.includes('bottom: 5px !important'));
+assert.ok(cssRelease.includes('.entry-row.has-meta-row .entry-line'));
+assert.ok(cssRelease.includes('.entry-lexeme-stack'));
 assert.ok(cssRelease.includes('border-radius: 0 !important'));
 
 // Long content remains accessible; phrase clamps are explicitly disabled.
@@ -144,6 +158,20 @@ assert.ok(!cssRelease.includes('backdrop-filter: blur'));
 assert.ok(cssRelease.includes('.search-controls input'));
 assert.ok(cssRelease.includes('width: 100% !important'));
 assert.ok(cssRelease.includes('grid-template-columns: minmax(0, 1fr) !important'));
+assert.ok(cssRelease.includes('.app-dialog,'));
+assert.ok(cssRelease.includes('.sheet-dialog,'));
+assert.ok(cssRelease.includes('.confirm-dialog {'));
+assert.ok(cssRelease.includes('width: min(520px, calc(100vw - 32px)) !important'));
+assert.ok(cssRelease.includes('.search-dialog .dialog-header'));
+assert.ok(cssRelease.includes('grid-template-columns: 44px minmax(0, 1fr) 44px !important'));
+
+// Calendar uses outer year jumps and inner month jumps.
+assert.ok(ui.includes("iconButton('doubleChevron', 'calendar-prev-year', '上一年'"));
+assert.ok(ui.includes("monthShift(monthKey, -12)"));
+assert.ok(ui.includes("iconButton('chevron', 'calendar-prev calendar-prev-month', '上个月'"));
+assert.ok(ui.includes("iconButton('chevron', 'calendar-next calendar-next-month', '下个月'"));
+assert.ok(ui.includes("monthShift(monthKey, 12)"));
+assert.ok(cssRelease.includes('grid-template-columns: 44px 44px minmax(0, 1fr) 44px 44px !important'));
 
 // Projection semantics: concrete cross-domain entries, unique counts, priority ownership.
 assert.ok(model.includes('export function buildProjection'));
@@ -204,14 +232,14 @@ for (const relative of precache) {
   if (clean) assert.ok(exists(clean), `预缓存资源不存在：${clean}`);
 }
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.5.0'));
+assert.ok(manifest.name.includes('3.5.1'));
 assert.equal(manifest.display, 'standalone');
 
 // Lifecycle and release documents are part of every full-source package.
 for (const file of [
-  'PROJECT_HISTORY.md', 'CHANGE_REPORT_3.5.0.md', 'AUDIT_REPORT_3.5.0.md',
-  'TEST_REPORT_3.5.0.md', 'MIGRATION_3.5.0.md', 'UX_SPEC_3.5.0.md',
-  'PRODUCT_MANUAL_3.5.0.md',
+  'PROJECT_HISTORY.md', 'CHANGE_REPORT_3.5.1.md', 'AUDIT_REPORT_3.5.1.md',
+  'TEST_REPORT_3.5.1.md', 'MIGRATION_3.5.1.md', 'UX_SPEC_3.5.1.md',
+  'PRODUCT_MANUAL_3.5.1.md',
 ]) assert.ok(exists(file), `缺少生命周期/交付文档：${file}`);
 
 // All relative ES module dependencies exist.

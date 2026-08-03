@@ -19,7 +19,7 @@ const collections = [
   createCollection({ domainId: domain.id, name: '短语总表', type: 'system-phrases', order: 1, timestamp }),
 ];
 let backup = canonicalizeBackup({
-  schemaVersion: 5, appVersion: '3.5.0', exportedAt: timestamp,
+  schemaVersion: 5, appVersion: '3.5.1', exportedAt: timestamp,
   domains: [domain], collections, entries: [], memberships: [], phraseTokens: [], pins: [], annotations: [], studyStamps: [],
   settings: { viewModes: {}, calendarMonths: {}, lastPositions: {}, builtInSeedRevision: 3 },
 });
@@ -48,7 +48,7 @@ for (let step = 0; step < 800; step += 1) {
     ensureMembership(word, pick(normalCollections));
   } else if (operation === 3) {
     const phrase = ensureEntry(`word${Math.floor(random() * 70)} pool`);
-    // 3.5.0 ordinary collections may contain phrases.
+    // 3.5.1 ordinary collections may contain phrases.
     if (random() < 0.85) ensureMembership(phrase, pick(normalCollections));
   } else if (operation === 4 && backup.entries.length) {
     const entry = pick(backup.entries);

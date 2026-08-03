@@ -1,4 +1,4 @@
-# Vocabulary Index 3.4.0 数据格式
+# Vocabulary Index 3.5.1 数据格式
 
 ## 1. 完整备份
 
@@ -7,7 +7,7 @@
 ```json
 {
   "schemaVersion": 5,
-  "appVersion": "3.4.0",
+  "appVersion": "3.5.1",
   "domains": [],
   "collections": [],
   "entries": [],
@@ -257,7 +257,7 @@ data/vix-json.schema.json
   "version": 1,
   "application": {
     "name": "Vocabulary Index",
-    "version": "3.4.0"
+    "version": "3.5.1"
   },
   "subject": {
     "scope": "domain-entry",

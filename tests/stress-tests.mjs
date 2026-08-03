@@ -48,7 +48,7 @@ for (let step = 0; step < 800; step += 1) {
     ensureMembership(word, pick(normalCollections));
   } else if (operation === 3) {
     const phrase = ensureEntry(`word${Math.floor(random() * 70)} pool`);
-    // 3.5.1 ordinary collections may contain phrases.
+    // 3.5.0 ordinary collections may contain phrases.
     if (random() < 0.85) ensureMembership(phrase, pick(normalCollections));
   } else if (operation === 4 && backup.entries.length) {
     const entry = pick(backup.entries);

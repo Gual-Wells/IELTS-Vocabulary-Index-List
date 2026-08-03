@@ -35,6 +35,7 @@ const elements = Object.fromEntries([
 let currentCollectionId = '';
 let currentViewKind = 'word';
 const expandedLettersByCollection = new Map();
+const letterTrackStates = new WeakMap();
 let pendingJumpEntryId = '';
 let pendingJumpReason = 'jump';
 let persistentJumpEntryId = '';
@@ -71,11 +72,9 @@ let activeQueryMenu = null;
 let activeRelationTargetMenu = null;
 let scrollUiFrame = 0;
 let letterTrackInteractionUntil = 0;
-let letterTrackResyncTimer = 0;
-let letterTrackProgrammaticUntil = 0;
-let lastLetterTrackIndex = -1;
-let lastLetterTrackDirection = 0;
-let letterTrackDirectionLockUntil = 0;
+let letterTrackSyncTimer = 0;
+let browseAnchorPress = null;
+let browseAnchorSuppressClickUntil = 0;
 let routeRenderFrame = 0;
 let entryChunkObserver = null;
 const entryChunkData = new WeakMap();
@@ -115,7 +114,7 @@ const ICONS = {
   pin: '<path d="M9.1 3.8h5.8l-.75 4.4 2.8 2.75v1.75h-3.65v6.25L12 21l-1.3-2.05V12.7H7.05v-1.75l2.8-2.75-.75-4.4Z"></path>',
   more: '<circle cx="5.2" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"></circle><circle cx="18.8" cy="12" r="1.35" fill="currentColor" stroke="none"></circle>',
   chevron: '<path d="m8.4 9.3 3.6 3.6 3.6-3.6"></path>',
-  doubleChevron: '<path d="m6.7 9.3 3.6 3.6 3.6-3.6M11.2 9.3l3.6 3.6 3.6-3.6"></path>',
+  chevrons: '<path d="m6.3 9.3 3.6 3.6 3.6-3.6"></path><path d="m11.4 9.3 3.6 3.6 3.6-3.6"></path>',
   enter: '<path d="M18.8 5.2v6.9H7.1"></path><path d="m10.1 9.1-3 3 3 3"></path>',
   refresh: '<rect x="4.2" y="5.4" width="15.6" height="14.4" rx="2.5"></rect><path d="M8 3.5v3.9M16 3.5v3.9M4.2 9.7h15.6"></path><path d="M15.8 13.1a3.55 3.55 0 1 1-1.05-1.2"></path><path d="M15.8 11.15v2.35h-2.35"></path>',
   calendar: '<rect x="3.8" y="5.4" width="16.4" height="15" rx="2.4"></rect><path d="M8 3.4v4M16 3.4v4M3.8 9.9h16.4"></path>',
@@ -194,10 +193,12 @@ function updateVisualViewportVars() {
   viewportUpdateFrame = requestAnimationFrame(() => {
     const viewport = window.visualViewport;
     const height = viewport?.height || window.innerHeight;
+    const width = viewport?.width || window.innerWidth;
     const top = viewport?.offsetTop || 0;
     const left = viewport?.offsetLeft || 0;
     const bottom = Math.max(0, window.innerHeight - top - height);
     document.documentElement.style.setProperty('--visual-height', `${Math.round(height)}px`);
+    document.documentElement.style.setProperty('--visual-width', `${Math.round(width)}px`);
     document.documentElement.style.setProperty('--visual-top', `${Math.round(top)}px`);
     document.documentElement.style.setProperty('--visual-left', `${Math.round(left)}px`);
     document.documentElement.style.setProperty('--visual-bottom', `${Math.round(bottom)}px`);
@@ -260,7 +261,7 @@ function unlockPageForModal() {
 }
 
 function modalScrollableTarget(target) {
-  const node = target instanceof Element ? target.closest('.dialog-body, .dialog-card, #dialog-form, #confirm-form') : null;
+  const node = target instanceof Element ? target.closest('.dialog-body') : null;
   if (!node) return null;
   return node.scrollHeight > node.clientHeight + 1 ? node : null;
 }
@@ -488,10 +489,12 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
     clearExpandedRelationsForView(collection.id, viewKind);
     return;
   }
-  if (entry && ['search', 'relation', 'route', 'annotation', 'mode'].includes(reason)) {
-    expanded.clear();
+  if (entry && ['search', 'relation', 'route', 'annotation', 'mode-anchor'].includes(reason)) {
     clearExpandedRelationsForView(collection.id, viewKind);
-    expanded.add(letterForEntry(entry));
+    if (getViewMode(collection.id, viewKind) === 'alphabet') {
+      expanded.clear();
+      expanded.add(letterForEntry(entry));
+    }
   }
 }
 
@@ -1315,152 +1318,106 @@ function currentMode(collection, section = currentViewKind) {
   return getViewMode(collection.id, section);
 }
 
-function entryAtReadingProbe(collection, section = currentViewKind, { allowFirstVisible = false } = {}) {
-  const sectionContext = collectionRenderContext?.sections?.get(section);
-  if (!sectionContext?.root) return null;
-  const bounds = readingViewportBounds();
-  // Calendar, large-title and page-top states do not own a semantic Entry yet.
-  // Only once the actual content root reaches the reading viewport can an Entry
-  // be used as a mode-conversion or manual-anchor target.
-  if (sectionContext.root.getBoundingClientRect().top > bounds.top + 24) return null;
-  const probeXs = [window.innerWidth * .28, window.innerWidth * .5];
-  const probeOffsets = [54, 82, 112];
-  for (const offset of probeOffsets) for (const probeX of probeXs) {
-    const probeY = Math.min(bounds.bottom - 2, bounds.top + offset);
-    const node = document.elementFromPoint(Math.max(18, Math.min(window.innerWidth - 18, probeX)), probeY);
-    const row = /** @type {HTMLElement | null} */ (node?.closest?.('.entry-row[data-entry-id]') || null);
-    if (!row?.dataset.entryId || row.dataset.section !== section) continue;
-    const entry = getState().entryById.get(row.dataset.entryId);
-    if (entry && getState().visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)) return entry;
-  }
-  if (!allowFirstVisible) return null;
-  const rows = /** @type {NodeListOf<HTMLElement>} */ (elements['entry-list'].querySelectorAll(`.entry-row[data-entry-id][data-section="${section}"]`));
-  for (const row of rows) {
-    const rect = row.getBoundingClientRect();
-    if (rect.bottom <= bounds.top + 1 || rect.top >= bounds.bottom - 1) continue;
-    const entry = getState().entryById.get(row.dataset.entryId || '');
-    if (entry && getState().visibleEntryIdsByCollection.get(collection.id)?.has(entry.id)) return entry;
-  }
-  return null;
+function browseAnchorEntryId(collection, section = currentViewKind) {
+  const mode = getViewMode(collection.id, section);
+  return getLastPosition(positionDomainId(collection), collection.id, { mode, section }) || '';
 }
 
-function currentBrowseAnchorEntry(collection, section = currentViewKind, options = {}) {
-  return entryAtReadingProbe(collection, section, options);
+function cancelBrowseAnchorPress({ suppressClick = false } = {}) {
+  const press = browseAnchorPress;
+  if (!press) return;
+  browseAnchorPress = null;
+  clearTimeout(press.timer);
+  press.button?.classList.remove('saving-anchor');
+  if (press.button?.hasPointerCapture?.(press.pointerId)) {
+    try { press.button.releasePointerCapture(press.pointerId); } catch {}
+  }
+  if (suppressClick) browseAnchorSuppressClickUntil = Date.now() + 450;
 }
 
-async function saveCurrentBrowseAnchor(collection, section = currentViewKind) {
-  const entry = currentBrowseAnchorEntry(collection, section, { allowFirstVisible: true });
-  if (!entry) {
-    showToast('当前位置没有可保存的词条', 'warning');
+async function saveBrowseAnchor(collection, section, buttonNode) {
+  const mode = getViewMode(collection.id, section);
+  const entryId = firstVisibleEntryId() || '';
+  const entry = entryId ? getState().entryById.get(entryId) : null;
+  if (!entry || sectionForEntry(entry) !== section) {
+    showToast('当前位置没有可保存的词条');
     return false;
   }
-  const mode = currentMode(collection, section);
-  await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
-  updateLastPositionButton(collection);
-  showToast(`已保存位置：${entry.text}`);
+  const saved = await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
+  if (!saved) {
+    showToast('当前位置已失效，未保存浏览锚点');
+    return false;
+  }
+  navigator.vibrate?.(10);
+  buttonNode?.classList.add('has-anchor');
+  buttonNode?.classList.remove('no-anchor');
+  buttonNode?.setAttribute('aria-label', '浏览锚点：短按跳转，长按覆盖当前位置');
+  buttonNode.title = '短按跳转到浏览锚点；长按覆盖为当前位置';
+  showToast('已保存当前位置');
   return true;
 }
 
-function bindBrowseAnchorButton(target, collection, section = currentViewKind) {
-  const HOLD_MS = 520;
-  const MOVE_LIMIT = 10;
-  let holdTimer = 0;
-  let pointerId = null;
-  let startX = 0;
-  let startY = 0;
-  let startScrollY = 0;
-  let longPressCommitted = false;
-  let suppressNextClick = false;
-
-  const clearHold = () => {
-    if (holdTimer) window.clearTimeout(holdTimer);
-    holdTimer = 0;
+function bindBrowseAnchorButton(buttonNode, collection, section) {
+  const updateState = () => {
+    const hasAnchor = Boolean(browseAnchorEntryId(collection, section));
+    buttonNode.disabled = false;
+    buttonNode.classList.toggle('has-anchor', hasAnchor);
+    buttonNode.classList.toggle('no-anchor', !hasAnchor);
+    buttonNode.title = hasAnchor ? '短按跳转到浏览锚点；长按覆盖为当前位置' : '长按保存当前位置；短按查看说明';
+    buttonNode.setAttribute('aria-label', hasAnchor ? '浏览锚点：短按跳转，长按覆盖当前位置' : '浏览锚点：长按保存当前位置');
   };
-  const resetPointer = ({ suppressClick = false } = {}) => {
-    const activePointer = pointerId;
-    clearHold();
-    pointerId = null;
-    if (suppressClick) suppressNextClick = true;
-    if (activePointer != null) {
-      try { target.releasePointerCapture?.(activePointer); } catch {}
-    }
+  updateState();
+  buttonNode.onpointerdown = (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    cancelBrowseAnchorPress();
+    browseAnchorPress = {
+      button: buttonNode,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      fired: false,
+      timer: window.setTimeout(() => {
+        const press = browseAnchorPress;
+        if (!press || press.button !== buttonNode) return;
+        press.fired = true;
+        browseAnchorSuppressClickUntil = Date.now() + 650;
+        buttonNode.classList.add('saving-anchor');
+        saveBrowseAnchor(collection, section, buttonNode).catch(displayError).finally(() => buttonNode.classList.remove('saving-anchor'));
+      }, 520),
+    };
+    try { buttonNode.setPointerCapture(event.pointerId); } catch {}
   };
-  const commitLongPress = async () => {
-    if (longPressCommitted || pointerId == null) return;
-    longPressCommitted = true;
-    suppressNextClick = true;
-    clearHold();
-    try {
-      await saveCurrentBrowseAnchor(collection, section);
-      target.title = '短按跳到浏览锚点；长按覆盖保存当前位置';
-      target.setAttribute('aria-label', target.title);
-      navigator.vibrate?.(12);
-    } catch (error) { displayError(error); }
+  buttonNode.onpointermove = (event) => {
+    const press = browseAnchorPress;
+    if (!press || press.button !== buttonNode || press.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 10) cancelBrowseAnchorPress({ suppressClick: true });
   };
-
-  target.onpointerdown = (event) => {
-    if (event.button !== 0 || pointerId != null) return;
-    pointerId = event.pointerId;
-    startX = event.clientX;
-    startY = event.clientY;
-    startScrollY = window.scrollY;
-    longPressCommitted = false;
-    suppressNextClick = false;
-    clearHold();
-    try { target.setPointerCapture?.(event.pointerId); } catch {}
-    holdTimer = window.setTimeout(commitLongPress, HOLD_MS);
+  buttonNode.onpointerup = (event) => {
+    const press = browseAnchorPress;
+    if (!press || press.button !== buttonNode || press.pointerId !== event.pointerId) return;
+    const fired = press.fired;
+    cancelBrowseAnchorPress({ suppressClick: fired });
   };
-  target.onpointermove = (event) => {
-    if (pointerId !== event.pointerId || longPressCommitted) return;
-    const moved = Math.hypot(event.clientX - startX, event.clientY - startY);
-    if (moved > MOVE_LIMIT || Math.abs(window.scrollY - startScrollY) > 2) resetPointer({ suppressClick: true });
+  buttonNode.onpointercancel = () => cancelBrowseAnchorPress({ suppressClick: true });
+  buttonNode.onlostpointercapture = () => {
+    if (browseAnchorPress?.button === buttonNode) cancelBrowseAnchorPress({ suppressClick: browseAnchorPress.fired });
   };
-  target.onpointerup = (event) => {
-    if (pointerId !== event.pointerId) return;
-    clearHold();
-    try { target.releasePointerCapture?.(event.pointerId); } catch {}
-    pointerId = null;
-    if (longPressCommitted) {
+  buttonNode.oncontextmenu = (event) => event.preventDefault();
+  buttonNode.onclick = (event) => {
+    if (Date.now() < browseAnchorSuppressClickUntil) {
       event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-  target.onpointercancel = () => resetPointer({ suppressClick: true });
-  target.onlostpointercapture = () => { if (!longPressCommitted) resetPointer(); };
-  target.oncontextmenu = (event) => {
-    event.preventDefault();
-    if (!longPressCommitted && pointerId != null) commitLongPress();
-  };
-  target.onclick = (event) => {
-    if (suppressNextClick || longPressCommitted) {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressNextClick = false;
-      longPressCommitted = false;
       return;
     }
-    const mode = currentMode(collection, section);
-    const anchor = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
-    if (!anchor) {
-      showToast('长按此按钮保存当前位置');
-      return;
-    }
-    if (!getState().visibleEntryIdsByCollection.get(collection.id)?.has(anchor)) {
-      showToast('保存的位置已失效，请长按重新保存', 'warning');
-      return;
-    }
-    jumpToEntry(anchor, { collectionId: collection.id, reason: 'last' });
+    const target = browseAnchorEntryId(collection, section);
+    if (target) jumpToEntry(target, { collectionId: collection.id, reason: 'last' });
+    else showToast('长按此按钮保存当前位置');
   };
 }
 
 function renderBottomToolbar(collection, section = currentViewKind) {
   const mode = currentMode(collection, section);
-  const last = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
   const lastButton = elements['bottom-last-position'];
   lastButton.replaceChildren(svgIcon('target'));
-  lastButton.disabled = false;
-  lastButton.title = last ? '短按跳到浏览锚点；长按覆盖保存当前位置' : '长按保存当前位置';
-  lastButton.setAttribute('aria-label', lastButton.title);
   bindBrowseAnchorButton(lastButton, collection, section);
 
   elements['back-to-top'].classList.remove('hidden');
@@ -1511,29 +1468,6 @@ function isCompositeCollection(collection) {
 
 function isPhraseCollection(collection) {
   return collection?.type === 'system-phrases' || collection?.type === 'system-global-phrases';
-}
-
-function lastPositionButton(collection, section = currentViewKind, mode = getViewMode(collection.id, section)) {
-  const entryId = getLastPosition(positionDomainId(collection), collection.id, { mode, section });
-  const target = iconButton('target', 'last-position-button', entryId ? '短按跳到浏览锚点；长按覆盖保存当前位置' : '长按保存当前位置', () => {});
-  target.disabled = false;
-  target.dataset.section = section;
-  target.dataset.mode = mode;
-  bindBrowseAnchorButton(target, collection, section);
-  return target;
-}
-
-function updateLastPositionButton(collection) {
-  elements['collection-view'].querySelectorAll('.last-position-button').forEach((target) => {
-    const section = target.dataset.section || currentViewKind;
-    const mode = target.dataset.mode || getViewMode(collection.id, section);
-    target.disabled = false;
-  });
-  if (elements['bottom-last-position'] && !elements['bottom-toolbar'].classList.contains('hidden')) {
-    const section = currentViewKind;
-    const mode = getViewMode(collection.id, section);
-    elements['bottom-last-position'].disabled = false;
-  }
 }
 
 function syncPinIndexForEntry(collectionId, entryId) {
@@ -1622,19 +1556,36 @@ function jumpToSection(section) {
   positionHeadingBelowChrome(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
 }
 
+function modeSwitchAnchorEntryId(section, mode) {
+  if (!currentCollectionId || !collectionRenderContext || collectionRenderContext.mode !== mode) return '';
+  const bounds = readingViewportBounds();
+  const largeTitle = elements['large-title'];
+  if (largeTitle && largeTitle.getBoundingClientRect().bottom > bounds.top + 8) return '';
+  if (mode === 'date') {
+    const calendar = elements['entry-list'].querySelector(`.study-calendar[data-section="${section}"]`);
+    if (calendar && calendar.getBoundingClientRect().bottom > bounds.top + 8) return '';
+  }
+  const content = elements['entry-list'].querySelector(`.content-section[data-section="${section}"]`);
+  if (!content || content.getBoundingClientRect().top >= bounds.top + 8) return '';
+  const anchorBottom = Math.min(bounds.bottom - 1, bounds.top + 128);
+  for (const row of content.querySelectorAll('.entry-row[data-entry-id]')) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom > bounds.top + 2 && rect.top < anchorBottom) return row.dataset.entryId || '';
+  }
+  return '';
+}
+
 async function switchCollectionMode(collection, section = currentViewKind) {
   const currentModeValue = getViewMode(collection.id, section);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
-  // Mode switching converts the current semantic reading position. It never
-  // consumes the manually saved browse anchor. Calendar/large-title/top views
-  // have no entry at the reading probe and therefore open the target mode at top.
-  const currentEntry = currentBrowseAnchorEntry(collection, section, { allowFirstVisible: true });
-  pendingJumpEntryId = currentEntry?.id || '';
-  pendingJumpReason = currentEntry ? 'mode' : 'home';
-  if (!currentEntry) {
-    expandedLettersFor(collection.id, section).clear();
-    clearExpandedRelationsForView(collection.id, section);
-  }
+  const anchorEntryId = modeSwitchAnchorEntryId(section, currentModeValue);
+  const anchorEntry = anchorEntryId ? getState().entryById.get(anchorEntryId) : null;
+  const validAnchor = anchorEntry && sectionForEntry(anchorEntry) === section
+    && getState().visibleEntryIdsByCollection.get(collection.id)?.has(anchorEntry.id);
+  pendingJumpEntryId = validAnchor ? anchorEntry.id : '';
+  pendingJumpReason = validAnchor ? 'mode-anchor' : 'home';
+  if (!validAnchor) expandedLettersFor(collection.id, section).clear();
+  suppressScrollPersistence(700);
   await setViewMode(collection.id, nextMode, section);
 }
 
@@ -1670,23 +1621,23 @@ function calendarForSection(collection, section, dates) {
   }
   const calendar = el('section', { className: 'study-calendar', dataset: { section, month: monthKey }, 'aria-label': `${year} 年 ${month} 月学习日期` }, [
     el('header', { className: 'calendar-header' }, [
-      iconButton('doubleChevron', 'calendar-prev-year', '上一年', async () => {
+      iconButton('chevrons', 'calendar-prev-year', '上一年', async () => {
         const next = monthShift(monthKey, -12);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
-      iconButton('chevron', 'calendar-prev calendar-prev-month', '上个月', async () => {
+      iconButton('chevron', 'calendar-prev', '上个月', async () => {
         const next = monthShift(monthKey, -1);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
       el('strong', { text: `${year} 年 ${month} 月` }),
-      iconButton('chevron', 'calendar-next calendar-next-month', '下个月', async () => {
+      iconButton('chevron', 'calendar-next', '下个月', async () => {
         const next = monthShift(monthKey, 1);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
       }),
-      iconButton('doubleChevron', 'calendar-next-year', '下一年', async () => {
+      iconButton('chevrons', 'calendar-next-year', '下一年', async () => {
         const next = monthShift(monthKey, 12);
         await setCalendarMonth(collection.id, section, next);
         calendar.replaceWith(calendarForSection(collection, section, dates));
@@ -1722,37 +1673,37 @@ function navigationControls(collection, section, sectionContext, mode) {
   return { fixed: [], track };
 }
 
-function scheduleLetterTrackFinalSync(delay = 120) {
-  clearTimeout(letterTrackResyncTimer);
-  letterTrackResyncTimer = window.setTimeout(() => {
-    letterTrackResyncTimer = 0;
-    letterTrackInteractionUntil = 0;
-    syncActiveAlphabetHeading();
-  }, delay);
+function scheduleLetterTrackSync(delay = 0) {
+  clearTimeout(letterTrackSyncTimer);
+  letterTrackSyncTimer = window.setTimeout(() => {
+    letterTrackSyncTimer = 0;
+    requestAnimationFrame(syncActiveAlphabetHeading);
+  }, Math.max(0, delay));
 }
 
 function populateNavigationBar(nav, controls) {
-  lastLetterTrackIndex = -1;
-  lastLetterTrackDirection = 0;
-  letterTrackDirectionLockUntil = 0;
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
-  const markTrackInteraction = (duration = 500) => { letterTrackInteractionUntil = Date.now() + duration; };
+  const trackState = { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
+  letterTrackStates.set(track, trackState);
+  const markTrackInteraction = (duration = 500) => { letterTrackInteractionUntil = Math.max(letterTrackInteractionUntil, Date.now() + duration); };
   track.addEventListener('pointerdown', () => {
-    clearTimeout(letterTrackResyncTimer);
-    markTrackInteraction(900);
+    trackState.pointerActive = true;
+    markTrackInteraction(800);
   }, { passive: true });
   track.addEventListener('pointerup', () => {
-    markTrackInteraction(120);
-    scheduleLetterTrackFinalSync(130);
+    trackState.pointerActive = false;
+    markTrackInteraction(180);
+    scheduleLetterTrackSync(205);
   }, { passive: true });
   track.addEventListener('pointercancel', () => {
-    markTrackInteraction(80);
-    scheduleLetterTrackFinalSync(90);
+    trackState.pointerActive = false;
+    markTrackInteraction(120);
+    scheduleLetterTrackSync(145);
   }, { passive: true });
   track.addEventListener('scroll', () => {
-    if (Date.now() < letterTrackProgrammaticUntil) return;
-    markTrackInteraction(120);
-    scheduleLetterTrackFinalSync(130);
+    if (Date.now() < trackState.programmaticUntil || trackState.pointerActive) return;
+    markTrackInteraction(180);
+    scheduleLetterTrackSync(205);
   }, { passive: true });
   nav.replaceChildren(track);
   nav.classList.toggle('no-track', !controls.track.length);
@@ -2001,56 +1952,116 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   updateOverlayLayout();
 }
 
+function setLetterSectionOpen(section, letter, open) {
+  const context = collectionRenderContext;
+  if (!context || context.collection.id !== currentCollectionId || context.mode !== 'alphabet') return false;
+  const sectionContext = context.sections.get(section);
+  const sectionNode = sectionContext?.sectionByKey.get(letter);
+  const entries = sectionContext?.grouped.get(letter);
+  if (!sectionNode || !entries) return false;
+  const expandedLetters = expandedLettersFor(currentCollectionId, section);
+  const heading = sectionNode.querySelector('.letter-heading');
+  const indicator = sectionNode.querySelector('.letter-indicator');
+  let body = sectionNode.querySelector('.letter-body');
+  if (open) {
+    expandedLetters.add(letter);
+    if (!body) {
+      body = el('div', { className: 'letter-body' });
+      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, { groupIndexById: groupedNumberIndex(entries, context.collection) }));
+      sectionNode.append(body);
+    }
+  } else {
+    expandedLetters.delete(letter);
+    if (body) {
+      for (const chunk of body.querySelectorAll('.entry-chunk')) {
+        entryChunkObserver?.unobserve(chunk);
+        const data = entryChunkData.get(chunk);
+        for (const item of data?.items || []) {
+          if (entryChunkByEntryId.get(item.entry.id) === chunk) entryChunkByEntryId.delete(item.entry.id);
+        }
+      }
+      body.remove();
+    }
+  }
+  heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (indicator) indicator.classList.toggle('open', open);
+  updateActiveLetter(section, letter);
+  persistCurrentHistorySnapshot();
+  return true;
+}
+
+function toggleLetterSectionWithAnchor(section, letter, heading) {
+  const context = collectionRenderContext;
+  if (!context || context.mode !== 'alphabet') return;
+  const open = !expandedLettersFor(currentCollectionId, section).has(letter);
+  if (open) {
+    setLetterSectionOpen(section, letter, true);
+    return;
+  }
+  const beforeTop = heading?.getBoundingClientRect().top;
+  const root = document.documentElement;
+  const previousAnchor = root.style.overflowAnchor;
+  root.style.overflowAnchor = 'none';
+  setLetterSectionOpen(section, letter, false);
+  requestAnimationFrame(() => {
+    if (heading?.isConnected && Number.isFinite(beforeTop)) {
+      const delta = heading.getBoundingClientRect().top - beforeTop;
+      if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+    }
+    requestAnimationFrame(() => { root.style.overflowAnchor = previousAnchor; syncActiveAlphabetHeading(); });
+  });
+}
+
+function moveLetterTrack(track, nextLeft, direction = 0) {
+  const state = letterTrackStates.get(track) || { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
+  letterTrackStates.set(track, state);
+  const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
+  const clamped = Math.max(0, Math.min(maxLeft, nextLeft));
+  if (Math.abs(clamped - track.scrollLeft) <= 1) return;
+  state.programmaticUntil = Date.now() + 90;
+  state.lastMoveAt = Date.now();
+  if (direction) state.lastDirection = direction;
+  track.scrollLeft = clamped;
+}
+
 function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}) {
-  const track = elements['letter-nav'].querySelector('.letter-nav-track');
-  if (!track) return;
-  const buttons = [...track.querySelectorAll('button[data-letter]')];
-  for (const button of buttons) button.classList.toggle('active', button.dataset.letter === letter && button.dataset.section === section);
-  const active = buttons.find((button) => button.dataset.letter === letter && button.dataset.section === section);
-  if (!active) return;
-
-  const currentIndex = buttons.indexOf(active);
-  const direction = lastLetterTrackIndex < 0 ? 0 : Math.sign(currentIndex - lastLetterTrackIndex);
-  lastLetterTrackIndex = currentIndex;
-  if (!ensureVisible || Date.now() < letterTrackInteractionUntil) return;
-
-  const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-  if (currentIndex <= 0 || maxScroll <= 1) {
-    letterTrackProgrammaticUntil = Date.now() + 90;
-    track.scrollLeft = 0;
-    return;
-  }
-  if (currentIndex >= buttons.length - 1) {
-    letterTrackProgrammaticUntil = Date.now() + 90;
-    track.scrollLeft = maxScroll;
-    return;
-  }
-
-  const trackRect = track.getBoundingClientRect();
-  const activeRect = active.getBoundingClientRect();
-  const buttonWidth = Math.max(1, activeRect.width || 48);
-  const startGuard = trackRect.left + buttonWidth * 1.05;
-  const endGuard = trackRect.right - buttonWidth * 1.05;
-  const now = Date.now();
-  let moveDirection = 0;
-  if (activeRect.right >= endGuard && (direction >= 0 || activeRect.right > trackRect.right)) moveDirection = 1;
-  else if (activeRect.left <= startGuard && (direction <= 0 || activeRect.left < trackRect.left)) moveDirection = -1;
-  if (!moveDirection) return;
-  if (now < letterTrackDirectionLockUntil && moveDirection !== lastLetterTrackDirection) return;
-
-  const targetIndex = Math.max(0, Math.min(buttons.length - 1, currentIndex + moveDirection * 2));
-  const targetRect = buttons[targetIndex].getBoundingClientRect();
-  const desiredX = moveDirection > 0
-    ? trackRect.right - buttonWidth * 1.75
-    : trackRect.left + buttonWidth * 1.75;
-  const targetCenter = targetRect.left + targetRect.width / 2;
-  let nextLeft = track.scrollLeft + targetCenter - desiredX;
-  nextLeft = Math.max(0, Math.min(maxScroll, nextLeft));
-  if (Math.abs(nextLeft - track.scrollLeft) <= 1) return;
-  letterTrackDirectionLockUntil = now + 90;
-  lastLetterTrackDirection = moveDirection;
-  letterTrackProgrammaticUntil = now + 100;
-  track.scrollLeft = nextLeft;
+  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
+    const active = item.dataset.section === section && Boolean(letter) && item.dataset.letter === letter;
+    item.classList.toggle('active', active);
+    if (!active || !ensureVisible) return;
+    const track = item.closest('.letter-nav-track');
+    if (!track) return;
+    const state = letterTrackStates.get(track) || { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
+    letterTrackStates.set(track, state);
+    const buttons = [...track.querySelectorAll('[data-letter]')];
+    const index = buttons.indexOf(item);
+    const direction = state.lastIndex < 0 ? 0 : Math.sign(index - state.lastIndex);
+    state.lastIndex = index;
+    if (Date.now() < letterTrackInteractionUntil || state.pointerActive) {
+      scheduleLetterTrackSync(Math.max(25, letterTrackInteractionUntil - Date.now() + 25));
+      return;
+    }
+    if (letter === 'A') { moveLetterTrack(track, 0, -1); state.lastDirection = -1; return; }
+    if (letter === '#') { moveLetterTrack(track, track.scrollWidth - track.clientWidth, 1); state.lastDirection = 1; return; }
+    const itemRect = item.getBoundingClientRect();
+    const trackRect = track.getBoundingClientRect();
+    const itemWidth = Math.max(1, itemRect.width || 52);
+    const leftGuard = trackRect.left + itemWidth * 1.15;
+    const rightGuard = trackRect.right - itemWidth * 1.15;
+    const now = Date.now();
+    const reversingQuickly = direction && state.lastDirection && direction !== state.lastDirection && now - state.lastMoveAt < 150;
+    const beyondLeftGuard = itemRect.left <= leftGuard;
+    const beyondRightGuard = itemRect.right >= rightGuard;
+    const actuallyOutsideLeft = itemRect.left < trackRect.left + 1;
+    const actuallyOutsideRight = itemRect.right > trackRect.right - 1;
+    if (beyondLeftGuard && (direction <= 0 || actuallyOutsideLeft)) {
+      if (!reversingQuickly || actuallyOutsideLeft) moveLetterTrack(track, item.offsetLeft - itemWidth, -1);
+      return;
+    }
+    if (beyondRightGuard && (direction >= 0 || actuallyOutsideRight)) {
+      if (!reversingQuickly || actuallyOutsideRight) moveLetterTrack(track, item.offsetLeft - (track.clientWidth - itemWidth * 2), 1);
+    }
+  });
 }
 
 function syncActiveAlphabetHeading() {
@@ -2428,20 +2439,26 @@ function handleEntryPrimaryAction(entry, collection, annotationRecord) {
   else copyEntry(entry, collection);
 }
 
-function createTextViewport(entry, collection, annotationRecord, layoutKind, indexText = '') {
+function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText = '', reserveMetaLine = false) {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
   let pointerStart = null;
   let suppressClick = false;
   const viewport = el('div', {
-    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}`,
+    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}${gloss ? ' has-gloss' : ' no-gloss'}${reserveMetaLine ? ' has-meta-line' : ''}`,
     role: 'button', tabindex: 0,
     'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
   });
-  const primaryLine = el('div', { className: 'entry-primary-text-line' }, [
-    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
+  const lexemeStack = el('div', { className: 'entry-lexeme-stack' }, [
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
+    gloss
+      ? el('span', { className: 'entry-gloss', text: gloss, title: gloss })
+      : reserveMetaLine ? el('span', { className: 'entry-gloss entry-gloss-placeholder', 'aria-hidden': 'true' }) : null,
   ]);
-  viewport.append(el('div', { className: 'entry-text-content' }, [primaryLine]));
+  const content = el('div', { className: 'entry-text-content' }, [
+    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
+    lexemeStack,
+  ]);
+  viewport.append(content);
   const updateOverflowState = () => {
     if (!isScrollable) return;
     const overflow = viewport.scrollWidth > viewport.clientWidth + 1;
@@ -2587,18 +2604,22 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const studyStamp = getStudyStamp(entry, collection.id);
   const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${(gloss || sourceDomainLabel) ? ' has-meta-row' : ' no-meta-row'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
   const actionItems = [];
   if (hasRelations) {
-    actionItems.push(iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id)));
-    actionItems[0].setAttribute('aria-expanded', expanded ? 'true' : 'false');
-  } else actionItems.push(el('span', { className: 'entry-action-placeholder', 'aria-hidden': 'true' }));
+    const relationButton = iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id));
+    relationButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    actionItems.push(relationButton);
+  } else {
+    actionItems.push(el('span', { className: 'entry-action-placeholder relation-placeholder', 'aria-hidden': 'true' }));
+  }
   actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
-  const textViewport = createTextViewport(entry, collection, annotationRecord, layoutKind, indexText);
+  const hasMetaLine = Boolean(gloss || sourceDomainLabel);
+  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText, hasMetaLine);
   const lineChildren = [textViewport];
   if (studyStamp) lineChildren.push(el('span', {
     className: 'entry-study-date marked',
@@ -2606,16 +2627,8 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
   }));
   lineChildren.push(el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, actionItems));
-  if (gloss || sourceDomainLabel) {
-    lineChildren.push(el('div', { className: 'entry-meta-row' }, [
-      indexText ? el('span', { className: 'entry-meta-index-spacer', text: indexText, 'aria-hidden': 'true' }) : null,
-      el('span', { className: 'entry-gloss-viewport' }, [
-        gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
-      ]),
-      sourceDomainLabel ? el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }) : null,
-    ]));
-  }
-  const primary = el('div', { className: 'entry-line' }, lineChildren);
+  if (sourceDomainLabel) lineChildren.push(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
+  const primary = el('div', { className: `entry-line${hasMetaLine ? ' has-meta-line' : ''}` }, lineChildren);
   if (annotationRecord) {
     primary.addEventListener('click', (event) => {
       if (event.target.closest('button, .entry-text-viewport')) return;
@@ -2851,11 +2864,13 @@ function firstVisibleEntryId() {
 
 function persistScrollPosition() {
   if (persistentJumpEntryId && Date.now() >= suppressScrollPersistenceUntil) clearPersistentJump();
+  if (!currentCollectionId || Date.now() < suppressScrollPersistenceUntil) return;
   clearTimeout(scrollPersistenceTimer);
   scrollPersistenceTimer = setTimeout(() => {
     scrollPersistenceTimer = 0;
+    if (!currentCollectionId || Date.now() < suppressScrollPersistenceUntil) return;
     persistCurrentHistorySnapshot();
-  }, 220);
+  }, 320);
 }
 
 function updateBackToTopVisibility() {
@@ -2869,7 +2884,8 @@ function updateBackToTopVisibility() {
 
 function returnToTop() {
   if (!currentCollectionId) return;
-  suppressScrollPersistence(500);
+  cancelBrowseAnchorPress({ suppressClick: true });
+  suppressScrollPersistence(900);
   navigationRevision += 1;
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
@@ -3205,7 +3221,8 @@ async function startAiCheck(collectionId, requestedViewKind = currentViewKind) {
   if (!entries.length) return;
   const controller = new AiCheckController();
   const entryIds = entries.map((entry) => entry.id);
-  let resolveCompletion;
+  /** @type {((value?: unknown) => void) | null} */
+  let resolveCompletion = null;
   const task = {
     controller, paused: false, completed: 0, total: 1, collectionId, viewKind,
     status: '准备 AI 核查…', entryIds,
@@ -3253,7 +3270,7 @@ async function startAiCheck(collectionId, requestedViewKind = currentViewKind) {
   finally {
     if (activeTask === task) activeTask = null;
     renderTaskPanel('');
-    resolveCompletion?.();
+    if (resolveCompletion) resolveCompletion();
   }
 }
 
@@ -3660,7 +3677,7 @@ function renderApp() {
   if (route.viewKind) currentViewKind = route.viewKind;
   if (route.entryId) {
     pendingJumpEntryId = route.entryId;
-    if (!['search', 'relation', 'annotation', 'last', 'mode', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
+    if (!['search', 'relation', 'annotation', 'last', 'mode-anchor', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
   } else if (route.collectionId !== previousCollectionId && !pendingPageSnapshot) {
     pendingJumpEntryId = '';
     if (pendingJumpReason !== 'home') pendingJumpReason = 'jump';
@@ -3736,6 +3753,7 @@ function handleStoreEvent({ type, detail }) {
 }
 
 function handleWindowScroll() {
+  if (browseAnchorPress) cancelBrowseAnchorPress({ suppressClick: true });
   if (activeQueryMenu) closeQueryMenu();
   if (activeRelationTargetMenu) closeRelationTargetMenu();
   if (!scrollUiFrame) {

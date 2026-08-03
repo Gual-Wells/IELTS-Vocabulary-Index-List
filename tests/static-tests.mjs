@@ -32,7 +32,7 @@ assert.equal(seed.appVersion, '3.5.1');
 assert.ok(html.includes('name="application-version" content="3.5.1"'));
 assert.ok(html.includes('<title>Vocabulary Index 3.5.1</title>'));
 assert.ok(app.includes("const MODULE_VERSION = '3.5.1'"));
-assert.ok(sw.includes('v3.5.1-ios-shell-20260803-3'));
+assert.ok(sw.includes('v3.5.1-clean-rebuild-20260803-1'));
 assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.1'));
 assert.ok(html.includes('./css/v3.5.1.css'));
 assert.ok(sw.includes('./css/v3.5.1.css'));
@@ -83,6 +83,18 @@ assert.ok(store.includes('export function getViewMode(collectionId, section = \'
 assert.ok(store.includes('export async function setViewMode(collectionId, mode, section = \'main\')'));
 assert.ok(store.includes('const key = `${collectionId}:${section}`'));
 assert.ok(store.includes('`lastPosition:${domainId}:${collectionId}:${mode}:${section}`'));
+assert.ok(ui.includes('function bindBrowseAnchorButton'));
+assert.ok(ui.includes('长按保存当前位置'));
+assert.ok(ui.includes('Math.hypot(event.clientX - press.startX'));
+assert.ok(ui.includes("const entryId = firstVisibleEntryId() || '';"));
+assert.equal((ui.match(/setLastPosition\(/g) || []).length, 1, '浏览锚点只能由长按保存路径写入');
+assert.ok(ui.includes('function modeSwitchAnchorEntryId'));
+assert.ok(ui.includes("pendingJumpReason = validAnchor ? 'mode-anchor' : 'home'"));
+assert.ok(!ui.includes("getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode"));
+assert.ok(ui.includes("iconButton('chevrons', 'calendar-prev-year'"));
+assert.ok(ui.includes("iconButton('chevrons', 'calendar-next-year'"));
+assert.ok(cssRelease.includes('grid-template-columns: 38px 34px minmax(0, 1fr) 34px 38px !important'));
+
 
 // Bottom toolbar has one stable owner; top search is removed from collection pages.
 assert.ok(cssRelease.includes('.bottom-toolbar'));
@@ -91,30 +103,16 @@ assert.ok(cssRelease.includes('env(safe-area-inset-bottom)'));
 assert.ok(ui.includes("elements['search-button'].classList.add('hidden')"));
 assert.ok(ui.includes("elements['bottom-search'].onclick = openSearchDialog"));
 assert.ok(ui.includes("elements['bottom-view-switch']"));
-assert.ok(ui.includes('function bindBrowseAnchorButton'));
-assert.ok(ui.includes("showToast('长按此按钮保存当前位置')"));
-assert.ok(ui.includes('await saveCurrentBrowseAnchor(collection, section)'));
-assert.ok(!ui.includes('复制后的浏览位置保存失败'));
-assert.ok(!ui.includes('返回顶部前保存位置失败'));
-assert.ok(ui.includes("pendingJumpEntryId = currentEntry?.id || ''"));
-assert.ok(!ui.includes('const target = getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode, section })'));
-assert.ok(ui.includes('Calendar, large-title and page-top states do not own a semantic Entry yet'));
-assert.ok(ui.includes('sectionContext.root.getBoundingClientRect().top > bounds.top + 24'));
-assert.ok(ui.includes('const MOVE_LIMIT = 10'));
-assert.ok(ui.includes('Math.hypot(event.clientX - startX, event.clientY - startY)'));
-assert.ok(!ui.includes('target.oncontextmenu = async'));
 
 // Alphabet track contains letters only and follows immediately, without smooth chase.
 assert.ok(ui.includes("className: 'letter-nav-track'"));
 assert.ok(ui.includes('return { fixed: [], track }'));
 assert.ok(!ui.includes("behavior: 'smooth'"), '运行时不得再使用平滑滚动追赶');
-assert.ok(ui.includes('if (currentIndex <= 0 || maxScroll <= 1)'));
-assert.ok(ui.includes('if (currentIndex >= buttons.length - 1)'));
-assert.ok(ui.includes('const startGuard = trackRect.left + buttonWidth * 1.05'));
-assert.ok(ui.includes('const endGuard = trackRect.right - buttonWidth * 1.05'));
-assert.ok(ui.includes('letterTrackDirectionLockUntil'));
-assert.ok(ui.includes('letterTrackProgrammaticUntil'));
-assert.ok(ui.includes('scheduleLetterTrackFinalSync'));
+assert.ok(ui.includes("if (letter === 'A') { moveLetterTrack(track, 0, -1)"));
+assert.ok(ui.includes("if (letter === '#') { moveLetterTrack(track, track.scrollWidth - track.clientWidth, 1)"));
+assert.ok(ui.includes('const leftGuard = trackRect.left + itemWidth * 1.15'));
+assert.ok(ui.includes('const rightGuard = trackRect.right - itemWidth * 1.15'));
+assert.ok(ui.includes('scheduleLetterTrackSync(205)'));
 assert.ok(cssRelease.includes('scroll-behavior: auto !important'));
 assert.ok(cssRelease.includes('.letter-heading'));
 assert.ok(cssRelease.includes('position: sticky !important'));
@@ -122,24 +120,22 @@ assert.ok(cssRelease.includes('backdrop-filter: none !important'));
 
 // Entry layout: inline number, source on shell border, no index badge/side rail.
 assert.ok(ui.includes("className: 'entry-index-inline'"));
-assert.ok(ui.includes("lineChildren.push(el('div', { className: 'entry-meta-row'"));
-assert.ok(ui.includes("className: 'entry-source-domain'"));
+assert.ok(ui.includes("lineChildren.push(el('span', { className: 'entry-source-domain'"));
+assert.ok(ui.includes("className: 'entry-lexeme-stack'"));
+assert.ok(ui.includes("entry-gloss entry-gloss-placeholder"));
 assert.ok(!ui.includes("className: 'entry-index-badge'"));
 assert.ok(!ui.includes("className: 'entry-relation-rail'"));
 assert.ok(!ui.includes("className: `entry-relation-tab"));
-assert.ok(ui.includes("actionItems.push(iconButton('disclosure'"));
-assert.ok(ui.includes("else actionItems.push(el('span', { className: 'entry-action-placeholder'"));
-assert.ok(ui.indexOf("actionItems.push(iconButton('disclosure'") < ui.indexOf('actionItems.push(actions.refresh, actions.pin, actions.query, actions.more)'));
+assert.ok(ui.includes("const relationButton = iconButton('disclosure'"));
+assert.ok(ui.includes("className: 'entry-action-placeholder relation-placeholder'"));
+assert.ok(ui.indexOf("const relationButton = iconButton('disclosure'") < ui.indexOf('actionItems.push(actions.refresh, actions.pin, actions.query, actions.more)'));
 assert.ok(ui.includes("if (studyStamp) lineChildren.push"));
 assert.ok(cssRelease.includes('.entry-study-date:not(.marked) { display: none'));
-assert.ok(cssRelease.includes('display: grid !important'));
-assert.ok(cssRelease.includes('.entry-index-badge,\n.entry-relation-rail,\n.entry-relation-tab,'));
-assert.ok(cssRelease.includes('.entry-source-domain'));
-assert.ok(cssRelease.includes('.entry-meta-row'));
-assert.ok(cssRelease.includes('grid-column: 1 / -1 !important'));
-assert.ok(cssRelease.includes('.entry-row.has-meta-row .entry-line'));
-assert.ok(cssRelease.includes('.entry-meta-index-spacer'));
+assert.ok(cssRelease.includes('grid-template-areas: "text date actions"'));
+assert.ok(cssRelease.includes('grid-area: source'));
 assert.ok(cssRelease.includes('position: static !important'));
+assert.ok(cssRelease.includes('.entry-index-badge,\n.entry-relation-rail,\n.entry-relation-tab { display: none'));
+assert.ok(cssRelease.includes('.entry-source-domain'));
 assert.ok(cssRelease.includes('border-radius: 0 !important'));
 
 // Long content remains accessible; phrase clamps are explicitly disabled.
@@ -168,22 +164,15 @@ assert.ok(!cssRelease.includes('backdrop-filter: blur'));
 assert.ok(cssRelease.includes('.search-controls input'));
 assert.ok(cssRelease.includes('width: 100% !important'));
 assert.ok(cssRelease.includes('grid-template-columns: minmax(0, 1fr) !important'));
-assert.ok(cssRelease.includes('.app-dialog,'));
-assert.ok(cssRelease.includes('.sheet-dialog,'));
-assert.ok(cssRelease.includes('.confirm-dialog,'));
-assert.ok(cssRelease.includes('width: 100vw !important'));
-assert.ok(cssRelease.includes('place-items: center !important'));
-assert.ok(cssRelease.includes('.dialog-header::before'));
-assert.ok(cssRelease.includes('.search-dialog .dialog-card'));
+assert.ok(cssRelease.includes('width: var(--visual-width, 100vw) !important'));
 assert.ok(cssRelease.includes('grid-template-columns: 44px minmax(0, 1fr) 44px !important'));
+assert.ok(cssRelease.includes('position: relative !important;'));
+assert.ok(cssRelease.includes('width: min(520px, calc(var(--visual-width, 100vw) - 28px)) !important'));
+assert.ok(cssRelease.includes('left: auto !important;'));
+assert.ok(cssRelease.includes('.entry-lexeme-stack > .entry-text'));
+assert.ok(cssRelease.includes('grid-column: 1 !important;'));
 
-// Calendar uses outer year jumps and inner month jumps.
-assert.ok(ui.includes("iconButton('doubleChevron', 'calendar-prev-year', '上一年'"));
-assert.ok(ui.includes("monthShift(monthKey, -12)"));
-assert.ok(ui.includes("iconButton('chevron', 'calendar-prev calendar-prev-month', '上个月'"));
-assert.ok(ui.includes("iconButton('chevron', 'calendar-next calendar-next-month', '下个月'"));
-assert.ok(ui.includes("monthShift(monthKey, 12)"));
-assert.ok(cssRelease.includes('grid-template-columns: 44px 44px minmax(0, 1fr) 44px 44px !important'));
+assert.ok(ui.includes("target.closest('.dialog-body')"));
 
 // Projection semantics: concrete cross-domain entries, unique counts, priority ownership.
 assert.ok(model.includes('export function buildProjection'));

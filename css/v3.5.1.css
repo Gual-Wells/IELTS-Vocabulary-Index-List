@@ -1,4 +1,4 @@
-/* Vocabulary Index 3.5.1 iPhone UI/state correction layer.
+/* Vocabulary Index 3.5.1 runtime/UI stabilization layer.
    Structural surfaces are rectangular, scrolling has one owner, and ordinary
    collections expose word/phrase as separate projections. */
 
@@ -256,7 +256,8 @@ body { background-image: none !important; }
 .date-day-body,
 .unmarked-body { padding-left: 0 !important; }
 
-/* Entry structure: explicit grid ownership, inline number, one optional metadata row. */
+/* Entry structure: inline number, a real shared metadata line, content-sized
+   date, and a stable five-slot action strip. */
 .entry-list { background: transparent !important; }
 .entry-row,
 .entry-row.has-index,
@@ -266,6 +267,7 @@ body { background-image: none !important; }
   min-width: 0;
   min-height: 0 !important;
   margin: 0 !important;
+  padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -285,8 +287,9 @@ body { background-image: none !important; }
   min-width: 0;
   min-height: 48px !important;
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto auto !important;
-  grid-template-rows: minmax(47px, auto) !important;
+  grid-template-columns: minmax(0, 1fr) auto max-content !important;
+  grid-template-rows: minmax(48px, auto) !important;
+  grid-template-areas: "text date actions" !important;
   align-items: center !important;
   column-gap: 2px !important;
   row-gap: 0 !important;
@@ -297,33 +300,35 @@ body { background-image: none !important; }
   background: var(--surface) !important;
   background-image: none !important;
   box-shadow: none !important;
-  overflow: hidden !important;
-  box-sizing: border-box !important;
+  overflow: visible !important;
+  box-sizing: border-box;
 }
-.entry-row.has-meta-row .entry-line {
-  min-height: 58px !important;
-  grid-template-rows: minmax(43px, auto) 14px !important;
+.entry-line.has-meta-line {
+  min-height: 60px !important;
+  grid-template-rows: minmax(44px, auto) 15px !important;
+  grid-template-areas:
+    "text date actions"
+    "text source source" !important;
 }
 .entry-row.phrase-two-line .entry-line,
 .entry-row.phrase-extreme .entry-line { min-height: 62px !important; }
+.entry-row.phrase-two-line .entry-line.has-meta-line,
+.entry-row.phrase-extreme .entry-line.has-meta-line { min-height: 68px !important; }
 .entry-index-badge,
 .entry-relation-rail,
-.entry-relation-tab,
-.entry-lexeme-stack { display: none !important; }
-
+.entry-relation-tab { display: none !important; }
 .entry-text-viewport {
-  grid-column: 1 !important;
-  grid-row: 1 !important;
+  grid-area: text;
+  align-self: stretch;
   min-width: 0 !important;
-  width: 100% !important;
-  min-height: 43px;
+  width: auto !important;
+  min-height: 44px;
   display: flex !important;
   align-items: center !important;
-  padding: 4px 4px 4px 0 !important;
+  padding: 4px 4px !important;
   border-radius: 0 !important;
   overflow-y: visible !important;
   touch-action: pan-y;
-  box-sizing: border-box !important;
 }
 .entry-text-viewport.horizontally-scrollable {
   overflow-x: auto !important;
@@ -331,59 +336,92 @@ body { background-image: none !important; }
   touch-action: pan-x pan-y;
   scrollbar-width: none;
 }
-.entry-text-viewport.horizontally-scrollable::-webkit-scrollbar,
-.entry-gloss-viewport::-webkit-scrollbar { display: none; }
+.entry-text-viewport.horizontally-scrollable::-webkit-scrollbar { display: none; }
 .entry-text-content {
   min-width: 0 !important;
   width: 100% !important;
   max-width: none !important;
-  display: block !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: start !important;
+  column-gap: 7px !important;
   padding: 0 !important;
   overflow: visible !important;
+}
+.entry-row.no-index .entry-text-content {
+  grid-template-columns: minmax(0, 1fr) !important;
+  column-gap: 0 !important;
 }
 .word-normal .entry-text-content,
 .phrase-extreme .entry-text-content {
   min-width: max-content !important;
   width: max-content !important;
 }
-.entry-primary-text-line {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  white-space: nowrap;
-}
-.word-normal .entry-primary-text-line,
-.phrase-extreme .entry-primary-text-line { min-width: max-content; }
-.phrase-normal .entry-primary-text-line,
-.phrase-two-line .entry-primary-text-line {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.entry-index-inline,
-.entry-meta-index-spacer {
+.entry-index-inline {
+  grid-column: 1;
+  align-self: start;
   flex: none;
+  padding-top: 1px;
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.2;
+  line-height: 1.25;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
-.entry-meta-index-spacer { visibility: hidden; }
+.entry-lexeme-stack {
+  grid-column: 2 !important;
+  min-width: 0;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-content: center;
+  gap: 1px;
+}
+.entry-row.no-index .entry-lexeme-stack { grid-column: 1 !important; }
+.entry-lexeme-stack > .entry-text,
+.entry-lexeme-stack > .entry-gloss {
+  grid-column: 1 !important;
+  grid-row: auto !important;
+  margin-left: 0 !important;
+}
 .entry-text {
+  display: block;
   min-width: 0;
   font-size: 15.5px !important;
   line-height: 1.25 !important;
   font-weight: 720 !important;
+  white-space: nowrap;
+}
+.phrase-normal .entry-text,
+.phrase-two-line .entry-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .phrase-normal .entry-text,
 .phrase-two-line .entry-text,
 .phrase-extreme .entry-text { font-size: 14.8px !important; }
-
+.entry-gloss {
+  display: block !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  color: var(--muted) !important;
+  font-size: 10.8px !important;
+  line-height: 1.18 !important;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.entry-gloss::-webkit-scrollbar { display: none; }
+.entry-gloss-placeholder {
+  min-height: 12px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.phrase-normal .entry-gloss,
+.phrase-two-line .entry-gloss { white-space: normal; overflow-wrap: anywhere; }
 .entry-study-date {
-  grid-column: 2 !important;
-  grid-row: 1 !important;
-  align-self: center !important;
+  grid-area: date;
+  align-self: center;
   min-width: 0 !important;
   width: auto !important;
   padding: 0 3px !important;
@@ -395,9 +433,8 @@ body { background-image: none !important; }
 .entry-study-date:not(.marked) { display: none !important; }
 .entry-actions,
 .phrase-two-line .entry-actions {
-  grid-column: 3 !important;
-  grid-row: 1 !important;
-  align-self: center !important;
+  grid-area: actions;
+  align-self: center;
   width: auto !important;
   min-width: 0 !important;
   display: flex !important;
@@ -415,54 +452,32 @@ body { background-image: none !important; }
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
+  box-sizing: border-box;
 }
-.entry-action-placeholder { pointer-events: none; }
+.entry-actions > .entry-action-placeholder {
+  display: block;
+  pointer-events: none;
+  visibility: hidden;
+}
 .entry-actions > button:active { background: var(--surface-soft) !important; transform: none !important; }
 .entry-actions .ui-icon { width: 18px !important; height: 18px !important; }
 .entry-relations .ui-icon { transition: none !important; }
 .entry-relations.active .ui-icon { transform: rotate(90deg); }
-
-.entry-meta-row {
-  grid-column: 1 / -1 !important;
-  grid-row: 2 !important;
-  min-width: 0;
-  height: 14px;
-  display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) auto !important;
-  align-items: start;
-  column-gap: 7px;
-  padding: 0 8px 2px 0;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-.entry-gloss-viewport {
-  grid-column: 2 !important;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-  touch-action: pan-x pan-y;
-  white-space: nowrap;
-}
-.entry-gloss {
-  display: inline-block !important;
-  min-width: max-content !important;
-  padding: 0 !important;
-  color: var(--muted) !important;
-  font-size: 10.8px !important;
-  line-height: 12px !important;
-  white-space: nowrap !important;
-}
 .entry-source-domain {
   position: static !important;
-  grid-column: 3 !important;
-  align-self: start;
-  max-width: min(42vw, 150px);
-  padding: 0 !important;
+  top: auto !important;
+  right: auto !important;
+  grid-area: source;
+  align-self: end;
+  justify-self: end;
+  z-index: 1;
+  max-width: min(46vw, 150px);
+  min-width: 0;
+  padding: 0 3px 2px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   color: var(--muted);
@@ -523,124 +538,135 @@ body { background-image: none !important; }
 .query-menu-option .ui-icon { width: 18px !important; height: 18px !important; }
 .query-menu::after { display: none !important; }
 
-/* Dialog shell: one full-viewport owner and one centered card. */
-html.modal-open,
-body.modal-open {
+/* One dialog shell owns visual-viewport positioning and width. Internal cards
+   are always 100% of that shell and only the body may scroll. */
+html.modal-open, body.modal-open {
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }
 .app-dialog,
 .sheet-dialog,
-.confirm-dialog,
-.search-dialog {
+.confirm-dialog {
   position: fixed !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: var(--visual-height) !important;
+  inset: auto !important;
+  top: var(--visual-top, 0px) !important;
+  left: var(--visual-left, 0px) !important;
+  width: var(--visual-width, 100vw) !important;
+  height: var(--visual-height, 100dvh) !important;
   max-width: none !important;
   max-height: none !important;
   margin: 0 !important;
-  padding:
-    max(16px, env(safe-area-inset-top, 0px))
-    max(16px, env(safe-area-inset-right, 0px))
-    max(16px, env(safe-area-inset-bottom, 0px))
-    max(16px, env(safe-area-inset-left, 0px)) !important;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(12px, env(safe-area-inset-bottom)) !important;
   border: 0 !important;
   background: transparent !important;
   overflow: hidden !important;
-  box-sizing: border-box !important;
+  box-sizing: border-box;
 }
 .app-dialog[open],
 .sheet-dialog[open],
-.confirm-dialog[open],
-.search-dialog[open] {
+.confirm-dialog[open] {
   display: grid !important;
   place-items: center !important;
 }
+.app-dialog::backdrop,
+.sheet-dialog::backdrop,
+.confirm-dialog::backdrop {
+  background: rgb(28 27 25 / 48%) !important;
+}
 .app-dialog form,
 .sheet-dialog .dialog-card,
-.confirm-dialog .dialog-card,
-.search-dialog .dialog-card {
-  position: static !important;
+.confirm-dialog .dialog-card {
+  position: relative !important;
   inset: auto !important;
-  width: min(520px, 100%) !important;
-  max-width: 100% !important;
-  max-height: calc(var(--visual-height) - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: min(520px, calc(var(--visual-width, 100vw) - 28px)) !important;
+  max-width: calc(var(--visual-width, 100vw) - 28px) !important;
+  max-height: 100% !important;
+  min-width: 0 !important;
   margin: 0 !important;
-  box-sizing: border-box !important;
-  display: flex !important;
-  flex-direction: column !important;
-  border: 1px solid var(--line) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--line-strong) !important;
   border-radius: 12px !important;
   background: var(--surface) !important;
   background-image: none !important;
   box-shadow: 0 10px 30px rgb(0 0 0 / 13%) !important;
   overflow: hidden !important;
   overscroll-behavior: contain;
+  box-sizing: border-box;
 }
-.action-dialog .dialog-card { width: min(420px, 100%) !important; }
-.search-dialog .dialog-card { width: min(500px, 100%) !important; }
-.confirm-dialog .dialog-card { width: min(360px, 100%) !important; }
+.sheet-dialog .dialog-card { grid-template-rows: auto minmax(0, 1fr); }
+.confirm-dialog .dialog-card { width: min(420px, calc(var(--visual-width, 100vw) - 28px)) !important; }
+.search-dialog .dialog-card { width: min(500px, calc(var(--visual-width, 100vw) - 28px)) !important; }
 .dialog-header {
-  flex: 0 0 auto !important;
-  width: 100%;
   min-width: 0;
+  min-height: 56px;
   display: grid !important;
   grid-template-columns: 44px minmax(0, 1fr) 44px !important;
   align-items: center !important;
   gap: 0 !important;
-  padding: 10px 8px !important;
+  padding: 10px 10px 9px !important;
   box-sizing: border-box;
 }
 .dialog-header::before {
-  content: '';
+  content: "";
   grid-column: 1;
   width: 44px;
   height: 1px;
 }
 .dialog-header > div {
-  grid-column: 2 !important;
+  grid-column: 2;
   min-width: 0;
   text-align: center;
 }
-.dialog-header h2 {
-  margin: 0 !important;
-  text-align: center !important;
-  overflow-wrap: anywhere;
-}
-.dialog-header p { text-align: center; }
-.dialog-header .icon-button {
-  grid-column: 3 !important;
+.dialog-header > .icon-button {
+  grid-column: 3;
   justify-self: end;
   width: 44px !important;
   min-width: 44px !important;
   height: 44px !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
 }
-.dialog-header .icon-button .ui-icon { width: 18px !important; height: 18px !important; }
+.dialog-header h2,
+.dialog-header p { text-align: center !important; }
 .dialog-body {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
   min-width: 0;
-  width: 100%;
   max-width: 100%;
-  box-sizing: border-box;
+  width: 100%;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-}
-.dialog-actions,
-.search-controls,
-.data-exchange-form,
-.action-list,
-.dialog-body > * {
-  min-width: 0;
-  max-width: 100%;
   box-sizing: border-box;
+}
+.dialog-actions {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.dialog-body > *,
+.dialog-body .field,
+.dialog-body .field > input,
+.dialog-body .field > select,
+.dialog-body .field > textarea,
+.dialog-body input:not([type="checkbox"]):not([type="radio"]),
+.dialog-body select,
+.dialog-body textarea,
+.dialog-body .action-list,
+.dialog-body .search-controls,
+.dialog-body .import-preview,
+.dialog-body .manager-list {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.dialog-body input:not([type="checkbox"]):not([type="radio"]),
+.dialog-body select,
+.dialog-body textarea,
+.dialog-body input[type="file"] {
+  width: 100% !important;
 }
 .search-controls {
   width: 100%;
@@ -651,37 +677,50 @@ body.modal-open {
 }
 .search-controls input,
 .search-controls select,
-.search-controls .secondary-button,
-.dialog-body input:not([type="checkbox"]):not([type="radio"]),
-.dialog-body select,
-.dialog-body textarea,
-.dialog-body .field,
-.dialog-body .action-list,
-.dialog-body .data-exchange-form,
-.dialog-body input[type="file"] {
+.search-controls .secondary-button {
+  grid-column: 1 !important;
   width: 100% !important;
-  max-width: 100% !important;
   min-width: 0 !important;
-  box-sizing: border-box !important;
+  box-sizing: border-box;
 }
-.dialog-actions {
-  flex: 0 0 auto !important;
-  width: 100% !important;
-  display: flex !important;
-  flex-wrap: wrap;
-  justify-content: flex-end !important;
-  gap: 8px !important;
-  box-sizing: border-box !important;
-}
-.app-dialog::backdrop,
-.sheet-dialog::backdrop,
-.confirm-dialog::backdrop,
-.search-dialog::backdrop { background: rgb(28 27 25 / 48%) !important; }
 
 /* Lightweight page opacity transition only; no layout/scroll animation. */
 .collection-view { transition: opacity .09s linear; }
 .collection-view.page-transition-out { opacity: 0; }
 .collection-view.page-transition-in { opacity: 0; }
+
+/* Five-part calendar navigation: year controls outside, month controls inside. */
+.calendar-header {
+  grid-template-columns: 38px 34px minmax(0, 1fr) 34px 38px !important;
+  gap: 0 !important;
+}
+.calendar-prev-year,
+.calendar-prev,
+.calendar-next,
+.calendar-next-year {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 38px !important;
+  border-radius: 0 !important;
+}
+.calendar-prev-year .ui-icon,
+.calendar-prev .ui-icon { transform: rotate(90deg); }
+.calendar-next .ui-icon,
+.calendar-next-year .ui-icon { transform: rotate(-90deg); }
+.calendar-prev-year .ui-icon,
+.calendar-next-year .ui-icon { width: 17px !important; height: 17px !important; }
+.calendar-prev .ui-icon,
+.calendar-next .ui-icon { width: 15px !important; height: 15px !important; }
+
+/* The former automatic last-position control is now a manual browse anchor. */
+#bottom-last-position {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+#bottom-last-position.no-anchor { color: var(--muted) !important; opacity: .62; }
+#bottom-last-position.has-anchor { color: var(--accent-ink) !important; opacity: 1; }
+#bottom-last-position.saving-anchor { background: var(--accent-soft) !important; }
 
 @media (max-width: 390px) {
   .topbar { grid-template-columns: 64px minmax(0, 1fr) 64px !important; }
@@ -723,7 +762,7 @@ body.modal-open {
   box-shadow: none !important;
 }
 
-/* 3.5.1 final runtime corrections: remove stale 3.4 projection decoration and
+/* 3.5.0 final runtime corrections: remove stale 3.4 projection decoration and
    make the bottom docks a single opaque rectangular language. */
 #collection-view.system-collection-view,
 #collection-view.global-system-view,
@@ -846,20 +885,3 @@ body.modal-open {
   box-shadow: none !important;
 }
 
-/* 3.5.1 calendar navigation: outer year jumps, inner month jumps. */
-.calendar-header {
-  grid-template-columns: 44px 44px minmax(0, 1fr) 44px 44px !important;
-  min-height: 44px !important;
-}
-.calendar-prev-year, .calendar-prev-month, .calendar-next-month, .calendar-next-year {
-  width: 44px !important;
-  min-width: 44px !important;
-  height: 44px !important;
-  border-radius: 0 !important;
-}
-.calendar-prev-year .ui-icon, .calendar-prev-month .ui-icon { transform: rotate(90deg) !important; }
-.calendar-next-month .ui-icon, .calendar-next-year .ui-icon { transform: rotate(-90deg) !important; }
-.calendar-header strong { min-width: 0; text-align: center; }
-
-/* Manual browse anchor is always available for long-press save. */
-#bottom-last-position:disabled { opacity: 1 !important; color: var(--accent-ink) !important; }

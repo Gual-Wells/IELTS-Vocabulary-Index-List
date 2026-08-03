@@ -1,65 +1,66 @@
-# Vocabulary Index 3.5.1 测试报告（对齐重做版）
+# Vocabulary Index 3.5.1 测试报告
 
-## 版本信息
+## 测试对象
 
 - App version：3.5.1
-- Backup schema：5
-- IndexedDB DB version：4
+- 代码基线：3.5.0 清洁解压副本
+- Backup Schema：5
+- IndexedDB version：4
 - Seed revision：3
-- Service Worker cache：`v3.5.1-ios-shell-20260803-3`
+- VIX version：1
 
-第一次 3.5.1 封包已撤回完整交付认定。本报告只对应当前对齐重做包。
+## 新增防截断测试
 
-## 自动测试
+`tests/runtime-symbol-tests.mjs` 检查核心运行时函数各定义一次，并验证字母导航、标题点击和目标展开仍连接到完整链路。特别覆盖：
 
-在工作副本中分别执行：
+- `setLetterSectionOpen`
+- `toggleLetterSectionWithAnchor`
+- `renderAlphabetContent`
+- `updateActiveLetter`
+- `syncActiveAlphabetHeading`
+- `switchCollectionMode`
+- `bindBrowseAnchorButton`
+- `calendarForSection`
 
-- `node tests/run-tests.mjs`：通过；
-- `node tests/static-tests.mjs`：通过；
-- `node tests/stress-tests.mjs`：通过（126 entries、156 memberships、45 study stamps）；
-- `node tests/integration-tests.mjs`：通过（最大测试 URL 30,636 字符）；
-- `node tests/performance-tests.mjs`：通过。
+同时使用 TypeScript `checkJs` 检查全部 `js/*.js` 的未定义名称。该检查用于阻止两份已撤回 3.5.1 中“函数调用存在但定义被截断”的事故再次发生。
 
-性能结果：
+## 合成布局契约
 
-- 25 次搜索：25.8 ms；
-- 词表导入预检：2,543.1 ms。
+`tests/layout-contract-check.py` 使用 Chromium 布局引擎和 320／375／390px 视口，加载实际四层 CSS 并检查：
 
-## 语法与格式
+- Dialog 卡片不越界；
+- 标题物理中心误差在阈值内；
+- 输入框受 Body 宽度约束；
+- 释义与英文左边缘对齐；
+- 释义、来源、二者同时存在的表项高度一致；
+- 来源位于表项边界内的右下区域；
+- 五段日历标题不超出视口。
 
-- JavaScript／ES Module 语法检查：通过；
-- JSON 全量解析：通过；
-- 4 个 CSS 文件使用 `tinycss2` 完整解析：通过。
+## 自动测试结果
 
-## Chromium 组件布局契约
+各套件以独立进程执行并通过：
 
-使用真实 Chromium 布局引擎和 320、375、390px 三种移动端宽度验证：
+```text
+run-tests: OK
+static-tests: OK
+runtime-symbol-tests: OK
+stress-tests: OK (126 entries, 156 memberships, 45 study stamps)
+integration-tests: OK (largest tested URL 30636 chars)
+performance-tests: OK (27.7 ms / 25 searches; 2509.9 ms collection preflight)
+layout-contract-check: OK
+```
 
-- App、Action、Search、Confirm 四类 Dialog 卡片均在至少 15px 安全边距内；
-- 四类 Dialog 标题物理中心与视口中心误差小于 2.1px；
-- 序号开启时繁体释义与英文左边缘误差小于 1.5px；
-- 单行一级表项高度不超过 50px；
-- 有释义／来源的双行一级表项高度不超过 64px；
-- 独立域来源保持在一级表项右下边界内。
+语法与格式：
 
-该契约使用组件夹具，不等同于完整 PWA 真机测试，但比纯字符串静态测试额外验证了 CSS 实际几何结果。
+```text
+node --check：通过
+TypeScript checkJs（全部 js/*.js）：通过
+JSON parse：通过（13 项）
+CSS parse：通过（4 项）
+```
 
-## 当前自动化覆盖
+当前容器中将多套长测试串入同一 Shell 命令会触发外层命令时限，因此验收证据采用每套测试独立启动、独立完成。`npm run test:all` 仍保留；`test:layout` 独立运行，以避免用户环境未安装 Playwright 时阻断基础测试。
 
-- 手动浏览锚点不再由普通滚动自动写入；
-- 长按包含位移阈值和 Pointer 取消保护；
-- 模式切换不读取目标模式锚点，并检测内容 Root 是否进入阅读区；
-- 字母栏包含警戒区、方向、反向锁和程序滚动抑制；
-- 来源与释义使用真实 `entry-meta-row`；
-- 日期和操作区使用显式 Grid 列；
-- Dialog 使用全视口 Shell 与统一三列标题；
-- 日历包含年／月四个方向按钮。
+## 测试边界
 
-## 仍需 iPhone 真机验证
-
-- iOS Native Dialog 在 Visual Viewport、键盘和 Home Indicator 下的完整遮罩；
-- 长按浏览锚点与 Safari 系统长按手势；
-- 快速惯性滚动下字母栏警戒和反向滞回；
-- 超长繁体释义、超长独立域名称及 Dynamic Type；
-- 日历五按钮在目标机型上的实际视觉与触控；
-- 主屏幕 PWA 的 Service Worker 从旧 3.5.1 Cache 升级到本重做包。
+当前执行环境禁止 Chromium 直接导航本地 HTTP／file 页面，因此合成布局测试采用 `page.set_content`，没有声称完成整个 PWA 的真实浏览器端到端运行。真实 iPhone standalone PWA 仍必须按 `tests/MANUAL_CHECKLIST.md` 验收。

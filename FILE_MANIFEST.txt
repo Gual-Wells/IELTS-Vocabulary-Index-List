@@ -1,8 +1,8 @@
-Vocabulary Index 3.5.1 clean-rebuild complete source manifest
-Generated: 2026-08-03
-Baseline: Vocabulary-Index-3.5.0-Full-Source.zip (SHA-256 f3352050903c982be172e92000e474b5f39ae785b3ffb3a055f52fde537bc23b)
-Excludes: .git/, FILE_MANIFEST.txt, SHA256SUMS.txt
-Files listed: 125
+Vocabulary Index 3.5.2 complete source manifest
+Generated: 2026-08-04
+Baseline: Vocabulary-Index-3.5.1-Clean-Rebuild-Full-Source.zip (SHA-256 66a43ed0dc2f83cc789e6003b96b21bea1cecf8672a0f36ac7ed1d03ada9cd38)
+Excludes: .git/, FILE_MANIFEST.txt, SHA256SUMS.txt, tests/__pycache__/
+Files listed: 133
 
 .nojekyll	0
 AUDIT_REPORT_3.2.0.md	14636
@@ -11,7 +11,8 @@ AUDIT_REPORT_3.3.1.md	4146
 AUDIT_REPORT_3.4.0.md	5758
 AUDIT_REPORT_3.5.0.md	3656
 AUDIT_REPORT_3.5.1.md	4382
-CHANGELOG.md	10344
+AUDIT_REPORT_3.5.2.md	1807
+CHANGELOG.md	11936
 CHANGE_REPORT_3.0.2.md	1854
 CHANGE_REPORT_3.0.3.md	1101
 CHANGE_REPORT_3.0.4.md	1067
@@ -25,10 +26,11 @@ CHANGE_REPORT_3.3.1.md	3167
 CHANGE_REPORT_3.4.0.md	7048
 CHANGE_REPORT_3.5.0.md	2566
 CHANGE_REPORT_3.5.1.md	4054
+CHANGE_REPORT_3.5.2.md	3282
 DATA_FORMATS.md	7639
 DATA_REPORT.md	1938
-DEPLOY.md	1469
-LOCAL_ARCHITECTURE.md	3275
+DEPLOY.md	1488
+LOCAL_ARCHITECTURE.md	4528
 MIGRATION_3.0.0.md	2142
 MIGRATION_3.1.0.md	1372
 MIGRATION_3.1.1.md	607
@@ -38,6 +40,8 @@ MIGRATION_3.3.1.md	1447
 MIGRATION_3.4.0.md	3540
 MIGRATION_3.5.0.md	977
 MIGRATION_3.5.1.md	934
+MIGRATION_3.5.2.md	1223
+PREUPDATE_ROADMAP_2026-08-04.md	10189
 PRODUCT_MANUAL_3.0.4.md	4917
 PRODUCT_MANUAL_3.0.5.md	6165
 PRODUCT_MANUAL_3.0.7.md	2019
@@ -49,8 +53,9 @@ PRODUCT_MANUAL_3.3.1.md	2221
 PRODUCT_MANUAL_3.4.0.md	4695
 PRODUCT_MANUAL_3.5.0.md	1704
 PRODUCT_MANUAL_3.5.1.md	1366
-PROJECT_HISTORY.md	21202
-README.md	2836
+PRODUCT_MANUAL_3.5.2.md	1738
+PROJECT_HISTORY.md	24535
+README.md	3895
 SECURITY.md	1227
 TEST_REPORT_3.0.4.md	1246
 TEST_REPORT_3.0.5.md	0
@@ -63,6 +68,7 @@ TEST_REPORT_3.3.1.md	3862
 TEST_REPORT_3.4.0.md	3645
 TEST_REPORT_3.5.0.md	3474
 TEST_REPORT_3.5.1.md	2348
+TEST_REPORT_3.5.2.md	3816
 UX_SPEC_3.0.4.md	946
 UX_SPEC_3.0.5.md	704
 UX_SPEC_3.0.7.md	853
@@ -74,12 +80,14 @@ UX_SPEC_3.3.1.md	3018
 UX_SPEC_3.4.0.md	4441
 UX_SPEC_3.5.0.md	1898
 UX_SPEC_3.5.1.md	2261
+UX_SPEC_3.5.2.md	2395
 assets/icons/apple-touch-icon.png	33779
 assets/icons/icon-192.png	36899
 assets/icons/icon-512.png	151357
 css/v3.3.1.css	8746
 css/v3.4.0.css	6111
 css/v3.5.1.css	27283
+css/v3.5.2.css	28531
 css/v3.css	70659
 data/computer-terms-classification-report.json	112605
 data/computer-terms-source-report.json	812
@@ -112,18 +120,18 @@ js/v3-import.js	6667
 js/v3-integrations.js	8087
 js/v3-model.js	82186
 js/v3-store.js	47789
-js/v3-ui.js	189738
-js/v3-upgrade.js	919
-manifest.webmanifest	523
-package.json	654
-sw.js	2405
-tests/MANUAL_CHECKLIST.md	11367
+js/v3-ui.js	198438
+js/v3-upgrade.js	927
+manifest.webmanifest	579
+package.json	677
+sw.js	2413
+tests/MANUAL_CHECKLIST.md	9064
 tests/integration-tests.mjs	7026
-tests/layout-contract-check.py	8124
+tests/layout-contract-check.py	9859
 tests/performance-tests.mjs	2132
 tests/run-tests.mjs	22945
-tests/runtime-symbol-tests.mjs	2649
-tests/static-tests.mjs	15042
+tests/runtime-symbol-tests.mjs	4764
+tests/static-tests.mjs	17280
 tests/stress-tests.mjs	6573
 tools/classify-computer-terms.py	6236
 tools/classify-seed-phrases.py	15578

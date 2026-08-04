@@ -19,7 +19,7 @@ const collections = [
   createCollection({ domainId: domain.id, name: '短语总表', type: 'system-phrases', order: 1, timestamp }),
 ];
 let backup = canonicalizeBackup({
-  schemaVersion: 5, appVersion: '3.5.1', exportedAt: timestamp,
+  schemaVersion: 5, appVersion: '3.5.2', exportedAt: timestamp,
   domains: [domain], collections, entries: [], memberships: [], phraseTokens: [], pins: [], annotations: [], studyStamps: [],
   settings: { viewModes: {}, calendarMonths: {}, lastPositions: {}, builtInSeedRevision: 3 },
 });

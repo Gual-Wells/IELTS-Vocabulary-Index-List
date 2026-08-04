@@ -1,4 +1,4 @@
-# Vocabulary Index 3.5.1 本地架构
+# Vocabulary Index 3.5.2 本地架构
 
 ## 目标
 
@@ -38,12 +38,27 @@ PIN、Annotation 和 StudyStamp 均绑定 Entry ID。系统总表只读取和操
 - 固定紧凑导航与滚动 Large Title 分离；
 - 真实字母标题使用 sticky，不创建重复悬浮副本；
 - PIN、标注审阅和首页警告使用固定覆盖层；
-- 顶部遮挡底边通过有限 CSS 变量统一提供给 sticky 标题和程序跳转；
+- 顶部有效底边由 `topChromeBottom()` 统一提供给 sticky 标题、活动字母探针、程序跳转和菜单避让，不保留正文可透出的接缝；
 - 一级表项按 42 行分块；首块同步生成，其余块接近视口时物化；
 - 只有可见 `phrase-two-line` 行进行真实 DOM 溢出检查；
 - SVG 图标模板按名称缓存；
 - 完整关系只在展开时解析；
-- 滚动结束或限流后持久化上次位置。
+- 普通滚动不自动持久化浏览位置；底部浏览锚点只有长按约 520ms 才写入，短按只读取。
+
+## 3.5.2 页面状态
+
+- 字母／日期、词汇／短语属于普通切换：目标页顶部、全部组收起，不映射当前 Entry；
+- 搜索、关系、PIN、日期和手动锚点属于明确目标跳转；
+- 浏览器 History 只为真实递归返回保存完整页面快照，包括 view kind、mode、calendar month、scrollY、expanded groups 和 expanded relations；
+- 日期具体日和“未标注”复用统一展开集合，年／月不折叠；
+- 字母轨道横滑使用人工锁；顶部 A、底部 # 和边界橡皮筋都不能单独解除锁，只有 sticky 字母真实变化或显式点击字母才交回自动跟随。
+
+## 3.5.2 视觉视口与停靠层
+
+- native dialog 根层固定覆盖 Layout Viewport；内部卡片使用 VisualViewport 的中心、宽高和键盘状态；
+- VisualViewport resize/scroll 合并更新查询菜单、关系菜单和 Overlay 几何；
+- 底部工具栏试行固定 58px，PIN／标注栏统一停靠其上方；该数值只对当前 iPhone 17 真机验收负责；
+- 禁用按钮只降低图标透明度，结构分隔线不继承禁用透明度。
 
 ## 搜索
 

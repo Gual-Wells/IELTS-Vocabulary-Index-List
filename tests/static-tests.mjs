@@ -21,21 +21,21 @@ const sw = read('sw.js');
 const cssBase = read('css/v3.css');
 const css331 = read('css/v3.3.1.css');
 const css340 = read('css/v3.4.0.css');
-const cssRelease = read('css/v3.5.1.css');
+const cssRelease = read('css/v3.5.2.css');
 const css = `${cssBase}\n${css331}\n${css340}\n${cssRelease}`;
 const pkg = JSON.parse(read('package.json'));
 const seed = JSON.parse(read('data/seed.json'));
 
 // Release identity and complete shell.
-assert.equal(pkg.version, '3.5.1');
-assert.equal(seed.appVersion, '3.5.1');
-assert.ok(html.includes('name="application-version" content="3.5.1"'));
-assert.ok(html.includes('<title>Vocabulary Index 3.5.1</title>'));
-assert.ok(app.includes("const MODULE_VERSION = '3.5.1'"));
-assert.ok(sw.includes('v3.5.1-clean-rebuild-20260803-1'));
-assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.1'));
-assert.ok(html.includes('./css/v3.5.1.css'));
-assert.ok(sw.includes('./css/v3.5.1.css'));
+assert.equal(pkg.version, '3.5.2');
+assert.equal(seed.appVersion, '3.5.2');
+assert.ok(html.includes('name="application-version" content="3.5.2"'));
+assert.ok(html.includes('<title>Vocabulary Index 3.5.2</title>'));
+assert.ok(app.includes("const MODULE_VERSION = '3.5.2'"));
+assert.ok(sw.includes('v3.5.2-runtime-stabilization-20260804-1'));
+assert.ok(upgrade.includes('vocabulary-index:cache-bridge:3.5.2'));
+assert.ok(html.includes('./css/v3.5.2.css'));
+assert.ok(sw.includes('./css/v3.5.2.css'));
 assert.ok(html.includes('maximum-scale=1') && html.includes('viewport-fit=cover'));
 assert.ok(html.includes("script-src 'self'"));
 assert.ok(!/on(?:click|change|input|submit)\s*=/i.test(html));
@@ -71,7 +71,9 @@ for (const token of [
   'function navigateCollection(', 'function navigateBack()', 'function handleHistoryNavigation(',
   "history.pushState({ vix: true, depth }", "window.addEventListener('popstate', handleHistoryNavigation)",
 ]) assert.ok(ui.includes(token), `缺少返回栈实现：${token}`);
-assert.ok(ui.includes('expandedLetters: [...expandedLettersFor'));
+assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
+assert.ok(ui.includes('mode,'));
+assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('expandedRelations: [...expandedRelations]'));
 
 // Ordinary collections are two independent projections; system views cannot switch.
@@ -88,18 +90,31 @@ assert.ok(ui.includes('长按保存当前位置'));
 assert.ok(ui.includes('Math.hypot(event.clientX - press.startX'));
 assert.ok(ui.includes("const entryId = firstVisibleEntryId() || '';"));
 assert.equal((ui.match(/setLastPosition\(/g) || []).length, 1, '浏览锚点只能由长按保存路径写入');
-assert.ok(ui.includes('function modeSwitchAnchorEntryId'));
-assert.ok(ui.includes("pendingJumpReason = validAnchor ? 'mode-anchor' : 'home'"));
-assert.ok(!ui.includes("getLastPosition(positionDomainId(collection), collection.id, { mode: nextMode"));
+assert.ok(!ui.includes('function modeSwitchAnchorEntryId'));
+assert.ok(!ui.includes("pendingJumpReason = validAnchor ? 'mode-anchor' : 'home'"));
+assert.ok(ui.includes("pendingJumpReason = 'home';"));
+assert.ok(ui.includes('expandedLettersFor(collection.id, nextKind).clear()'));
+assert.ok(ui.includes('expandedLettersFor(collection.id, section).clear()'));
+assert.ok(!ui.includes('viewStateSnapshots'));
 assert.ok(ui.includes("iconButton('chevrons', 'calendar-prev-year'"));
 assert.ok(ui.includes("iconButton('chevrons', 'calendar-next-year'"));
+assert.ok(ui.includes('function setDateSectionOpen'));
+assert.ok(ui.includes('function toggleDateSectionWithAnchor'));
+assert.ok(ui.includes('date-group-indicator${open'));
+assert.ok(ui.includes("dateExpansionKey('unmarked')"));
+assert.ok(ui.includes("showModalStable(elements['search-dialog'])"));
+assert.ok(ui.includes('window.getSelection?.()?.removeAllRanges()'));
+assert.ok(cssRelease.includes('-webkit-touch-callout: none !important'));
 assert.ok(cssRelease.includes('grid-template-columns: 38px 34px minmax(0, 1fr) 34px 38px !important'));
 
 
 // Bottom toolbar has one stable owner; top search is removed from collection pages.
 assert.ok(cssRelease.includes('.bottom-toolbar'));
 assert.ok(cssRelease.includes('grid-template-columns: repeat(5'));
-assert.ok(cssRelease.includes('env(safe-area-inset-bottom)'));
+assert.ok(cssRelease.includes('height: var(--bottom-toolbar-height)'));
+assert.ok(!cssRelease.includes('height: calc(var(--bottom-toolbar-height) + env(safe-area-inset-bottom))'));
+assert.ok(cssRelease.includes('.bottom-toolbar > button:disabled .ui-icon { opacity: .3; }'));
+assert.ok(cssRelease.includes('.bottom-toolbar > button:disabled { color: var(--muted); opacity: 1; }'));
 assert.ok(ui.includes("elements['search-button'].classList.add('hidden')"));
 assert.ok(ui.includes("elements['bottom-search'].onclick = openSearchDialog"));
 assert.ok(ui.includes("elements['bottom-view-switch']"));
@@ -112,7 +127,13 @@ assert.ok(ui.includes("if (letter === 'A') { moveLetterTrack(track, 0, -1)"));
 assert.ok(ui.includes("if (letter === '#') { moveLetterTrack(track, track.scrollWidth - track.clientWidth, 1)"));
 assert.ok(ui.includes('const leftGuard = trackRect.left + itemWidth * 1.15'));
 assert.ok(ui.includes('const rightGuard = trackRect.right - itemWidth * 1.15'));
-assert.ok(ui.includes('scheduleLetterTrackSync(205)'));
+assert.ok(!ui.includes('scheduleLetterTrackSync(205)'));
+assert.ok(ui.includes('manualLocked: false'));
+assert.ok(ui.includes('allowManualRelease: Boolean(activeChanged || stickyBoundaryNewlyEngaged)'));
+assert.ok(!ui.includes('movedSinceManualLock'), '字母轨道在页面顶部或底部都不能仅因边界滚动回弹而解除手动锁定');
+assert.ok(ui.includes('manualLockStickyEngaged'), '人工锁必须记录手势发生时标题是否已经 sticky');
+assert.ok(ui.includes('stickyBoundaryNewlyEngaged'), '只有标题从未 sticky 进入真实 sticky 边界时才允许同字母接管');
+assert.ok(ui.includes('function releaseLetterTrackManualLock'));
 assert.ok(cssRelease.includes('scroll-behavior: auto !important'));
 assert.ok(cssRelease.includes('.letter-heading'));
 assert.ok(cssRelease.includes('position: sticky !important'));
@@ -120,19 +141,22 @@ assert.ok(cssRelease.includes('backdrop-filter: none !important'));
 
 // Entry layout: inline number, source on shell border, no index badge/side rail.
 assert.ok(ui.includes("className: 'entry-index-inline'"));
-assert.ok(ui.includes("lineChildren.push(el('span', { className: 'entry-source-domain'"));
 assert.ok(ui.includes("className: 'entry-lexeme-stack'"));
-assert.ok(ui.includes("entry-gloss entry-gloss-placeholder"));
+assert.ok(ui.includes("className: `entry-control-stack${sourceDomainLabel ? ' has-source' : ''}`"));
+assert.ok(ui.includes("className: 'entry-control-main'"));
+assert.ok(ui.includes("className: 'entry-source-domain'"));
+assert.ok(!ui.includes('entry-gloss-placeholder'));
 assert.ok(!ui.includes("className: 'entry-index-badge'"));
 assert.ok(!ui.includes("className: 'entry-relation-rail'"));
 assert.ok(!ui.includes("className: `entry-relation-tab"));
 assert.ok(ui.includes("const relationButton = iconButton('disclosure'"));
 assert.ok(ui.includes("className: 'entry-action-placeholder relation-placeholder'"));
 assert.ok(ui.indexOf("const relationButton = iconButton('disclosure'") < ui.indexOf('actionItems.push(actions.refresh, actions.pin, actions.query, actions.more)'));
-assert.ok(ui.includes("if (studyStamp) lineChildren.push"));
+assert.ok(ui.includes('if (studyStamp) actionMainChildren.push'));
 assert.ok(cssRelease.includes('.entry-study-date:not(.marked) { display: none'));
-assert.ok(cssRelease.includes('grid-template-areas: "text date actions"'));
-assert.ok(cssRelease.includes('grid-area: source'));
+assert.ok(cssRelease.includes('grid-template-areas: "text controls"'));
+assert.ok(cssRelease.includes('grid-template-areas: "index text controls"'));
+assert.ok(cssRelease.includes('grid-area: controls'));
 assert.ok(cssRelease.includes('position: static !important'));
 assert.ok(cssRelease.includes('.entry-index-badge,\n.entry-relation-rail,\n.entry-relation-tab { display: none'));
 assert.ok(cssRelease.includes('.entry-source-domain'));
@@ -153,7 +177,7 @@ assert.ok(cssRelease.includes('grid-template-columns: repeat(2, 42px)'));
 assert.ok(integrations.includes("export const CHATGPT_SHORTCUT_NAME = 'AI查询'"));
 
 // PIN/review are opaque rectangular bottom docks and never title overlays.
-assert.ok(cssRelease.includes('bottom: calc(var(--bottom-toolbar-height) + env(safe-area-inset-bottom))'));
+assert.ok(cssRelease.includes('bottom: var(--bottom-toolbar-height) !important'));
 assert.ok(cssRelease.includes('.pin-bar::before { display: none'));
 assert.ok(cssRelease.includes('PIN is an integrated bottom dock'));
 assert.ok(cssRelease.includes('background: var(--surface) !important'));
@@ -164,11 +188,15 @@ assert.ok(!cssRelease.includes('backdrop-filter: blur'));
 assert.ok(cssRelease.includes('.search-controls input'));
 assert.ok(cssRelease.includes('width: 100% !important'));
 assert.ok(cssRelease.includes('grid-template-columns: minmax(0, 1fr) !important'));
-assert.ok(cssRelease.includes('width: var(--visual-width, 100vw) !important'));
+assert.ok(cssRelease.includes('width: 100vw !important'));
+assert.ok(cssRelease.includes('height: 100lvh !important'));
+assert.ok(cssRelease.includes('--sticky-base-top'));
+assert.ok(cssRelease.includes('.collection-view.has-letter-nav .letter-heading { border-top: 0 !important; }'));
 assert.ok(cssRelease.includes('grid-template-columns: 44px minmax(0, 1fr) 44px !important'));
-assert.ok(cssRelease.includes('position: relative !important;'));
+assert.ok(cssRelease.includes('position: fixed !important;'));
 assert.ok(cssRelease.includes('width: min(520px, calc(var(--visual-width, 100vw) - 28px)) !important'));
-assert.ok(cssRelease.includes('left: auto !important;'));
+assert.ok(cssRelease.includes('left: var(--visual-center-x, 50vw) !important'));
+assert.ok(cssRelease.includes('transform: translate(-50%, -50%) !important'));
 assert.ok(cssRelease.includes('.entry-lexeme-stack > .entry-text'));
 assert.ok(cssRelease.includes('grid-column: 1 !important;'));
 
@@ -233,14 +261,16 @@ for (const relative of precache) {
   if (clean) assert.ok(exists(clean), `预缓存资源不存在：${clean}`);
 }
 const manifest = JSON.parse(read('manifest.webmanifest'));
-assert.ok(manifest.name.includes('3.5.1'));
+assert.ok(manifest.name.includes('3.5.2'));
 assert.equal(manifest.display, 'standalone');
+assert.equal(manifest.background_color, '#fafafa');
+assert.equal(manifest.theme_color, '#fafafa');
 
 // Lifecycle and release documents are part of every full-source package.
 for (const file of [
-  'PROJECT_HISTORY.md', 'CHANGE_REPORT_3.5.1.md', 'AUDIT_REPORT_3.5.1.md',
-  'TEST_REPORT_3.5.1.md', 'MIGRATION_3.5.1.md', 'UX_SPEC_3.5.1.md',
-  'PRODUCT_MANUAL_3.5.1.md',
+  'PROJECT_HISTORY.md', 'CHANGE_REPORT_3.5.2.md', 'AUDIT_REPORT_3.5.2.md',
+  'TEST_REPORT_3.5.2.md', 'MIGRATION_3.5.2.md', 'UX_SPEC_3.5.2.md',
+  'PRODUCT_MANUAL_3.5.2.md', 'PREUPDATE_ROADMAP_2026-08-04.md',
 ]) assert.ok(exists(file), `缺少生命周期/交付文档：${file}`);
 
 // All relative ES module dependencies exist.

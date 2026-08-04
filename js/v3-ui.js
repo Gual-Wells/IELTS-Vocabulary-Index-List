@@ -17,7 +17,7 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.5.2';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -65,14 +65,11 @@ let appNavigationDepth = 0;
 let pendingPageSnapshot = null;
 let pageTransitionTimer = 0;
 let renderRevision = 0;
-const viewStateSnapshots = new Map();
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
 let activeQueryMenu = null;
 let activeRelationTargetMenu = null;
 let scrollUiFrame = 0;
-let letterTrackInteractionUntil = 0;
-let letterTrackSyncTimer = 0;
 let browseAnchorPress = null;
 let browseAnchorSuppressClickUntil = 0;
 let routeRenderFrame = 0;
@@ -188,46 +185,81 @@ function field(label, control, help = '') {
 }
 
 let viewportUpdateFrame = 0;
-function updateVisualViewportVars() {
+let overlayLayoutFrame = 0;
+let collapseTransactionRevision = 0;
+let historyRestoreInProgress = false;
+function visualViewportMetrics() {
+  const viewport = window.visualViewport;
+  const height = viewport?.height || window.innerHeight;
+  const width = viewport?.width || window.innerWidth;
+  const top = viewport?.offsetTop || 0;
+  const left = viewport?.offsetLeft || 0;
+  return {
+    height, width, top, left,
+    bottom: Math.max(0, window.innerHeight - top - height),
+  };
+}
+
+function applyVisualViewportVars() {
+  const { height, width, top, left, bottom } = visualViewportMetrics();
+  document.documentElement.style.setProperty('--visual-height', `${Math.round(height)}px`);
+  document.documentElement.style.setProperty('--visual-width', `${Math.round(width)}px`);
+  document.documentElement.style.setProperty('--visual-top', `${Math.round(top)}px`);
+  document.documentElement.style.setProperty('--visual-left', `${Math.round(left)}px`);
+  document.documentElement.style.setProperty('--visual-bottom', `${Math.round(bottom)}px`);
+  document.documentElement.style.setProperty('--visual-center-x', `${Math.round(left + width / 2)}px`);
+  document.documentElement.style.setProperty('--visual-center-y', `${Math.round(top + height / 2)}px`);
+  const keyboardVisible = height < window.innerHeight - 120;
+  document.documentElement.classList.toggle('keyboard-visible', keyboardVisible);
+  elements['search-dialog']?.classList.toggle('keyboard-visible', keyboardVisible);
+}
+
+function updateVisualViewportVars({ immediate = false } = {}) {
   cancelAnimationFrame(viewportUpdateFrame);
-  viewportUpdateFrame = requestAnimationFrame(() => {
-    const viewport = window.visualViewport;
-    const height = viewport?.height || window.innerHeight;
-    const width = viewport?.width || window.innerWidth;
-    const top = viewport?.offsetTop || 0;
-    const left = viewport?.offsetLeft || 0;
-    const bottom = Math.max(0, window.innerHeight - top - height);
-    document.documentElement.style.setProperty('--visual-height', `${Math.round(height)}px`);
-    document.documentElement.style.setProperty('--visual-width', `${Math.round(width)}px`);
-    document.documentElement.style.setProperty('--visual-top', `${Math.round(top)}px`);
-    document.documentElement.style.setProperty('--visual-left', `${Math.round(left)}px`);
-    document.documentElement.style.setProperty('--visual-bottom', `${Math.round(bottom)}px`);
-    const keyboardVisible = height < window.innerHeight - 120;
-    document.documentElement.classList.toggle('keyboard-visible', keyboardVisible);
-    elements['search-dialog']?.classList.toggle('keyboard-visible', keyboardVisible);
+  const apply = () => {
+    viewportUpdateFrame = 0;
+    applyVisualViewportVars();
     if (activeQueryMenu) positionQueryMenu();
+    if (activeRelationTargetMenu) positionRelationTargetMenu();
     updateOverlayLayout();
-  });
+  };
+  if (immediate) apply();
+  else viewportUpdateFrame = requestAnimationFrame(apply);
+}
+
+function topChromeBottom({ includeLetterNav = true } = {}) {
+  const viewportTop = window.visualViewport?.offsetTop || 0;
+  const selectors = includeLetterNav
+    ? '.topbar, .update-banner, .home-annotation-banner, .letter-nav'
+    : '.topbar, .update-banner, .home-annotation-banner';
+  const topSurfaces = [...document.querySelectorAll(selectors)]
+    .filter((node) => !node.classList.contains('hidden'))
+    .map((node) => node.getBoundingClientRect())
+    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
+    .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  let bottom = viewportTop;
+  for (const rect of topSurfaces) if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
+  return Math.max(bottom, viewportTop + 72);
 }
 
 function updateOverlayLayout() {
-  requestAnimationFrame(() => {
+  if (overlayLayoutFrame) return;
+  overlayLayoutFrame = requestAnimationFrame(() => {
+    overlayLayoutFrame = 0;
     const updateVisible = elements['update-banner'] && !elements['update-banner'].classList.contains('hidden');
     const updateHeight = updateVisible ? Math.ceil(elements['update-banner'].getBoundingClientRect().height + 8) : 0;
     document.documentElement.style.setProperty('--update-overlay-offset', `${updateHeight}px`);
-    requestAnimationFrame(() => {
-      const viewportTop = window.visualViewport?.offsetTop || 0;
-      const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .context-bar, .letter-nav')]
-        .filter((node) => !node.classList.contains('hidden'))
-        .map((node) => node.getBoundingClientRect())
-        .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
-        .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
-      let bottom = viewportTop;
-      for (const rect of topSurfaces) if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
-      bottom = Math.max(bottom, viewportTop + 72);
-      document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
-      document.documentElement.style.setProperty('--content-sticky-top', `${Math.ceil(bottom + 2)}px`);
-    });
+    const baseBottom = topChromeBottom({ includeLetterNav: false });
+    const bottom = topChromeBottom();
+    const sealedBaseBottom = Math.floor(baseBottom + .01);
+    const sealedBottom = Math.floor(bottom + .01);
+    document.documentElement.style.setProperty('--sticky-base-top', `${sealedBaseBottom}px`);
+    document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
+    document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
+    document.documentElement.style.setProperty('--content-sticky-top', `${sealedBaseBottom}px`);
+    if (activeQueryMenu) positionQueryMenu();
+    if (activeRelationTargetMenu) positionRelationTargetMenu();
+    syncActiveAlphabetHeading();
   });
 }
 
@@ -243,7 +275,15 @@ function lockPageForModal() {
   body.style.width = '100%';
   document.documentElement.classList.add('modal-open');
   body.classList.add('modal-open');
-  updateVisualViewportVars();
+  updateVisualViewportVars({ immediate: true });
+}
+
+function showModalStable(dialog) {
+  if (!dialog || dialog.open) return;
+  updateVisualViewportVars({ immediate: true });
+  lockPageForModal();
+  dialog.showModal();
+  requestAnimationFrame(() => updateVisualViewportVars({ immediate: true }));
 }
 
 function unlockPageForModal() {
@@ -340,10 +380,7 @@ function openDialog({
     dialogSubmitHandler = onSubmit;
   } else dialogSubmitHandler = null;
   currentDialogMeta = { onRestore };
-  if (!elements['app-dialog'].open) {
-    lockPageForModal();
-    elements['app-dialog'].showModal();
-  }
+  showModalStable(elements['app-dialog']);
   queueMicrotask(() => elements['dialog-close']?.focus({ preventScroll: true }));
 }
 
@@ -359,10 +396,7 @@ function openActionDialog({ title, description = '', body = [] }) {
   elements['action-description'].textContent = description;
   elements['action-description'].classList.toggle('hidden', !description);
   elements['action-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
-  if (!elements['action-dialog'].open) {
-    lockPageForModal();
-    elements['action-dialog'].showModal();
-  }
+  showModalStable(elements['action-dialog']);
   queueMicrotask(() => elements['action-close']?.focus({ preventScroll: true }));
 }
 
@@ -396,10 +430,7 @@ function openConfirmDialog({ title, description = '', body = [], submitText = '�
   confirmSubmitHandler = onSubmit;
   confirmCancelHandler = onCancel;
   confirmChoiceRequired = Boolean(choiceRequired);
-  if (!elements['confirm-dialog'].open) {
-    lockPageForModal();
-    elements['confirm-dialog'].showModal();
-  }
+  showModalStable(elements['confirm-dialog']);
 }
 
 function handleConfirmCancel() {
@@ -441,10 +472,13 @@ function currentSnapshot() {
   const collection = getState().collectionById.get(currentCollectionId);
   if (!collection) return null;
   const section = currentViewKind;
+  const mode = getViewMode(currentCollectionId, section);
   return {
     type: 'collection', collectionId: currentCollectionId, viewKind: section,
+    mode,
+    calendarMonth: mode === 'date' ? getCalendarMonth(currentCollectionId, section) : '',
     scrollY: window.scrollY,
-    expandedLetters: [...expandedLettersFor(currentCollectionId, section)],
+    expandedGroups: [...expandedLettersFor(currentCollectionId, section)],
     expandedRelations: [...expandedRelations].filter((key) => key.startsWith(`${currentCollectionId}\u0000${section}\u0000`)),
     activeSection,
   };
@@ -454,14 +488,13 @@ function persistCurrentHistorySnapshot() {
   const snapshot = currentSnapshot();
   const state = { ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: snapshot };
   history.replaceState(state, '', location.href);
-  if (snapshot?.type === 'collection') viewStateSnapshots.set(`${snapshot.collectionId}:${snapshot.viewKind}`, snapshot);
 }
 
 function applySnapshotBeforeRender(snapshot, collection, viewKind) {
   if (!snapshot || snapshot.type !== 'collection' || snapshot.collectionId !== collection.id || snapshot.viewKind !== viewKind) return;
   const expanded = expandedLettersFor(collection.id, viewKind);
   expanded.clear();
-  for (const letter of snapshot.expandedLetters || []) expanded.add(letter);
+  for (const key of snapshot.expandedGroups || snapshot.expandedLetters || []) expanded.add(key);
   for (const key of [...expandedRelations]) if (key.startsWith(`${collection.id}\u0000${viewKind}\u0000`)) expandedRelations.delete(key);
   for (const key of snapshot.expandedRelations || []) expandedRelations.add(key);
   activeSection = snapshot.activeSection || viewKind;
@@ -489,13 +522,16 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
     clearExpandedRelationsForView(collection.id, viewKind);
     return;
   }
-  if (entry && ['search', 'relation', 'route', 'annotation', 'mode-anchor'].includes(reason)) {
+  if (entry && ['search', 'relation', 'route', 'annotation', 'pin', 'last', 'study-date'].includes(reason)) {
     clearExpandedRelationsForView(collection.id, viewKind);
-    if (getViewMode(collection.id, viewKind) === 'alphabet') {
-      expanded.clear();
-      expanded.add(letterForEntry(entry));
-    }
+    expanded.clear();
+    if (getViewMode(collection.id, viewKind) === 'alphabet') expanded.add(letterForEntry(entry));
+    else expanded.add(dateExpansionKey(getStudyStamp(entry, collection.id)?.reviewDateKey || 'unmarked'));
   }
+}
+
+function dateExpansionKey(dateKey) {
+  return `date:${dateKey || 'unmarked'}`;
 }
 
 function performPageTransition(callback, enabled = true) {
@@ -556,9 +592,26 @@ function goHome() {
   renderApp();
 }
 
-function handleHistoryNavigation(event) {
+async function handleHistoryNavigation(event) {
   appNavigationDepth = Number(event.state?.depth || 0);
   pendingPageSnapshot = event.state?.pageSnapshot || null;
+  const snapshot = pendingPageSnapshot;
+  historyRestoreInProgress = true;
+  try {
+    if (snapshot?.type === 'collection' && ['alphabet', 'date'].includes(snapshot.mode)) {
+      if (getViewMode(snapshot.collectionId, snapshot.viewKind) !== snapshot.mode) {
+        await setViewMode(snapshot.collectionId, snapshot.mode, snapshot.viewKind);
+      }
+      if (snapshot.mode === 'date' && /^\d{4}-\d{2}$/.test(String(snapshot.calendarMonth || ''))
+        && getCalendarMonth(snapshot.collectionId, snapshot.viewKind) !== snapshot.calendarMonth) {
+        await setCalendarMonth(snapshot.collectionId, snapshot.viewKind, snapshot.calendarMonth);
+      }
+    }
+  } catch (error) {
+    displayError(error);
+  } finally {
+    historyRestoreInProgress = false;
+  }
   renderApp();
 }
 
@@ -1340,21 +1393,18 @@ async function saveBrowseAnchor(collection, section, buttonNode) {
   const entryId = firstVisibleEntryId() || '';
   const entry = entryId ? getState().entryById.get(entryId) : null;
   if (!entry || sectionForEntry(entry) !== section) {
-    showToast('当前位置没有可保存的词条');
-    return false;
+    return { saved: false, message: '当前位置没有可保存的词条' };
   }
   const saved = await setLastPosition(positionDomainId(collection, entry), collection.id, entry.id, { mode, section });
   if (!saved) {
-    showToast('当前位置已失效，未保存浏览锚点');
-    return false;
+    return { saved: false, message: '当前位置已失效，未保存浏览锚点' };
   }
   navigator.vibrate?.(10);
   buttonNode?.classList.add('has-anchor');
   buttonNode?.classList.remove('no-anchor');
   buttonNode?.setAttribute('aria-label', '浏览锚点：短按跳转，长按覆盖当前位置');
   buttonNode.title = '短按跳转到浏览锚点；长按覆盖为当前位置';
-  showToast('已保存当前位置');
-  return true;
+  return { saved: true, message: '已保存当前位置' };
 }
 
 function bindBrowseAnchorButton(buttonNode, collection, section) {
@@ -1376,13 +1426,17 @@ function bindBrowseAnchorButton(buttonNode, collection, section) {
       startX: event.clientX,
       startY: event.clientY,
       fired: false,
+      savePromise: null,
       timer: window.setTimeout(() => {
         const press = browseAnchorPress;
         if (!press || press.button !== buttonNode) return;
         press.fired = true;
         browseAnchorSuppressClickUntil = Date.now() + 650;
         buttonNode.classList.add('saving-anchor');
-        saveBrowseAnchor(collection, section, buttonNode).catch(displayError).finally(() => buttonNode.classList.remove('saving-anchor'));
+        press.savePromise = saveBrowseAnchor(collection, section, buttonNode)
+          .then((result) => ({ result, error: null }))
+          .catch((error) => ({ result: null, error }))
+          .finally(() => buttonNode.classList.remove('saving-anchor'));
       }, 520),
     };
     try { buttonNode.setPointerCapture(event.pointerId); } catch {}
@@ -1396,9 +1450,20 @@ function bindBrowseAnchorButton(buttonNode, collection, section) {
     const press = browseAnchorPress;
     if (!press || press.button !== buttonNode || press.pointerId !== event.pointerId) return;
     const fired = press.fired;
+    const savePromise = press.savePromise;
     cancelBrowseAnchorPress({ suppressClick: fired });
+    window.getSelection?.()?.removeAllRanges();
+    if (fired && savePromise) savePromise.then(({ result, error }) => {
+      window.getSelection?.()?.removeAllRanges();
+      if (error) displayError(error);
+      else if (result?.message) showToast(result.message, result.saved ? '' : 'error');
+    });
   };
-  buttonNode.onpointercancel = () => cancelBrowseAnchorPress({ suppressClick: true });
+  buttonNode.onpointercancel = () => {
+    const savePromise = browseAnchorPress?.button === buttonNode ? browseAnchorPress.savePromise : null;
+    cancelBrowseAnchorPress({ suppressClick: true });
+    if (savePromise) savePromise.then(({ error }) => { if (error) displayError(error); });
+  };
   buttonNode.onlostpointercapture = () => {
     if (browseAnchorPress?.button === buttonNode) cancelBrowseAnchorPress({ suppressClick: browseAnchorPress.fired });
   };
@@ -1446,15 +1511,22 @@ function renderBottomToolbar(collection, section = currentViewKind) {
 
 function switchCollectionView(collection, nextKind) {
   if (collection.type !== 'normal' || !['word', 'phrase'].includes(nextKind) || nextKind === currentViewKind) return;
-  persistCurrentHistorySnapshot();
-  const snapshot = viewStateSnapshots.get(`${collection.id}:${nextKind}`) || null;
+  collapseTransactionRevision += 1;
+  expandedLettersFor(collection.id, nextKind).clear();
+  clearExpandedRelationsForView(collection.id, nextKind);
   currentViewKind = nextKind;
   activeSection = nextKind;
-  pendingPageSnapshot = snapshot;
+  pendingPageSnapshot = null;
   pendingJumpEntryId = '';
-  pendingJumpReason = snapshot ? 'return' : 'home';
+  pendingJumpReason = 'home';
   const nextHash = collectionRoute(collection.id, '', nextKind);
-  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: snapshot }, '', nextHash);
+  const mode = getViewMode(collection.id, nextKind);
+  const freshSnapshot = {
+    type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
+    calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, nextKind) : '',
+    scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
+  };
+  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: freshSnapshot }, '', nextHash);
   performPageTransition(renderApp, true);
 }
 
@@ -1556,37 +1628,33 @@ function jumpToSection(section) {
   positionHeadingBelowChrome(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
 }
 
-function modeSwitchAnchorEntryId(section, mode) {
-  if (!currentCollectionId || !collectionRenderContext || collectionRenderContext.mode !== mode) return '';
-  const bounds = readingViewportBounds();
-  const largeTitle = elements['large-title'];
-  if (largeTitle && largeTitle.getBoundingClientRect().bottom > bounds.top + 8) return '';
-  if (mode === 'date') {
-    const calendar = elements['entry-list'].querySelector(`.study-calendar[data-section="${section}"]`);
-    if (calendar && calendar.getBoundingClientRect().bottom > bounds.top + 8) return '';
-  }
-  const content = elements['entry-list'].querySelector(`.content-section[data-section="${section}"]`);
-  if (!content || content.getBoundingClientRect().top >= bounds.top + 8) return '';
-  const anchorBottom = Math.min(bounds.bottom - 1, bounds.top + 128);
-  for (const row of content.querySelectorAll('.entry-row[data-entry-id]')) {
-    const rect = row.getBoundingClientRect();
-    if (rect.bottom > bounds.top + 2 && rect.top < anchorBottom) return row.dataset.entryId || '';
-  }
-  return '';
-}
-
 async function switchCollectionMode(collection, section = currentViewKind) {
   const currentModeValue = getViewMode(collection.id, section);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
-  const anchorEntryId = modeSwitchAnchorEntryId(section, currentModeValue);
-  const anchorEntry = anchorEntryId ? getState().entryById.get(anchorEntryId) : null;
-  const validAnchor = anchorEntry && sectionForEntry(anchorEntry) === section
-    && getState().visibleEntryIdsByCollection.get(collection.id)?.has(anchorEntry.id);
-  pendingJumpEntryId = validAnchor ? anchorEntry.id : '';
-  pendingJumpReason = validAnchor ? 'mode-anchor' : 'home';
-  if (!validAnchor) expandedLettersFor(collection.id, section).clear();
+  collapseTransactionRevision += 1;
+  expandedLettersFor(collection.id, section).clear();
+  clearExpandedRelationsForView(collection.id, section);
+  pendingPageSnapshot = null;
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'home';
   suppressScrollPersistence(700);
+  if (nextMode === 'date') {
+    const months = entriesForCollectionView(collection.id, section)
+      .map((entry) => getStudyStamp(entry, collection.id)?.reviewDateKey?.slice(0, 7) || '')
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a));
+    const fallback = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    await setCalendarMonth(collection.id, section, months[0] || fallback);
+  }
   await setViewMode(collection.id, nextMode, section);
+  history.replaceState({
+    ...(history.state || {}), vix: true, depth: appNavigationDepth,
+    pageSnapshot: {
+      type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
+      calendarMonth: nextMode === 'date' ? getCalendarMonth(collection.id, section) : '',
+      scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: section,
+    },
+  }, '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
 }
 
 function monthShift(monthKey, delta) {
@@ -1612,6 +1680,7 @@ function calendarForSection(collection, section, dates) {
     const dateKey = `${monthKey}-${String(day).padStart(2, '0')}`;
     const enabled = available.has(dateKey);
     grid.push(button(String(day), enabled ? 'calendar-day active' : 'calendar-day', () => {
+      setDateSectionOpen(section, dateKey, true);
       const target = document.getElementById(dateAnchorId(section, dateKey));
       if (!target) return;
       activeSection = section;
@@ -1657,6 +1726,7 @@ function navigationControls(collection, section, sectionContext, mode) {
       const enabled = sectionContext.grouped.has(letter);
       const control = button(letter, enabled ? '' : 'empty', () => {
         if (!enabled) return;
+        releaseLetterTrackManualLock(section);
         setLetterSectionOpen(section, letter, true);
         const target = sectionContext.sectionByKey.get(letter);
         if (target) {
@@ -1673,37 +1743,34 @@ function navigationControls(collection, section, sectionContext, mode) {
   return { fixed: [], track };
 }
 
-function scheduleLetterTrackSync(delay = 0) {
-  clearTimeout(letterTrackSyncTimer);
-  letterTrackSyncTimer = window.setTimeout(() => {
-    letterTrackSyncTimer = 0;
-    requestAnimationFrame(syncActiveAlphabetHeading);
-  }, Math.max(0, delay));
-}
-
 function populateNavigationBar(nav, controls) {
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
-  const trackState = { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
+  const trackState = {
+    lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0,
+    pointerActive: false, manualLocked: false, manualLockScrollY: 0, manualLockLetter: '', manualLockStickyEngaged: false,
+  };
   letterTrackStates.set(track, trackState);
-  const markTrackInteraction = (duration = 500) => { letterTrackInteractionUntil = Math.max(letterTrackInteractionUntil, Date.now() + duration); };
+  const lockManualPosition = () => {
+    trackState.manualLocked = true;
+    trackState.manualLockScrollY = window.scrollY;
+    trackState.manualLockLetter = track.querySelector('[data-letter].active')?.dataset.letter || '';
+    const activeHeading = elements['entry-list'].querySelector('.letter-heading.active-sticky');
+    const headingTop = activeHeading?.getBoundingClientRect().top;
+    trackState.manualLockStickyEngaged = Number.isFinite(headingTop) && headingTop <= topChromeBottom() + 1;
+  };
   track.addEventListener('pointerdown', () => {
     trackState.pointerActive = true;
-    markTrackInteraction(800);
+    lockManualPosition();
   }, { passive: true });
   track.addEventListener('pointerup', () => {
     trackState.pointerActive = false;
-    markTrackInteraction(180);
-    scheduleLetterTrackSync(205);
   }, { passive: true });
   track.addEventListener('pointercancel', () => {
     trackState.pointerActive = false;
-    markTrackInteraction(120);
-    scheduleLetterTrackSync(145);
   }, { passive: true });
   track.addEventListener('scroll', () => {
     if (Date.now() < trackState.programmaticUntil || trackState.pointerActive) return;
-    markTrackInteraction(180);
-    scheduleLetterTrackSync(205);
+    lockManualPosition();
   }, { passive: true });
   nav.replaceChildren(track);
   nav.classList.toggle('no-track', !controls.track.length);
@@ -1726,7 +1793,7 @@ function createSectionContext(section, entries, collection, mode) {
       if (dateKey) dates.add(dateKey);
     }
   }
-  return { section, entries, grouped, sectionByKey: new Map(), root: null, dates };
+  return { section, entries, grouped, dateGroups: new Map(), sectionByKey: new Map(), root: null, dates };
 }
 
 function resetEntryChunking() {
@@ -1791,8 +1858,12 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
     entryChunkData.set(chunk, { items, collection, domain, globalIndexById, renderToken: renderRevision });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
     const estimatedHeight = slice.reduce((total, entry) => {
-      const kind = entryLayoutKind(entry, displayGlossForEntry(entry, collection, domain));
-      const rowHeight = kind === 'phrase-extreme' ? 88 : kind === 'phrase-two-line' ? 72 : ENTRY_ROW_ESTIMATE;
+      const gloss = displayGlossForEntry(entry, collection, domain);
+      const kind = entryLayoutKind(entry, gloss);
+      const hasMeta = Boolean(gloss || sourceDomainLabelForEntry(entry, collection));
+      const rowHeight = kind === 'phrase-extreme' ? (hasMeta ? 92 : 88)
+        : kind === 'phrase-two-line' ? (hasMeta ? 76 : 72)
+          : hasMeta ? 60 : ENTRY_ROW_ESTIMATE;
       const relationHeight = expandedRelations.has(relationExpansionKey(collection.id, entry.id))
         ? Math.max(0, relationItemsForEntry(entry).length * 42 + 8)
         : 0;
@@ -1829,6 +1900,14 @@ function groupedNumberIndex(entries, collection) {
 function uniqueEntryCountForDisplay(entries, collection) {
   if (!isGlobalCollection(collection)) return entries.length;
   return new Set(entries.map((entry) => `${entry.kind}\u0000${entry.normalizedText}`)).size;
+}
+
+function sourceDomainLabelForEntry(entry, collection) {
+  const state = getState();
+  const conflictKey = `${entry.kind}\u0000${entry.normalizedText}`;
+  return isGlobalCollection(collection) && state.globalConflictKeys.has(conflictKey)
+    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
+    : '';
 }
 
 function renderAlphabetContent(context, sectionContext) {
@@ -1869,6 +1948,7 @@ function renderAlphabetContent(context, sectionContext) {
 function renderDateContent(context, sectionContext) {
   const { collection, domain, globalIndexById } = context;
   const section = sectionContext.section;
+  const expandedGroups = expandedLettersFor(collection.id, section);
   const root = el('section', { className: `content-section date-content ${section}-content`, id: `content-${section}`, dataset: { section } });
   const stampedByDate = new Map();
   const unmarked = [];
@@ -1897,24 +1977,44 @@ function renderDateContent(context, sectionContext) {
       root.append(el('h3', { className: 'date-month-title', text: `${Number(month)} 月` }));
     }
     const entries = stampedByDate.get(dateKey).sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-    const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [
-      el('h4', { className: 'date-day-title', text: `${Number(day)} 日` }),
-    ]);
-    const dayBody = el('div', { className: 'letter-body date-day-body' });
-    dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection) }));
-    daySection.append(dayBody);
+    const expansionKey = dateExpansionKey(dateKey);
+    const open = expandedGroups.has(expansionKey);
+    const heading = button('', 'date-day-title', (event) => toggleDateSectionWithAnchor(section, dateKey, event.currentTarget));
+    heading.setAttribute('aria-expanded', open ? 'true' : 'false');
+    heading.append(
+      el('span', { className: 'date-group-title', text: `${Number(day)} 日` }),
+      el('span', { className: 'date-group-count', text: uniqueEntryCountForDisplay(entries, collection).toLocaleString() }),
+      el('span', { className: `date-group-indicator${open ? ' open' : ''}` }, [svgIcon('chevron')]),
+    );
+    const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [heading]);
+    if (open) {
+      const dayBody = el('div', { className: 'letter-body date-day-body' });
+      dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection) }));
+      daySection.append(dayBody);
+    }
     root.append(daySection);
+    sectionContext.dateGroups.set(dateKey, entries);
     sectionContext.sectionByKey.set(dateKey, daySection);
   }
   unmarked.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
   if (unmarked.length) {
-    const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
-    unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection) }));
-    const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [
-      el('h2', { className: 'date-unmarked-heading', text: '未标注' }),
-      unmarkedBody,
-    ]);
+    const expansionKey = dateExpansionKey('unmarked');
+    const open = expandedGroups.has(expansionKey);
+    const heading = button('', 'date-unmarked-heading', (event) => toggleDateSectionWithAnchor(section, 'unmarked', event.currentTarget));
+    heading.setAttribute('aria-expanded', open ? 'true' : 'false');
+    heading.append(
+      el('span', { className: 'date-group-title', text: '未标注' }),
+      el('span', { className: 'date-group-count', text: uniqueEntryCountForDisplay(unmarked, collection).toLocaleString() }),
+      el('span', { className: `date-group-indicator${open ? ' open' : ''}` }, [svgIcon('chevron')]),
+    );
+    const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [heading]);
+    if (open) {
+      const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
+      unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection) }));
+      unmarkedSection.append(unmarkedBody);
+    }
     root.append(unmarkedSection);
+    sectionContext.dateGroups.set('unmarked', unmarked);
     sectionContext.sectionByKey.set('unmarked', unmarkedSection);
   }
   if (!dates.length && !unmarked.length) root.append(el('div', { className: 'empty-state compact-empty', text: section === 'word' ? '暂无词汇' : '暂无短语' }));
@@ -1952,6 +2052,83 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   updateOverlayLayout();
 }
 
+function releaseChunksInBody(body) {
+  if (!body) return;
+  for (const chunk of body.querySelectorAll('.entry-chunk')) {
+    entryChunkObserver?.unobserve(chunk);
+    const data = entryChunkData.get(chunk);
+    for (const item of data?.items || []) {
+      if (entryChunkByEntryId.get(item.entry.id) === chunk) entryChunkByEntryId.delete(item.entry.id);
+    }
+  }
+}
+
+function setDateSectionOpen(section, dateKey, open) {
+  const context = collectionRenderContext;
+  if (!context || context.collection.id !== currentCollectionId || context.mode !== 'date') return false;
+  const sectionContext = context.sections.get(section);
+  const sectionNode = sectionContext?.sectionByKey.get(dateKey);
+  const entries = sectionContext?.dateGroups.get(dateKey);
+  if (!sectionNode || !entries) return false;
+  const expandedGroups = expandedLettersFor(currentCollectionId, section);
+  const expansionKey = dateExpansionKey(dateKey);
+  const heading = sectionNode.querySelector('.date-day-title, .date-unmarked-heading');
+  const indicator = sectionNode.querySelector('.date-group-indicator');
+  let body = sectionNode.querySelector('.date-day-body, .unmarked-body');
+  if (open) {
+    expandedGroups.add(expansionKey);
+    if (!body) {
+      body = el('div', { className: `letter-body ${dateKey === 'unmarked' ? 'unmarked-body' : 'date-day-body'}` });
+      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, {
+        groupIndexById: groupedNumberIndex(entries, context.collection),
+      }));
+      sectionNode.append(body);
+    }
+  } else {
+    expandedGroups.delete(expansionKey);
+    if (body) {
+      releaseChunksInBody(body);
+      body.remove();
+    }
+  }
+  heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  indicator?.classList.toggle('open', open);
+  persistCurrentHistorySnapshot();
+  return true;
+}
+
+function compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor = '') {
+  const root = document.documentElement;
+  requestAnimationFrame(() => {
+    if (transaction !== collapseTransactionRevision || !heading?.isConnected || !Number.isFinite(beforeTop)) return;
+    const delta = heading.getBoundingClientRect().top - beforeTop;
+    if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+    requestAnimationFrame(() => {
+      if (transaction !== collapseTransactionRevision) return;
+      root.style.overflowAnchor = previousOverflowAnchor;
+      syncActiveAlphabetHeading();
+    });
+  });
+}
+
+function toggleDateSectionWithAnchor(section, dateKey, heading) {
+  const context = collectionRenderContext;
+  if (!context || context.mode !== 'date') return;
+  const expansionKey = dateExpansionKey(dateKey);
+  const open = !expandedLettersFor(currentCollectionId, section).has(expansionKey);
+  if (open) {
+    collapseTransactionRevision += 1;
+    setDateSectionOpen(section, dateKey, true);
+    return;
+  }
+  const beforeTop = heading?.getBoundingClientRect().top;
+  const previousOverflowAnchor = document.documentElement.style.overflowAnchor;
+  document.documentElement.style.overflowAnchor = 'none';
+  const transaction = ++collapseTransactionRevision;
+  setDateSectionOpen(section, dateKey, false);
+  compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor);
+}
+
 function setLetterSectionOpen(section, letter, open) {
   const context = collectionRenderContext;
   if (!context || context.collection.id !== currentCollectionId || context.mode !== 'alphabet') return false;
@@ -1973,13 +2150,7 @@ function setLetterSectionOpen(section, letter, open) {
   } else {
     expandedLetters.delete(letter);
     if (body) {
-      for (const chunk of body.querySelectorAll('.entry-chunk')) {
-        entryChunkObserver?.unobserve(chunk);
-        const data = entryChunkData.get(chunk);
-        for (const item of data?.items || []) {
-          if (entryChunkByEntryId.get(item.entry.id) === chunk) entryChunkByEntryId.delete(item.entry.id);
-        }
-      }
+      releaseChunksInBody(body);
       body.remove();
     }
   }
@@ -1995,52 +2166,71 @@ function toggleLetterSectionWithAnchor(section, letter, heading) {
   if (!context || context.mode !== 'alphabet') return;
   const open = !expandedLettersFor(currentCollectionId, section).has(letter);
   if (open) {
+    collapseTransactionRevision += 1;
     setLetterSectionOpen(section, letter, true);
     return;
   }
   const beforeTop = heading?.getBoundingClientRect().top;
-  const root = document.documentElement;
-  const previousAnchor = root.style.overflowAnchor;
-  root.style.overflowAnchor = 'none';
+  const previousOverflowAnchor = document.documentElement.style.overflowAnchor;
+  document.documentElement.style.overflowAnchor = 'none';
+  const transaction = ++collapseTransactionRevision;
   setLetterSectionOpen(section, letter, false);
-  requestAnimationFrame(() => {
-    if (heading?.isConnected && Number.isFinite(beforeTop)) {
-      const delta = heading.getBoundingClientRect().top - beforeTop;
-      if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
-    }
-    requestAnimationFrame(() => { root.style.overflowAnchor = previousAnchor; syncActiveAlphabetHeading(); });
-  });
+  compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor);
+}
+
+function letterTrackState(track) {
+  let state = letterTrackStates.get(track);
+  if (!state) {
+    state = {
+      lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0,
+      pointerActive: false, manualLocked: false, manualLockScrollY: 0, manualLockLetter: '', manualLockStickyEngaged: false,
+    };
+    letterTrackStates.set(track, state);
+  }
+  return state;
+}
+
+function releaseLetterTrackManualLock(section = '') {
+  for (const track of elements['collection-view'].querySelectorAll('.letter-nav-track')) {
+    if (section && !track.querySelector(`[data-section="${section}"]`)) continue;
+    const state = letterTrackState(track);
+    state.manualLocked = false;
+    state.manualLockLetter = '';
+    state.manualLockScrollY = window.scrollY;
+    state.manualLockStickyEngaged = false;
+  }
 }
 
 function moveLetterTrack(track, nextLeft, direction = 0) {
-  const state = letterTrackStates.get(track) || { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
-  letterTrackStates.set(track, state);
+  const state = letterTrackState(track);
   const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
   const clamped = Math.max(0, Math.min(maxLeft, nextLeft));
   if (Math.abs(clamped - track.scrollLeft) <= 1) return;
-  state.programmaticUntil = Date.now() + 90;
+  state.programmaticUntil = Date.now() + 260;
   state.lastMoveAt = Date.now();
   if (direction) state.lastDirection = direction;
   track.scrollLeft = clamped;
 }
 
-function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}) {
+function updateActiveLetter(section, letter = '', { ensureVisible = false, allowManualRelease = false, force = false } = {}) {
   elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
     const active = item.dataset.section === section && Boolean(letter) && item.dataset.letter === letter;
     item.classList.toggle('active', active);
     if (!active || !ensureVisible) return;
     const track = item.closest('.letter-nav-track');
     if (!track) return;
-    const state = letterTrackStates.get(track) || { lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0, pointerActive: false };
-    letterTrackStates.set(track, state);
+    const state = letterTrackState(track);
+    if (state.pointerActive) return;
+    if (state.manualLocked && !force) {
+      if (!allowManualRelease) return;
+      state.manualLocked = false;
+      state.manualLockLetter = '';
+      state.manualLockStickyEngaged = false;
+    }
     const buttons = [...track.querySelectorAll('[data-letter]')];
     const index = buttons.indexOf(item);
     const direction = state.lastIndex < 0 ? 0 : Math.sign(index - state.lastIndex);
     state.lastIndex = index;
-    if (Date.now() < letterTrackInteractionUntil || state.pointerActive) {
-      scheduleLetterTrackSync(Math.max(25, letterTrackInteractionUntil - Date.now() + 25));
-      return;
-    }
     if (letter === 'A') { moveLetterTrack(track, 0, -1); state.lastDirection = -1; return; }
     if (letter === '#') { moveLetterTrack(track, track.scrollWidth - track.clientWidth, 1); state.lastDirection = 1; return; }
     const itemRect = item.getBoundingClientRect();
@@ -2067,20 +2257,44 @@ function updateActiveLetter(section, letter = '', { ensureVisible = false } = {}
 function syncActiveAlphabetHeading() {
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet') return;
-  const probe = readingViewportBounds().top + 2;
+  const probe = Math.floor(topChromeBottom() + .01);
   const sections = [...elements['entry-list'].querySelectorAll('.letter-section[data-letter][data-section]')];
   let active = null;
+  let stickyEngaged = false;
   for (const node of sections) {
     const rect = node.getBoundingClientRect();
-    if (rect.top <= probe && rect.bottom > probe) { active = node; break; }
-    if (rect.top <= probe) active = node;
-    else if (!active) { active = node; break; }
+    const heading = node.querySelector('.letter-heading');
+    const headingRect = heading?.getBoundingClientRect();
+    if (rect.top <= probe + 1 && rect.bottom > probe) {
+      active = node;
+      stickyEngaged = Boolean(headingRect && headingRect.top <= probe + 1);
+      break;
+    }
+    if (rect.top <= probe + 1) {
+      active = node;
+      stickyEngaged = Boolean(headingRect && headingRect.top <= probe + 1);
+    } else if (!active) {
+      active = node;
+      stickyEngaged = false;
+      break;
+    }
   }
   if (!active) return;
   for (const heading of elements['entry-list'].querySelectorAll('.letter-heading.active-sticky')) heading.classList.remove('active-sticky');
   active.querySelector('.letter-heading')?.classList.add('active-sticky');
   activeSection = active.dataset.section || activeSection;
-  updateActiveLetter(activeSection, active.dataset.letter || '', { ensureVisible: true });
+  const letter = active.dataset.letter || '';
+  const track = elements['letter-nav'].querySelector('.letter-nav-track');
+  const state = track ? letterTrackState(track) : null;
+  const activeChanged = state ? Boolean(state.manualLockLetter && state.manualLockLetter !== letter) : false;
+  const stickyBoundaryNewlyEngaged = state ? Boolean(stickyEngaged && !state.manualLockStickyEngaged) : false;
+  updateActiveLetter(activeSection, letter, {
+    ensureVisible: true,
+    // A manual track position survives stationary top/bottom rubber-banding.
+    // Automatic following resumes when the active section changes or when its
+    // real heading newly reaches the sticky boundary after the manual gesture.
+    allowManualRelease: Boolean(activeChanged || stickyBoundaryNewlyEngaged),
+  });
 }
 
 function updateLargeTitleState() {
@@ -2222,10 +2436,10 @@ function positionRelationTargetMenu() {
   const viewportTop = viewport?.offsetTop || 0;
   const viewportLeft = viewport?.offsetLeft || 0;
   const viewportWidth = viewport?.width || window.innerWidth;
-  const viewportHeight = viewport?.height || window.innerHeight;
   const viewportRight = viewportLeft + viewportWidth;
-  const viewportBottom = viewportTop + viewportHeight;
-  const chromeBottom = Math.max(viewportTop + 8, document.querySelector('.topbar')?.getBoundingClientRect().bottom || viewportTop);
+  const bounds = readingViewportBounds();
+  const viewportBottom = bounds.bottom;
+  const chromeBottom = bounds.top;
   const gap = 8;
   let top = sourceRect.bottom + gap;
   let below = true;
@@ -2439,25 +2653,20 @@ function handleEntryPrimaryAction(entry, collection, annotationRecord) {
   else copyEntry(entry, collection);
 }
 
-function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText = '', reserveMetaLine = false) {
+function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind) {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
   let pointerStart = null;
   let suppressClick = false;
   const viewport = el('div', {
-    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}${gloss ? ' has-gloss' : ' no-gloss'}${reserveMetaLine ? ' has-meta-line' : ''}`,
+    className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}${gloss ? ' has-gloss' : ' no-gloss'}`,
     role: 'button', tabindex: 0,
     'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
   });
   const lexemeStack = el('div', { className: 'entry-lexeme-stack' }, [
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
-    gloss
-      ? el('span', { className: 'entry-gloss', text: gloss, title: gloss })
-      : reserveMetaLine ? el('span', { className: 'entry-gloss entry-gloss-placeholder', 'aria-hidden': 'true' }) : null,
+    gloss ? el('span', { className: 'entry-gloss', text: gloss, title: gloss }) : null,
   ]);
-  const content = el('div', { className: 'entry-text-content' }, [
-    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
-    lexemeStack,
-  ]);
+  const content = el('div', { className: 'entry-text-content' }, [lexemeStack]);
   viewport.append(content);
   const updateOverflowState = () => {
     if (!isScrollable) return;
@@ -2521,10 +2730,10 @@ function positionQueryMenu() {
   const viewportTop = viewport?.offsetTop || 0;
   const viewportLeft = viewport?.offsetLeft || 0;
   const viewportWidth = viewport?.width || window.innerWidth;
-  const viewportHeight = viewport?.height || window.innerHeight;
   const viewportRight = viewportLeft + viewportWidth;
-  const viewportBottom = viewportTop + viewportHeight;
-  const chromeBottom = Math.max(viewportTop + 8, document.querySelector('.topbar')?.getBoundingClientRect().bottom || viewportTop);
+  const bounds = readingViewportBounds();
+  const viewportBottom = bounds.bottom;
+  const chromeBottom = bounds.top;
   const gap = 9;
   let top = sourceRect.top - menuRect.height - gap;
   let below = false;
@@ -2532,7 +2741,7 @@ function positionQueryMenu() {
     top = sourceRect.bottom + gap;
     below = true;
   }
-  top = Math.max(viewportTop + 8, Math.min(top, viewportBottom - menuRect.height - 8));
+  top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
   const left = Math.min(
     Math.max(viewportLeft + 8, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2),
     viewportRight - menuRect.width - 8,
@@ -2597,10 +2806,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const relations = expanded ? relationItemsForEntry(entry) : null;
   const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
-  const conflictKey = `${entry.kind}\u0000${entry.normalizedText}`;
-  const sourceDomainLabel = isGlobalCollection(collection) && state.globalConflictKeys.has(conflictKey)
-    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
-    : '';
+  const sourceDomainLabel = sourceDomainLabelForEntry(entry, collection);
   const studyStamp = getStudyStamp(entry, collection.id);
   const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
@@ -2618,17 +2824,26 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     actionItems.push(el('span', { className: 'entry-action-placeholder relation-placeholder', 'aria-hidden': 'true' }));
   }
   actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
-  const hasMetaLine = Boolean(gloss || sourceDomainLabel);
-  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind, indexText, hasMetaLine);
-  const lineChildren = [textViewport];
-  if (studyStamp) lineChildren.push(el('span', {
+  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind);
+  const actionMainChildren = [];
+  if (studyStamp) actionMainChildren.push(el('span', {
     className: 'entry-study-date marked',
     text: formatStudyDate(studyStamp.reviewDateKey),
     'aria-label': `最近学习日期 ${studyStamp.reviewDateKey}`,
   }));
-  lineChildren.push(el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, actionItems));
-  if (sourceDomainLabel) lineChildren.push(el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }));
-  const primary = el('div', { className: `entry-line${hasMetaLine ? ' has-meta-line' : ''}` }, lineChildren);
+  actionMainChildren.push(el('div', { className: 'entry-actions', 'aria-label': `${entry.text} 操作` }, actionItems));
+  const controlStack = el('div', { className: `entry-control-stack${sourceDomainLabel ? ' has-source' : ''}` }, [
+    el('div', { className: 'entry-control-main' }, actionMainChildren),
+    sourceDomainLabel ? el('span', { className: 'entry-source-domain', text: sourceDomainLabel, title: `来源：${sourceDomainLabel}` }) : null,
+  ]);
+  const lineChildren = [
+    indexText ? el('span', { className: 'entry-index-inline', text: indexText, 'aria-hidden': 'true' }) : null,
+    textViewport,
+    controlStack,
+  ];
+  const primary = el('div', {
+    className: `entry-line${gloss ? ' has-left-meta' : ''}${sourceDomainLabel ? ' has-right-meta' : ''}`,
+  }, lineChildren);
   if (annotationRecord) {
     primary.addEventListener('click', (event) => {
       if (event.target.closest('button, .entry-text-viewport')) return;
@@ -2699,6 +2914,9 @@ function ensureEntryRendered(entryId) {
     const letter = letterForEntry(entry);
     setLetterSectionOpen(section, letter, true);
     updateActiveLetter(section, letter);
+  } else {
+    const dateKey = getStudyStamp(entry, context.collection.id)?.reviewDateKey || 'unmarked';
+    setDateSectionOpen(section, dateKey, true);
   }
   const chunk = entryChunkByEntryId.get(entryId);
   if (chunk) materializeEntryChunk(chunk);
@@ -2723,22 +2941,14 @@ function readingViewportBounds() {
   const viewportTop = viewport?.offsetTop || 0;
   const viewportHeight = viewport?.height || window.innerHeight;
   const viewportBottom = viewportTop + viewportHeight;
-  const topRects = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .letter-nav')]
-    .filter((candidate) => candidate && !candidate.classList.contains('hidden'))
-    .map((candidate) => candidate.getBoundingClientRect())
-    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
-    .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
-  let top = viewportTop;
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (const rect of topRects) if (rect.bottom > top && rect.top <= top + 14) top = rect.bottom;
-  }
+  const top = topChromeBottom();
   const bottomRects = [...document.querySelectorAll('.bottom-toolbar, .pin-bar, .review-bar')]
     .filter((candidate) => candidate && !candidate.classList.contains('hidden'))
     .map((candidate) => candidate.getBoundingClientRect())
     .filter((rect) => rect.height > 0 && rect.bottom > viewportBottom - 140);
   let bottom = viewportBottom - 8;
   for (const rect of bottomRects) bottom = Math.min(bottom, rect.top - 8);
-  return { top: Math.max(viewportTop, top + 6), bottom: Math.max(top + 80, bottom) };
+  return { top: Math.max(viewportTop, Math.floor(top + .01)), bottom: Math.max(top + 80, bottom) };
 }
 
 function positionHeadingBelowChrome(target) {
@@ -3563,11 +3773,7 @@ function openSearchDialog() {
     }
   });
   elements['search-body'].replaceChildren(el('div', { className: 'search-controls' }, [input, scope, aiButton]), status, results);
-  if (!elements['search-dialog'].open) {
-    lockPageForModal();
-    elements['search-dialog'].showModal();
-  }
-  requestAnimationFrame(updateVisualViewportVars);
+  showModalStable(elements['search-dialog']);
 }
 
 function openSettingsDialog() {
@@ -3677,7 +3883,7 @@ function renderApp() {
   if (route.viewKind) currentViewKind = route.viewKind;
   if (route.entryId) {
     pendingJumpEntryId = route.entryId;
-    if (!['search', 'relation', 'annotation', 'last', 'mode-anchor', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
+    if (!['search', 'relation', 'annotation', 'last', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
   } else if (route.collectionId !== previousCollectionId && !pendingPageSnapshot) {
     pendingJumpEntryId = '';
     if (pendingJumpReason !== 'home') pendingJumpReason = 'jump';
@@ -3728,6 +3934,7 @@ function refreshVisibleEntryRows(entryIds = []) {
 }
 
 function handleStoreEvent({ type, detail }) {
+  if (historyRestoreInProgress && ['view-mode', 'calendar-month'].includes(type)) return;
   if (type === 'calendar-month') return;
   if (type === 'mutation' && detail?.kind === 'pin') return;
   if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
@@ -3805,9 +4012,9 @@ export async function initializeUI() {
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
   window.addEventListener('hashchange', () => { if (!history.state?.vix) scheduleRouteRender(); });
   window.addEventListener('popstate', handleHistoryNavigation);
-  window.visualViewport?.addEventListener('resize', updateVisualViewportVars);
-  window.visualViewport?.addEventListener('scroll', updateVisualViewportVars, { passive: true });
-  window.addEventListener('resize', updateVisualViewportVars, { passive: true });
+  window.visualViewport?.addEventListener('resize', () => updateVisualViewportVars());
+  window.visualViewport?.addEventListener('scroll', () => updateVisualViewportVars(), { passive: true });
+  window.addEventListener('resize', () => updateVisualViewportVars(), { passive: true });
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
   document.addEventListener('pointerdown', (event) => {
     if (activeQueryMenu && !elements['query-menu'].contains(event.target) && !activeQueryMenu.source?.contains(event.target)) closeQueryMenu();

@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.1.0 — 2026-08-08
+
+- Top Chrome 以真实 DOM rect 为唯一几何源，删除 VisualViewport + 72px 混合硬下限；字母栏未真实吸顶前不展示 Sticky mirror；
+- 字母栏重构为按钮单元格拥有结构边框：每格 top/right/bottom，首格 left；disabled/empty 只灰前景，不灰结构线；
+- 字母 Sticky 补齐结构边界，日期/字母模式共享统一顶部几何；
+- 日期模式刷新学习日期继续保持当前 viewport，不恢复 `study-date` 目标跳转；
+- Query chooser 使用明确 viewport edge inset；Oxford 严格按用户参考图重绘“合上的书”SVG；
+- 一级 Entry secondary line 再收紧，繁体与来源保持同 Y，操作触控尺寸不缩；
+- Home 全局区切换改为左侧“上→ / 下←”平行反向箭头图标，管理按钮置右；大字“词汇索引”保留，topbar/PWA 安装名统一 `Vocabulary Index`；
+- “全局非结构内容”展示名更新为“全局非结构总表”，稳定 ID/Schema/Seed/VIX 不变；
+- Modal system shell 改为按 retained stack depth 逐层 alpha compositing（48% 第一层、20% 后续），同步 theme-color/root/fixed topbar，custom backdrop 从 topbar 下缘以下开始，避免双重蒙版；
+- 新增 `css/v4.1.0.css`，Service Worker cache generation 升级 4.1.0；同步完整生命周期文档。
+
 
 ## 4.0.2 — 2026-08-08
 

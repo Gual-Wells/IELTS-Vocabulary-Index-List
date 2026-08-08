@@ -1,9 +1,9 @@
 // Cache-generation bridge. It exists only to prevent an old service-worker
-// shell from being mixed with the 4.0.2 runtime during a major content break.
+// shell from being mixed with the 4.1.0 runtime during a major content break.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.0.2-runtime-convergence-20260808-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.0.2';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.1.0-iphone-convergence-20260808-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.1.0';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

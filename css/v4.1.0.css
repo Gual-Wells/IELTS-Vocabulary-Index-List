@@ -1,0 +1,103 @@
+/* Vocabulary Index 4.1.0 iPhone visual/runtime convergence layer.
+   Data, relation, Backup Schema 6, DB 5, Seed revision 4 and VIX 2 remain unchanged. */
+
+:root {
+  --system-shell-surface: #fafafa;
+  --modal-backdrop-top: var(--sticky-base-top);
+  --query-menu-edge-inset: 22px;
+}
+
+/* Alphabet navigation is a row of structural cells. Borders belong to cells,
+   not the wrapper; disabled state only de-emphasizes the glyph. */
+.letter-nav {
+  border: 0 !important;
+  border-bottom: 0 !important;
+}
+.letter-nav-track button {
+  opacity: 1 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--line) !important;
+  border-right: 1px solid var(--line) !important;
+  border-bottom: 1px solid var(--line-strong) !important;
+}
+.letter-nav-track button:first-child {
+  border-left: 1px solid var(--line) !important;
+}
+.letter-nav-track button.empty,
+.letter-nav-track button:disabled {
+  opacity: 1 !important;
+  color: color-mix(in srgb, var(--muted) 36%, transparent) !important;
+  background: var(--surface) !important;
+}
+.letter-nav-track button.active {
+  color: var(--accent-ink) !important;
+}
+
+/* Alphabet sticky mirror keeps the same structural heading language as date
+   headings. Its top seam meets the alphabet-cell bottom seam directly. */
+.sticky-letter-heading-button {
+  border: 0 !important;
+  border-top: 1px solid var(--line-strong) !important;
+  border-bottom: 1px solid var(--line-strong) !important;
+  background: var(--surface) !important;
+}
+
+/* Further reduce the secondary information gap without shrinking the 44px
+   action hit targets. Traditional gloss and source keep one Y metric. */
+.entry-line.has-left-meta,
+.entry-line.has-right-meta { min-height: 50px !important; }
+.entry-row.phrase-two-line .entry-line.has-left-meta,
+.entry-row.phrase-two-line .entry-line.has-right-meta,
+.entry-row.content-two-line .entry-line.has-left-meta,
+.entry-row.content-two-line .entry-line.has-right-meta,
+.entry-row.phrase-extreme .entry-line.has-left-meta,
+.entry-row.phrase-extreme .entry-line.has-right-meta,
+.entry-row.content-extreme .entry-line.has-left-meta,
+.entry-row.content-extreme .entry-line.has-right-meta { min-height: 60px !important; }
+.entry-line.has-left-meta .entry-text-viewport { padding-bottom: 10px !important; }
+.entry-line.has-right-meta .entry-control-stack { padding-bottom: 10px !important; }
+.entry-line.has-left-meta .entry-gloss { bottom: 2px !important; }
+.entry-line.has-right-meta .entry-source-domain { bottom: 2px !important; }
+
+/* Home global-mode control is an icon action left of the Management control. */
+.global-mode-toggle {
+  width: 42px !important;
+  min-width: 42px !important;
+  padding: 0 !important;
+  display: inline-grid !important;
+  place-items: center !important;
+}
+.global-mode-toggle .ui-icon { width: 19px !important; height: 19px !important; }
+
+/* System-shell surface controller: the actual modal backdrops begin below the
+   fixed top chrome; the top chrome/root tint receive the already-composited
+   color exactly once. This gives WebKit both fixed-surface and theme signals. */
+html.system-modal-surface {
+  background: var(--system-shell-surface) !important;
+}
+html.system-modal-surface body {
+  background: var(--bg) !important;
+}
+html.system-modal-surface .topbar,
+html.system-modal-surface .topbar::before {
+  background: var(--system-shell-surface) !important;
+}
+.modal-layer-backdrop {
+  inset: var(--modal-backdrop-top, var(--topbar-height)) 0 0 !important;
+}
+
+/* Provider menu keeps a deliberate viewport-edge breathing space. */
+.query-menu {
+  max-width: calc(100vw - (2 * var(--query-menu-edge-inset))) !important;
+}
+
+/* Native utility dialog backdrops follow the same topbar-exclusion rule, so
+   the directly composited system shell is not darkened a second time. */
+.sheet-dialog::backdrop,
+.confirm-dialog::backdrop {
+  background: linear-gradient(
+    to bottom,
+    transparent 0 var(--modal-backdrop-top, var(--topbar-height)),
+    rgb(28 27 25 / 48%) var(--modal-backdrop-top, var(--topbar-height)) 100%
+  ) !important;
+}

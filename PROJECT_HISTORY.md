@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.0.2（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.1.0（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.0.2 完整源码实际行为。
+- **[当前实现]**：4.1.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -94,7 +94,7 @@ GitHub PAT/云同步增加失败面后被移除，正式确立 local-first 与�
 
 Schema6 / DB5 / Seed4 / VIX2、优先级占有、搜索/关系、四态导航和 Provider 业务语义保持不变。
 
-## 4.0.2：[当前实现]
+## 4.0.2：[历史稳定基线]
 
 4.0.2 不改变 4.0.0 数据世代，也不推翻 4.0.1 retained Modal Stack；它针对第二轮 iPhone 真机证据修正顶部几何与局部交互：
 
@@ -106,6 +106,23 @@ Schema6 / DB5 / Seed4 / VIX2、优先级占有、搜索/关系、四态导航和
 - Modal 打开时同步 theme-color 与页面底色到第一层蒙版合成色，作为系统壳融合 best-effort；iOS 26.5.2 若仍保留 DOM 不可达顶部状态条，明确记为 WebKit 平台边界。
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider 语义均不变。
+
+## 4.1.0：[当前实现]
+
+4.1.0 汇总 4.0.2 后连续 iPhone 真机反馈与本轮视觉/PWA shell 决策，不改变内容世代：
+
+- Top Chrome 根修：删除 `visualViewport.offsetTop + 72` 混合坐标硬下限，基础边界只由连续可见 DOM rect 决定；字母栏实际吸顶前不展示 Sticky mirror，吸顶后统一使用 base + nav height；
+- alphabet cell 边框所有权明确到每个字母按钮：top/right/bottom，首格 left；禁用只灰字形，不灰结构线；
+- 字母 Sticky 补齐标题结构边界，日期/字母共用同一 Top Chrome 几何；
+- 日期 StudyStamp 刷新继续保留当前 viewport，无 `study-date` 目标跳转；
+- Query chooser 采用明确 viewport edge inset；Oxford 严格按用户提供的合上书本参考图重绘 SVG，不直接使用图片，也不擅自改变 Collins/Groq/ChatGPT；
+- 一级 row secondary line 再收紧，繁体与独立域来源保持同 Y，44px action hit target 不缩；
+- Home 全局区改为左侧“上→ / 下←”平行反向切换图标、右侧“管理”；Home 大字仍为“词汇索引”，topbar 和 Home Screen PWA 名称统一 `Vocabulary Index`；
+- 全局 content virtual projection 的显示名从“全局非结构内容”改为“全局非结构总表”，稳定 ID 不变；
+- System Shell Surface Controller 取代 boolean `#8f8f8e`：按 retained modal depth 用 48% 第一层 + 20% 后续层逐层 alpha compositing，同步 theme-color/root/fixed topbar；custom backdrop 从 topbar 实测底边以下开始，避免 topbar 二次蒙版；
+- WebKit 调研确认 Safari 26 会参考 viewport-edge fixed/sticky opaque surface 做顶栏颜色延伸；同时 iOS 26.5.2 仍有 Home Screen standalone viewport 外 system strip 的公开复现，因此本版对可控信号做完整同步，最终系统 strip 仍以真机为准。
+
+Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
 
 # 三、4.0.x 当前数据模型
 
@@ -158,13 +175,15 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.0.2 当前待真机事项
+# 八、4.1.0 当前待真机事项
 
 - retained modal stack 在 iPhone 17 standalone 父层不消失、四角完整、无首帧闪现；
-- 字母模式在全局/域/普通、word/phrase/content 下 Sticky 均位于字母栏正下方且无镂空；日期 Sticky 不错误预留字母栏高度；
-- 日期模式刷新学习日期后保持原视口，无目标跳转、闪动或二次滚动；
-- Query chooser 右边框完整、Oxford 闭合书本图标视觉通过；
-- Modal 打开时顶部系统区尽可能与第一层蒙版连续；iOS 26.5.2 若仍存在 DOM 不可达系统带，按平台限制记录；
+- alphabet/date Top Chrome 无漏内容带；global/domain/normal、word/phrase/content Sticky 正确；
+- 字母栏 top/A-left/分隔线完整，disabled `#` 不灰结构线；
+- 日期刷新学习日期后保持原视口，无目标跳转、闪动或二次滚动；
+- Query chooser 右侧有稳定呼吸空间，Oxford 参考图重绘通过；一级 row secondary gap 通过；
+- Home switch 图标左/管理右，Home 大字“词汇索引”、topbar/PWA 名称 `Vocabulary Index`；
+- retained modal depth 1/2 时 fixed topbar/system shell 与实际 48%/20% 蒙版逐层一致；iOS 26.5.2 若仍有 viewport 外 system strip 不响应动态 tint，记录平台限制；
 - 长按成功/失败/取消后无系统 Selection/callout/click 泄漏；
 - Home Indicator、系统返回手势；
 - Oxford/ChatGPT Shortcuts 外跳返回；
@@ -173,4 +192,4 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.0.2.md`、`SEMANTIC_IMPACT_MATRIX_4.0.2.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.0.2.md` 和 `PRODUCT_MANUAL_4.0.2.md` 共同组成当前稳定规格。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.1.0.md`、`SEMANTIC_IMPACT_MATRIX_4.1.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.1.0.md`、`PRODUCT_MANUAL_4.1.0.md`、`AUDIT_REPORT_4.1.0.md`、`CHANGE_REPORT_4.1.0.md` 与 `TEST_REPORT_4.1.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

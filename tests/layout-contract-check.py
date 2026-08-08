@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = "\n".join((ROOT / p).read_text() for p in [
-    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css', 'css/v4.0.2.css'
+    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css', 'css/v4.0.2.css', 'css/v4.1.0.css'
 ])
 
 ACTIONS = '<div class="entry-actions"><span class="entry-action-placeholder relation-placeholder"></span><button></button><button></button><button></button><button></button></div>'
@@ -31,6 +31,7 @@ HTML = f'''<!doctype html><html><head><meta name="viewport" content="width=devic
   {row('source-row', '14', 'edge', source='计算机术语')}
   {row('both-row', '15', 'rendering pipeline', gloss='渲染管線', source='一个非常长的独立域来源名称', date='8·8')}
 </div>
+<nav id="letter-fixture" class="letter-nav"><div class="letter-nav-track"><button>A</button><button>B</button><button class="empty" disabled>#</button></div></nav>
 <nav id="bottom-toolbar" class="bottom-toolbar"><button><span class="ui-icon"></span></button><button disabled><span class="ui-icon"></span></button><button><span class="ui-icon"></span></button><button disabled><span class="ui-icon"></span></button><button><span class="ui-icon"></span></button></nav>
 <div id="app-dialog" class="modal-host"><section class="modal-layer" data-depth="1"><div class="modal-layer-backdrop"></div><form id="dialog-form" class="modal-card modal-card-management"><header class="dialog-header"><div><h2>设置</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><label class="field"><span>文本</span><input value="test"></label></div><footer class="dialog-actions"><button>取消</button><button>保存</button></footer></form></section></div>
 <dialog id="search-dialog" class="sheet-dialog search-dialog" open><div id="search-card" class="dialog-card"><header class="dialog-header"><div><h2>搜索</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><div class="search-controls"><input value="edge"><select><option>全部</option></select><button class="secondary-button">搜索</button></div></div></div></dialog>
@@ -88,6 +89,18 @@ with sync_playwright() as p:
         index_box = page.locator(f'#{row_id} .entry-index-inline').bounding_box()
         assert line_box and index_box
         assert abs(center_y(index_box) - center_y(line_box)) <= 1.5, (row_id, index_box, line_box)
+
+    # Alphabet borders are owned by cells, including the A/first left edge; disabled glyphs do not dim structure.
+    first = page.locator('#letter-fixture .letter-nav-track button:nth-child(1)')
+    second = page.locator('#letter-fixture .letter-nav-track button:nth-child(2)')
+    disabled = page.locator('#letter-fixture .letter-nav-track button:nth-child(3)')
+    assert first.evaluate("e => getComputedStyle(e).borderLeftWidth") == '1px'
+    for node in (first, second, disabled):
+        assert node.evaluate("e => getComputedStyle(e).borderTopWidth") == '1px'
+        assert node.evaluate("e => getComputedStyle(e).borderRightWidth") == '1px'
+        assert node.evaluate("e => getComputedStyle(e).borderBottomWidth") == '1px'
+    assert disabled.evaluate("e => getComputedStyle(e).opacity") == '1'
+    assert disabled.evaluate("e => getComputedStyle(e).borderRightColor") == second.evaluate("e => getComputedStyle(e).borderRightColor")
 
     toolbar = page.locator('#bottom-toolbar').bounding_box()
     assert toolbar and abs(toolbar['height'] - 58) <= .7, toolbar

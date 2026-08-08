@@ -586,7 +586,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '4.0.2',
+    appVersion: '4.1.0',
     exportedAt: timestamp,
     domains,
     collections,

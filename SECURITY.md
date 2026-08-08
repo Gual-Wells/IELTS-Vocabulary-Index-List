@@ -1,4 +1,4 @@
-# Vocabulary Index 4.0.2 安全与数据边界
+# Vocabulary Index 4.1.0 安全与数据边界
 
 Vocabulary Index 是个人本地 PWA，不提供服务端账户或云同步。
 

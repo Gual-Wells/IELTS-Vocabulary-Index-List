@@ -1,31 +1,31 @@
-# Vocabulary Index 4.0.2 iPhone PWA 部署与回滚
+# Vocabulary Index 4.1.0 iPhone PWA 部署与回滚
 
 ## 部署
 
-1. 部署完整 4.0.2 文件树，不做局部覆盖。
-2. 确认 `index.html` 按顺序加载 `css/v4.0.0.css`、`css/v4.0.1.css` 与最新 `css/v4.0.2.css`。
-3. 确认 `manifest.webmanifest` 与 Apple Touch Icon 使用 `V` 图标。
-4. 确认 Service Worker cache 名为 `gual-vocabulary-index-v4.0.2-runtime-convergence-20260808-1`。
-5. 在 Safari 打开 Pages URL，刷新至 4.0.2，再从主屏幕 standalone 冷启动复核。
+1. 部署完整 4.1.0 文件树，不做局部覆盖。
+2. 确认 `index.html` 最后加载 `css/v4.1.0.css`。
+3. 确认 Apple web-app title、Manifest `name/short_name` 均为 `Vocabulary Index`。
+4. 确认 Service Worker cache 为 `gual-vocabulary-index-v4.1.0-iphone-convergence-20260808-1`。
+5. Safari 打开 Pages URL 并确认 4.1.0 已更新。
+6. 因本版修改 Home Screen 名称和 shell 元数据，正式验收建议先完成本地备份，再删除旧主屏幕 PWA、重新“添加到主屏幕”，冷启动验证名称与顶部系统区。
 
-## 3.5.x → 4.0.2 首次启动
+## 3.5.x → 4.1.0
 
-4.0 是内容世代硬断代。检测到旧 DB 时，启动页先允许下载 3.5.x 完整备份或明确不备份，再要求确认替换。替换会清除旧 Seed、用户自建内容、PIN、日期、Annotation、浏览状态与 Undo/Redo；Groq/Collins Key、模型选择和一般显示偏好不属于内容世代，继续保留。
-
-## 旧文件
-
-- VIX v1：不兼容。
-- 旧 Full Backup Schema：不兼容。
-- 3.5.x 备份用于回滚 3.5.x，而不是导入 4.0.2。
+4.0 是内容世代硬断代；沿用 4.0.x 既有升级规则。4.0.2 → 4.1.0 无 IndexedDB/Seed/VIX 数据迁移。
 
 ## 回滚
 
-4.0.2 继承 4.0.0 的硬断代，不能用 Schema 6 数据直接回滚到 3.5.2。需要回滚时：
+4.1.0 与 4.0.x 同属 Schema 6 / DB 5 / Seed 4 / VIX 2。代码级回滚到 4.0.2 不应修改业务数据，但 Service Worker/PWA shell 需重新刷新；从 4.x 回退 3.5.x 仍需旧世代备份与站点数据清理。
 
-1. 恢复 3.5.2 完整源码；
-2. 清理 4.0.2 PWA/站点数据；
-3. 使用升级前导出的 3.5.x 完整备份在对应旧版本恢复。
+## 真机重点
 
-## 真机部署检查
-
-重点检查：4.0.1→4.0.2 无数据迁移；全局/域/普通 Collection 的 word/phrase/content 字母模式 Sticky 均位于字母栏下方且无镂空；日期 Sticky 不预留字母栏；日期刷新学习日期保持原视口；Query chooser 右边框完整、Oxford 闭合书本；retained Modal Stack、离线冷启动、长按、四态关系、外部 App 返回和 Collins/Groq CORS/Abort 均无回归。iOS 26.5.2 顶部系统带若仍不可动态着色，按平台限制记录。
+- alphabet/date Top Chrome 无漏内容带；
+- 字母栏 A 左线、所有 top 线、disabled `#` 结构线；
+- global/domain/normal + word/phrase/content Sticky；
+- 日期刷新原位；
+- Query 右侧留白与 Oxford 图标；
+- Home switch 图标左、管理右；PWA 名称；
+- 一级表项 secondary gap；
+- retained modal depth 1/2 顶部 shell 逐层变暗；
+- iOS 26.5.2 system strip 是否接受动态 tint；
+- 离线、进程回收、外部 App 返回、Collins/Groq CORS/Abort。

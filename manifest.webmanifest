@@ -1,6 +1,6 @@
 {
-  "name": "Vocabulary Index 4.0.2",
-  "short_name": "词汇索引",
+  "name": "Vocabulary Index",
+  "short_name": "Vocabulary Index",
   "description": "本地优先、按独立域组织的英语词汇、短语与非结构内容索引",
   "start_url": "./",
   "scope": "./",

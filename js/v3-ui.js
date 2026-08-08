@@ -17,7 +17,7 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 
-const APP_VERSION = '4.0.2';
+const APP_VERSION = '4.1.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -133,7 +133,8 @@ const ICONS = {
   groq: '<path d="M7.2 5.3h9.6M5.2 8.8h13.6v8.6H5.2z"></path><path d="M8.2 12h7.6M8.2 14.8h4.5"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<path d="M6.1 5.2h10.2c1.05 0 1.9.85 1.9 1.9v11.7H8.05a2.55 2.55 0 0 1-2.55-2.55V7.15c0-1.08.7-1.95 1.7-1.95Z"></path><path d="M5.5 15.8c.7-.72 1.55-1.08 2.55-1.08H18.2M8.25 8.45h6.1"></path>',
+  dictionary: '<rect x="4.2" y="2.5" width="15.3" height="16.2" rx="1.25"></rect><path d="M8.1 7.8h7.7M4.9 21h14.8"></path>',
+  switchParallel: '<path d="M5 8h12.2M14.4 5.2 17.2 8l-2.8 2.8"></path><path d="M19 16H6.8M9.6 13.2 6.8 16l2.8 2.8"></path>',
   aiChat: '<path d="M5.2 5.3h13.6v10.6H11l-4.1 2.8v-2.8H5.2z"></path><path d="M8.2 9.1h7.6M8.2 12.1h5.1"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
@@ -241,19 +242,37 @@ function topChromeBottom({ includeLetterNav = true } = {}) {
   const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner')]
     .filter((node) => !node.classList.contains('hidden'))
     .map((node) => node.getBoundingClientRect())
-    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
+    .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 320)
     .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
   let bottom = viewportTop;
-  for (const rect of topSurfaces) if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
-  const baseBottom = Math.max(bottom, viewportTop + 72);
+  for (const rect of topSurfaces) {
+    if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
+  }
+  // DOM geometry is the source of truth. The old viewportTop + 72 floor mixed
+  // VisualViewport and layout coordinates and created the iPhone standalone gap.
+  if (bottom <= viewportTop + .5) {
+    const topbar = document.querySelector('.topbar');
+    const fallbackRect = topbar?.getBoundingClientRect();
+    if (fallbackRect?.height) bottom = Math.max(bottom, fallbackRect.bottom);
+    else {
+      const fallbackHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-height')) || 64;
+      bottom = viewportTop + fallbackHeight;
+    }
+  }
+  const baseBottom = bottom;
   if (!includeLetterNav) return baseBottom;
   const nav = elements['letter-nav'];
   if (!nav || nav.classList.contains('hidden')) return baseBottom;
   const navHeight = Math.max(0, nav.getBoundingClientRect().height || nav.offsetHeight || 0);
-  // The alphabet bar is itself sticky at baseBottom. Its future/active occupied
-  // stack height is therefore deterministic: base chrome + measured nav height.
-  // Do not infer content geometry from the nav's transient document-flow top.
   return baseBottom + navHeight;
+}
+
+function alphabetNavAttached() {
+  const nav = elements['letter-nav'];
+  if (!nav || nav.classList.contains('hidden')) return false;
+  const baseBottom = topChromeBottom({ includeLetterNav: false });
+  const rect = nav.getBoundingClientRect();
+  return rect.height > 0 && rect.top <= baseBottom + 1.5 && rect.bottom > baseBottom + 1;
 }
 
 function updateOverlayLayout() {
@@ -269,6 +288,7 @@ function updateOverlayLayout() {
     const sealedBottom = Math.floor(bottom + .01);
     document.documentElement.style.setProperty('--sticky-base-top', `${sealedBaseBottom}px`);
     document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
+    document.documentElement.style.setProperty('--modal-backdrop-top', `${sealedBaseBottom}px`);
     document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
     document.documentElement.style.setProperty('--content-sticky-top', `${sealedBottom}px`);
     cachedChromeBottom = sealedBottom;
@@ -279,12 +299,38 @@ function updateOverlayLayout() {
 }
 
 const BASE_THEME_COLOR = '#fafafa';
-const MODAL_THEME_COLOR = '#8f8f8e';
+const MODAL_BACKDROP_RGB = [28, 27, 25];
+const MODAL_BACKDROP_ALPHA = 0.48;
+const NESTED_MODAL_BACKDROP_ALPHA = 0.20;
 
-function setSystemShellModalSurface(active) {
+function activeShellBackdropAlphas() {
+  const alphas = [];
+  if (dialogStack.length) {
+    alphas.push(MODAL_BACKDROP_ALPHA);
+    for (let index = 1; index < dialogStack.length; index += 1) alphas.push(NESTED_MODAL_BACKDROP_ALPHA);
+  }
+  if (elements['search-dialog']?.open) alphas.push(MODAL_BACKDROP_ALPHA);
+  if (elements['confirm-dialog']?.open) alphas.push(MODAL_BACKDROP_ALPHA);
+  return alphas;
+}
+
+function compositeShellSurface(alphas = []) {
+  let rgb = [250, 250, 250];
+  for (const alpha of alphas) {
+    rgb = rgb.map((channel, channelIndex) => Math.round(channel * (1 - alpha) + MODAL_BACKDROP_RGB[channelIndex] * alpha));
+  }
+  return `#${rgb.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function syncSystemShellSurface() {
+  const alphas = activeShellBackdropAlphas();
+  const active = alphas.length > 0;
+  const surface = active ? compositeShellSurface(alphas) : BASE_THEME_COLOR;
   const meta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="theme-color"]'));
-  if (meta) meta.content = active ? MODAL_THEME_COLOR : BASE_THEME_COLOR;
-  document.documentElement.classList.toggle('system-modal-surface', Boolean(active));
+  if (meta) meta.content = surface;
+  document.documentElement.style.setProperty('--system-shell-surface', surface);
+  document.documentElement.dataset.modalDepth = String(alphas.length);
+  document.documentElement.classList.toggle('system-modal-surface', active);
 }
 
 function lockPageForModal() {
@@ -299,7 +345,6 @@ function lockPageForModal() {
   body.style.width = '100%';
   document.documentElement.classList.add('modal-open');
   body.classList.add('modal-open');
-  setSystemShellModalSurface(true);
 }
 
 function showModalStable(dialog) {
@@ -310,15 +355,16 @@ function showModalStable(dialog) {
   // reserved for real keyboard/viewport changes.
   updateVisualViewportVars({ immediate: true });
   dialog.showModal();
+  syncSystemShellSurface();
 }
 
 function unlockPageForModal() {
   openModalCount = Math.max(0, openModalCount - 1);
+  syncSystemShellSurface();
   if (openModalCount) return;
   const body = document.body;
   document.documentElement.classList.remove('modal-open');
   body.classList.remove('modal-open');
-  setSystemShellModalSurface(false);
   body.style.position = '';
   body.style.top = '';
   body.style.left = '';
@@ -438,6 +484,7 @@ function closeDialog({ all = false } = {}) {
   frame.layer.remove();
   const parent = dialogStack.at(-1);
   if (parent) {
+    syncSystemShellSurface();
     parent.layer.inert = false;
     parent.layer.removeAttribute('aria-hidden');
     parent.onRestore?.();
@@ -473,6 +520,7 @@ function openDialog({
   }
   const frame = createAppDialogFrame({ title, description, body, submitText, cancelText, destructive, onSubmit, showCancel, onRestore, variant, kind });
   dialogStack.push(frame);
+  syncSystemShellSurface();
   host.append(frame.layer);
   revealAppDialogFrame(frame);
   return frame;
@@ -1347,26 +1395,30 @@ function renderHome(token = renderRevision) {
   elements['bottom-toolbar'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
   elements['back-to-top']?.classList.add('hidden');
-  elements['page-title'].textContent = '词汇索引';
-  elements['page-subtitle'].textContent = 'Vocabulary Index';
+  elements['page-title'].textContent = 'Vocabulary Index';
+  elements['page-subtitle'].textContent = '4.1.0';
   renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
   const homeActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
-  const toggleGlobal = button(homeGlobalMode === 'structured' ? '非结构' : '结构化', 'secondary-button compact-button global-mode-toggle', () => {
-    homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
-    renderHome(renderRevision);
-  });
-  toggleGlobal.setAttribute('aria-label', homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表');
-  toggleGlobal.setAttribute('aria-pressed', homeGlobalMode === 'nonStructured' ? 'true' : 'false');
+  const toggleGlobal = el('button', {
+    type: 'button',
+    className: 'secondary-button compact-button global-mode-toggle',
+    title: homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表',
+    'aria-label': homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表',
+    on: { click: () => {
+      homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
+      renderHome(renderRevision);
+    } },
+  }, [svgIcon('switchParallel')]);
   const globalCards = homeGlobalMode === 'structured'
     ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]
     : [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_CONTENT_ID))];
   const sections = [el('section', { className: 'index-scope global-scope', dataset: { mode: homeGlobalMode } }, [
     el('header', { className: 'scope-heading' }, [
       el('h3', { text: '全局' }),
-      el('div', { className: 'scope-actions' }, [...homeActions, toggleGlobal]),
+      el('div', { className: 'scope-actions' }, [toggleGlobal, ...homeActions]),
     ]),
     el('div', { className: 'collection-grid global-grid' }, globalCards.filter(Boolean)),
   ])];
@@ -2474,7 +2526,9 @@ function renderStickyAlphabetHeading(metric, engaged) {
 function syncActiveAlphabetHeading() {
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet' || !alphabetSectionMetrics.length) return;
-  const boundary = window.scrollY + Math.max(cachedChromeBottom, topChromeBottom()) + 1;
+  const navAttached = alphabetNavAttached();
+  const liveBoundary = navAttached ? topChromeBottom() : topChromeBottom({ includeLetterNav: false });
+  const boundary = window.scrollY + liveBoundary + 1;
   let low = 0;
   let high = alphabetSectionMetrics.length - 1;
   let activeIndex = -1;
@@ -2485,7 +2539,7 @@ function syncActiveAlphabetHeading() {
   }
   const active = alphabetSectionMetrics[Math.max(0, activeIndex)];
   if (!active) return;
-  const stickyEngaged = activeIndex >= 0;
+  const stickyEngaged = navAttached && activeIndex >= 0;
   renderStickyAlphabetHeading(active, stickyEngaged);
   activeSection = active.section;
   const track = elements['letter-nav'].querySelector('.letter-nav-track');
@@ -2981,9 +3035,11 @@ function positionQueryMenu() {
     below = true;
   }
   top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
-  const sideInset = 14;
+  const cssInset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--query-menu-edge-inset')) || 22;
+  const sideInset = Math.max(18, cssInset);
+  const idealLeft = sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 16;
   const left = Math.min(
-    Math.max(viewportLeft + sideInset, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 14),
+    Math.max(viewportLeft + sideInset, idealLeft),
     viewportRight - menuRect.width - sideInset,
   );
   const arrowX = Math.min(menuRect.width - 16, Math.max(16, sourceRect.left + sourceRect.width / 2 - left));
@@ -3928,7 +3984,7 @@ function openSearchDialog() {
   scope.append(el('option', { value: 'all', text: '全部内容' }));
   scope.append(el('option', { value: 'global:words', text: '全局词汇' }));
   scope.append(el('option', { value: 'global:phrases', text: '全局短语' }));
-  scope.append(el('option', { value: 'global:content', text: '全局非结构内容' }));
+  scope.append(el('option', { value: 'global:content', text: '全局非结构总表' }));
   const domains = [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   for (const domain of domains) {
     scope.append(el('option', { value: `domain:${domain.id}`, text: `${domain.name} · 全部` }));

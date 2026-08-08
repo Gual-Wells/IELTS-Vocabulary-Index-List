@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.0.1（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.0.2（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.0.1 完整源码实际行为。
+- **[当前实现]**：4.0.2 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -80,7 +80,7 @@ GitHub PAT/云同步增加失败面后被移除，正式确立 local-first 与�
 - PWA identity 改为 `V`；
 - 旧 Full Backup/VIX 直接拒绝，不做错误状态迁移。
 
-## 4.0.1：[当前实现]
+## 4.0.1：[历史稳定基线]
 
 4.0.1 不改变 4.0.0 内容世代，集中处理首轮 iPhone 真机反馈：
 
@@ -93,6 +93,19 @@ GitHub PAT/云同步增加失败面后被移除，正式确立 local-first 与�
 - Modal Host 覆盖顶部 safe-area，状态栏保持 `default`，避免浅色常态页面引入错误前景对比。
 
 Schema6 / DB5 / Seed4 / VIX2、优先级占有、搜索/关系、四态导航和 Provider 业务语义保持不变。
+
+## 4.0.2：[当前实现]
+
+4.0.2 不改变 4.0.0 数据世代，也不推翻 4.0.1 retained Modal Stack；它针对第二轮 iPhone 真机证据修正顶部几何与局部交互：
+
+- 复核确认日期模式 Sticky 正常，说明 WebKit sticky 本身不是本次主因；4.0.1 的字母 Sticky 实际被错误放在字母栏占位位置并被更高 z-index 的字母栏遮挡；
+- `topChromeBottom()` 改为“基础顶部 Chrome + 字母栏实测高度”的确定性栈，不再依赖字母栏尚未吸顶时的瞬态 rect；Sticky Heading、active 字母、跳转/阅读边界使用同一真值；
+- 字母栏下方镂空与 Sticky 不显被统一归因并修复，逻辑覆盖全局/域/普通 Collection 与 word/phrase/content；
+- 日期模式刷新学习日期取消 `study-date` 目标跳转，临时关闭 overflow-anchor 并在重渲染后无动画恢复原 scrollY；
+- Query chooser 再左移；Oxford 图标改为闭合书本，四 Provider 统一深色描边；
+- Modal 打开时同步 theme-color 与页面底色到第一层蒙版合成色，作为系统壳融合 best-effort；iOS 26.5.2 若仍保留 DOM 不可达顶部状态条，明确记为 WebKit 平台边界。
+
+Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider 语义均不变。
 
 # 三、4.0.x 当前数据模型
 
@@ -145,10 +158,13 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.0.1 当前待真机事项
+# 八、4.0.2 当前待真机事项
 
 - retained modal stack 在 iPhone 17 standalone 父层不消失、四角完整、无首帧闪现；
-- 新 Sticky Layer 顶部 A、快速 fling、橡皮筋、惰性块高度变化后即时正确；
+- 字母模式在全局/域/普通、word/phrase/content 下 Sticky 均位于字母栏正下方且无镂空；日期 Sticky 不错误预留字母栏高度；
+- 日期模式刷新学习日期后保持原视口，无目标跳转、闪动或二次滚动；
+- Query chooser 右边框完整、Oxford 闭合书本图标视觉通过；
+- Modal 打开时顶部系统区尽可能与第一层蒙版连续；iOS 26.5.2 若仍存在 DOM 不可达系统带，按平台限制记录；
 - 长按成功/失败/取消后无系统 Selection/callout/click 泄漏；
 - Home Indicator、系统返回手势；
 - Oxford/ChatGPT Shortcuts 外跳返回；
@@ -157,4 +173,4 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.0.1.md`、`SEMANTIC_IMPACT_MATRIX_4.0.1.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.0.1.md` 和 `PRODUCT_MANUAL_4.0.1.md` 共同组成当前稳定规格。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.0.2.md`、`SEMANTIC_IMPACT_MATRIX_4.0.2.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.0.2.md` 和 `PRODUCT_MANUAL_4.0.2.md` 共同组成当前稳定规格。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

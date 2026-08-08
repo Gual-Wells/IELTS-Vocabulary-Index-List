@@ -1,4 +1,4 @@
-# Vocabulary Index 4.0.1 本地架构
+# Vocabulary Index 4.0.2 本地架构
 
 ## 1. 架构目标
 
@@ -9,7 +9,7 @@
 - `js/v3-model.js`：Schema 6 实体、规范化、投影、精确关系组件、搜索、校验。
 - `js/v3-db.js`：IndexedDB 5、Seed 4、完整备份、硬断代内容世代替换。
 - `js/v3-store.js`：内存状态、Projection、Raw/Effective Relation Graph、事务操作。
-- `js/v3-ui.js`：Home/Collection shell、导航历史、单一 Sticky Heading Layer、retained Modal Stack、longpress、搜索和 Provider UI。
+- `js/v3-ui.js`：Home/Collection shell、导航历史、统一顶部几何、单一 Sticky Heading Layer、retained Modal Stack、longpress、搜索和 Provider UI。
 - `js/v3-exchange.js`：VIX v2 导入/导出与预检。
 - `js/v3-import.js`：文本/CSV/JSON 输入；拒绝旧世代 Full Backup。
 - `js/v3-ai.js`：Groq 模型发现、批量 AI 核查、临时词汇查询。
@@ -54,12 +54,13 @@
 
 ## 6. UI 几何与弹层
 
-- 顶部有效边界继续由 `topChromeBottom()`/真实 DOM rect 提供。
-- 真实字母 heading 不再 sticky；运行时维护 `alphabetSectionMetrics`，滚动时二分得到 active section，单一 `sticky-letter-heading` 只负责展示。ResizeObserver 在列表高度变化后重新测量。
+- 基础顶部 Chrome 由真实 DOM rect 测量；字母模式的最终阅读边界固定为“基础 Chrome 底边 + 字母栏当前实测高度”。字母栏是否已经从文档流滚入 sticky 状态，不再改变这个最终占位值。
+- `--sticky-base-top` 只代表基础 Chrome；`--content-sticky-top/--chrome-bottom` 代表完整阅读边界。字母栏隐藏的日期模式自动退化为基础 Chrome。
+- 真实字母 heading 不再 sticky；运行时维护 `alphabetSectionMetrics`，滚动时二分得到 active section，单一 `sticky-letter-heading` 只负责展示。全局/域/普通 Collection 与 word/phrase/content 共用同一函数。
 - bottom toolbar 视觉高度 58px，但阅读区域避让读取实际 DOM。
 - application form/action 使用 `modal-host → modal-layer → modal-card` retained stack。父层不替换 DOM，只设 inert；子层拥有独立 backdrop。Settings/Manager/action 使用统一受限高度，只有 `.dialog-body` 滚动。
 - search/confirm 仍是 native dialog utility layer；VisualViewport 仅在真实键盘/视口变化时参与布局。
-- standalone 状态栏保留 `default`；Modal Host 自身覆盖布局视口与 safe-area，业务控件继续按 safe-area 避让。
+- standalone 状态栏保留 `default`；Modal 开启时 theme-color 与 under-page background 做蒙版合成色 best-effort 同步。iOS 26.5.2 若保留系统绘制的 DOM 不可达顶部带，记录为 WebKit 平台限制。
 
 ## 7. 输入/选择模型
 
@@ -75,4 +76,4 @@ ChatGPT `vix-entry-context` v2 限制直接关系数量，确保 URL 不再随�
 
 ## 9. PWA 生命周期
 
-4.0.1 使用独立 Service Worker cache generation；4.0.0 的 Schema/Seed 世代不变。启动代码验证 HTML/JS 版本一致；旧缓存只由 4.0 cache bridge 清理。最终部署仍需在 iPhone standalone 验证冷启动、离线、系统进程回收和外部 App 返回。
+4.0.2 使用独立 Service Worker cache generation；4.0.0 的 Schema/Seed 世代不变。启动代码验证 HTML/JS 版本一致；旧缓存只由 4.0 cache bridge 清理。最终部署仍需在 iPhone standalone 验证冷启动、离线、系统进程回收和外部 App 返回。

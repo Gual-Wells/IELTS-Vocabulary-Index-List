@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -20,16 +20,17 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.0.1');
-assert.ok(index.includes('Vocabulary Index 4.0.1'));
+assert.equal(pkg.version, '4.0.2');
+assert.ok(index.includes('Vocabulary Index 4.0.2'));
 assert.ok(index.includes('css/v4.0.1.css'));
+assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.0.1-runtime-convergence'));
-assert.ok(manifest.name.includes('4.0.1'));
+assert.ok(sw.includes('v4.0.2-runtime-convergence'));
+assert.ok(manifest.name.includes('4.0.2'));
 
 // PWA identity is Vocabulary Index's V mark, not the former Oxford home-screen icon.
 const iconSrcs = manifest.icons.map((item) => item.src);
@@ -55,7 +56,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -139,7 +140,23 @@ assert.ok(ui.includes('refreshAlphabetSectionMetrics'));
 assert.ok(ui.includes('alphabetSectionMetrics'));
 assert.ok(ui.includes('while (low <= high)'));
 assert.ok(ui.includes("setProperty('--content-sticky-top'"));
+assert.ok(ui.includes("const navHeight = Math.max(0, nav.getBoundingClientRect().height || nav.offsetHeight || 0)"));
+assert.ok(ui.includes('return baseBottom + navHeight'));
+assert.ok(css.includes('top: var(--content-sticky-top, var(--chrome-bottom))'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
+
+
+// Date-mode study-date refresh is an in-place mutation, not a navigation jump.
+assert.ok(ui.includes("const preserveDateViewport = mode === 'date'"));
+assert.ok(ui.includes("window.scrollTo({ top: preservedScrollY, behavior: 'auto' })"));
+assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
+assert.ok(!ui.includes('学习日期已刷新并移到今天'));
+
+// Modal shell attempts to synchronize the system theme surface with the backdrop.
+assert.ok(ui.includes("const MODAL_THEME_COLOR = '#8f8f8e'"));
+assert.ok(ui.includes('setSystemShellModalSurface(true)'));
+assert.ok(ui.includes('setSystemShellModalSurface(false)'));
+assert.ok(css.includes('html.system-modal-surface'));
 
 // Bottom toolbar size remains accepted 58px, but layout code can measure it.
 assert.ok(css.includes('--bottom-toolbar-height: 58px'));

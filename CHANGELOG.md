@@ -1,6 +1,15 @@
 # Changelog
 
 
+## 4.0.2 — 2026-08-08
+
+- 修正 4.0.1 字母 Sticky 几何：内容顶部边界统一为基础 Chrome 实测底边 + 字母栏实测高度，不再依赖字母栏瞬态 flow 位置；
+- 同一边界统一覆盖全局/域/普通 Collection 与 word/phrase/content，消除 Sticky 被字母栏遮挡和同源镂空；
+- 日期模式刷新学习日期保持当前视口，不再自动跟随被刷新 Entry 跳到今天；
+- Query chooser 再左移并保证右边框露出；Oxford 重绘为闭合书本，四 Provider 统一深色描边；
+- Modal 打开/关闭同步 theme-color 与页面底色到第一层蒙版合成色；iOS 26.5.2 若仍保留 DOM 不可达顶部状态条，作为 WebKit 平台限制记录；
+- Schema 6 / DB 5 / Seed 4 / VIX 2 与全部 4.0.0 业务语义保持不变。
+
 ## 4.0.1 — 2026-08-08
 
 - 真机反馈收口：重建 Sticky 为普通分组标题 + 单一展示层 + metrics 二分定位，消除字母栏镂空与滚动扫描迟滞；

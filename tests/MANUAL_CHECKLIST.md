@@ -1,10 +1,10 @@
-# Vocabulary Index 4.0.1 · iPhone 17 主屏幕 PWA 人工验收清单
+# Vocabulary Index 4.0.2 · iPhone 17 主屏幕 PWA 人工验收清单
 
 > 自动化通过不等于真机通过。以下项目必须在 iPhone 17 标准版 standalone PWA 验证。
 
 ## A. 启动 / 世代 / PWA
 
-- [ ] 4.0.0 直接升级到 4.0.1，不清空 Entry、PIN、日期、Annotation、设置。
+- [ ] 4.0.1 直接升级到 4.0.2，不清空 Entry、PIN、日期、Annotation、设置。
 - [ ] 3.5.x 旧世代仍进入 Schema6/Seed4 替换流程；旧 VIX/Full Backup 不被误导入。
 - [ ] Home Screen `V` 图标正常；离线冷启动正常。
 - [ ] 状态栏/Dynamic Island 区域与 App 背景连续，不再出现 modal 顶部独立白块。
@@ -73,3 +73,11 @@
 - [ ] Recursive return 恢复 view/mode/scroll/expanded state。
 - [ ] Oxford/Collins/Groq/ChatGPT 功能顺序、Abort/stale-response、ChatGPT compact context 无回归。
 - [ ] 58px 底部工具栏保持原真机尺寸。
+
+## 4.0.2 真机专项
+
+- [ ] 字母模式：全局词汇/短语、域总表、普通词表、短语页、内容页的字母栏下方无镂空；独立 Sticky 标题稳定显示在字母栏下方。
+- [ ] 日期模式：Sticky 日标题继续位于顶部主栏下方，不错误预留字母栏高度。
+- [ ] 日期模式刷新学习日期后，视口保持原位置，不跟随被刷新 Entry 跳转。
+- [ ] 查询菜单右边界完整露出且相较 4.0.1 略左移；Oxford 为闭合书本描边图标，四 Provider 同为深色描边。
+- [ ] 打开/关闭应用 Modal 时检查顶部系统状态区颜色连续性；iOS 26.5.2 若仍保留系统不可绘制 62px 区域，记录为 WebKit 平台限制而非 DOM 回归。

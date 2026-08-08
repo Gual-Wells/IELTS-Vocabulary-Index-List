@@ -17,7 +17,7 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 
-const APP_VERSION = '4.0.1';
+const APP_VERSION = '4.0.2';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -133,7 +133,7 @@ const ICONS = {
   groq: '<path d="M7.2 5.3h9.6M5.2 8.8h13.6v8.6H5.2z"></path><path d="M8.2 12h7.6M8.2 14.8h4.5"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<path d="M5.2 5h13.6v14H5.2z"></path><path d="M12 5v14M7.8 8.4h2.3M13.9 8.4h2.3M7.8 11.6h2.3M13.9 11.6h2.3"></path>',
+  dictionary: '<path d="M6.1 5.2h10.2c1.05 0 1.9.85 1.9 1.9v11.7H8.05a2.55 2.55 0 0 1-2.55-2.55V7.15c0-1.08.7-1.95 1.7-1.95Z"></path><path d="M5.5 15.8c.7-.72 1.55-1.08 2.55-1.08H18.2M8.25 8.45h6.1"></path>',
   aiChat: '<path d="M5.2 5.3h13.6v10.6H11l-4.1 2.8v-2.8H5.2z"></path><path d="M8.2 9.1h7.6M8.2 12.1h5.1"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
@@ -238,17 +238,22 @@ function updateVisualViewportVars({ immediate = false } = {}) {
 
 function topChromeBottom({ includeLetterNav = true } = {}) {
   const viewportTop = window.visualViewport?.offsetTop || 0;
-  const selectors = includeLetterNav
-    ? '.topbar, .update-banner, .home-annotation-banner, .letter-nav'
-    : '.topbar, .update-banner, .home-annotation-banner';
-  const topSurfaces = [...document.querySelectorAll(selectors)]
+  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner')]
     .filter((node) => !node.classList.contains('hidden'))
     .map((node) => node.getBoundingClientRect())
     .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 280)
     .sort((a, b) => a.top - b.top || a.bottom - b.bottom);
   let bottom = viewportTop;
   for (const rect of topSurfaces) if (rect.top <= bottom + 14) bottom = Math.max(bottom, rect.bottom);
-  return Math.max(bottom, viewportTop + 72);
+  const baseBottom = Math.max(bottom, viewportTop + 72);
+  if (!includeLetterNav) return baseBottom;
+  const nav = elements['letter-nav'];
+  if (!nav || nav.classList.contains('hidden')) return baseBottom;
+  const navHeight = Math.max(0, nav.getBoundingClientRect().height || nav.offsetHeight || 0);
+  // The alphabet bar is itself sticky at baseBottom. Its future/active occupied
+  // stack height is therefore deterministic: base chrome + measured nav height.
+  // Do not infer content geometry from the nav's transient document-flow top.
+  return baseBottom + navHeight;
 }
 
 function updateOverlayLayout() {
@@ -273,6 +278,15 @@ function updateOverlayLayout() {
   });
 }
 
+const BASE_THEME_COLOR = '#fafafa';
+const MODAL_THEME_COLOR = '#8f8f8e';
+
+function setSystemShellModalSurface(active) {
+  const meta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="theme-color"]'));
+  if (meta) meta.content = active ? MODAL_THEME_COLOR : BASE_THEME_COLOR;
+  document.documentElement.classList.toggle('system-modal-surface', Boolean(active));
+}
+
 function lockPageForModal() {
   openModalCount += 1;
   if (openModalCount !== 1) return;
@@ -285,6 +299,7 @@ function lockPageForModal() {
   body.style.width = '100%';
   document.documentElement.classList.add('modal-open');
   body.classList.add('modal-open');
+  setSystemShellModalSurface(true);
 }
 
 function showModalStable(dialog) {
@@ -303,6 +318,7 @@ function unlockPageForModal() {
   const body = document.body;
   document.documentElement.classList.remove('modal-open');
   body.classList.remove('modal-open');
+  setSystemShellModalSurface(false);
   body.style.position = '';
   body.style.top = '';
   body.style.left = '';
@@ -598,7 +614,7 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
     clearExpandedRelationsForView(collection.id, viewKind);
     return;
   }
-  if (entry && ['search', 'relation', 'route', 'annotation', 'pin', 'last', 'study-date'].includes(reason)) {
+  if (entry && ['search', 'relation', 'route', 'annotation', 'pin', 'last'].includes(reason)) {
     clearExpandedRelationsForView(collection.id, viewKind);
     expanded.clear();
     if (getViewMode(collection.id, viewKind) === 'alphabet') expanded.add(letterForEntry(entry));
@@ -2741,9 +2757,13 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   closeQueryMenu();
   const section = sectionForEntry(entry);
   const mode = getViewMode(collection.id, section);
-  if (mode === 'date') {
-    pendingJumpEntryId = entry.id;
-    pendingJumpReason = 'study-date';
+  const preserveDateViewport = mode === 'date';
+  const root = document.documentElement;
+  const preservedScrollY = preserveDateViewport ? window.scrollY : 0;
+  const previousOverflowAnchor = preserveDateViewport ? root.style.overflowAnchor : '';
+  if (preserveDateViewport) {
+    root.style.overflowAnchor = 'none';
+    suppressScrollPersistence(700);
   }
   sourceButton?.classList.add('updating');
   try {
@@ -2753,9 +2773,18 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
       const row = document.getElementById(`entry-${entry.id}`);
       if (context && row) row.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
       showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
+      return;
     }
+    const token = renderRevision;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (token === renderRevision && currentCollectionId === collection.id && getViewMode(collection.id, section) === 'date') {
+        window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
+      }
+      root.style.overflowAnchor = previousOverflowAnchor;
+      showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
+    }));
   } catch (error) {
-    pendingJumpEntryId = '';
+    if (preserveDateViewport) root.style.overflowAnchor = previousOverflowAnchor;
     throw error;
   } finally {
     sourceButton?.classList.remove('updating');
@@ -2952,9 +2981,10 @@ function positionQueryMenu() {
     below = true;
   }
   top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
+  const sideInset = 14;
   const left = Math.min(
-    Math.max(viewportLeft + 8, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 7),
-    viewportRight - menuRect.width - 8,
+    Math.max(viewportLeft + sideInset, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 14),
+    viewportRight - menuRect.width - sideInset,
   );
   const arrowX = Math.min(menuRect.width - 16, Math.max(16, sourceRect.left + sourceRect.width / 2 - left));
   menu.style.left = `${Math.round(left)}px`;
@@ -3237,7 +3267,6 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
     requestAnimationFrame(() => {
       if (token === navigationRevision && row.isConnected) {
         markJumpTarget(row, reason);
-        if (reason === 'study-date') showToast('学习日期已刷新并移到今天');
       }
     });
   });

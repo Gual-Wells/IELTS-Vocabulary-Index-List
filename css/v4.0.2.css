@@ -1,0 +1,23 @@
+/* Vocabulary Index 4.0.2 iPhone geometry and continuity corrections.
+   4.0.0 data semantics and 4.0.1 modal architecture remain unchanged. */
+
+/* A single measured chrome stack owns every alphabet/date sticky boundary. */
+.sticky-letter-heading {
+  top: var(--content-sticky-top, var(--chrome-bottom)) !important;
+}
+
+/* Best-effort system-shell blending while a modal is active. On iOS versions
+   that expose the standalone status-bar strip to theme/page color, this keeps
+   it visually continuous with the first backdrop. */
+html.system-modal-surface,
+html.system-modal-surface body {
+  background: #8f8f8e !important;
+}
+
+/* Query providers use the same dark outline language. */
+.query-menu-option.oxford-option,
+.query-menu-option.collins-option,
+.query-menu-option.groq-option,
+.query-menu-option.chatgpt-option {
+  color: var(--text) !important;
+}

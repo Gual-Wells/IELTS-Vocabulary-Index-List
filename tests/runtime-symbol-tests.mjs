@@ -47,11 +47,16 @@ assert.ok(ui.includes('window.getSelection?.()?.removeAllRanges()'));
 assert.ok(ui.includes('function topChromeBottom'));
 assert.ok(ui.includes("setProperty('--content-sticky-top'"));
 assert.ok(ui.includes('sealedBottom'));
+assert.ok(ui.includes('return baseBottom + navHeight'));
 assert.ok(!ui.includes("setProperty('--content-sticky-top', '52px')"));
 assert.ok(ui.includes("const stickyHost = elements['sticky-letter-heading']"));
 assert.ok(ui.includes("trackState.manualLockStickyEngaged = Boolean(stickyHost && !stickyHost.classList.contains('hidden'))"));
 assert.ok(ui.includes('if (state && !state.manualLocked) state.manualLockStickyEngaged = stickyEngaged'));
 assert.ok(!ui.includes("querySelector('.letter-heading.active-sticky')"));
+
+assert.ok(ui.includes("const preserveDateViewport = mode === 'date'"));
+assert.ok(ui.includes('preservedScrollY'));
+assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
 
 // Four-state relation classification uses complete canonical target sets.
 for (const value of ["'intra'", "'external'", "'nonstruct'", "'multi'"]) assert.ok(ui.includes(`return ${value}`));

@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.0.0（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.0.1（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.0.0 完整源码实际行为。
+- **[当前实现]**：4.0.1 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -60,7 +60,7 @@ GitHub PAT/云同步增加失败面后被移除，正式确立 local-first 与�
 
 原本将查询 Provider 规划为 3.6.0，将 Seed/Domain 模型规划为 4.0.0。该路线保存在 `PREUPDATE_ROADMAP_2026-08-04.md`，但 2026-08-08 用户明确取消分版本方案并统一建模下一稳定大版本。
 
-## 4.0.0：[当前实现]
+## 4.0.0：[历史稳定基线]
 
 4.0.0 直接从 3.5.2 断代，合并查询、关系、Domain、Seed 和 iOS 运行时更新：
 
@@ -80,7 +80,21 @@ GitHub PAT/云同步增加失败面后被移除，正式确立 local-first 与�
 - PWA identity 改为 `V`；
 - 旧 Full Backup/VIX 直接拒绝，不做错误状态迁移。
 
-# 三、4.0.0 当前数据模型
+## 4.0.1：[当前实现]
+
+4.0.1 不改变 4.0.0 内容世代，集中处理首轮 iPhone 真机反馈：
+
+- 字母真实 heading 取消 sticky，改为单一 Sticky Heading Layer；section metrics + 二分定位替代滚动帧整页扫描；
+- `app-dialog`/action 从 snapshot/replace 伪栈改为 retained modal stack，父层常驻并 inert，子层独立遮罩；
+- Settings、管理词库与 action 卡片统一受限管理高度，body 自滚动，常驻开发说明文本从自用 UI 清除；
+- modal 先显示 backdrop、card 两帧稳定后 reveal，解决 4.0.0 “不抖但闪现”；
+- content 补齐 normal/two-line/extreme；一级 row secondary line 密度收紧；
+- Query chooser 增加四 Provider 副字，仅重绘 Oxford/ChatGPT；checkbox 使用产品视觉；
+- Modal Host 覆盖顶部 safe-area，状态栏保持 `default`，避免浅色常态页面引入错误前景对比。
+
+Schema6 / DB5 / Seed4 / VIX2、优先级占有、搜索/关系、四态导航和 Provider 业务语义保持不变。
+
+# 三、4.0.x 当前数据模型
 
 - `Domain`：name/order/glossEnabled/contentMode/relationExcluded。
 - `Collection`：普通内容来源；系统总表由运行时虚拟化。
@@ -104,10 +118,10 @@ Membership 与可见归属严格分离：所有 kind 都可以多 Membership，�
 7. fresh navigation 不读取旧页面缓存；recursive return 恢复完整离开状态。
 8. normal UI text 默认不可原生选择；复制和查询走产品显式交互。
 9. 底部 58px 是视觉规格，不是全局几何常量。
-10. native backdrop 覆盖屏幕，不要求 dialog root 全屏。
+10. 应用级 modal 必须保留真实父层并通过 retained stack 叠加子层；不得回退到 snapshot/replace 伪栈。
 11. 任何历史实现方案只有在新基线中被列为 Product Invariant 时才继续约束；固定 selector/timeout/RAF/事件类型属于 Implementation Note。
 
-# 五、4.0.0 内容世代
+# 五、4.0.x 内容世代
 
 当前 Seed：3 Domain / 17 Collection / 6176 Entry / 7574 Membership / 1240 RelationComponent。
 
@@ -131,10 +145,10 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、当前待真机事项
+# 八、4.0.1 当前待真机事项
 
-- dialog 在 iPhone 17 standalone 无底部白块/首帧抖动；
-- sticky 顶部 A、快速滚动、橡皮筋；
+- retained modal stack 在 iPhone 17 standalone 父层不消失、四角完整、无首帧闪现；
+- 新 Sticky Layer 顶部 A、快速 fling、橡皮筋、惰性块高度变化后即时正确；
 - 长按成功/失败/取消后无系统 Selection/callout/click 泄漏；
 - Home Indicator、系统返回手势；
 - Oxford/ChatGPT Shortcuts 外跳返回；
@@ -143,4 +157,4 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.0.0.md`、`SEMANTIC_IMPACT_MATRIX_4.0.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.0.0.md` 和 `PRODUCT_MANUAL_4.0.0.md` 共同组成当前稳定规格。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.0.1.md`、`SEMANTIC_IMPACT_MATRIX_4.0.1.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.0.1.md` 和 `PRODUCT_MANUAL_4.0.1.md` 共同组成当前稳定规格。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

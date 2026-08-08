@@ -1,4 +1,6 @@
-# Vocabulary Index 4.0.0 数据报告
+# Vocabulary Index 4.0.1 数据报告
+
+> 4.0.1 未修改 Seed 内容、计数或来源；本报告的数据结论继承 4.0.0。
 
 生成依据：`data/seed.json` 与 `data/seed-report.json`。
 

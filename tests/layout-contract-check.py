@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = "\n".join((ROOT / p).read_text() for p in [
-    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css'
+    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css'
 ])
 
 ACTIONS = '<div class="entry-actions"><span class="entry-action-placeholder relation-placeholder"></span><button></button><button></button><button></button><button></button></div>'
@@ -32,8 +32,7 @@ HTML = f'''<!doctype html><html><head><meta name="viewport" content="width=devic
   {row('both-row', '15', 'rendering pipeline', gloss='渲染管線', source='一个非常长的独立域来源名称', date='8·8')}
 </div>
 <nav id="bottom-toolbar" class="bottom-toolbar"><button><span class="ui-icon"></span></button><button disabled><span class="ui-icon"></span></button><button><span class="ui-icon"></span></button><button disabled><span class="ui-icon"></span></button><button><span class="ui-icon"></span></button></nav>
-<dialog id="app-dialog" class="app-dialog form-dialog" open><form id="dialog-form"><header class="dialog-header"><div><h2>设置</h2><p>对齐检查</p></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><label class="field"><span>文本</span><input value="test"></label></div><footer class="dialog-actions"><button>取消</button><button>保存</button></footer></form></dialog>
-<dialog id="action-dialog" class="sheet-dialog action-dialog" open><div id="action-card" class="dialog-card"><header class="dialog-header"><div><h2>条目操作</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><div class="action-list"><button>编辑</button><button>删除</button></div></div></div></dialog>
+<div id="app-dialog" class="modal-host"><section class="modal-layer" data-depth="1"><div class="modal-layer-backdrop"></div><form id="dialog-form" class="modal-card modal-card-management"><header class="dialog-header"><div><h2>设置</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><label class="field"><span>文本</span><input value="test"></label></div><footer class="dialog-actions"><button>取消</button><button>保存</button></footer></form></section></div>
 <dialog id="search-dialog" class="sheet-dialog search-dialog" open><div id="search-card" class="dialog-card"><header class="dialog-header"><div><h2>搜索</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><div class="search-controls"><input value="edge"><select><option>全部</option></select><button class="secondary-button">搜索</button></div></div></div></dialog>
 <dialog id="confirm-dialog" class="confirm-dialog" open><form id="confirm-card" class="dialog-card"><header class="dialog-header"><div><h2>确认操作</h2></div><button class="icon-button" type="button"></button></header><div class="dialog-body"><p>确认内容</p></div><footer class="dialog-actions"><button>取消</button><button>确认</button></footer></form></dialog>
 </body></html>'''
@@ -51,8 +50,17 @@ with sync_playwright() as p:
       document.documentElement.style.setProperty('--visual-center-y', (innerHeight / 2) + 'px');
     """)
 
-    # Dialog roots are centered cards, not full-screen layout surfaces.
-    for root_selector in ('#app-dialog', '#action-dialog', '#search-dialog', '#confirm-dialog'):
+    # Application modal host covers the viewport; its management card remains bounded and fully visible.
+    host = page.locator('#app-dialog').bounding_box(); app_card = page.locator('#dialog-form').bounding_box()
+    assert host and app_card
+    assert abs(host['width'] - 402) < 1 and abs(host['height'] - 874) < 1, host
+    assert app_card['width'] <= 374.5, app_card
+    assert app_card['height'] <= 666.5, app_card
+    assert app_card['y'] > 12 and app_card['y'] + app_card['height'] < 862, app_card
+    assert abs((app_card['x'] + app_card['width']/2) - 201) < 1.5, app_card
+
+    # Native utility dialogs remain centered task-sized cards.
+    for root_selector in ('#search-dialog', '#confirm-dialog'):
         box = page.locator(root_selector).bounding_box()
         assert box, root_selector
         assert box['width'] <= 374.5, (root_selector, box)
@@ -60,13 +68,10 @@ with sync_playwright() as p:
         assert abs((box['x'] + box['width']/2) - 201) < 1.5, (root_selector, box)
         assert abs((box['y'] + box['height']/2) - 437) < 1.5, (root_selector, box)
 
-    # Internal cards fill their task-sized root and titles are centered.
-    for root_selector, card_selector in (('#app-dialog','#dialog-form'),('#action-dialog','#action-card'),('#search-dialog','#search-card'),('#confirm-dialog','#confirm-card')):
-        root_box = page.locator(root_selector).bounding_box(); card = page.locator(card_selector).bounding_box()
-        assert root_box and card
-        assert abs(root_box['x'] - card['x']) < 1 and abs(root_box['width'] - card['width']) < 1
-        title = page.locator(f'{card_selector} .dialog-header h2').bounding_box()
-        assert title and abs((title['x'] + title['width']/2) - (card['x'] + card['width']/2)) < 2.5
+    # All card titles remain centered.
+    for card_selector in ('#dialog-form','#search-card','#confirm-card'):
+        card = page.locator(card_selector).bounding_box(); title = page.locator(f'{card_selector} .dialog-header h2').bounding_box()
+        assert card and title and abs((title['x'] + title['width']/2) - (card['x'] + card['width']/2)) < 2.5
 
     # Source and Traditional gloss share the same bottom-relative secondary-line Y metric.
     both_gloss = page.locator('#both-row .entry-gloss').bounding_box()

@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -20,12 +20,16 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.0.0');
-assert.ok(index.includes('Vocabulary Index 4.0.0'));
+assert.equal(pkg.version, '4.0.1');
+assert.ok(index.includes('Vocabulary Index 4.0.1'));
+assert.ok(index.includes('css/v4.0.1.css'));
+assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
+assert.ok(css.includes('.modal-host'));
+assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.0.0-major-generation'));
-assert.ok(manifest.name.includes('4.0.0'));
+assert.ok(sw.includes('v4.0.1-runtime-convergence'));
+assert.ok(manifest.name.includes('4.0.1'));
 
 // PWA identity is Vocabulary Index's V mark, not the former Oxford home-screen icon.
 const iconSrcs = manifest.icons.map((item) => item.src);
@@ -51,7 +55,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -107,26 +111,34 @@ assert.ok(store.includes('searchBackup({ entries }, query, searchOptions)'));
 assert.ok(ui.indexOf('const oxford =') < ui.indexOf('const collins ='));
 assert.ok(ui.indexOf('const collins =') < ui.indexOf('const groq ='));
 assert.ok(ui.indexOf('const groq =') < ui.indexOf('const chatgpt ='));
-assert.ok(ui.includes('replaceChildren(oxford, collins, groq, chatgpt)'));
+assert.ok(ui.includes('providerOptions'));
+for (const label of ['Oxford', 'Collins', 'Groq', 'ChatGPT']) assert.ok(ui.includes(`'${label}'`));
 assert.ok(integrations.includes('export const ENTRY_CONTEXT_VERSION = 2'));
 assert.ok(integrations.includes('const MAX_CONTEXT_RELATIONS = 16'));
 for (const excluded of ['PIN', '学习日期', 'AI 标注', '全量 Membership', '原始关系组件']) assert.ok(integrations.includes(excluded));
 
-// Dialog roots are card-sized; native backdrop owns screen coverage.
-assert.ok(css.includes('.app-dialog::backdrop'));
+// Application dialogs use a retained custom modal stack; native action/search/confirm remain top-layer utilities.
+assert.ok(index.includes('id="app-dialog" class="modal-host hidden"'));
+assert.ok(css.includes('.modal-host'));
+assert.ok(css.includes('.modal-layer-backdrop'));
+assert.ok(css.includes('.modal-card-management'));
+assert.ok(css.includes('.modal-card-pending'));
+assert.ok(ui.includes('createAppDialogFrame'));
+assert.ok(ui.includes('parent.layer.inert = true'));
+assert.ok(ui.includes('parent.onRestore?.()'));
+assert.ok(!ui.includes('snapshotAppDialog'));
+assert.ok(!ui.includes('restoreAppDialog'));
 assert.ok(css.includes('.sheet-dialog::backdrop'));
 assert.ok(css.includes('.confirm-dialog::backdrop'));
-const dialogSection = css.slice(css.indexOf('.app-dialog,'), css.indexOf('.dialog-header'));
-assert.ok(dialogSection.includes('position: fixed !important'));
-assert.ok(dialogSection.includes('left: var(--visual-center-x'));
-assert.ok(dialogSection.includes('top: var(--visual-center-y'));
-assert.ok(!dialogSection.includes('width: 100vw'));
-assert.ok(!dialogSection.includes('height: 100lvh'));
-assert.ok(!dialogSection.includes('transition:'));
 
-// One measured top geometry source replaces fixed +52 sticky logic.
+// Sticky uses one zero-height presentation layer and metric/binary-search state, not sticky real headings.
+assert.ok(index.includes('sticky-letter-heading'));
+assert.ok(css.includes('.sticky-letter-heading'));
+assert.ok(css.includes('.letter-heading {\n  position: relative !important'));
+assert.ok(ui.includes('refreshAlphabetSectionMetrics'));
+assert.ok(ui.includes('alphabetSectionMetrics'));
+assert.ok(ui.includes('while (low <= high)'));
 assert.ok(ui.includes("setProperty('--content-sticky-top'"));
-assert.ok(ui.includes('topChromeBottom()'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
 // Bottom toolbar size remains accepted 58px, but layout code can measure it.
@@ -152,10 +164,21 @@ assert.ok(ui.includes("for (const type of ['selectstart', 'contextmenu'])"));
 assert.ok(ui.includes('window.getSelection?.()?.removeAllRanges()'));
 
 // Source and Traditional gloss use the same secondary-line Y metric.
-const glossRule = css.match(/\.entry-line\.has-left-meta \.entry-gloss\s*\{([\s\S]*?)\}/)?.[1] || '';
-const sourceRule = css.match(/\.entry-line\.has-right-meta \.entry-source-domain\s*\{([\s\S]*?)\}/)?.[1] || '';
-assert.ok(/bottom:\s*6px/.test(glossRule));
-assert.ok(/bottom:\s*6px/.test(sourceRule));
+assert.ok(css.includes('.entry-line.has-left-meta .entry-gloss { bottom: 4px !important; }'));
+assert.ok(css.includes('.entry-line.has-right-meta .entry-source-domain { bottom: 4px !important; }'));
+
+
+// content long text inherits explicit normal/two-line/extreme handling.
+for (const kind of ['content-normal', 'content-two-line', 'content-extreme']) assert.ok(ui.includes(kind));
+assert.ok(css.includes('.content-two-line .entry-text'));
+assert.ok(css.includes('.content-extreme .entry-text-content'));
+
+// Settings are management-sized and remove development-style helper paragraphs.
+assert.ok(ui.includes("variant: 'management'"));
+assert.ok(ui.includes("className: 'vix-checkbox'"));
+assert.ok(css.includes('.vix-checkbox:checked'));
+assert.ok(!ui.includes('仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制'));
+assert.ok(!ui.includes('默认开启。只逻辑隐藏代词'));
 
 // Product package sources must not contain NUL bytes.
 for (const dir of ['js', 'css', 'data', 'tests', 'tools']) {

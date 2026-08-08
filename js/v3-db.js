@@ -181,7 +181,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.0.0',
+    appVersion: '4.0.1',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -189,14 +189,14 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
 
 async function loadCanonicalSeed() {
   const raw = await loadLegacySeed();
-  if (Number(raw?.schemaVersion) !== SCHEMA_VERSION) throw new Error('内置 Seed 与当前 4.0.0 内容世代不兼容');
+  if (Number(raw?.schemaVersion) !== SCHEMA_VERSION) throw new Error('内置 Seed 与当前 4.0.x 内容世代不兼容');
   return canonicalizeBackup(raw);
 }
 
 export function mergeBuiltInDomainBackup(_baseBackup, seedBackup) {
   // 4.0.0 is a content-generation break. Built-in seed updates are full
   // replacements and never perform the old add-only merge.
-  return canonicalizeBackup({ ...seedBackup, appVersion: '4.0.0', schemaVersion: SCHEMA_VERSION });
+  return canonicalizeBackup({ ...seedBackup, appVersion: '4.0.1', schemaVersion: SCHEMA_VERSION });
 }
 
 async function ensureBuiltInSeedRevision(db) {
@@ -228,7 +228,7 @@ export async function initializeDatabase() {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
   if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
-  if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.0 内容世代替换后再启动。');
+  if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
 
   return enqueueWrite(async () => {
     const seed = await loadCanonicalSeed();
@@ -397,14 +397,14 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.0.0',
+    appVersion: '4.0.1',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });
 }
 
 export async function replaceWithBackup(input, { migrationNoticePending = false, expectedRevision = null } = {}) {
-  if (Number(input?.schemaVersion) !== SCHEMA_VERSION) throw new Error('完整备份版本不兼容；4.0.0 仅接受 Schema 6 完整备份');
+  if (Number(input?.schemaVersion) !== SCHEMA_VERSION) throw new Error('完整备份版本不兼容；4.0.1 仅接受 Schema 6 完整备份');
   validateBackup(input);
   const backup = canonicalizeBackup(input);
   return enqueueWrite(async () => {

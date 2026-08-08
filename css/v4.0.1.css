@@ -1,0 +1,235 @@
+/* Vocabulary Index 4.0.1 iPhone runtime/UI convergence layer.
+   Data and relation semantics remain 4.0.0; this layer replaces sticky and
+   application-modal presentation behavior and tightens proven iPhone layouts. */
+
+:root {
+  --management-modal-max-height: min(76dvh, 666px);
+}
+
+html, body, #app, .boot-screen { background: var(--bg) !important; }
+
+/* 4.0.1 application modal stack. The page is locked once; each nested task is
+   a real retained layer with its own backdrop and card. */
+.modal-host {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+}
+.modal-host.hidden { display: none !important; }
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(12px, var(--safe-top)) 14px max(12px, var(--safe-bottom));
+  pointer-events: auto;
+  isolation: isolate;
+}
+.modal-layer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: rgb(28 27 25 / 48%);
+}
+.modal-layer[data-depth]:not([data-depth="1"]) .modal-layer-backdrop {
+  background: rgb(28 27 25 / 20%);
+}
+.modal-layer[inert] { pointer-events: none; }
+.modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(520px, calc(var(--visual-width, 100vw) - 28px));
+  min-width: 0;
+  max-width: calc(var(--visual-width, 100vw) - 28px);
+  max-height: min(calc(var(--visual-height, 100dvh) - 56px), 760px);
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 13%);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+.modal-card-management { max-height: var(--management-modal-max-height); }
+.modal-card-pending {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+.modal-card .dialog-header,
+.modal-card .dialog-body,
+.modal-card .dialog-actions { min-width: 0; }
+.modal-card .dialog-body {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-card .dialog-actions.hidden { display: none !important; }
+.modal-close { justify-self: end; }
+
+/* Settings/manager keep the established collection-action rhythm; height is
+   bounded by the management window rather than expanded toward full screen. */
+.modal-card-management .dialog-header { min-height: 56px !important; }
+.modal-card-management .dialog-body { padding: 16px 18px !important; gap: 13px !important; }
+.modal-card-management .dialog-actions { padding: 11px 16px !important; }
+.settings-section { gap: 9px !important; padding-bottom: 12px !important; }
+.settings-section h3 { margin-bottom: 2px !important; }
+.settings-version {
+  min-height: 28px;
+  display: flex !important;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Product-styled checkbox; native input remains the semantic control. */
+.vix-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px !important;
+  min-width: 22px !important;
+  height: 22px !important;
+  margin: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+}
+.vix-checkbox:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.vix-checkbox:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.vix-checkbox:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, white); outline-offset: 2px; }
+.checkbox-field { min-height: 48px; }
+
+/* 4.0.1 sticky model: real section headings stay in normal flow. A single
+   zero-height overlay layer renders the current heading without creating a gap. */
+.letter-heading {
+  position: relative !important;
+  top: auto !important;
+  z-index: auto !important;
+}
+.sticky-letter-heading {
+  position: sticky;
+  top: var(--chrome-bottom, var(--sticky-base-top));
+  z-index: 47;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.sticky-letter-heading.hidden { display: none !important; }
+.sticky-letter-heading-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--accent-ink);
+  text-align: left;
+  pointer-events: auto;
+}
+.sticky-letter-heading-button .letter-title { min-width: 0; }
+.sticky-letter-heading-button .letter-count { color: var(--muted); font-size: 11px; font-weight: 600; }
+.sticky-letter-heading-button .letter-indicator { width: 28px; height: 28px; display: grid; place-items: center; }
+.sticky-letter-heading-button .letter-indicator .ui-icon { width: 15px; height: 15px; }
+.sticky-letter-heading-button .letter-indicator.open .ui-icon { transform: rotate(180deg); }
+
+/* Entry meta rows: keep source/gloss baseline alignment but remove the large
+   empty middle band introduced in 4.0.0. */
+.entry-line.has-left-meta,
+.entry-line.has-right-meta { min-height: 54px !important; }
+.entry-row.phrase-two-line .entry-line,
+.entry-row.content-two-line .entry-line,
+.entry-row.phrase-extreme .entry-line,
+.entry-row.content-extreme .entry-line { min-height: 58px !important; }
+.entry-row.phrase-two-line .entry-line.has-left-meta,
+.entry-row.phrase-two-line .entry-line.has-right-meta,
+.entry-row.content-two-line .entry-line.has-left-meta,
+.entry-row.content-two-line .entry-line.has-right-meta,
+.entry-row.phrase-extreme .entry-line.has-left-meta,
+.entry-row.phrase-extreme .entry-line.has-right-meta,
+.entry-row.content-extreme .entry-line.has-left-meta,
+.entry-row.content-extreme .entry-line.has-right-meta { min-height: 64px !important; }
+.entry-text-viewport { padding-top: 2px !important; padding-bottom: 2px !important; }
+.entry-line.has-left-meta .entry-text-viewport { padding-bottom: 15px !important; }
+.entry-line.has-right-meta .entry-control-stack { padding-bottom: 15px !important; }
+.entry-line.has-left-meta .entry-gloss { bottom: 4px !important; }
+.entry-line.has-right-meta .entry-source-domain { bottom: 4px !important; }
+
+/* content entries inherit the mature phrase/word long-text strategies. */
+.content-normal .entry-text { white-space: nowrap; }
+.content-two-line .entry-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.content-two-line .entry-gloss { white-space: normal; overflow-wrap: anywhere; }
+.content-normal .entry-text,
+.content-two-line .entry-text,
+.content-extreme .entry-text { font-size: 14.8px !important; }
+.content-extreme .entry-text-content {
+  min-width: max-content !important;
+  width: max-content !important;
+}
+
+/* Query chooser: labels fit inside the existing lightweight footprint. */
+.query-menu {
+  grid-template-columns: repeat(4, 46px) !important;
+  gap: 1px !important;
+  padding: 3px !important;
+}
+.query-menu-option {
+  width: 46px !important;
+  min-width: 46px !important;
+  height: 48px !important;
+  display: grid !important;
+  grid-template-rows: 24px 11px !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 1px !important;
+  padding: 2px 0 !important;
+}
+.query-menu-option .ui-icon { width: 17px !important; height: 17px !important; }
+.query-provider-label {
+  max-width: 44px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7.8px;
+  line-height: 1;
+  font-weight: 620;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/* Existing native action/search/confirm dialogs remain top-layer utilities;
+   application management tasks use the custom retained modal stack above. */
+.app-dialog { display: none !important; }
+
+@media (max-height: 760px) {
+  :root { --management-modal-max-height: min(74dvh, 600px); }
+}
+.modal-card-action { max-height: var(--management-modal-max-height); }

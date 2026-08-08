@@ -7,7 +7,7 @@ import {
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
 } from './v3-store.js';
 import {
-  AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog, getModelCatalogUpdatedAt,
+  AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog,
   getSelectedModel, queryVocabularyEntry, refreshModels, selectModel, setApiKey, suggestEntries, suggestSearchTerms,
 } from './v3-ai.js';
 import {
@@ -17,16 +17,15 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.0.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
-  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
+  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'sticky-letter-heading', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
-  'app-dialog', 'dialog-form', 'dialog-title', 'dialog-description', 'dialog-close', 'dialog-body', 'dialog-actions',
-  'action-dialog', 'action-title', 'action-description', 'action-close', 'action-body',
+  'app-dialog',
   'search-dialog', 'search-close', 'search-body',
   'confirm-dialog', 'confirm-form', 'confirm-title', 'confirm-description', 'confirm-body', 'confirm-cancel', 'confirm-submit',
   'hidden-file-input',
@@ -46,7 +45,6 @@ let pinIndex = 0;
 let pinCollectionId = '';
 let activeTask = null;
 let review = { ids: [], index: 0, collectionId: '', viewKind: '' };
-let dialogSubmitHandler = null;
 let confirmSubmitHandler = null;
 let confirmCancelHandler = null;
 let confirmChoiceRequired = false;
@@ -60,7 +58,10 @@ let activeSection = 'main';
 let navigationRevision = 0;
 const expandedRelations = new Set();
 const dialogStack = [];
-let currentDialogMeta = { onRestore: null };
+let alphabetSectionMetrics = [];
+let alphabetMetricsRevision = 0;
+let alphabetResizeObserver = null;
+let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalScrollY = 0;
 let modalTouchY = 0;
@@ -132,8 +133,8 @@ const ICONS = {
   groq: '<path d="M7.2 5.3h9.6M5.2 8.8h13.6v8.6H5.2z"></path><path d="M8.2 12h7.6M8.2 14.8h4.5"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<path d="M5.2 4.8h5.1c1.05 0 1.7.35 1.7 1.25v13.1c0-.9-.65-1.25-1.7-1.25H5.2V4.8Z"></path><path d="M18.8 4.8h-5.1c-1.05 0-1.7.35-1.7 1.25v13.1c0-.9.65-1.25 1.7-1.25h5.1V4.8Z"></path><path d="M7.4 8h2.2M14.4 8h2.2M7.4 11h2.2M14.4 11h2.2"></path>',
-  aiChat: '<path d="M5.1 5.2h13.8a1.9 1.9 0 0 1 1.9 1.9v8a1.9 1.9 0 0 1-1.9 1.9h-7.2l-4.4 3.1V17H5.1a1.9 1.9 0 0 1-1.9-1.9v-8a1.9 1.9 0 0 1 1.9-1.9Z"></path><path d="M8 10.9h.01M12 10.9h.01M16 10.9h.01"></path>',
+  dictionary: '<path d="M5.2 5h13.6v14H5.2z"></path><path d="M12 5v14M7.8 8.4h2.3M13.9 8.4h2.3M7.8 11.6h2.3M13.9 11.6h2.3"></path>',
+  aiChat: '<path d="M5.2 5.3h13.6v10.6H11l-4.1 2.8v-2.8H5.2z"></path><path d="M8.2 9.1h7.6M8.2 12.1h5.1"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
   clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
@@ -265,6 +266,7 @@ function updateOverlayLayout() {
     document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
     document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
     document.documentElement.style.setProperty('--content-sticky-top', `${sealedBottom}px`);
+    cachedChromeBottom = sealedBottom;
     if (activeQueryMenu) positionQueryMenu();
     if (activeRelationTargetMenu) positionRelationTargetMenu();
     syncActiveAlphabetHeading();
@@ -332,82 +334,143 @@ function handleModalTouchMove(event) {
   if ((atTop && delta > 0) || (atBottom && delta < 0)) event.preventDefault();
 }
 
-function snapshotAppDialog() {
-  return {
-    title: elements['dialog-title'].textContent,
-    description: elements['dialog-description'].textContent,
-    descriptionHidden: elements['dialog-description'].classList.contains('hidden'),
-    body: [...elements['dialog-body'].childNodes],
-    actions: [...elements['dialog-actions'].childNodes],
-    submitHandler: dialogSubmitHandler,
-    meta: currentDialogMeta,
-  };
+function createAppDialogFrame({
+  title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false,
+  onSubmit = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
+}) {
+  const layer = el('section', {
+    className: 'modal-layer',
+    dataset: { depth: String(dialogStack.length + 1), variant, kind },
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-label': title,
+  });
+  const backdrop = el('div', { className: 'modal-layer-backdrop', 'aria-hidden': 'true' });
+  const form = el('form', { className: `modal-card modal-card-${variant} modal-card-pending` });
+  const titleNode = el('h2', { text: title });
+  const descriptionNode = el('p', { className: `muted${description ? '' : ' hidden'}`, text: description });
+  const closeButton = iconButton('close', 'icon-button modal-close', '关闭', () => closeDialog());
+  const header = el('header', { className: 'dialog-header' }, [el('div', {}, [titleNode, descriptionNode]), closeButton]);
+  const bodyNode = el('div', { className: 'dialog-body' }, Array.isArray(body) ? body : [body]);
+  const actions = el('footer', { className: 'dialog-actions' });
+  const includeCancel = showCancel == null ? Boolean(onSubmit) : Boolean(showCancel);
+  if (includeCancel) actions.append(button(cancelText, 'secondary-button', () => closeDialog()));
+  let submitButton = null;
+  if (onSubmit) {
+    submitButton = el('button', { type: 'submit', className: destructive ? 'danger-button' : 'primary-button', text: submitText });
+    actions.append(submitButton);
+  }
+  if (!actions.childNodes.length) actions.classList.add('hidden');
+  form.append(header, bodyNode, actions);
+  layer.append(backdrop, form);
+  const frame = { layer, form, body: bodyNode, actions, closeButton, onSubmit, onRestore, submitButton, kind, returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+  backdrop.addEventListener('click', () => closeDialog());
+  layer.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); closeDialog(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = [...form.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((node) => node instanceof HTMLElement && !node.hidden && getComputedStyle(node).visibility !== 'hidden');
+    if (!focusable.length) { event.preventDefault(); closeButton.focus({ preventScroll: true }); return; }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus({ preventScroll: true }); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({ preventScroll: true }); }
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!frame.onSubmit) return;
+    const activeHandler = frame.onSubmit;
+    try {
+      if (frame.submitButton) {
+        frame.submitButton.disabled = true;
+        frame.submitButton.dataset.oldText = frame.submitButton.textContent || '';
+        frame.submitButton.textContent = '处理中…';
+      }
+      await activeHandler();
+      if (dialogStack.at(-1) === frame && frame.onSubmit === activeHandler) closeDialog();
+    } catch (error) { displayError(error); }
+    finally {
+      if (frame.submitButton?.isConnected) {
+        frame.submitButton.disabled = false;
+        frame.submitButton.textContent = frame.submitButton.dataset.oldText || submitText;
+      }
+    }
+  });
+  return frame;
 }
 
-function restoreAppDialog(frame) {
-  elements['dialog-title'].textContent = frame.title;
-  elements['dialog-description'].textContent = frame.description;
-  elements['dialog-description'].classList.toggle('hidden', frame.descriptionHidden);
-  elements['dialog-body'].replaceChildren(...frame.body);
-  elements['dialog-actions'].replaceChildren(...frame.actions);
-  dialogSubmitHandler = frame.submitHandler;
-  currentDialogMeta = frame.meta || { onRestore: null };
-  currentDialogMeta.onRestore?.();
+function revealAppDialogFrame(frame) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!frame?.form?.isConnected) return;
+    frame.form.classList.remove('modal-card-pending');
+    frame.closeButton?.focus({ preventScroll: true });
+  }));
 }
 
 function closeDialog({ all = false } = {}) {
-  if (!all && dialogStack.length) {
-    const frame = dialogStack.pop();
-    restoreAppDialog(frame);
-    queueMicrotask(() => elements['dialog-close']?.focus({ preventScroll: true }));
+  if (!dialogStack.length) return;
+  const host = elements['app-dialog'];
+  if (all) {
+    while (dialogStack.length) dialogStack.pop().layer.remove();
+    host.classList.add('hidden');
+    host.setAttribute('aria-hidden', 'true');
+    if (elements.app) elements.app.inert = false;
+    unlockPageForModal();
     return;
   }
-  dialogStack.length = 0;
-  if (elements['app-dialog'].open) {
-    elements['app-dialog'].close();
-    unlockPageForModal();
+  const frame = dialogStack.pop();
+  frame.layer.remove();
+  const parent = dialogStack.at(-1);
+  if (parent) {
+    parent.layer.inert = false;
+    parent.layer.removeAttribute('aria-hidden');
+    parent.onRestore?.();
+    requestAnimationFrame(() => {
+      if (frame.returnFocus?.isConnected) frame.returnFocus.focus({ preventScroll: true });
+      else parent.closeButton?.focus({ preventScroll: true });
+    });
+    return;
   }
-  dialogSubmitHandler = null;
-  currentDialogMeta = { onRestore: null };
+  host.classList.add('hidden');
+  host.setAttribute('aria-hidden', 'true');
+  if (elements.app) elements.app.inert = false;
+  unlockPageForModal();
+  requestAnimationFrame(() => frame.returnFocus?.isConnected && frame.returnFocus.focus({ preventScroll: true }));
 }
 
 function openDialog({
   title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false,
-  onSubmit = null, showCancel = null, onRestore = null,
+  onSubmit = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
 }) {
-  if (elements['app-dialog'].open) dialogStack.push(snapshotAppDialog());
-  elements['dialog-title'].textContent = title;
-  elements['dialog-description'].textContent = description;
-  elements['dialog-description'].classList.toggle('hidden', !description);
-  elements['dialog-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
-  elements['dialog-actions'].replaceChildren();
-  const includeCancel = showCancel == null ? Boolean(onSubmit) : Boolean(showCancel);
-  if (includeCancel) elements['dialog-actions'].append(button(cancelText, 'secondary-button', () => closeDialog()));
-  if (onSubmit) {
-    const submit = el('button', { type: 'submit', className: destructive ? 'danger-button' : 'primary-button', text: submitText });
-    elements['dialog-actions'].append(submit);
-    dialogSubmitHandler = onSubmit;
-  } else dialogSubmitHandler = null;
-  currentDialogMeta = { onRestore };
-  showModalStable(elements['app-dialog']);
-  queueMicrotask(() => elements['dialog-close']?.focus({ preventScroll: true }));
+  const host = elements['app-dialog'];
+  const parent = dialogStack.at(-1);
+  if (!dialogStack.length) {
+    lockPageForModal();
+    updateVisualViewportVars({ immediate: true });
+    if (elements.app) elements.app.inert = true;
+    host.classList.remove('hidden');
+    host.setAttribute('aria-hidden', 'false');
+  }
+  if (parent) {
+    parent.layer.inert = true;
+    parent.layer.setAttribute('aria-hidden', 'true');
+  }
+  const frame = createAppDialogFrame({ title, description, body, submitText, cancelText, destructive, onSubmit, showCancel, onRestore, variant, kind });
+  dialogStack.push(frame);
+  host.append(frame.layer);
+  revealAppDialogFrame(frame);
+  return frame;
 }
 
 function closeActionDialog() {
   if (activeProviderQuery) { activeProviderQuery.controller.abort(); activeProviderQuery = null; }
-  if (elements['action-dialog'].open) {
-    elements['action-dialog'].close();
-    unlockPageForModal();
-  }
+  const top = dialogStack.at(-1);
+  if (top?.kind === 'action') closeDialog();
 }
 
 function openActionDialog({ title, description = '', body = [] }) {
-  elements['action-title'].textContent = title;
-  elements['action-description'].textContent = description;
-  elements['action-description'].classList.toggle('hidden', !description);
-  elements['action-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
-  showModalStable(elements['action-dialog']);
-  queueMicrotask(() => elements['action-close']?.focus({ preventScroll: true }));
+  const frame = openDialog({ title, description, body, showCancel: false, variant: 'action', kind: 'action' });
+  return frame;
 }
 
 function closeSearchDialog() {
@@ -910,7 +973,7 @@ function openLibraryManager() {
   const mount = el('div');
   const refresh = () => mount.replaceChildren(libraryManagerBody());
   refresh();
-  openDialog({ title: '管理词库', body: mount, showCancel: false, onRestore: refresh });
+  openDialog({ title: '管理词库', body: mount, variant: 'management', showCancel: false, onRestore: refresh });
 }
 
 async function exportBackupNow() {
@@ -1820,9 +1883,8 @@ function populateNavigationBar(nav, controls) {
     trackState.manualLocked = true;
     trackState.manualLockScrollY = window.scrollY;
     trackState.manualLockLetter = track.querySelector('[data-letter].active')?.dataset.letter || '';
-    const activeHeading = elements['entry-list'].querySelector('.letter-heading.active-sticky');
-    const headingTop = activeHeading?.getBoundingClientRect().top;
-    trackState.manualLockStickyEngaged = Number.isFinite(headingTop) && headingTop <= topChromeBottom() + 1;
+    const stickyHost = elements['sticky-letter-heading'];
+    trackState.manualLockStickyEngaged = Boolean(stickyHost && !stickyHost.classList.contains('hidden'));
   };
   track.addEventListener('pointerdown', () => {
     trackState.pointerActive = true;
@@ -1927,9 +1989,9 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
       const gloss = displayGlossForEntry(entry, collection, domain);
       const kind = entryLayoutKind(entry, gloss);
       const hasMeta = Boolean(gloss || sourceDomainLabelForEntry(entry, collection));
-      const rowHeight = kind === 'phrase-extreme' ? (hasMeta ? 92 : 88)
-        : kind === 'phrase-two-line' ? (hasMeta ? 76 : 72)
-          : hasMeta ? 60 : ENTRY_ROW_ESTIMATE;
+      const rowHeight = ['phrase-extreme', 'content-extreme', 'phrase-two-line', 'content-two-line'].includes(kind)
+        ? (hasMeta ? 64 : 58)
+        : hasMeta ? 54 : ENTRY_ROW_ESTIMATE;
       const relationHeight = expandedRelations.has(relationExpansionKey(collection.id, entry.id))
         ? Math.max(0, relationItemsForEntry(entry).length * 42 + 8)
         : 0;
@@ -2090,6 +2152,9 @@ function renderDateContent(context, sectionContext) {
 
 function renderEntryList(collection, domain, entries, section = currentViewKind) {
   resetEntryChunking();
+  alphabetSectionMetrics = [];
+  elements['sticky-letter-heading']?.classList.add('hidden');
+  elements['sticky-letter-heading']?.replaceChildren();
   collectionRenderContext = null;
   const mode = getViewMode(collection.id, section);
   const sections = new Map();
@@ -2103,19 +2168,24 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   if (mode === 'alphabet') {
     elements['letter-nav'].classList.remove('hidden');
     elements['letter-nav'].dataset.section = section;
-    elements['letter-nav'].setAttribute('aria-label', `${section === 'word' ? '词汇' : '短语'}字母索引`);
+    elements['letter-nav'].setAttribute('aria-label', `${section === 'word' ? '词汇' : section === 'phrase' ? '短语' : '内容'}字母索引`);
     populateNavigationBar(elements['letter-nav'], navigationControls(collection, section, sectionContext, mode));
   } else {
     elements['letter-nav'].classList.add('hidden');
     elements['letter-nav'].replaceChildren();
+    elements['sticky-letter-heading']?.classList.add('hidden');
+    elements['sticky-letter-heading']?.replaceChildren();
   }
 
   const output = [];
   if (mode === 'date') output.push(calendarForSection(collection, section, sectionContext.dates));
   output.push(mode === 'date' ? renderDateContent(context, sectionContext) : renderAlphabetContent(context, sectionContext));
   elements['entry-list'].replaceChildren(...output);
+  alphabetResizeObserver?.disconnect();
+  if (mode === 'alphabet') ensureAlphabetResizeObserver()?.observe(elements['entry-list']);
   updateBackToTopVisibility();
   updateOverlayLayout();
+  if (mode === 'alphabet') scheduleAlphabetSectionMetricsRefresh();
 }
 
 function releaseChunksInBody(body) {
@@ -2223,6 +2293,7 @@ function setLetterSectionOpen(section, letter, open) {
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (indicator) indicator.classList.toggle('open', open);
   updateActiveLetter(section, letter);
+  scheduleAlphabetSectionMetricsRefresh();
   persistCurrentHistorySnapshot();
   return true;
 }
@@ -2320,47 +2391,96 @@ function updateActiveLetter(section, letter = '', { ensureVisible = false, allow
   });
 }
 
+function ensureAlphabetResizeObserver() {
+  if (alphabetResizeObserver || !('ResizeObserver' in window)) return alphabetResizeObserver;
+  alphabetResizeObserver = new ResizeObserver(() => scheduleAlphabetSectionMetricsRefresh());
+  return alphabetResizeObserver;
+}
+
+function scheduleAlphabetSectionMetricsRefresh() {
+  const revision = ++alphabetMetricsRevision;
+  requestAnimationFrame(() => {
+    if (revision !== alphabetMetricsRevision) return;
+    refreshAlphabetSectionMetrics();
+  });
+}
+
+function refreshAlphabetSectionMetrics() {
+  const context = collectionRenderContext;
+  if (!currentCollectionId || !context || context.mode !== 'alphabet') {
+    alphabetSectionMetrics = [];
+    elements['sticky-letter-heading']?.classList.add('hidden');
+    return;
+  }
+  const scrollY = window.scrollY;
+  alphabetSectionMetrics = [...elements['entry-list'].querySelectorAll('.letter-section[data-letter][data-section]')]
+    .map((node) => {
+      const heading = node.querySelector('.letter-heading');
+      const rect = node.getBoundingClientRect();
+      return {
+        node,
+        heading,
+        top: rect.top + scrollY,
+        section: node.dataset.section || currentViewKind,
+        letter: node.dataset.letter || '',
+      };
+    })
+    .sort((a, b) => a.top - b.top);
+  syncActiveAlphabetHeading();
+}
+
+function renderStickyAlphabetHeading(metric, engaged) {
+  const host = elements['sticky-letter-heading'];
+  if (!host) return;
+  if (!engaged || !metric?.heading?.isConnected) {
+    host.classList.add('hidden');
+    host.replaceChildren();
+    host.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  const expanded = metric.heading.getAttribute('aria-expanded') === 'true';
+  const count = metric.heading.querySelector('.letter-count')?.textContent || '';
+  const buttonNode = button('', 'sticky-letter-heading-button', () => {
+    const liveHeading = metric.node.querySelector('.letter-heading');
+    if (liveHeading) toggleLetterSectionWithAnchor(metric.section, metric.letter, liveHeading);
+  });
+  buttonNode.setAttribute('aria-label', `${metric.letter}，${count} 项${expanded ? '，已展开' : '，已收起'}`);
+  buttonNode.append(
+    el('span', { className: 'letter-title', text: metric.letter }),
+    el('span', { className: 'letter-count', text: count }),
+    el('span', { className: `letter-indicator${expanded ? ' open' : ''}` }, [svgIcon('chevron')]),
+  );
+  host.replaceChildren(buttonNode);
+  host.classList.remove('hidden');
+  host.setAttribute('aria-hidden', 'false');
+}
+
 function syncActiveAlphabetHeading() {
   const context = collectionRenderContext;
-  if (!currentCollectionId || !context || context.mode !== 'alphabet') return;
-  const probe = Math.floor(topChromeBottom() + .01);
-  const sections = [...elements['entry-list'].querySelectorAll('.letter-section[data-letter][data-section]')];
-  let active = null;
-  let stickyEngaged = false;
-  for (const node of sections) {
-    const rect = node.getBoundingClientRect();
-    const heading = node.querySelector('.letter-heading');
-    const headingRect = heading?.getBoundingClientRect();
-    if (rect.top <= probe + 1 && rect.bottom > probe) {
-      active = node;
-      stickyEngaged = Boolean(headingRect && headingRect.top <= probe + 1);
-      break;
-    }
-    if (rect.top <= probe + 1) {
-      active = node;
-      stickyEngaged = Boolean(headingRect && headingRect.top <= probe + 1);
-    } else if (!active) {
-      active = node;
-      stickyEngaged = false;
-      break;
-    }
+  if (!currentCollectionId || !context || context.mode !== 'alphabet' || !alphabetSectionMetrics.length) return;
+  const boundary = window.scrollY + Math.max(cachedChromeBottom, topChromeBottom()) + 1;
+  let low = 0;
+  let high = alphabetSectionMetrics.length - 1;
+  let activeIndex = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (alphabetSectionMetrics[mid].top <= boundary) { activeIndex = mid; low = mid + 1; }
+    else high = mid - 1;
   }
+  const active = alphabetSectionMetrics[Math.max(0, activeIndex)];
   if (!active) return;
-  for (const heading of elements['entry-list'].querySelectorAll('.letter-heading.active-sticky')) heading.classList.remove('active-sticky');
-  active.querySelector('.letter-heading')?.classList.add('active-sticky');
-  activeSection = active.dataset.section || activeSection;
-  const letter = active.dataset.letter || '';
+  const stickyEngaged = activeIndex >= 0;
+  renderStickyAlphabetHeading(active, stickyEngaged);
+  activeSection = active.section;
   const track = elements['letter-nav'].querySelector('.letter-nav-track');
   const state = track ? letterTrackState(track) : null;
-  const activeChanged = state ? Boolean(state.manualLockLetter && state.manualLockLetter !== letter) : false;
+  const activeChanged = state ? Boolean(state.manualLockLetter && state.manualLockLetter !== active.letter) : false;
   const stickyBoundaryNewlyEngaged = state ? Boolean(stickyEngaged && !state.manualLockStickyEngaged) : false;
-  updateActiveLetter(activeSection, letter, {
+  updateActiveLetter(active.section, active.letter, {
     ensureVisible: true,
-    // A manual track position survives stationary top/bottom rubber-banding.
-    // Automatic following resumes when the active section changes or when its
-    // real heading newly reaches the sticky boundary after the manual gesture.
     allowManualRelease: Boolean(activeChanged || stickyBoundaryNewlyEngaged),
   });
+  if (state && !state.manualLocked) state.manualLockStickyEngaged = stickyEngaged;
 }
 
 function updateLargeTitleState() {
@@ -2643,7 +2763,7 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
 }
 
 function providerQueryIsCurrent(sequence) {
-  return activeProviderQuery?.sequence === sequence && elements['action-dialog'].open;
+  return activeProviderQuery?.sequence === sequence && dialogStack.some((frame) => frame.kind === 'action');
 }
 
 function providerResultBody(provider, entry, statusText = '查询中…') {
@@ -2658,13 +2778,16 @@ function providerResultBody(provider, entry, statusText = '查询中…') {
 }
 
 async function startProviderQuery(provider, entry, collection) {
-  if (activeProviderQuery) activeProviderQuery.controller.abort();
+  if (activeProviderQuery) {
+    activeProviderQuery.controller.abort();
+    if (dialogStack.at(-1)?.kind === 'action') closeDialog();
+  }
   const controller = new AbortController();
   const sequence = ++providerQuerySequence;
   activeProviderQuery = { provider, entryId: entry.id, sequence, controller };
   const body = providerResultBody(provider, entry);
-  openActionDialog({ title: `${provider} 查询`, body });
-  const card = elements['action-body'].querySelector('.provider-result-card');
+  const queryFrame = openActionDialog({ title: `${provider} 查询`, body });
+  const card = queryFrame?.body.querySelector('.provider-result-card');
   const status = card?.querySelector('.provider-result-status');
   const content = card?.querySelector('.provider-result-content');
   try {
@@ -2722,11 +2845,16 @@ function estimatedTextUnits(text) {
 }
 
 function entryLayoutKind(entry, gloss = '') {
-  if (entry.kind !== 'phrase') return 'word-normal';
-  const phraseUnits = estimatedTextUnits(entry.text);
+  const textUnits = estimatedTextUnits(entry.text);
   const glossUnits = estimatedTextUnits(gloss);
-  if (phraseUnits <= 13.5 && glossUnits <= 18) return 'phrase-normal';
-  if (phraseUnits <= 28 && glossUnits <= 24) return 'phrase-two-line';
+  if (entry.kind === 'content') {
+    if (textUnits <= 18 && glossUnits <= 20) return 'content-normal';
+    if (textUnits <= 36 && glossUnits <= 30) return 'content-two-line';
+    return 'content-extreme';
+  }
+  if (entry.kind !== 'phrase') return 'word-normal';
+  if (textUnits <= 13.5 && glossUnits <= 18) return 'phrase-normal';
+  if (textUnits <= 28 && glossUnits <= 24) return 'phrase-two-line';
   return 'phrase-extreme';
 }
 
@@ -2736,7 +2864,7 @@ function handleEntryPrimaryAction(entry, collection, annotationRecord) {
 }
 
 function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind) {
-  const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme';
+  const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme' || layoutKind === 'content-extreme';
   let pointerStart = null;
   let suppressClick = false;
   const viewport = el('div', {
@@ -2825,7 +2953,7 @@ function positionQueryMenu() {
   }
   top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
   const left = Math.min(
-    Math.max(viewportLeft + 8, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2),
+    Math.max(viewportLeft + 8, sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 7),
     viewportRight - menuRect.width - 8,
   );
   const arrowX = Math.min(menuRect.width - 16, Math.max(16, sourceRect.left + sourceRect.width / 2 - left));
@@ -2854,8 +2982,12 @@ function openQueryMenu(entry, collection, source) {
     closeQueryMenu();
     try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
   });
-  for (const option of [oxford, collins, groq, chatgpt]) option.setAttribute('role', 'menuitem');
-  elements['query-menu'].replaceChildren(oxford, collins, groq, chatgpt);
+  const providerOptions = [[oxford, 'Oxford'], [collins, 'Collins'], [groq, 'Groq'], [chatgpt, 'ChatGPT']];
+  for (const [option, label] of providerOptions) {
+    option.setAttribute('role', 'menuitem');
+    option.append(el('span', { className: 'query-provider-label', text: label }));
+  }
+  elements['query-menu'].replaceChildren(...providerOptions.map(([option]) => option));
   elements['query-menu'].classList.remove('hidden');
   requestAnimationFrame(() => { positionQueryMenu(); oxford.focus({ preventScroll: true }); });
 }
@@ -3867,12 +3999,10 @@ function openSettingsDialog() {
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
     el('option', { value: 'global', text: '连续编号', selected: !['none', 'group'].includes(state.settings.numberMode) }),
   ]);
-  const lowLevelRelations = el('input', { type: 'checkbox', checked: state.settings.closeLowLevelRelations !== false });
-  const updated = el('p', { className: 'help-text' });
+  const lowLevelRelations = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: state.settings.closeLowLevelRelations !== false });
   const renderModels = () => {
     const catalog = getModelCatalog();
     model.replaceChildren(el('option', { value: '', text: catalog.length ? '选择模型' : '未刷新' }), ...catalog.map((item) => el('option', { value: item.id, text: `${item.id}${item.active ? '' : '（历史）'}`, selected: item.id === getSelectedModel() })));
-    updated.textContent = getModelCatalogUpdatedAt() ? new Date(getModelCatalogUpdatedAt()).toLocaleString() : '';
   };
   renderModels();
   const refresh = button('刷新模型', 'secondary-button', async () => {
@@ -3883,15 +4013,15 @@ function openSettingsDialog() {
   const exchangeButton = button('数据交换', 'secondary-button', openDataExchangeDialog);
   const manageButton = button('管理词库', 'secondary-button', openLibraryManager);
   const body = [
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('API Key', key), field('模型', model), updated, refresh]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }), field('API Key', collinsKey), el('p', { className: 'help-text', text: '仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制，查询结果页会提供 Collins 网站降级入口。' })]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations]), el('p', { className: 'help-text', text: '默认开启。只逻辑隐藏代词、冠词、基础介词、助动词、低级数词等低信息关系；搜索与底层双向关系不受影响。' })]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('API Key', key), field('模型', model), refresh]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }), field('API Key', collinsKey)]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [manageButton])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [exchangeButton])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '版本' }), el('p', { className: 'help-text', text: `Vocabulary Index ${APP_VERSION}` })]),
+    el('section', { className: 'settings-section settings-version' }, [el('span', { text: `Vocabulary Index ${APP_VERSION}` })]),
   ];
-  openDialog({ title: '设置', body, submitText: '保存', onSubmit: async () => {
+  openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
     setApiKey(key.value); setCollinsApiKey(collinsKey.value); if (model.value) selectModel(model.value);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
@@ -3907,7 +4037,7 @@ function showMigrationNotice() {
     description: `当前数据库已使用 Schema 6。`,
     body: [
       el('div', { className: 'warning-box', text: '建议立即导出一份当前版本完整 JSON，并保留升级前备份直到真机验收完成。' }),
-      el('p', { className: 'help-text', text: '4.0.0 的内容、投影、关系与个人状态都按具体 Entry 语义运行；旧世代文件不做隐式迁移。' }),
+      el('p', { className: 'help-text', text: '4.0.x 的内容、投影、关系与个人状态都按具体 Entry 语义运行；旧世代文件不做隐式迁移。' }),
     ],
     submitText: '我已了解',
     onSubmit: acknowledgeMigrationNotice,
@@ -3983,19 +4113,6 @@ function renderApp() {
   });
 }
 
-async function handleDialogSubmit(event) {
-  event.preventDefault();
-  if (!dialogSubmitHandler) return;
-  const submit = /** @type {HTMLButtonElement | null} */ (elements['dialog-actions'].querySelector('button[type="submit"]'));
-  const activeHandler = dialogSubmitHandler;
-  try {
-    if (submit) { submit.disabled = true; submit.dataset.oldText = submit.textContent; submit.textContent = '处理中…'; }
-    await activeHandler();
-    if (dialogSubmitHandler === activeHandler) closeDialog();
-  } catch (error) { displayError(error); }
-  finally { if (submit?.isConnected) { submit.disabled = false; submit.textContent = submit.dataset.oldText || '保存'; } }
-}
-
 function scheduleRouteRender() {
   if (routeRenderFrame) return;
   routeRenderFrame = requestAnimationFrame(() => {
@@ -4061,22 +4178,13 @@ export async function initializeUI() {
   elements['back-button']?.replaceChildren(svgIcon('back'));
   elements['search-button']?.replaceChildren(svgIcon('search'));
   elements['back-to-top']?.replaceChildren(svgIcon('top'));
-  elements['dialog-close']?.replaceChildren(svgIcon('close'));
-  elements['action-close']?.replaceChildren(svgIcon('close'));
   elements['search-close']?.replaceChildren(svgIcon('close'));
   elements['update-later-button']?.replaceChildren(svgIcon('close'));
-  elements['dialog-form'].addEventListener('submit', handleDialogSubmit);
   elements['confirm-form'].addEventListener('submit', handleConfirmSubmit);
-  elements['dialog-close'].addEventListener('click', closeDialog);
-  elements['action-close'].addEventListener('click', closeActionDialog);
   elements['search-close'].addEventListener('click', closeSearchDialog);
   elements['confirm-cancel'].addEventListener('click', handleConfirmCancel);
-  elements['app-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['app-dialog'], closeDialog));
-  elements['action-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['action-dialog'], closeActionDialog));
   elements['search-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['search-dialog'], closeSearchDialog));
   elements['confirm-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['confirm-dialog'], closeConfirmDialog));
-  elements['app-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeDialog(); });
-  elements['action-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeActionDialog(); });
   elements['search-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeSearchDialog(); });
   elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
   elements['back-button'].addEventListener('click', navigateBack);
@@ -4097,7 +4205,7 @@ export async function initializeUI() {
   window.addEventListener('popstate', handleHistoryNavigation);
   window.visualViewport?.addEventListener('resize', () => updateVisualViewportVars());
   window.visualViewport?.addEventListener('scroll', () => updateVisualViewportVars(), { passive: true });
-  window.addEventListener('resize', () => updateVisualViewportVars(), { passive: true });
+  window.addEventListener('resize', () => { updateVisualViewportVars(); scheduleAlphabetSectionMetricsRefresh(); }, { passive: true });
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
   document.addEventListener('pointerdown', (event) => {
     if (activeQueryMenu && !elements['query-menu'].contains(event.target) && !activeQueryMenu.source?.contains(event.target)) closeQueryMenu();

@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 6,
-    appVersion: '4.0.0',
+    appVersion: '4.0.1',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -53,7 +53,7 @@ async function ensureLowLevelLexemes() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.0.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.0.1', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);

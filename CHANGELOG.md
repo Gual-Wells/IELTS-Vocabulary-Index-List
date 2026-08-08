@@ -1,6 +1,15 @@
 # Changelog
 
 
+## 4.0.1 — 2026-08-08
+
+- 真机反馈收口：重建 Sticky 为普通分组标题 + 单一展示层 + metrics 二分定位，消除字母栏镂空与滚动扫描迟滞；
+- `app-dialog`/action 改为 retained modal stack，父层 DOM/输入/滚动保留，子层独立 backdrop + inert；
+- Settings/管理词库/action 使用受限管理高度，删除无必要常驻说明文字，card 两帧稳定后 reveal；
+- 补齐 content normal/two-line/extreme，收紧繁体/来源 secondary row；
+- 查询菜单增加 Provider 副字，仅重绘 Oxford/ChatGPT 对齐现有 Collins/Groq；设置 checkbox 改产品视觉；
+- Modal Host 改为应用 DOM 全屏遮罩并延伸至 safe-area；状态栏维持 light-page 友好的 `default`，Schema6/DB5/Seed4/VIX2 与 4.0.0 数据语义不变。
+
 ## 4.0.0 — 2026-08-08
 
 - 合并原 3.6.0/4.0.0 候选路线为单一 major generation；Schema 6 / DB 5 / Seed 4 / VIX 2，旧导入硬断代；

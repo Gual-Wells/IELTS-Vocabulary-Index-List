@@ -1,10 +1,10 @@
-# Vocabulary Index 4.0.0
+# Vocabulary Index 4.0.1
 
-Vocabulary Index 是面向 iPhone 主屏幕 PWA 的本地英语学习索引。4.0.0 将原先分散在“词汇索引、查询增强、未来 Seed 重建”中的方案合并为一个内容世代：统一 word / phrase / content 三类 Entry、统一优先级占有、重建精确双向关系、加入非结构内容域，并收口 iOS dialog / sticky / 长按与 PWA 身份。
+Vocabulary Index 是面向 iPhone 主屏幕 PWA 的本地英语学习索引。4.0.1 延续 4.0.0 的内容世代与全部业务语义，专门收口 iPhone 真机暴露的 Sticky、Modal Stack、长内容和管理窗口体验。
 
 ## 当前正式边界
 
-- 版本：`4.0.0`
+- 版本：`4.0.1`
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`4`
@@ -41,16 +41,17 @@ Vocabulary Index 是面向 iPhone 主屏幕 PWA 的本地英语学习索引。4.
 
 ## iOS 运行时收口
 
-- 普通非编辑文本默认不可原生选中/Callout；输入框、文本域、contenteditable 显式恢复选择。
-- 浏览锚点长按：520ms 成立，成立即保存，松手提示；松手后约 350ms 隐形 guard 吸收迟到 click/select/contextmenu/callout。
-- dialog 遮罩与卡片职责分离：native `::backdrop` 覆盖屏幕，卡片按任务尺寸居中，不再使用全屏 dialog shell；打开不做位置动画或首帧二次校准。
-- sticky、跳转和菜单避让读取同一实际 DOM 顶部几何，不以固定 `+52px` 作为逻辑真值。
-- 底部工具栏继续采用当前真机合适的 58px 视觉高度，但逻辑边界以实际 DOM 测量为准；不恢复 Home Indicator 独立白带。
-- PWA Home Screen 图标改为 Vocabulary Index 自有 `V`。
+- 普通非编辑文本默认不可原生选中/Callout；编辑控件恢复原生选择。浏览锚点继续 520ms + 350ms invisible grace。
+- 字母真实 heading 回归普通文档流；单一 `sticky-letter-heading` 展示当前字母，active section 由预计算 metrics + 二分定位，ResizeObserver 处理惰性渲染/展开后的高度变化。
+- 应用级 form/action 使用 retained modal stack：父层保留真实 DOM，子层新增轻 backdrop 并将父层 inert；关闭只 pop 顶层。Settings/管理词库/action 使用受限管理高度，body 自滚动。
+- modal backdrop 先建立，card 稳定两帧后一次性 reveal，避免首帧闪现；全屏 Modal Host 覆盖 safe-area，状态栏保持 `default` 以适配浅色常态页面。
+- content Entry 补齐 normal/two-line/extreme 长文本；繁体/来源 secondary line 更紧凑。
+- 查询菜单显示 Provider 副字；只重绘 Oxford/ChatGPT，使其与现有 Collins/Groq 协调。
+- 底部工具栏保持 58px；PWA Home Screen 继续使用自有 `V`。
 
 ## 数据世代与兼容
 
-4.0.0 是硬断代。旧 VIX v1 和旧 Full Backup 不导入 4.0.0。已安装的 3.5.x 首次升级会先提供旧完整备份选项，再确认全量替换内容世代；旧内容、自建内容以及内容绑定状态被清除，API Key、模型选择和一般显示偏好保留。
+4.0.0 建立的硬断代继续有效。旧 VIX v1 和旧 Full Backup 不导入 4.0.1。已安装的 3.5.x 首次升级会先提供旧完整备份选项，再确认全量替换内容世代；旧内容、自建内容以及内容绑定状态被清除，API Key、模型选择和一般显示偏好保留。
 
 ## 当前 Seed
 
@@ -74,12 +75,12 @@ npm run test:all
 
 ## 现行规范入口
 
-- `REQUIREMENT_BASELINE_4.0.0.md`
-- `SEMANTIC_IMPACT_MATRIX_4.0.0.md`
+- `REQUIREMENT_BASELINE_4.0.1.md`
+- `SEMANTIC_IMPACT_MATRIX_4.0.1.md`
 - `LOCAL_ARCHITECTURE.md`
 - `DATA_FORMATS.md`
-- `UX_SPEC_4.0.0.md`
-- `PRODUCT_MANUAL_4.0.0.md`
+- `UX_SPEC_4.0.1.md`
+- `PRODUCT_MANUAL_4.0.1.md`
 - `PROJECT_HISTORY.md`
 
 `PREUPDATE_ROADMAP_2026-08-04.md` 仅保留为历史决策来源；原 3.6.0/4.0.0 暂定分版本路线已被本版统一基线取代。

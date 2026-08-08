@@ -1,6 +1,6 @@
 {
   "format": "vix-json",
-  "version": 1,
+  "version": 2,
   "target": {
     "scope": "global"
   },
@@ -11,7 +11,9 @@
         "key": "domain_demo",
         "name": "示例词域",
         "order": 0,
-        "glossEnabled": true
+        "glossEnabled": true,
+        "contentMode": "structured",
+        "relationExcluded": false
       }
     ],
     "collections": [
@@ -36,14 +38,20 @@
         "domainKey": "domain_demo",
         "text": "example",
         "glossHans": "示例",
-        "glossHant": "示例"
+        "glossHant": "示例",
+        "kind": "word",
+        "contentType": "",
+        "partsOfSpeech": []
       },
       {
         "key": "entry_demo_phrase",
         "domainKey": "domain_demo",
         "text": "worked example",
         "glossHans": "例题",
-        "glossHant": "例題"
+        "glossHant": "例題",
+        "kind": "phrase",
+        "contentType": "",
+        "partsOfSpeech": []
       }
     ],
     "memberships": [

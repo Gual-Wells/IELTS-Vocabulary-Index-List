@@ -1,8 +1,9 @@
-// One-time compatibility bridge for upgrading from pre-3.5.2 workers.
+// Cache-generation bridge. It exists only to prevent an old service-worker
+// shell from being mixed with the 4.0.0 runtime during a major content break.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v3.5.2-runtime-stabilization-20260804-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:3.5.2';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.0.0-major-generation-20260808-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.0.0';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

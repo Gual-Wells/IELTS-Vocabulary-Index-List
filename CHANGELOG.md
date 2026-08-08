@@ -1,5 +1,21 @@
 # Changelog
 
+
+## 4.0.0 — 2026-08-08
+
+- 合并原 3.6.0/4.0.0 候选路线为单一 major generation；Schema 6 / DB 5 / Seed 4 / VIX 2，旧导入硬断代；
+- Domain 增加 structured/nonStructured 与可逆 relationExcluded；新增“通用英语搭配” nonStructured Domain；
+- Entry 扩展为 word/phrase/content，POS/contentType 作为属性；word/phrase/content 全部执行普通表优先级占有；
+- PhraseToken 中心关系升级为通用 RelationComponent，全局精确匹配并双向维护；新增默认开启的“关闭低级词汇关联”逻辑过滤；
+- 关系导航改为域内唯一／域外唯一／非结构唯一／多目标四态，多目标展示全部有效目标；
+- 搜索范围统一，搜索保持 fuzzy 且与 relation exact 彻底解耦；
+- 查询入口固定 Oxford → Collins → Groq → ChatGPT；Collins/Groq 使用可取消 session；ChatGPT context 升级 v2 并显著缩短 Shortcut URL；
+- fresh Home→Collection 固定 alphabet/top/collapsed/word-first；recursive Back 继续恢复完整页面快照；
+- dialog 去全屏 shell，sticky 使用统一 DOM 几何，longpress 增加 350ms invisible grace；普通 UI 文本默认不可选，编辑控件白名单恢复；
+- bottom toolbar 保持 58px 视觉尺寸且不恢复 Home Indicator 白带；来源 secondary Y 与繁体释义统一；
+- Home Screen PWA icon 改为 Vocabulary Index `V`；
+- 同步 4.0.0 生命周期、架构、数据、UX、迁移、测试与影响矩阵文档。
+
 ## 3.5.2 — 2026-08-04
 
 - 以唯一可信的 3.5.1 Clean Rebuild 完整包为基线，不引用两份已废弃 3.5.1 错版；

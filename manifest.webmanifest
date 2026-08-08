@@ -1,7 +1,7 @@
 {
-  "name": "Vocabulary Index 3.5.2",
+  "name": "Vocabulary Index 4.0.0",
   "short_name": "词汇索引",
-  "description": "本地优先、按词域组织的英语词汇与短语索引",
+  "description": "本地优先、按独立域组织的英语词汇、短语与非结构内容索引",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,13 +9,13 @@
   "theme_color": "#fafafa",
   "icons": [
     {
-      "src": "./assets/icons/icon-192.png",
+      "src": "./assets/icons/vix-icon-192-v4.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./assets/icons/icon-512.png",
+      "src": "./assets/icons/vix-icon-512-v4.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

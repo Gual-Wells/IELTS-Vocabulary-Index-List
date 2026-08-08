@@ -239,6 +239,21 @@ export async function suggestEntries({ domainName, collectionName, instruction, 
   })).filter((item) => item.text);
 }
 
+export async function queryVocabularyEntry(context, { signal = null } = {}) {
+  const subject = context?.subject || {};
+  const relationText = (Array.isArray(context?.relations) ? context.relations : []).slice(0, 12)
+    .map((item) => `${item.text}${item.domain ? `（${item.domain}）` : ''}`).join('、');
+  const payload = await requestJson([
+    { role: 'system', content: 'You are a compact English vocabulary verification assistant. Return one JSON object only. Be precise and concise.' },
+    { role: 'user', content: `Entry: ${subject.text || ''}\nKind: ${subject.kind || ''}${subject.contentType ? ` / ${subject.contentType}` : ''}\nDomain: ${subject.domain?.name || ''}\nCollection: ${subject.collection?.name || ''}\nCurrent Traditional Chinese gloss: ${subject.glossHant || '(none)'}\nDirect relations: ${relationText || '(none)'}\nReturn {"summary":"繁体中文简释","usage":"简短英文用法或语境","warning":"仅在现有释义明显错误、过时或有歧义时填写，否则空字符串"}.` },
+  ], { temperature: 0.1, maxTokens: 700, signal });
+  return {
+    summary: String(payload?.summary || '').trim(),
+    usage: String(payload?.usage || '').trim(),
+    warning: String(payload?.warning || '').trim(),
+  };
+}
+
 function estimateTokens(entries) {
   return entries.reduce((sum, entry) => sum + Math.ceil(String(entry.text || '').length / 3) + 6, 0);
 }
@@ -288,11 +303,11 @@ export async function checkEntries(entries, { controller = new AiCheckController
     const payload = await requestJson([
       {
         role: 'system',
-        content: 'Check English spelling, obvious text-format errors, and whether the supplied part-of-speech label is plausible for the headword. Return JSON only. Do not judge meaning, style, or harmless capitalization variants.',
+        content: 'Check English spelling and obvious text-format errors. For word or phrase headwords, also judge whether the supplied part-of-speech/source label is plausible. For content entries such as sentence patterns, grammar frameworks, templates, or discourse markers, do not invent a part-of-speech label. Return JSON only. Do not judge meaning, style, or harmless capitalization variants.',
       },
       {
         role: 'user',
-        content: `Items:\n${batch.map((entry) => `${entry.id}\t${entry.text}\t${entry.sourceLabel || ''}`).join('\n')}\nReturn {"issues":[{"entryId":"...","suggestion":"...","posSuggestion":"...","reason":"..."}]}. Leave suggestion empty when spelling is correct. Leave posSuggestion empty when the label is acceptable. Omit fully correct items.`,
+        content: `Items (id\tkind\ttext\tlabel):\n${batch.map((entry) => `${entry.id}\t${entry.kind || 'word'}\t${entry.text}\t${entry.kind === 'content' ? '' : (entry.sourceLabel || '')}`).join('\n')}\nReturn {"issues":[{"entryId":"...","suggestion":"...","posSuggestion":"...","reason":"..."}]}. Leave suggestion empty when spelling/format is correct. For content entries always leave posSuggestion empty. For word/phrase entries leave posSuggestion empty when the label is acceptable. Omit fully correct items.`,
       },
     ], { temperature: 0, maxTokens: 1800, signal: controller.signal });
     const issues = (Array.isArray(payload?.issues) ? payload.issues : []).map((item) => {

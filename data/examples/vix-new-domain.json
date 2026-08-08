@@ -1,6 +1,6 @@
 {
   "format": "vix-json",
-  "version": 1,
+  "version": 2,
   "target": {
     "scope": "domain",
     "domainKey": "domain_medical_demo"
@@ -12,7 +12,9 @@
         "key": "domain_medical_demo",
         "name": "医学术语示例",
         "order": 2,
-        "glossEnabled": true
+        "glossEnabled": true,
+        "contentMode": "structured",
+        "relationExcluded": false
       }
     ],
     "collections": [
@@ -40,7 +42,10 @@
         "glossHant": "神經元",
         "sourceRefs": [
           "demo-medical"
-        ]
+        ],
+        "kind": "word",
+        "contentType": "",
+        "partsOfSpeech": []
       },
       {
         "key": "entry_medical_cell_membrane",
@@ -50,7 +55,10 @@
         "glossHant": "細胞膜",
         "sourceRefs": [
           "demo-medical"
-        ]
+        ],
+        "kind": "phrase",
+        "contentType": "",
+        "partsOfSpeech": []
       }
     ],
     "memberships": [

@@ -1,12 +1,12 @@
 import {
   buildProjection, canonicalizeBackup, cleanStudyStampReferences,
   createCollection, createDomain, createEntry, createMembership, isPhraseText, normalizeDisplayText,
-  normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemPhraseCollectionId,
+  normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemDomainContentCollectionId, systemPhraseCollectionId,
   toTraditional,
 } from './v3-model.js';
 
 export const VIX_FORMAT = 'vix-json';
-export const VIX_VERSION = 1;
+export const VIX_VERSION = 2;
 export const NEW_DOMAIN_TARGET = '__new_domain__';
 export const NEW_COLLECTION_TARGET = '__new_collection__';
 
@@ -25,6 +25,8 @@ function packageDomain(item, index) {
     name,
     order: Number.isFinite(item?.order) ? item.order : index,
     glossEnabled: Boolean(item?.glossEnabled),
+    contentMode: item?.contentMode === 'nonStructured' ? 'nonStructured' : 'structured',
+    relationExcluded: Boolean(item?.relationExcluded),
   };
 }
 
@@ -53,7 +55,9 @@ function packageEntry(item, index) {
     domainKey,
     text,
     normalizedText,
-    kind: isPhraseText(text) ? 'phrase' : 'word',
+    kind: ['word', 'phrase', 'content'].includes(item?.kind) ? item.kind : (isPhraseText(text) ? 'phrase' : 'word'),
+    contentType: normalizeDisplayText(item?.contentType || ''),
+    partsOfSpeech: array(item?.partsOfSpeech || item?.pos).flatMap((value) => String(value || '').split(/[;,/]+/)).map(normalizeDisplayText).filter(Boolean),
     glossHant,
     glossHans: normalizeDisplayText(item?.glossHans || ''),
     glossSource: normalizeDisplayText(item?.glossSource || array(item?.sourceRefs).join(', ') || ''),
@@ -149,10 +153,10 @@ export function createVixPackage(input, selection = { scope: 'global' }) {
       const memberIds = new Set(backup.memberships.filter((item) => item.collectionId === collection.id).map((item) => item.entryId));
       entries = backup.entries.filter((item) => memberIds.has(item.id));
       memberships = backup.memberships.filter((item) => item.collectionId === collection.id);
-      const tokenTexts = new Set(entries.map((item) => item.normalizedText));
-      const relatedPhraseIds = new Set(backup.phraseTokens.filter((item) => item.domainId === domain.id && tokenTexts.has(item.normalizedToken)).map((item) => item.phraseId));
+      const selectedEntryIds = new Set(entries.map((item) => item.id));
       context = {
-        relatedPhrases: backup.entries.filter((item) => relatedPhraseIds.has(item.id)).map((item) => ({ text: item.text, glossHant: item.glossHant })),
+        relationComponents: backup.relationComponents.filter((item) => selectedEntryIds.has(item.sourceEntryId))
+          .slice(0, 1000).map((item) => ({ sourceEntryId: item.sourceEntryId, normalizedText: item.normalizedText })),
       };
     }
     target = { scope, domainKey: domain.id, collectionKey: collection.id };
@@ -168,14 +172,15 @@ export function createVixPackage(input, selection = { scope: 'global' }) {
     target,
     mode: 'replace',
     data: {
-      domains: selectedDomains.map((item) => ({ key: item.id, name: item.name, order: item.order, glossEnabled: item.glossEnabled })),
+      domains: selectedDomains.map((item) => ({ key: item.id, name: item.name, order: item.order, glossEnabled: item.glossEnabled, contentMode: item.contentMode, relationExcluded: Boolean(item.relationExcluded) })),
       collections: collections.map((item) => ({
         key: item.id, domainKey: item.domainId, name: item.name, label: item.label,
         kind: item.type === 'system-phrases' ? 'phrases' : 'normal', order: item.order,
       })),
       entries: entries.map((item) => ({
         key: entryKeys.get(item.id), domainKey: item.domainId, text: item.text,
-        glossHant: item.glossHant, glossSource: item.glossSource,
+        kind: item.kind, contentType: item.contentType || '', partsOfSpeech: item.partsOfSpeech || [],
+        glossHans: item.glossHans || '', glossHant: item.glossHant, glossSource: item.glossSource,
         sourceRefs: item.glossSource ? item.glossSource.split(/\s*,\s*/).filter(Boolean) : [],
       })),
       memberships: memberships.filter((item) => includedCollectionIds.has(item.collectionId)).map((item) => ({
@@ -224,8 +229,10 @@ function summaryBetween(before, after, conflicts, skippedDuplicates = 0, members
     removedCollections: [...bCollections.keys()].filter((id) => !aCollections.has(id)).length,
     addedWords: [...aEntries.values()].filter((item) => item.kind === 'word' && !bEntries.has(item.id)).length,
     addedPhrases: [...aEntries.values()].filter((item) => item.kind === 'phrase' && !bEntries.has(item.id)).length,
+    addedContent: [...aEntries.values()].filter((item) => item.kind === 'content' && !bEntries.has(item.id)).length,
     removedWords: [...bEntries.values()].filter((item) => item.kind === 'word' && !aEntries.has(item.id)).length,
     removedPhrases: [...bEntries.values()].filter((item) => item.kind === 'phrase' && !aEntries.has(item.id)).length,
+    removedContent: [...bEntries.values()].filter((item) => item.kind === 'content' && !aEntries.has(item.id)).length,
     updatedGlosses,
     addedMemberships: [...afterMemberships].filter((key) => !beforeMemberships.has(key)).length,
     removedMemberships: [...beforeMemberships].filter((key) => !afterMemberships.has(key)).length,
@@ -243,7 +250,9 @@ function normalizePersonalReferences(backup) {
     let entry = entryById.get(pin.entryId);
     if (!entry) return [];
     if ((projection.get(pin.contextCollectionId) || []).some((item) => item.id === entry.id)) return [{ ...pin, domainId: entry.domainId }];
-    const fallback = entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId) : systemDomainWordsCollectionId(entry.domainId);
+    const fallback = entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId)
+      : entry.kind === 'content' ? systemDomainContentCollectionId(entry.domainId)
+        : systemDomainWordsCollectionId(entry.domainId);
     if (!(projection.get(fallback) || []).some((item) => item.id === entry.id)) return [];
     return [{ ...pin, domainId: entry.domainId, contextCollectionId: fallback }];
   });
@@ -300,7 +309,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
 
   const existingDomainById = new Map(domains.map((item) => [item.id, item]));
   const existingDomainByName = new Map(domains.map((item) => [normalizeEnglish(item.name), item]));
-  const incomingDomains = pkg.data.domains.length ? pkg.data.domains : [{ key: pkg.target.domainKey || 'imported-domain', name: pkg.target.domainKey || '导入词域', order: domains.length, glossEnabled: false }];
+  const incomingDomains = pkg.data.domains.length ? pkg.data.domains : [{ key: pkg.target.domainKey || 'imported-domain', name: pkg.target.domainKey || '导入词域', order: domains.length, glossEnabled: false, contentMode: 'structured', relationExcluded: false }];
   if (target.scope !== 'global' && incomingDomains.length > 1) throw new Error('局部导入文件只能包含一个词域');
 
   const domainMap = new Map();
@@ -313,11 +322,11 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     if (!domain) {
       const id = target.scope !== 'global' && target.domainId && target.domainId !== NEW_DOMAIN_TARGET
         ? target.domainId : stableId('domain', incoming.key || incoming.name);
-      domain = createDomain({ id, name: incoming.name, order: incoming.order, glossEnabled: incoming.glossEnabled, timestamp });
+      domain = createDomain({ id, name: incoming.name, order: incoming.order, glossEnabled: incoming.glossEnabled, contentMode: incoming.contentMode, relationExcluded: incoming.relationExcluded, timestamp });
       domains.push(domain);
       existingDomainById.set(domain.id, domain);
     } else {
-      const updated = createDomain({ ...domain, name: incoming.name || domain.name, glossEnabled: incoming.glossEnabled ?? domain.glossEnabled, updatedAt: timestamp, timestamp });
+      const updated = createDomain({ ...domain, name: incoming.name || domain.name, glossEnabled: incoming.glossEnabled ?? domain.glossEnabled, contentMode: incoming.contentMode || domain.contentMode, relationExcluded: incoming.relationExcluded ?? domain.relationExcluded, updatedAt: timestamp, timestamp });
       domains = domains.map((item) => item.id === domain.id ? updated : item);
       domain = updated;
     }
@@ -383,10 +392,13 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     if (target.scope === 'collection') targetCollection = collection;
   }
 
-  // Every domain has exactly one phrase collection, including packages that omit it.
+  // Structured domains have exactly one phrase total; non-structured domains never persist one.
   for (const domainId of new Set(domainMap.values())) {
+    const domain = domains.find((item) => item.id === domainId);
     const phraseId = systemPhraseCollectionId(domainId);
-    if (!collections.some((item) => item.id === phraseId)) {
+    if (domain?.contentMode === 'nonStructured') {
+      collections = collections.filter((item) => item.id !== phraseId && !(item.domainId === domainId && item.type === 'system-phrases'));
+    } else if (!collections.some((item) => item.id === phraseId)) {
       collections.push(createCollection({ id: phraseId, domainId, name: '短语总表', type: 'system-phrases', order: 1, timestamp }));
     }
   }
@@ -420,11 +432,14 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const incoming of pkg.data.entries) {
     const domainId = target.scope === 'global' ? domainMap.get(incoming.domainKey) : targetDomainId;
     if (!domainId) throw new Error(`词条 ${incoming.text} 指向未知词域`);
+    const incomingDomain = domains.find((item) => item.id === domainId);
+    if (incomingDomain?.contentMode === 'nonStructured' && incoming.kind !== 'content') throw new Error(`非结构独立域中的条目必须为 content：${incoming.text}`);
+    if (incomingDomain?.contentMode !== 'nonStructured' && incoming.kind === 'content') throw new Error(`结构化独立域不能导入 content：${incoming.text}`);
     if (target.scope === 'collection' && targetCollection?.type === 'system-phrases' && incoming.kind !== 'phrase') continue;
     const identity = contentIdentity(domainId, incoming.normalizedText);
     let entry = entryByIdentity.get(identity);
     if (!entry) {
-      entry = createEntry({ id: stableId('entry', `${domainId}:${incoming.normalizedText}`), domainId, text: incoming.text, glossHant: incoming.glossHant, glossSource: incoming.glossSource, timestamp });
+      entry = createEntry({ id: stableId('entry', `${domainId}:${incoming.normalizedText}`), domainId, text: incoming.text, kind: incoming.kind, contentType: incoming.contentType, partsOfSpeech: incoming.partsOfSpeech, glossHans: incoming.glossHans, glossHant: incoming.glossHant, glossSource: incoming.glossSource, timestamp });
       entries.push(entry);
       entryByIdentity.set(identity, entry);
     } else {
@@ -434,7 +449,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
         if (entry.glossHant) conflicts.push({ type: 'gloss', text: entry.text, current: entry.glossHant, incoming: incoming.glossHant });
         if (!entry.glossHant || conflictPolicy === 'import') { glossHant = incoming.glossHant; glossSource = incoming.glossSource || entry.glossSource; }
       }
-      const updated = createEntry({ ...entry, text: incoming.text || entry.text, glossHant, glossSource, updatedAt: timestamp, timestamp });
+      const updated = createEntry({ ...entry, text: incoming.text || entry.text, kind: incoming.kind || entry.kind, contentType: incoming.contentType || entry.contentType, partsOfSpeech: incoming.partsOfSpeech?.length ? incoming.partsOfSpeech : entry.partsOfSpeech, glossHans: incoming.glossHans || entry.glossHans, glossHant, glossSource, updatedAt: timestamp, timestamp });
       entries = entries.map((item) => item.id === entry.id ? updated : item);
       entry = updated;
       entryByIdentity.set(identity, updated);
@@ -542,12 +557,12 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     }
   }
 
-  // Imported words without a visible normal collection receive one hidden provenance collection.
+  // Imported entries without a normal collection receive one hidden provenance collection.
   for (const domainId of new Set(domainMap.values())) {
-    const domainWords = entries.filter((item) => item.domainId === domainId && item.kind === 'word');
+    const domainEntries = entries.filter((item) => item.domainId === domainId);
     const normalCollectionIds = new Set(collections.filter((item) => item.domainId === domainId && item.type === 'normal').map((item) => item.id));
     const assigned = new Set(memberships.filter((item) => normalCollectionIds.has(item.collectionId)).map((item) => item.entryId));
-    const missing = domainWords.filter((item) => !assigned.has(item.id));
+    const missing = domainEntries.filter((item) => !assigned.has(item.id));
     if (missing.length) {
       const hiddenId = stableId('collection', `${domainId}:import-source`);
       let hidden = collections.find((item) => item.id === hiddenId);
@@ -561,8 +576,8 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
 
   if (target.mode === 'replace' && target.scope === 'collection' && targetCollection?.type === 'normal') {
     const normalIds = new Set(collections.filter((item) => item.type === 'normal').map((item) => item.id));
-    const referencedWords = new Set(memberships.filter((item) => normalIds.has(item.collectionId)).map((item) => item.entryId));
-    entries = entries.filter((item) => item.kind === 'phrase' || referencedWords.has(item.id));
+    const referencedEntries = new Set(memberships.filter((item) => normalIds.has(item.collectionId)).map((item) => item.entryId));
+    entries = entries.filter((item) => referencedEntries.has(item.id));
     const validEntryIds = new Set(entries.map((item) => item.id));
     memberships = memberships.filter((item) => validEntryIds.has(item.entryId));
   }
@@ -571,7 +586,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '3.5.2',
+    appVersion: '4.0.0',
     exportedAt: timestamp,
     domains,
     collections,

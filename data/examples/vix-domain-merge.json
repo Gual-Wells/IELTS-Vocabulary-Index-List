@@ -1,6 +1,6 @@
 {
   "format": "vix-json",
-  "version": 1,
+  "version": 2,
   "target": {
     "scope": "domain",
     "domainKey": "domain_computer_terms"
@@ -12,7 +12,9 @@
         "key": "domain_computer_terms",
         "name": "计算机术语",
         "order": 1,
-        "glossEnabled": true
+        "glossEnabled": true,
+        "contentMode": "structured",
+        "relationExcluded": false
       }
     ],
     "collections": [
@@ -33,7 +35,10 @@
         "glossHant": "量化",
         "sourceRefs": [
           "NIST-AI"
-        ]
+        ],
+        "kind": "word",
+        "contentType": "",
+        "partsOfSpeech": []
       },
       {
         "key": "entry_computer_vector_database",
@@ -43,7 +48,10 @@
         "glossHant": "向量數據庫",
         "sourceRefs": [
           "NIST-AI"
-        ]
+        ],
+        "kind": "phrase",
+        "contentType": "",
+        "partsOfSpeech": []
       }
     ],
     "memberships": [

@@ -1,5 +1,5 @@
 import {
-  canonicalizeBackup, migrateLegacyBackup, normalizeDisplayText, normalizeEnglish,
+  canonicalizeBackup, normalizeDisplayText, normalizeEnglish,
   normalizeGlossHant, parseLegacySourceLine,
 } from './v3-model.js';
 import { isVixContentPackage, normalizeVixPackage } from './v3-exchange.js';
@@ -103,11 +103,14 @@ export function parseJsonContent(text) {
   }
   if (parsed && typeof parsed === 'object') {
     if (isVixContentPackage(parsed)) return { kind: 'content-package', package: normalizeVixPackage(parsed), errors: [] };
-    if ([3, 4].includes(Number(parsed.schemaVersion)) || Array.isArray(parsed.domains)) {
+    if (Number(parsed.schemaVersion) === 6 && Array.isArray(parsed.domains)) {
       return { kind: 'backup', backup: canonicalizeBackup(parsed), errors: [] };
     }
-    if (Array.isArray(parsed.categories) && Array.isArray(parsed.entries)) {
-      return { kind: 'backup', backup: migrateLegacyBackup(parsed), errors: [] };
+    if (Number(parsed.schemaVersion) && Number(parsed.schemaVersion) !== 6) {
+      throw new Error('完整备份版本不兼容；4.0.0 仅接受 Schema 6 完整备份');
+    }
+    if (Array.isArray(parsed.categories) || Array.isArray(parsed.domains)) {
+      throw new Error('旧世代完整备份不兼容 4.0.0；请使用对应旧版本回滚');
     }
   }
   throw new Error('JSON 既不是内容数组、VIX 内容文件，也不是受支持的完整备份');

@@ -63,7 +63,7 @@
 
 - `computer-terms-source.tsv`：英文、简体中文、来源标签；
 - `computer-terms-source-report.json`：数量及来源分布；
-- `seed.json`：应用实际加载的 Schema 5 数据，其中释义已经转换为繁体。
+- `seed.json`：应用实际加载的 Schema 6 / Seed revision 4 数据，其中计算机术语释义沿用已验证繁体结果，并进入 4.0.0 通用 RelationComponent 模型。
 
 ## 许可与归属
 

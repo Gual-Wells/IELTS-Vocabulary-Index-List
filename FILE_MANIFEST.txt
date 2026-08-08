@@ -1,139 +1,145 @@
-Vocabulary Index 3.5.2 complete source manifest
-Generated: 2026-08-04
-Baseline: Vocabulary-Index-3.5.1-Clean-Rebuild-Full-Source.zip (SHA-256 66a43ed0dc2f83cc789e6003b96b21bea1cecf8672a0f36ac7ed1d03ada9cd38)
-Excludes: .git/, FILE_MANIFEST.txt, SHA256SUMS.txt, tests/__pycache__/
-Files listed: 133
-
-.nojekyll	0
-AUDIT_REPORT_3.2.0.md	14636
-AUDIT_REPORT_3.3.0.md	2633
-AUDIT_REPORT_3.3.1.md	4146
-AUDIT_REPORT_3.4.0.md	5758
-AUDIT_REPORT_3.5.0.md	3656
-AUDIT_REPORT_3.5.1.md	4382
-AUDIT_REPORT_3.5.2.md	1807
-CHANGELOG.md	11936
-CHANGE_REPORT_3.0.2.md	1854
-CHANGE_REPORT_3.0.3.md	1101
-CHANGE_REPORT_3.0.4.md	1067
-CHANGE_REPORT_3.0.5.md	1033
-CHANGE_REPORT_3.0.7.md	1430
-CHANGE_REPORT_3.1.0.md	2092
-CHANGE_REPORT_3.1.1.md	1177
-CHANGE_REPORT_3.2.0.md	2174
-CHANGE_REPORT_3.3.0.md	5539
-CHANGE_REPORT_3.3.1.md	3167
-CHANGE_REPORT_3.4.0.md	7048
-CHANGE_REPORT_3.5.0.md	2566
-CHANGE_REPORT_3.5.1.md	4054
-CHANGE_REPORT_3.5.2.md	3282
-DATA_FORMATS.md	7639
-DATA_REPORT.md	1938
-DEPLOY.md	1488
-LOCAL_ARCHITECTURE.md	4528
-MIGRATION_3.0.0.md	2142
-MIGRATION_3.1.0.md	1372
-MIGRATION_3.1.1.md	607
-MIGRATION_3.2.0.md	923
-MIGRATION_3.3.0.md	1113
-MIGRATION_3.3.1.md	1447
-MIGRATION_3.4.0.md	3540
-MIGRATION_3.5.0.md	977
-MIGRATION_3.5.1.md	934
-MIGRATION_3.5.2.md	1223
-PREUPDATE_ROADMAP_2026-08-04.md	10189
-PRODUCT_MANUAL_3.0.4.md	4917
-PRODUCT_MANUAL_3.0.5.md	6165
-PRODUCT_MANUAL_3.0.7.md	2019
-PRODUCT_MANUAL_3.1.0.md	5967
-PRODUCT_MANUAL_3.1.1.md	7415
-PRODUCT_MANUAL_3.2.0.md	4811
-PRODUCT_MANUAL_3.3.0.md	2996
-PRODUCT_MANUAL_3.3.1.md	2221
-PRODUCT_MANUAL_3.4.0.md	4695
-PRODUCT_MANUAL_3.5.0.md	1704
-PRODUCT_MANUAL_3.5.1.md	1366
-PRODUCT_MANUAL_3.5.2.md	1738
-PROJECT_HISTORY.md	24535
-README.md	3895
-SECURITY.md	1227
-TEST_REPORT_3.0.4.md	1246
-TEST_REPORT_3.0.5.md	0
-TEST_REPORT_3.0.7.md	3302
-TEST_REPORT_3.1.0.md	2877
-TEST_REPORT_3.1.1.md	2056
-TEST_REPORT_3.2.0.md	2221
-TEST_REPORT_3.3.0.md	4650
-TEST_REPORT_3.3.1.md	3862
-TEST_REPORT_3.4.0.md	3645
-TEST_REPORT_3.5.0.md	3474
-TEST_REPORT_3.5.1.md	2348
-TEST_REPORT_3.5.2.md	3816
-UX_SPEC_3.0.4.md	946
-UX_SPEC_3.0.5.md	704
-UX_SPEC_3.0.7.md	853
-UX_SPEC_3.1.0.md	2149
-UX_SPEC_3.1.1.md	2837
-UX_SPEC_3.2.0.md	2835
-UX_SPEC_3.3.0.md	3924
-UX_SPEC_3.3.1.md	3018
-UX_SPEC_3.4.0.md	4441
-UX_SPEC_3.5.0.md	1898
-UX_SPEC_3.5.1.md	2261
-UX_SPEC_3.5.2.md	2395
-assets/icons/apple-touch-icon.png	33779
-assets/icons/icon-192.png	36899
-assets/icons/icon-512.png	151357
-css/v3.3.1.css	8746
-css/v3.4.0.css	6111
-css/v3.5.1.css	27283
-css/v3.5.2.css	28531
-css/v3.css	70659
-data/computer-terms-classification-report.json	112605
-data/computer-terms-source-report.json	812
-data/computer-terms-source.tsv	33089
-data/computer-terms-sources.md	3352
-data/examples/vix-collection-merge.json	1404
-data/examples/vix-domain-merge.json	1508
-data/examples/vix-global-replace-sample.json	1320
-data/examples/vix-new-collection.json	1289
-data/examples/vix-new-domain.json	1859
-data/examples/vix-phrases-merge.json	1126
-data/seed-phrase-classification-report.json	170079
-data/seed-report.json	2110
-data/seed.json	4530320
-data/source/A1.txt	11267
-data/source/A2.txt	11040
-data/source/AVL.txt	7475
-data/source/AWL.txt	7486
-data/source/B1.txt	10551
-data/source/B2.txt	18993
-data/source/C1.txt	17857
-data/vix-json.schema.json	4039
-index.html	7163
-js/v3-ai.js	13504
-js/v3-app.js	3858
-js/v3-data-worker.js	575
-js/v3-db.js	31323
-js/v3-exchange.js	32600
-js/v3-import.js	6667
-js/v3-integrations.js	8087
-js/v3-model.js	82186
-js/v3-store.js	47789
-js/v3-ui.js	198438
-js/v3-upgrade.js	927
-manifest.webmanifest	579
-package.json	677
-sw.js	2413
-tests/MANUAL_CHECKLIST.md	9064
-tests/integration-tests.mjs	7026
-tests/layout-contract-check.py	9859
-tests/performance-tests.mjs	2132
-tests/run-tests.mjs	22945
-tests/runtime-symbol-tests.mjs	4764
-tests/static-tests.mjs	17280
-tests/stress-tests.mjs	6573
-tools/classify-computer-terms.py	6236
-tools/classify-seed-phrases.py	15578
-tools/report-seed.mjs	3141
-tools/update-computer-glosses.mjs	986
+.nojekyll
+AUDIT_REPORT_3.2.0.md
+AUDIT_REPORT_3.3.0.md
+AUDIT_REPORT_3.3.1.md
+AUDIT_REPORT_3.4.0.md
+AUDIT_REPORT_3.5.0.md
+AUDIT_REPORT_3.5.1.md
+AUDIT_REPORT_3.5.2.md
+AUDIT_REPORT_4.0.0.md
+CHANGELOG.md
+CHANGE_REPORT_3.0.2.md
+CHANGE_REPORT_3.0.3.md
+CHANGE_REPORT_3.0.4.md
+CHANGE_REPORT_3.0.5.md
+CHANGE_REPORT_3.0.7.md
+CHANGE_REPORT_3.1.0.md
+CHANGE_REPORT_3.1.1.md
+CHANGE_REPORT_3.2.0.md
+CHANGE_REPORT_3.3.0.md
+CHANGE_REPORT_3.3.1.md
+CHANGE_REPORT_3.4.0.md
+CHANGE_REPORT_3.5.0.md
+CHANGE_REPORT_3.5.1.md
+CHANGE_REPORT_3.5.2.md
+CHANGE_REPORT_4.0.0.md
+DATA_FORMATS.md
+DATA_REPORT.md
+DEPLOY.md
+LOCAL_ARCHITECTURE.md
+MIGRATION_3.0.0.md
+MIGRATION_3.1.0.md
+MIGRATION_3.1.1.md
+MIGRATION_3.2.0.md
+MIGRATION_3.3.0.md
+MIGRATION_3.3.1.md
+MIGRATION_3.4.0.md
+MIGRATION_3.5.0.md
+MIGRATION_3.5.1.md
+MIGRATION_3.5.2.md
+MIGRATION_4.0.0.md
+PREUPDATE_ROADMAP_2026-08-04.md
+PRODUCT_MANUAL_3.0.4.md
+PRODUCT_MANUAL_3.0.5.md
+PRODUCT_MANUAL_3.0.7.md
+PRODUCT_MANUAL_3.1.0.md
+PRODUCT_MANUAL_3.1.1.md
+PRODUCT_MANUAL_3.2.0.md
+PRODUCT_MANUAL_3.3.0.md
+PRODUCT_MANUAL_3.3.1.md
+PRODUCT_MANUAL_3.4.0.md
+PRODUCT_MANUAL_3.5.0.md
+PRODUCT_MANUAL_3.5.1.md
+PRODUCT_MANUAL_3.5.2.md
+PRODUCT_MANUAL_4.0.0.md
+PROJECT_HISTORY.md
+PROJECT_HISTORY_3.5.2_SNAPSHOT.md
+README.md
+REQUIREMENT_BASELINE_4.0.0.md
+SECURITY.md
+SEMANTIC_IMPACT_MATRIX_4.0.0.md
+TEST_REPORT_3.0.4.md
+TEST_REPORT_3.0.5.md
+TEST_REPORT_3.0.7.md
+TEST_REPORT_3.1.0.md
+TEST_REPORT_3.1.1.md
+TEST_REPORT_3.2.0.md
+TEST_REPORT_3.3.0.md
+TEST_REPORT_3.3.1.md
+TEST_REPORT_3.4.0.md
+TEST_REPORT_3.5.0.md
+TEST_REPORT_3.5.1.md
+TEST_REPORT_3.5.2.md
+TEST_REPORT_4.0.0.md
+UX_SPEC_3.0.4.md
+UX_SPEC_3.0.5.md
+UX_SPEC_3.0.7.md
+UX_SPEC_3.1.0.md
+UX_SPEC_3.1.1.md
+UX_SPEC_3.2.0.md
+UX_SPEC_3.3.0.md
+UX_SPEC_3.3.1.md
+UX_SPEC_3.4.0.md
+UX_SPEC_3.5.0.md
+UX_SPEC_3.5.1.md
+UX_SPEC_3.5.2.md
+UX_SPEC_4.0.0.md
+assets/icons/vix-icon-180-v4.png
+assets/icons/vix-icon-192-v4.png
+assets/icons/vix-icon-512-v4.png
+css/v3.3.1.css
+css/v3.4.0.css
+css/v3.5.1.css
+css/v3.5.2.css
+css/v3.css
+css/v4.0.0.css
+data/computer-terms-classification-report.json
+data/computer-terms-source-report.json
+data/computer-terms-source.tsv
+data/computer-terms-sources.md
+data/examples/vix-collection-merge.json
+data/examples/vix-domain-merge.json
+data/examples/vix-global-replace-sample.json
+data/examples/vix-new-collection.json
+data/examples/vix-new-domain.json
+data/examples/vix-nonstructured-domain.json
+data/examples/vix-phrases-merge.json
+data/relation-low-level-lexemes.json
+data/seed-phrase-classification-report.json
+data/seed-report.json
+data/seed.json
+data/source/A1.txt
+data/source/A2.txt
+data/source/AWL.txt
+data/source/B1.txt
+data/source/B2.txt
+data/source/C1.txt
+data/vix-json.schema.json
+index.html
+js/v3-ai.js
+js/v3-app.js
+js/v3-data-worker.js
+js/v3-db.js
+js/v3-exchange.js
+js/v3-import.js
+js/v3-integrations.js
+js/v3-model.js
+js/v3-store.js
+js/v3-ui.js
+js/v3-upgrade.js
+manifest.webmanifest
+package.json
+sw.js
+tests/MANUAL_CHECKLIST.md
+tests/integration-tests.mjs
+tests/layout-contract-check.py
+tests/performance-tests.mjs
+tests/run-tests.mjs
+tests/runtime-symbol-tests.mjs
+tests/static-tests.mjs
+tests/stress-tests.mjs
+tools/build-seed-4.mjs
+tools/classify-computer-terms.py
+tools/classify-seed-phrases.py
+tools/report-seed.mjs
+tools/update-computer-glosses.mjs

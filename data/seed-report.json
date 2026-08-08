@@ -1,21 +1,33 @@
 {
-  "generatedAt": "2026-08-02T01:51:00.000Z",
-  "schemaVersion": 5,
-  "appVersion": "3.5.2",
-  "builtInSeedRevision": 3,
+  "generatedAt": "2026-08-08T06:30:00.000Z",
+  "schemaVersion": 6,
+  "appVersion": "4.0.0",
+  "builtInSeedRevision": 4,
+  "contentGeneration": 4,
   "total": {
-    "domains": 2,
-    "collections": 14,
-    "entries": 6126,
+    "domains": 3,
+    "collections": 17,
+    "entries": 6176,
     "words": 5539,
     "phrases": 587,
-    "memberships": 8072,
-    "phraseTokens": 1312,
+    "content": 50,
+    "memberships": 7574,
+    "relationComponents": 1240,
     "studyStamps": 0
   },
   "global": {
-    "words": 5322,
-    "phrases": 587
+    "words": {
+      "renderedRows": 5539,
+      "uniqueNormalized": 5322
+    },
+    "phrases": {
+      "renderedRows": 587,
+      "uniqueNormalized": 587
+    },
+    "content": {
+      "renderedRows": 50,
+      "uniqueNormalized": 50
+    }
   },
   "generalEnglish": {
     "entries": 5005,
@@ -25,37 +37,38 @@
       "A1": {
         "words": 894,
         "phrases": 5,
+        "content": 0,
         "total": 899
       },
       "A2": {
         "words": 786,
         "phrases": 5,
+        "content": 0,
         "total": 791
       },
       "B1": {
         "words": 691,
         "phrases": 0,
+        "content": 0,
         "total": 691
       },
       "B2": {
         "words": 1294,
         "phrases": 0,
+        "content": 0,
         "total": 1294
       },
       "C1": {
         "words": 1277,
         "phrases": 0,
+        "content": 0,
         "total": 1277
       },
       "AWL": {
         "words": 53,
         "phrases": 0,
+        "content": 0,
         "total": 53
-      },
-      "AVL": {
-        "words": 0,
-        "phrases": 0,
-        "total": 0
       }
     }
   },
@@ -73,21 +86,25 @@
       "计算机基础与系统": {
         "words": 214,
         "phrases": 139,
+        "content": 0,
         "total": 353
       },
       "软件开发与数据": {
         "words": 197,
         "phrases": 222,
+        "content": 0,
         "total": 419
       },
       "网络、云与安全": {
         "words": 114,
         "phrases": 165,
+        "content": 0,
         "total": 279
       },
       "人工智能": {
         "words": 19,
         "phrases": 51,
+        "content": 0,
         "total": 70
       }
     },
@@ -107,5 +124,38 @@
       "CNCF": 47,
       "DEVOPS": 23
     }
-  }
+  },
+  "nonStructured": {
+    "domainId": "domain_general_collocations",
+    "name": "通用英语搭配",
+    "entries": 50,
+    "content": 50,
+    "visibleCollections": {
+      "句型": {
+        "words": 0,
+        "phrases": 0,
+        "content": 12,
+        "total": 12
+      },
+      "语法框架": {
+        "words": 0,
+        "phrases": 0,
+        "content": 12,
+        "total": 12
+      },
+      "模板表达": {
+        "words": 0,
+        "phrases": 0,
+        "content": 12,
+        "total": 12
+      },
+      "语篇标记": {
+        "words": 0,
+        "phrases": 0,
+        "content": 14,
+        "total": 14
+      }
+    }
+  },
+  "scopeNote": "Seed 4.0.0 in this package contains the validated local A1/A2/B1/B2/C1/AWL baseline, the existing computer-term domain, and a 50-entry non-structured starter domain. NAWL/CET/TEM/COCA remain documented data-source backlog because clean local source artifacts were not available in the handoff package; no synthetic replacement lists were fabricated."
 }

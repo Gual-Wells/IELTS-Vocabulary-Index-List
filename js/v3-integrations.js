@@ -1,203 +1,169 @@
 // @ts-check
-import { SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
+import { SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
 
 export const OXFORD_LOOKUP_SCHEME = 'hk-com-oupc-oecd-lookup://x-callback-url/s';
 export const CHATGPT_SHORTCUT_NAME = 'AI查询';
 export const ENTRY_CONTEXT_FORMAT = 'vix-entry-context';
-export const ENTRY_CONTEXT_VERSION = 1;
+export const ENTRY_CONTEXT_VERSION = 2;
+const COLLINS_KEY_STORAGE = 'gualVocabulary.collinsApiKey';
+const COLLINS_BASE_URL = 'https://api.collinsdictionary.com/api/v1';
+const MAX_CONTEXT_RELATIONS = 16;
 
-function cloneRecord(value) {
-  if (value == null) return null;
-  return JSON.parse(JSON.stringify(value));
+function clean(value) { return String(value ?? '').trim(); }
+
+export function getCollinsApiKey() { return localStorage.getItem(COLLINS_KEY_STORAGE) || ''; }
+export function setCollinsApiKey(value) {
+  const key = clean(value);
+  if (key) localStorage.setItem(COLLINS_KEY_STORAGE, key);
+  else localStorage.removeItem(COLLINS_KEY_STORAGE);
 }
 
-function sortById(items) {
-  return [...items].sort((a, b) => String(a.id || a.key || '').localeCompare(String(b.id || b.key || '')));
+function isGlobalCollection(collectionId) {
+  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);
 }
 
-function sourceKeysForEntry(entry) {
-  const value = String(entry?.glossSource || '').trim();
-  return value ? value.split(/[+,/|;\s]+/).filter(Boolean) : [];
+function preferredMembership(state, entry, requestedCollectionId = '') {
+  const memberships = (state.membershipsByEntry.get(entry.id) || [])
+    .map((membership) => ({ membership, collection: state.collectionById.get(membership.collectionId) }))
+    .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden && state.visibleEntryIdsByCollection.get(item.collection.id)?.has(entry.id))
+    .sort((a, b) => Number(a.collection.order || 0) - Number(b.collection.order || 0) || a.collection.name.localeCompare(b.collection.name));
+  return memberships.find((item) => item.collection.id === requestedCollectionId)?.collection || memberships[0]?.collection || null;
 }
 
-function matchingInstances(_state, entry, _collectionId) {
-  // System total tables are projection views. Query/copy always targets the
-  // concrete entry represented by the selected row, never a synthetic group.
-  return [entry];
-}
-
-/**
- * Build a normalized, JSON-safe snapshot for one first-level row.
- * The selected entry instances and their direct relation targets are exported as
- * complete records once, while relation edges refer to IDs to avoid URL bloat.
- */
+/** Build the intentionally compact context sent through iOS Shortcuts. */
 export function createEntryContext(state, entry, collectionId, options = {}) {
   if (!state || !entry || !collectionId) throw new Error('无法生成条目上下文');
-  const currentCollection = state.collectionById.get(collectionId);
-  if (!currentCollection) throw new Error('当前词表不存在');
-  const isGlobal = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId);
-  const instances = matchingInstances(state, entry, collectionId);
-  if (!instances.length) throw new Error('当前条目没有可导出的独立域实例');
-
-  const domainMap = new Map();
-  const collectionMap = new Map();
-  const membershipMap = new Map();
-  const tokenMap = new Map();
-  const pinMap = new Map();
-  const annotationMap = new Map();
-  const studyMap = new Map();
-  const relations = [];
-  const sourceKeys = new Set();
-
-  const addDomain = (domainId) => {
-    const domain = state.domainById.get(domainId);
-    if (domain) domainMap.set(domain.id, domain);
-  };
-  const addCollection = (collection) => {
-    if (!collection) return;
-    collectionMap.set(collection.id, collection);
-    if (collection.domainId) addDomain(collection.domainId);
-  };
-  const addMemberships = (entryId, includeRecords = true) => {
-    const result = [];
-    for (const membership of state.membershipsByEntry.get(entryId) || []) {
-      const collection = state.collectionById.get(membership.collectionId);
-      if (includeRecords) membershipMap.set(`${membership.entryId}\u0000${membership.collectionId}`, membership);
-      addCollection(collection);
-      result.push({
-        membershipId: `${membership.entryId}:${membership.collectionId}`,
-        collectionId: membership.collectionId,
-        collectionName: collection?.name || '',
-        collectionType: collection?.type || '',
-        domainId: collection?.domainId || '',
-      });
-    }
-    return result;
-  };
-  const entrySummary = (candidate) => {
-    if (!candidate) return null;
-    sourceKeysForEntry(candidate).forEach((key) => sourceKeys.add(key));
-    addDomain(candidate.domainId);
-    return {
-      id: candidate.id,
-      domainId: candidate.domainId,
-      kind: candidate.kind,
-      text: candidate.text,
-      normalizedText: candidate.normalizedText,
-      glossHant: candidate.glossHant || '',
-      glossSource: candidate.glossSource || '',
-      memberships: addMemberships(candidate.id, false),
-    };
-  };
-
-  addCollection(currentCollection);
-  for (const instance of instances) {
-    addDomain(instance.domainId);
-    sourceKeysForEntry(instance).forEach((key) => sourceKeys.add(key));
-    addMemberships(instance.id, true);
-    const pin = state.pinByEntry.get(instance.id);
-    const annotation = state.annotationByEntry.get(instance.id);
-    const stamp = state.studyStampByKey.get(`entry:${instance.id}`);
-    if (pin) pinMap.set(instance.id, pin);
-    if (annotation) annotationMap.set(instance.id, annotation);
-    if (stamp) studyMap.set(stamp.key, stamp);
-
-    if (instance.kind === 'word') {
-      for (const phrase of state.relatedPhrasesByEntry.get(instance.id) || []) {
-        relations.push({
-          type: 'related-phrase',
-          sourceEntryId: instance.id,
-          target: entrySummary(phrase),
-        });
-      }
-    } else {
-      for (const component of state.phraseComponentsByEntry.get(instance.id) || []) {
-        const token = {
-          id: component.id,
-          phraseId: component.phraseId,
-          domainId: component.domainId,
-          token: component.token,
-          normalizedToken: component.normalizedToken,
-          tokenIndex: component.tokenIndex,
-        };
-        tokenMap.set(token.id, token);
-        relations.push({
-          type: 'component-word',
-          sourceEntryId: instance.id,
-          tokenId: component.id,
-          target: entrySummary(component.entry),
-        });
-      }
-    }
-  }
-
-
-  const sourceCatalog = (state.settings?.contentSources || [])
-    .filter((source) => sourceKeys.has(String(source.key || '')))
-    .map(cloneRecord);
-
+  const selectedCollection = state.collectionById.get(collectionId);
+  if (!selectedCollection) throw new Error('当前词表不存在');
+  const domain = state.domainById.get(entry.domainId);
+  if (!domain) throw new Error('当前独立域不存在');
+  const ordinary = preferredMembership(state, entry, selectedCollection.type === 'normal' ? selectedCollection.id : '');
+  const related = (state.relatedEntriesByEntry.get(entry.id) || []).slice(0, MAX_CONTEXT_RELATIONS);
+  const sameText = (state.entriesByNormalizedText.get(entry.normalizedText) || []).filter((candidate) => candidate.id !== entry.id);
   return {
     format: ENTRY_CONTEXT_FORMAT,
     version: ENTRY_CONTEXT_VERSION,
     generatedAt: new Date().toISOString(),
-    application: { name: 'Vocabulary Index', version: String(options.appVersion || '') },
-    currentView: {
-      collectionId,
-      domainId: currentCollection.domainId || null,
-      mode: String(options.viewMode || 'alphabet'),
-      section: String(options.section || (entry.kind === 'phrase' ? 'phrase' : 'word')),
-    },
+    application: { name: 'Vocabulary Index', version: clean(options.appVersion) },
     subject: {
-      scope: 'domain-entry',
-      projectedFromGlobal: isGlobal,
-      kind: entry.kind,
-      text: entry.text,
-      normalizedText: entry.normalizedText,
       entryId: entry.id,
-      domainId: entry.domainId,
-      instanceEntryIds: [entry.id],
+      text: entry.text,
+      kind: entry.kind,
+      contentType: entry.contentType || '',
+      partsOfSpeech: Array.isArray(entry.partsOfSpeech) ? entry.partsOfSpeech : [],
+      glossHant: entry.glossHant || '',
+      glossSource: entry.glossSource || '',
+      domain: { id: domain.id, name: domain.name, contentMode: domain.contentMode || 'structured' },
+      collection: ordinary ? { id: ordinary.id, name: ordinary.name } : { id: selectedCollection.id, name: selectedCollection.name },
+      projectedFromTotal: selectedCollection.type !== 'normal' || isGlobalCollection(collectionId),
     },
-    domains: sortById([...domainMap.values()]).map(cloneRecord),
-    collections: sortById([...collectionMap.values()]).map(cloneRecord),
-    entries: instances.map(cloneRecord),
-    memberships: [...membershipMap.values()]
-      .sort((a, b) => `${a.entryId}\u0000${a.collectionId}`.localeCompare(`${b.entryId}\u0000${b.collectionId}`))
-      .map(cloneRecord),
-    phraseTokens: sortById([...tokenMap.values()]).map(cloneRecord),
-    relations,
-    pins: sortById([...pinMap.values()]).map(cloneRecord),
-    annotations: sortById([...annotationMap.values()]).map(cloneRecord),
-    studyStamps: [...studyMap.values()].sort((a, b) => String(a.key).localeCompare(String(b.key))).map(cloneRecord),
-    sources: sourceCatalog,
-    exclusions: [
-      'Groq API Key',
-      'unrelated entries',
-      'application-wide settings',
-      'undo and redo history',
-      'saved browsing positions outside the current view',
-    ],
+    relations: related.map((target) => {
+      const targetDomain = state.domainById.get(target.domainId);
+      const targetCollection = preferredMembership(state, target);
+      return {
+        entryId: target.id,
+        text: target.text,
+        kind: target.kind,
+        contentType: target.contentType || '',
+        domain: targetDomain?.name || '',
+        collection: targetCollection?.name || '',
+      };
+    }),
+    relationCount: (state.relatedEntriesByEntry.get(entry.id) || []).length,
+    crossDomainSameText: sameText.length ? {
+      warning: '存在跨独立域同形条目；当前查询只针对本具体 Entry。',
+      domains: [...new Set(sameText.map((candidate) => state.domainById.get(candidate.domainId)?.name || candidate.domainId))].slice(0, 8),
+    } : null,
+    exclusions: ['PIN', '学习日期', 'AI 标注', '全量 Membership', '原始关系组件', '全库同形对象'],
   };
 }
 
 export function buildOxfordLookupUrl(text) {
-  const query = String(text || '').trim();
+  const query = clean(text);
   if (!query) throw new Error('没有可查询的英文');
   return `${OXFORD_LOOKUP_SCHEME}?q=${encodeURIComponent(query)}`;
 }
 
 export function buildChatGPTPrompt(context) {
-  if (!context || context.format !== ENTRY_CONTEXT_FORMAT) throw new Error('条目上下文格式无效');
+  if (!context || context.format !== ENTRY_CONTEXT_FORMAT || context.version !== ENTRY_CONTEXT_VERSION) throw new Error('条目上下文格式无效');
   return [
-    '请为以下 Vocabulary Index 一级条目创建一次独立查询。',
-    '请使用网页搜索及权威原始资料，根据条目所属独立域和普通表判断语境，核查当前含义、繁体中文译法、典型用法或技术场景、相关概念以及可能过时或不准确的信息。重要事实请提供来源。',
-    '不要修改或省略原始 JSON；先给出核查结论，再给出对现有条目数据的修订建议。',
-    '',
+    '请核查并解释以下 Vocabulary Index 学习条目。根据其具体独立域、词表和直接关系判断语境；给出简洁准确的繁体中文解释、典型用法，并指出现有释义明显不准确或过时时的修订建议。需要外部事实时优先权威来源。',
+    '这是一个具体 Entry；不要把跨独立域同形条目自动合并。',
     JSON.stringify(context),
   ].join('\n');
 }
 
 export function buildChatGPTShortcutUrl(prompt, shortcutName = CHATGPT_SHORTCUT_NAME) {
-  const text = String(prompt || '');
-  if (!text.trim()) throw new Error('没有可发送给 ChatGPT 的内容');
+  const text = clean(prompt);
+  if (!text) throw new Error('没有可发送给 ChatGPT 的内容');
   return `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}&input=text&text=${encodeURIComponent(text)}`;
+}
+
+export function buildCollinsExternalUrl(text) {
+  const query = clean(text).toLocaleLowerCase('en').replace(/\s+/g, '-');
+  if (!query) throw new Error('没有可查询的英文');
+  return `https://www.collinsdictionary.com/dictionary/english/${encodeURIComponent(query)}`;
+}
+
+async function collinsFetch(path, key, signal) {
+  const joiner = path.includes('?') ? '&' : '?';
+  const response = await fetch(`${COLLINS_BASE_URL}${path}${joiner}accesskey=${encodeURIComponent(key)}`, {
+    method: 'GET', signal, headers: { Accept: 'application/json' }, cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`Collins 请求失败（HTTP ${response.status}）`);
+  return response.json();
+}
+
+function dictionaryScore(dictionary) {
+  const text = `${dictionary?.dictionaryName || ''} ${dictionary?.name || ''} ${dictionary?.dictionaryCode || ''}`.toLocaleLowerCase('en');
+  if (/traditional.*chinese|chinese.*traditional|english.*chinese/.test(text)) return 30;
+  if (/cobuild/.test(text)) return 25;
+  if (/advanced.*learner|learner/.test(text)) return 20;
+  if (/english/.test(text)) return 10;
+  return 0;
+}
+
+function htmlToText(html) {
+  const value = clean(html);
+  if (!value) return '';
+  if (typeof DOMParser === 'function') {
+    const doc = new DOMParser().parseFromString(value, 'text/html');
+    return clean(doc.body?.textContent || '').replace(/\s+/g, ' ');
+  }
+  return value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+}
+
+/** Direct Collins API query. A network/CORS error is intentionally surfaced so UI can offer website fallback. */
+export async function queryCollins(text, { signal = null } = {}) {
+  const query = clean(text);
+  if (!query) throw new Error('没有可查询的英文');
+  const key = getCollinsApiKey();
+  if (!key) throw new Error('请先配置 Collins API Key');
+  const dictionariesPayload = await collinsFetch('/dictionaries', key, signal);
+  const dictionaries = Array.isArray(dictionariesPayload) ? dictionariesPayload : Array.isArray(dictionariesPayload?.dictionaries) ? dictionariesPayload.dictionaries : [];
+  const candidates = [...dictionaries].sort((a, b) => dictionaryScore(b) - dictionaryScore(a));
+  if (!candidates.length) throw new Error('Collins API Key 没有返回可用词典');
+  let lastError = null;
+  for (const dictionary of candidates.slice(0, 6)) {
+    const code = clean(dictionary?.dictionaryCode || dictionary?.code || dictionary?.id);
+    if (!code) continue;
+    try {
+      const search = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/search/first?q=${encodeURIComponent(query)}`, key, signal);
+      const entryId = clean(search?.entryId || search?.id || search?.entry?.entryId || search?.entry?.id);
+      if (!entryId) continue;
+      const entry = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/entries/${encodeURIComponent(entryId)}`, key, signal);
+      const html = clean(entry?.entryContent || entry?.content || entry?.entry?.entryContent || entry?.entry?.content);
+      const resultText = htmlToText(html);
+      if (!resultText) continue;
+      return {
+        provider: 'Collins', query, dictionaryCode: code,
+        dictionaryName: clean(dictionary?.dictionaryName || dictionary?.name || code),
+        entryId, text: resultText,
+      };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Collins 未找到该条目');
 }

@@ -1,6 +1,6 @@
 {
   "format": "vix-json",
-  "version": 1,
+  "version": 2,
   "target": {
     "scope": "collection",
     "domainKey": "domain_computer_terms",
@@ -12,7 +12,9 @@
       {
         "key": "domain_computer_terms",
         "name": "计算机术语",
-        "glossEnabled": true
+        "glossEnabled": true,
+        "contentMode": "structured",
+        "relationExcluded": false
       }
     ],
     "collections": [
@@ -30,14 +32,20 @@
         "domainKey": "domain_computer_terms",
         "text": "agentic",
         "glossHans": "智能体式",
-        "glossHant": "智能體式"
+        "glossHant": "智能體式",
+        "kind": "word",
+        "contentType": "",
+        "partsOfSpeech": []
       },
       {
         "key": "entry_agentic_workflow",
         "domainKey": "domain_computer_terms",
         "text": "agentic workflow",
         "glossHans": "智能体工作流",
-        "glossHant": "智能體工作流"
+        "glossHant": "智能體工作流",
+        "kind": "phrase",
+        "contentType": "",
+        "partsOfSpeech": []
       }
     ],
     "memberships": [

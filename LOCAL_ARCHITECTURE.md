@@ -1,83 +1,76 @@
-# Vocabulary Index 3.5.2 本地架构
+# Vocabulary Index 4.0.0 本地架构
 
-## 目标
+## 1. 架构目标
 
-架构只服务 iPhone standalone PWA 的单用户本地工作流。无远程业务数据库、账户或同步服务器。
+单设备、local-first、iPhone standalone PWA。架构优先保证数据身份、投影一致性、可恢复导航和低摩擦浏览；不为桌面、多端同步或服务端架构增加额外复杂度。
 
-## 模块
+## 2. 模块
 
-- `v3-app.js`：版本校验、Service Worker、standalone 检测、viewport 恢复；
-- `v3-db.js`：IndexedDB DB version 4、Schema 5 完整备份、事务、Undo/Redo；
-- `v3-model.js`：规范化、验证、Schema 迁移、系统总表投影、PhraseToken；
-- `v3-store.js`：内存状态、具体 Entry 索引、可见 ID 集合、局部写入和范围搜索；
-- `v3-ui.js`：动态顶部、sticky 字母标题、一级表项、关系、日期模式、分块渲染和弹窗；
-- `v3-exchange.js`：VIX 内容包、差异计划、脏归属报告；
-- `v3-integrations.js`：Oxford 与 ChatGPT 快捷指令；
-- `v3-data-worker.js`：大型 JSON 解析与预检；
-- `v3-ai.js`：Groq 模型目录、分批核查、暂停与 Abort。
+- `js/v3-model.js`：Schema 6 实体、规范化、投影、精确关系组件、搜索、校验。
+- `js/v3-db.js`：IndexedDB 5、Seed 4、完整备份、硬断代内容世代替换。
+- `js/v3-store.js`：内存状态、Projection、Raw/Effective Relation Graph、事务操作。
+- `js/v3-ui.js`：Home/Collection shell、导航历史、sticky、dialog、longpress、搜索和 Provider UI。
+- `js/v3-exchange.js`：VIX v2 导入/导出与预检。
+- `js/v3-import.js`：文本/CSV/JSON 输入；拒绝旧世代 Full Backup。
+- `js/v3-ai.js`：Groq 模型发现、批量 AI 核查、临时词汇查询。
+- `js/v3-integrations.js`：Oxford、Collins、ChatGPT 紧凑上下文。
+- `js/v3-upgrade.js`：4.0 缓存桥，只清理旧 Vocabulary Index 缓存。
+- `sw.js`：离线外壳与版本化缓存。
 
-## 投影模型
+## 3. 数据身份与投影
 
-系统总表不是持久化真实词表：
+`Domain → Collection ← Membership → Entry` 是内容事实链。Collection 的普通 Membership 可多重存在；`buildProjection()` 按 Collection order 选择一个可见 owner。这个规则统一用于 word / phrase / content。
 
-- 域内词汇总表：当前域具体 word Entry 的投影；
-- 域内短语总表：当前域具体 phrase Entry 的投影；
-- 全局词汇总表：所有域具体 word Entry 的投影；
-- 全局短语总表：所有域具体 phrase Entry 的投影。
+系统总表均为虚拟投影：
 
-同一具体 Entry 的多个 Membership 在总表中去重；跨域相同规范文本保持为多个具体 Entry。全局投影额外预计算：
+- structured Domain：词汇总表、短语总表；
+- nonStructured Domain：内容总表；
+- global：全局词汇、全局短语、全局非结构内容。
 
-- `globalConflictKeys`：需要显示来源域的跨域同形组；
-- `projectionUniqueCounts`：首页和标题使用的唯一词形组数量；
-- 实际投影数组长度：渲染、分块、定位和性能计算使用。
+系统总表不能成为 Entry 的状态所有者或直接写入目标。
 
-PIN、Annotation 和 StudyStamp 均绑定 Entry ID。系统总表只读取和操作具体 Entry 状态。
+## 4. 关系层
 
-## 渲染
+关系层分三步：
 
-- 固定紧凑导航与滚动 Large Title 分离；
-- 真实字母标题使用 sticky，不创建重复悬浮副本；
-- PIN、标注审阅和首页警告使用固定覆盖层；
-- 顶部有效底边由 `topChromeBottom()` 统一提供给 sticky 标题、活动字母探针、程序跳转和菜单避让，不保留正文可透出的接缝；
-- 一级表项按 42 行分块；首块同步生成，其余块接近视口时物化；
-- 只有可见 `phrase-two-line` 行进行真实 DOM 溢出检查；
-- SVG 图标模板按名称缓存；
-- 完整关系只在展开时解析；
-- 普通滚动不自动持久化浏览位置；底部浏览锚点只有长按约 520ms 才写入，短按只读取。
+1. `RelationComponent[]`：phrase/content 中与现有 Entry 规范文本精确对应的连续 span；
+2. Raw Graph：按规范文本全局解析并强制对称；
+3. Effective Graph：在 Raw Graph 上应用 Domain `relationExcluded` 与 Settings `closeLowLevelRelations` 逻辑过滤。
 
-## 3.5.2 页面状态
+搜索的 fuzzy 算法不进入关系构建。改变搜索容错阈值不得改变任何 relation edge。
 
-- 字母／日期、词汇／短语属于普通切换：目标页顶部、全部组收起，不映射当前 Entry；
-- 搜索、关系、PIN、日期和手动锚点属于明确目标跳转；
-- 浏览器 History 只为真实递归返回保存完整页面快照，包括 view kind、mode、calendar month、scrollY、expanded groups 和 expanded relations；
-- 日期具体日和“未标注”复用统一展开集合，年／月不折叠；
-- 字母轨道横滑使用人工锁；顶部 A、底部 # 和边界橡皮筋都不能单独解除锁，只有 sticky 字母真实变化或显式点击字母才交回自动跟随。
+低级词汇表位于 `data/relation-low-level-lexemes.json`，仅控制关系投影；不删除 Entry、Membership 或组件。
 
-## 3.5.2 视觉视口与停靠层
+## 5. 导航与 History
 
-- native dialog 根层固定覆盖 Layout Viewport；内部卡片使用 VisualViewport 的中心、宽高和键盘状态；
-- VisualViewport resize/scroll 合并更新查询菜单、关系菜单和 Overlay 几何；
-- 底部工具栏试行固定 58px，PIN／标注栏统一停靠其上方；该数值只对当前 iPhone 17 真机验收负责；
-- 禁用按钮只降低图标透明度，结构分隔线不继承禁用透明度。
+入口分两类：
 
-## 搜索
+- **Fresh navigation**：首页进入 Collection。强制 alphabet/top/collapsed；structured 有 word 时 word-first。
+- **Recursive return**：内部跳转返回。恢复 collection、viewKind、mode、calendarMonth、scroll、expandedGroups、relation state。
 
-搜索先计算范围 Entry ID 集，再在该范围内执行评分和截断。全局结果直接返回具体 Entry，因此跨域同形词和各自繁体释义均可独立命中。
+搜索、PIN、关系和浏览锚点属于显式目标跳转，会定位目标；普通 word/phrase 或 alphabet/date 切换不映射旧位置。
 
-## AI 事务
+关系目标先解析每个具体 Entry 的 canonical visible destination，再按当前有效目标总集合分类四态。一个 Entry 多 Membership 不会制造多个菜单目标。
 
-- 每批标注使用 Annotation 局部事务，不复制完整 Backup；
-- Entry 文本或 `updatedAt` 发生变化时，旧 AI 结果被跳过且不清除原标注；
-- 外部 AbortSignal 可中止当前 Fetch 和重试等待；
-- 一次完整 AI 核查结束后只追加一条历史记录，Undo 恢复任务开始前的目标 Annotation 集合。
+## 6. UI 几何
 
-## 数据交换
+- 顶部有效边界由 `topChromeBottom()`/真实 DOM rect 统一提供。
+- CSS sticky top 由运行时写入同一几何变量，不使用固定字母栏高度推导逻辑。
+- bottom toolbar 视觉高度 58px，但阅读区域避让读取实际 DOM。
+- dialog root 保持内容尺寸；native backdrop 负责全屏遮罩；VisualViewport 仅在真实键盘/视口变化时参与布局。
 
-预检在 Worker 中执行，返回带 `baseRevision` 的计划。最终提交前 Revision 变化时重新预检。VIX 裸引用若对应多个具体 Entry，则跳过该 Membership 并生成结构化问题报告。
+## 7. 输入/选择模型
 
-## PWA 生命周期
+非编辑 UI 默认 `user-select:none`、`-webkit-user-select:none`、`-webkit-touch-callout:none`；input/textarea/contenteditable 显式恢复原生编辑。
 
-- Service Worker 缓存 App Shell；
-- 更新桥删除旧壳缓存；
-- 后台恢复检测 WebKit 异常 viewport；
-- 更新和 viewport 修复不清理业务数据库。
+浏览锚点长按使用手势状态机：PRESSING → LONGPRESS_ACTIVE → GRACE → IDLE。GRACE 只保留事件所有权，不保留 Pointer Capture，也不制造可见 overlay。
+
+## 8. Provider 会话
+
+Collins/Groq 共用单一前台 Provider Session：新查询 abort 旧查询；关闭弹窗后 stale response 不得更新 UI。Oxford 与 ChatGPT 是外部跳转，不写用户状态。
+
+ChatGPT `vix-entry-context` v2 限制直接关系数量，确保 URL 不再随全库对象爆炸。
+
+## 9. PWA 生命周期
+
+4.0.0 使用独立 Service Worker cache generation。启动代码验证 HTML/JS 版本一致；旧缓存只由 4.0 cache bridge 清理。最终部署仍需在 iPhone standalone 验证冷启动、离线、系统进程回收和外部 App 返回。

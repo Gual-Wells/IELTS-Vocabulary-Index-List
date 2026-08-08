@@ -1,10 +1,12 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const DEFAULT_DOMAIN_ID = 'domain_general_english';
 export const DEFAULT_DOMAIN_NAME = '通用英语';
 export const SYSTEM_PHRASE_SUFFIX = '__phrases';
 export const SYSTEM_DOMAIN_WORDS_SUFFIX = '__all_words';
+export const SYSTEM_DOMAIN_CONTENT_SUFFIX = '__all_content';
 export const SYSTEM_GLOBAL_WORDS_ID = '__global_all_words';
 export const SYSTEM_GLOBAL_PHRASES_ID = '__global_all_phrases';
+export const SYSTEM_GLOBAL_CONTENT_ID = '__global_all_content';
 export const MAX_ENTRY_TEXT = 160;
 export const MAX_GLOSS_TEXT = 120;
 export const MAX_DOMAIN_NAME = 40;
@@ -47,6 +49,10 @@ export function systemPhraseCollectionId(domainId) {
 
 export function systemDomainWordsCollectionId(domainId) {
   return `${domainId}${SYSTEM_DOMAIN_WORDS_SUFFIX}`;
+}
+
+export function systemDomainContentCollectionId(domainId) {
+  return `${domainId}${SYSTEM_DOMAIN_CONTENT_SUFFIX}`;
 }
 
 export function isSystemDomainWordsCollectionId(collectionId) {
@@ -96,15 +102,18 @@ export function nowIso() {
   return new Date().toISOString();
 }
 
-export function createDomain({ id = null, name, order = 0, glossEnabled = false, timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
+export function createDomain({ id = null, name, order = 0, glossEnabled = false, contentMode = 'structured', relationExcluded = false, timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
   const cleanName = normalizeDisplayText(name);
   if (!cleanName) throw new Error('词域名称不能为空');
   if (cleanName.length > MAX_DOMAIN_NAME) throw new Error(`词域名称不能超过 ${MAX_DOMAIN_NAME} 个字符`);
+  const cleanMode = contentMode === 'nonStructured' ? 'nonStructured' : 'structured';
   return {
     id: id || safeId('domain', cleanName),
     name: cleanName,
     order: Number.isFinite(order) ? order : 0,
     glossEnabled: Boolean(glossEnabled),
+    contentMode: cleanMode,
+    relationExcluded: Boolean(relationExcluded),
     createdAt: String(createdAt || timestamp),
     updatedAt: String(updatedAt || createdAt || timestamp),
   };
@@ -132,21 +141,28 @@ export function createCollection({ id = null, domainId, name, label = '', type =
   };
 }
 
-export function createEntry({ id = null, domainId, text, glossHant = '', glossSource = '', timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
+export function createEntry({ id = null, domainId, text, kind = '', contentType = '', partsOfSpeech = [], glossHans = '', glossHant = '', glossSource = '', timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
   const cleanText = normalizeDisplayText(text);
   const normalizedText = normalizeEnglish(cleanText);
   if (!domainId) throw new Error('内容缺少词域');
   if (!normalizedText) throw new Error('内容不能为空');
   if (cleanText.length > MAX_ENTRY_TEXT) throw new Error(`内容不能超过 ${MAX_ENTRY_TEXT} 个字符`);
+  const cleanKind = ['word', 'phrase', 'content'].includes(kind) ? kind : (isPhraseText(cleanText) ? 'phrase' : 'word');
+  if (cleanKind === 'word' && isPhraseText(cleanText)) throw new Error('多词文本不能标记为普通词');
   const normalizedGloss = normalizeGlossHant(glossHant);
+  const cleanPos = [...new Set((Array.isArray(partsOfSpeech) ? partsOfSpeech : String(partsOfSpeech || '').split(/[;,/]/))
+    .map((item) => normalizeDisplayText(item)).filter(Boolean))].slice(0, 16);
   return {
     id: id || safeId('entry', `${domainId}:${normalizedText}`),
     domainId,
-    kind: isPhraseText(cleanText) ? 'phrase' : 'word',
+    kind: cleanKind,
+    contentType: cleanKind === 'content' ? (normalizeDisplayText(contentType) || 'general') : '',
+    partsOfSpeech: cleanPos,
     text: cleanText,
     normalizedText,
+    glossHans: normalizeDisplayText(glossHans),
     glossHant: normalizedGloss,
-    glossSource: normalizedGloss ? normalizeDisplayText(glossSource || 'manual') : '',
+    glossSource: (normalizedGloss || glossHans) ? normalizeDisplayText(glossSource || 'manual') : '',
     createdAt: String(createdAt || timestamp),
     updatedAt: String(updatedAt || createdAt || timestamp),
   };
@@ -259,15 +275,58 @@ function migrateStudyStampsToEntries(rawStamps, entries, domains) {
 }
 
 export function buildPhraseTokens(entry) {
-  if (!entry || entry.kind !== 'phrase') return [];
+  if (!entry || !['phrase', 'content'].includes(entry.kind)) return [];
   return tokenizeEnglish(entry.text).map((token, tokenIndex) => ({
     id: `${entry.id}:${tokenIndex}`,
+    sourceEntryId: entry.id,
     phraseId: entry.id,
     domainId: entry.domainId,
     token,
     normalizedToken: normalizeEnglish(token),
+    normalizedText: normalizeEnglish(token),
+    startToken: tokenIndex,
+    endToken: tokenIndex + 1,
     tokenIndex,
+    componentKind: 'token',
   }));
+}
+
+// Build a deterministic exact structural component index. Components describe
+// spans that correspond to at least one concrete Entry text; relation edges are
+// resolved globally from these normalized spans and therefore stay symmetric.
+export function buildRelationComponentsForEntries(entriesInput) {
+  const entries = Array.isArray(entriesInput) ? entriesInput : [];
+  const known = new Set(entries.map((entry) => entry.normalizedText).filter(Boolean));
+  const components = [];
+  for (const entry of entries) {
+    if (!['phrase', 'content'].includes(entry.kind)) continue;
+    const tokens = tokenizeEnglish(entry.text);
+    const normalizedTokens = tokens.map(normalizeEnglish);
+    const seen = new Set();
+    for (let start = 0; start < normalizedTokens.length; start += 1) {
+      for (let end = start + 1; end <= normalizedTokens.length; end += 1) {
+        const normalizedText = normalizedTokens.slice(start, end).join(' ');
+        if (!known.has(normalizedText) || normalizedText === entry.normalizedText || seen.has(`${start}:${end}:${normalizedText}`)) continue;
+        seen.add(`${start}:${end}:${normalizedText}`);
+        components.push({
+          id: `${entry.id}:${start}:${end}:${hash32(normalizedText)}`,
+          sourceEntryId: entry.id,
+          phraseId: entry.id,
+          domainId: entry.domainId,
+          text: tokens.slice(start, end).join(' '),
+          token: tokens.slice(start, end).join(' '),
+          normalizedText,
+          normalizedToken: normalizedText,
+          startToken: start,
+          endToken: end,
+          tokenIndex: start,
+          componentKind: end - start === 1 ? 'token' : 'span',
+        });
+      }
+    }
+  }
+  return components.sort((a, b) => a.sourceEntryId.localeCompare(b.sourceEntryId)
+    || a.startToken - b.startToken || b.endToken - a.endToken || a.normalizedText.localeCompare(b.normalizedText, 'en'));
 }
 
 // Phrase-first replacements handle common lexical ambiguities before character mapping.
@@ -1529,7 +1588,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   const entries = [...entryByNormalized.values()];
   const memberships = [...membershipsByKey.values()];
-  const phraseTokens = entries.flatMap(buildPhraseTokens);
+  const relationComponents = buildRelationComponentsForEntries(entries);
   const collectionsById = new Map(collections.map((item) => [item.id, item]));
   const entriesById = new Map(entries.map((item) => [item.id, item]));
 
@@ -1605,17 +1664,18 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '3.5.2',
+    appVersion: '4.0.0',
     exportedAt: timestamp,
     domains,
     collections,
     entries,
     memberships,
-    phraseTokens,
+    relationComponents,
     pins,
     annotations,
     settings: {
       numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
+    closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
       lastPositions,
       migrationComplete: true,
       migrationSource: input?.appVersion || '2.x',
@@ -1633,7 +1693,7 @@ export function canonicalizeBackup(input) {
   collections.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
   entries.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'));
   memberships.sort((a, b) => a.collectionId.localeCompare(b.collectionId) || a.sourceOrder - b.sourceOrder || a.entryId.localeCompare(b.entryId));
-  const rebuiltTokens = entries.flatMap(buildPhraseTokens);
+  const rebuiltComponents = buildRelationComponentsForEntries(entries);
   const pins = array(input?.pins).map((item, index) => ({
     id: item?.id || safeId('pin', item?.entryId),
     entryId: String(item?.entryId || ''),
@@ -1664,6 +1724,7 @@ export function canonicalizeBackup(input) {
     .filter(([key, value]) => key.startsWith('lastPosition:') && typeof value === 'string'));
   const settings = {
     numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
+    closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
     lastPositions,
     viewModes: Object.fromEntries(Object.entries(object(settingsInput.viewModes)).filter(([, value]) => ['alphabet', 'date'].includes(value))),
     calendarMonths: Object.fromEntries(Object.entries(object(settingsInput.calendarMonths)).filter(([, value]) => /^\d{4}-\d{2}$/.test(String(value)))),
@@ -1683,13 +1744,13 @@ export function canonicalizeBackup(input) {
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '3.5.2'),
+    appVersion: normalizeDisplayText(input?.appVersion || '4.0.0'),
     exportedAt: timestamp,
     domains,
     collections,
     entries,
     memberships,
-    phraseTokens: rebuiltTokens,
+    relationComponents: rebuiltComponents,
     pins,
     annotations,
     studyStamps,
@@ -1700,12 +1761,12 @@ export function canonicalizeBackup(input) {
 }
 
 export function validateBackup(backup) {
-  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 5');
+  if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 6');
   const domains = array(backup.domains);
   const collections = array(backup.collections);
   const entries = array(backup.entries);
   const memberships = array(backup.memberships);
-  const tokens = array(backup.phraseTokens);
+  const components = array(backup.relationComponents);
   const pins = array(backup.pins);
   const annotations = array(backup.annotations);
   const studyStamps = array(backup.studyStamps);
@@ -1727,7 +1788,7 @@ export function validateBackup(backup) {
   unique(entries, (item) => item.id, '内容 ID 为空或重复');
   unique(entries, (item) => `${item.domainId}\u0000${item.normalizedText}`, '同一词域内内容重复');
   unique(memberships, (item) => `${item.entryId}\u0000${item.collectionId}`, '来源关系重复');
-  unique(tokens, (item) => item.id, '短语词元 ID 重复');
+  unique(components, (item) => item.id, '关系组件 ID 重复');
   unique(pins, (item) => item.entryId, '同一内容存在多个 PIN');
   unique(annotations, (item) => item.entryId, '同一内容存在多个 AI 标注');
   unique(studyStamps, (item) => item.key, '学习日期键为空或重复');
@@ -1741,7 +1802,7 @@ export function validateBackup(backup) {
   for (const item of [...domains, ...collections, ...entries, ...memberships, ...pins]) {
     if (!validId(item.id)) throw new Error('数据包含无效或危险 ID');
   }
-  for (const token of tokens) if (!validTokenId(token.id)) throw new Error('短语词元 ID 无效');
+  for (const component of components) if (!validTokenId(component.id)) throw new Error('关系组件 ID 无效');
   unique(domains, (item) => normalizeEnglish(item.name), '词域名称重复');
   unique(collections, (item) => `${item.domainId}\u0000${normalizeEnglish(item.name)}`, '同一词域内词表名称重复');
 
@@ -1763,8 +1824,10 @@ export function validateBackup(backup) {
 
   for (const domain of domains) {
     const phraseCollections = collections.filter((item) => item.domainId === domain.id && item.type === 'system-phrases');
-    if (phraseCollections.length !== 1) throw new Error(`词域 ${domain.name} 必须恰有一个系统短语表`);
-    if (phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('系统短语表 ID 无效');
+    if (domain.contentMode === 'structured') {
+      if (phraseCollections.length !== 1) throw new Error(`结构化词域 ${domain.name} 必须恰有一个系统短语表`);
+      if (phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('系统短语表 ID 无效');
+    } else if (phraseCollections.length) throw new Error(`非结构词域 ${domain.name} 不应持久化系统短语表`);
   }
 
   for (const collection of collections) {
@@ -1774,24 +1837,27 @@ export function validateBackup(backup) {
   for (const entry of entries) {
     if (!domainIds.has(entry.domainId)) throw new Error('内容指向不存在词域');
     if (entry.normalizedText !== normalizeEnglish(entry.text)) throw new Error('内容规范文本不一致');
-    if (entry.kind !== (isPhraseText(entry.text) ? 'phrase' : 'word')) throw new Error('内容 kind 与文本不一致');
+    if (!['word', 'phrase', 'content'].includes(entry.kind)) throw new Error('内容 kind 无效');
+    const domain = domains.find((item) => item.id === entry.domainId);
+    if (domain?.contentMode === 'nonStructured' && entry.kind !== 'content') throw new Error('非结构词域只能包含 content Entry');
+    if (domain?.contentMode === 'structured' && entry.kind === 'content') throw new Error('结构化词域不能包含 content Entry');
     if (entry.glossHant !== normalizeGlossHant(entry.glossHant)) throw new Error('释义不是规范繁体');
-    if (entry.kind === 'word') {
+    if (['word', 'phrase', 'content'].includes(entry.kind)) {
       const hasNormalMembership = (membershipByEntry.get(entry.id) || [])
         .some((item) => collectionById.get(item.collectionId)?.type === 'normal');
-      if (!hasNormalMembership) throw new Error(`普通词 ${entry.text} 没有普通词表来源`);
+      if (!hasNormalMembership) throw new Error(`内容 ${entry.text} 没有普通词表来源`);
     }
   }
 
-  const expectedTokens = entries.flatMap(buildPhraseTokens);
-  if (JSON.stringify(tokens) !== JSON.stringify(expectedTokens)) throw new Error('短语词元索引与内容不一致');
+  const expectedComponents = buildRelationComponentsForEntries(entries);
+  if (JSON.stringify(components) !== JSON.stringify(expectedComponents)) throw new Error('关系组件索引与内容不一致');
 
   const visible = buildProjection(backup);
   for (const pin of pins) {
     const entry = entryById.get(pin.entryId);
     const collection = collectionById.get(pin.contextCollectionId);
     const domainTotalId = entry ? systemDomainWordsCollectionId(entry.domainId) : '';
-    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === domainTotalId;
+    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID || pin.contextCollectionId === domainTotalId || pin.contextCollectionId === systemDomainContentCollectionId(entry?.domainId || '');
     if (!entry || pin.domainId !== entry.domainId || (!virtualValid && (!collection || collection.domainId !== entry.domainId))) {
       throw new Error('PIN 关联无效');
     }
@@ -1822,6 +1888,7 @@ export function buildProjection(backup) {
   const entries = array(backup?.entries);
   const memberships = array(backup?.memberships);
   const collectionById = new Map(collections.map((item) => [item.id, item]));
+  const domainById = new Map(domains.map((item) => [item.id, item]));
   const domainOrder = new Map(domains.map((item, index) => [item.id, index]));
   const membershipsByEntry = new Map();
   memberships.forEach((membership) => {
@@ -1832,11 +1899,17 @@ export function buildProjection(backup) {
   const projection = new Map(collections.map((item) => [item.id, []]));
   projection.set(SYSTEM_GLOBAL_WORDS_ID, []);
   projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
-  for (const domain of domains) projection.set(systemDomainWordsCollectionId(domain.id), []);
+  projection.set(SYSTEM_GLOBAL_CONTENT_ID, []);
+  for (const domain of domains) {
+    if (domain.contentMode === 'nonStructured') projection.set(systemDomainContentCollectionId(domain.id), []);
+    else projection.set(systemDomainWordsCollectionId(domain.id), []);
+  }
 
   const globalWords = [];
   const globalPhrases = [];
+  const globalContent = [];
   for (const entry of entries) {
+    const domain = domainById.get(entry.domainId);
     const candidates = (membershipsByEntry.get(entry.id) || [])
       .map((membership) => ({ membership, collection: collectionById.get(membership.collectionId) }))
       .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden)
@@ -1844,13 +1917,18 @@ export function buildProjection(backup) {
         || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
         || a.collection.name.localeCompare(b.collection.name));
 
-    if (entry.kind === 'phrase') {
-      projection.get(systemPhraseCollectionId(entry.domainId))?.push(entry);
-      for (const candidate of candidates) projection.get(candidate.collection.id)?.push(entry);
-      globalPhrases.push(entry);
+    if (entry.kind === 'content' || domain?.contentMode === 'nonStructured') {
+      projection.get(systemDomainContentCollectionId(entry.domainId))?.push(entry);
+      globalContent.push(entry);
+      if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
       continue;
     }
-
+    if (entry.kind === 'phrase') {
+      projection.get(systemPhraseCollectionId(entry.domainId))?.push(entry);
+      globalPhrases.push(entry);
+      if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
+      continue;
+    }
     projection.get(systemDomainWordsCollectionId(entry.domainId))?.push(entry);
     globalWords.push(entry);
     if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
@@ -1860,8 +1938,9 @@ export function buildProjection(backup) {
     || a.id.localeCompare(b.id);
   projection.set(SYSTEM_GLOBAL_WORDS_ID, globalWords.sort(globalSorter));
   projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
+  projection.set(SYSTEM_GLOBAL_CONTENT_ID, globalContent.sort(globalSorter));
   for (const [collectionId, list] of projection.entries()) {
-    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) continue;
+    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId)) continue;
     list.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id));
   }
   return projection;
@@ -1871,25 +1950,45 @@ export function uniqueProjectionCount(entries) {
   return new Set(array(entries).map((entry) => `${entry.kind}\u0000${entry.normalizedText}`)).size;
 }
 
+export function relationEdgeSuppressed(left, right, { domainById = new Map(), lowLevelLexemes = new Set(), closeLowLevelRelations = true } = {}) {
+  if (!left || !right) return true;
+  if (domainById.get(left.domainId)?.relationExcluded || domainById.get(right.domainId)?.relationExcluded) return true;
+  if (!closeLowLevelRelations) return false;
+  return (left.kind === 'word' && lowLevelLexemes.has(left.normalizedText))
+    || (right.kind === 'word' && lowLevelLexemes.has(right.normalizedText));
+}
+
+export function relatedEntries(backup, entryId) {
+  const entries = array(backup?.entries);
+  const entryById = new Map(entries.map((item) => [item.id, item]));
+  const entriesByText = new Map();
+  for (const item of entries) {
+    const list = entriesByText.get(item.normalizedText) || [];
+    list.push(item);
+    entriesByText.set(item.normalizedText, list);
+  }
+  const adjacency = new Map(entries.map((item) => [item.id, new Set()]));
+  for (const component of array(backup?.relationComponents)) {
+    const source = entryById.get(component.sourceEntryId);
+    if (!source) continue;
+    for (const target of entriesByText.get(component.normalizedText) || []) {
+      if (target.id === source.id) continue;
+      adjacency.get(source.id)?.add(target.id);
+      adjacency.get(target.id)?.add(source.id);
+    }
+  }
+  return [...(adjacency.get(entryId) || [])].map((id) => entryById.get(id)).filter(Boolean)
+    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id));
+}
+
 export function relatedPhrases(backup, entryId) {
-  const entry = array(backup?.entries).find((item) => item.id === entryId);
-  if (!entry || entry.kind !== 'word') return [];
-  const phraseIds = new Set(array(backup?.phraseTokens)
-    .filter((token) => token.domainId === entry.domainId && token.normalizedToken === entry.normalizedText)
-    .map((token) => token.phraseId));
-  return array(backup?.entries)
-    .filter((item) => phraseIds.has(item.id))
-    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  return relatedEntries(backup, entryId).filter((entry) => entry.kind === 'phrase');
 }
 
 export function phraseComponents(backup, phraseId) {
-  const phrase = array(backup?.entries).find((item) => item.id === phraseId && item.kind === 'phrase');
-  if (!phrase) return [];
-  const entries = array(backup?.entries);
-  return buildPhraseTokens(phrase).map((token) => ({
-    ...token,
-    entry: entries.find((item) => item.domainId === phrase.domainId && item.kind === 'word' && item.normalizedText === token.normalizedToken) || null,
-  }));
+  const entry = array(backup?.entries).find((item) => item.id === phraseId);
+  if (!entry || !['phrase', 'content'].includes(entry.kind)) return [];
+  return array(backup?.relationComponents).filter((item) => item.sourceEntryId === entry.id);
 }
 
 function isSubsequence(text, query) {

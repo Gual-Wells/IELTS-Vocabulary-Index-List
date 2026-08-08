@@ -1,14 +1,14 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v3.5.2-runtime-stabilization-20260804-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v4.0.0-major-generation-20260808-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
-  './', './index.html', './manifest.webmanifest', './css/v3.css', './css/v3.3.1.css', './css/v3.4.0.css', './css/v3.5.2.css',
+  './', './index.html', './manifest.webmanifest', './css/v3.css', './css/v3.3.1.css', './css/v3.4.0.css', './css/v4.0.0.css',
   './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-store.js', './js/v3-db.js',
   './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
-  './data/seed.json', './data/seed-report.json',
-  './assets/icons/apple-touch-icon.png', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
+  './data/seed.json', './data/seed-report.json', './data/relation-low-level-lexemes.json',
+  './assets/icons/vix-icon-180-v4.png', './assets/icons/vix-icon-192-v4.png', './assets/icons/vix-icon-512-v4.png',
 ];
 
 sw.addEventListener('install', (event) => {

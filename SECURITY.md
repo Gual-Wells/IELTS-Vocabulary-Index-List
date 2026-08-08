@@ -1,18 +1,28 @@
-# Vocabulary Index 3.5.2 安全说明
+# Vocabulary Index 4.0.0 安全与数据边界
 
-- 业务数据默认仅保存在当前 iPhone Web App 的 IndexedDB；
-- 不建立账户、云同步或远程业务数据库；
-- 其他人打开同一公开部署时使用自己的浏览器存储；
-- 内容导入先在 Web Worker 中预检，再以单次事务提交；
-- 导入计划绑定基准 Revision，确认期间状态变化时必须重新预检；
-- 歧义 VIX 裸键不会自动猜测，相关脏 Membership 被跳过并报告；
-- 高危操作执行前提供“下载备份／不下载”选择；两项都会继续进入实际操作确认；
-- 完整备份包含个人状态，应由用户自行妥善保管；
-- VIX 内容 JSON 不包含 PIN、标注、学习日期、浏览位置或 API Key；
-- Groq API Key 只保存在当前浏览器 localStorage，不进入 Seed、VIX 或完整备份；
-- AI 取消会 Abort 当前请求和重试等待；
-- Oxford 只接收当前英文；
-- ChatGPT 只在用户点击时接收当前具体 Entry 的上下文 JSON；
-- 外部 URL Scheme 的最终接收行为由 iOS 和目标 App 控制。
+Vocabulary Index 是个人本地 PWA，不提供服务端账户或云同步。
 
-用户仍应定期导出完整备份。卸载主屏幕 Web App、清除 Safari 网站数据或系统存储回收都可能影响本地数据。
+## 本地数据
+
+业务内容与个人状态保存在 IndexedDB。Groq/Collins API Key 保存在浏览器本地存储；这是便捷的单设备存储，不是硬件级/服务端秘密存储，用户应按可被当前站点脚本读取的凭据理解。
+
+## 外部请求
+
+- Oxford：外部 App URL scheme，只发送当前英文文本。
+- Collins：向 `api.collinsdictionary.com` 发送 Key 与查询词；若直接 API 失败，可跳转 Collins 网站。
+- Groq：向 Groq API 发送用户发起的查询/核查内容。
+- ChatGPT：通过 iOS Shortcuts URL 发送紧凑 Entry context。
+
+查询 Provider 不自动写入 Seed；Groq 单条查询与 Collins 结果是临时 UI。
+
+## DOM 与文本
+
+普通应用文本默认不可原生选择和 iOS callout；可编辑控件显式恢复选择。动态内容使用 DOM 构造/文本节点而不是持久化 HTML 拼接作为主要路径。CSP 仅开放当前需要的网络来源。
+
+## 备份
+
+Full Backup 可能包含完整个人学习状态，但不包含 Groq/Collins API Key。VIX 只包含内容，不含个人状态。删除、整代替换等大范围操作继续提供备份选择。
+
+## 公开仓库注意
+
+当前大型 Seed 数据的质量/来源记录与公开再分发授权是两个不同问题。项目长期自用时可先以质量和可重建性为主，但任何未来公开提交第三方大词表前应重新审核其公开分发条件。

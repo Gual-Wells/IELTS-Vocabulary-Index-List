@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.2.0 — 2026-08-09
+
+- Alphabet Sticky 从独立 mirror 回归真实 `.letter-heading` native sticky；浏览器恢复 collapsed 自然退出、section-bottom push-off、真实点击锚点与 section side rails；JS metrics 只负责 active 字母；
+- Query chooser 改为 relation multi-target 风格右缘挂接，再左退 10px；viewport inset 12px，浮层与 Entry 框线 gap 13px；
+- Oxford 放弃旧参考图几何忠实，重设计为与 Collins/Groq/ChatGPT optical bounds 一致的紧凑 closed-book outline；
+- 撤销 4.1.0 System Shell Surface 动态染色实验；custom/native backdrop 恢复 full Web viewport，不再运行时修改 theme-color/root/topbar；
+- Home `Vocabulary Index` 顶栏使用独立 serif Product Wordmark；Hero 大字“词汇索引”保持；
+- `全局` 标题恢复 Domain 同级 15px/740，删除 3.x 遗留淡完整矩形框，改为标题与动作之间的轻量 Index Rule；
+- Topbar 新增 Root Home：depth>=2 显示 Back+Home；Home 一次回 root，并用 `navigationEpoch` 失效旧 recursive pageSnapshot/forward history 语义，不清业务数据或 Undo/Redo；
+- 保留 4.1.0 的字母 cell border、parallel switch、PWA 名称、全局非结构总表、Entry secondary gap、日期 StudyStamp 原位刷新；
+- 新增 `css/v4.2.0.css`，Service Worker cache generation 升级 4.2.0；同步完整生命周期文档。
+
 ## 4.1.0 — 2026-08-08
 
 - Top Chrome 以真实 DOM rect 为唯一几何源，删除 VisualViewport + 72px 混合硬下限；字母栏未真实吸顶前不展示 Sticky mirror；

@@ -1,4 +1,4 @@
-# Vocabulary Index 4.1.0 安全与数据边界
+# Vocabulary Index 4.2.0 安全与数据边界
 
 Vocabulary Index 是个人本地 PWA，不提供服务端账户或云同步。
 
@@ -26,3 +26,7 @@ Full Backup 可能包含完整个人学习状态，但不包含 Groq/Collins API
 ## 公开仓库注意
 
 当前大型 Seed 数据的质量/来源记录与公开再分发授权是两个不同问题。项目长期自用时可先以质量和可重建性为主，但任何未来公开提交第三方大词表前应重新审核其公开分发条件。
+
+## 4.2.0 Navigation History
+
+`navigationEpoch` 只用于失效浏览器递归页面状态，不上传、不写业务数据库，也不触碰数据 Undo/Redo。Root Home 不删除 Entry/PIN/Annotation/StudyStamp/API Key/Settings。

@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -20,17 +20,18 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.1.0');
-assert.ok(index.includes('Vocabulary Index 4.1.0'));
+assert.equal(pkg.version, '4.2.0');
+assert.ok(index.includes('Vocabulary Index 4.2.0'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
+assert.ok(index.includes('css/v4.2.0.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.1.0-iphone-convergence'));
+assert.ok(sw.includes('v4.2.0-native-sticky-navigation'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
@@ -59,7 +60,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -111,6 +112,12 @@ assert.ok(ui.includes("elements['page-title'].textContent = 'Vocabulary Index'")
 assert.ok(ui.includes('全局非结构总表'));
 assert.ok(store.includes("name: '全局非结构总表'"));
 assert.ok(ui.includes('SYSTEM_GLOBAL_CONTENT_ID'));
+assert.ok(css.includes('.app.is-home #page-title'));
+assert.ok(css.includes('font-family: ui-serif'));
+assert.ok(css.includes('.global-scope .scope-heading::after'));
+assert.ok(css.includes('font-size: 15px !important'));
+assert.ok(css.includes('.global-scope {\n  border: 0 !important'));
+assert.ok(ui.includes("switchParallel:"));
 
 // Search scope identities are explicit and Collection scope is complete, not current-view-only.
 for (const token of ['global:words', 'global:phrases', 'global:content', 'domain:', 'collection:']) assert.ok(ui.includes(token), `缺少搜索范围 ${token}`);
@@ -122,9 +129,11 @@ assert.ok(ui.indexOf('const collins =') < ui.indexOf('const groq ='));
 assert.ok(ui.indexOf('const groq =') < ui.indexOf('const chatgpt ='));
 assert.ok(ui.includes('providerOptions'));
 for (const label of ['Oxford', 'Collins', 'Groq', 'ChatGPT']) assert.ok(ui.includes(`'${label}'`));
-assert.ok(ui.includes('x=\"4.2\" y=\"2.5\" width=\"15.3\" height=\"16.2\"'), 'Oxford must use the reference-derived closed-book cover geometry');
-assert.ok(ui.includes('M8.1 7.8h7.7M4.9 21h14.8'), 'Oxford must preserve the reference short face line and lower book edge');
-assert.ok(css.includes('--query-menu-edge-inset: 22px'));
+assert.ok(ui.includes('M6 5.2h11.2'), 'Oxford must use the 4.2.0 compact closed-book geometry');
+assert.ok(ui.includes('M8.7 9h6.8M6 16.4h12.8M7.6 19h11.2'), 'Oxford must keep compact face/page lines inside the shared optical box');
+assert.ok(css.includes('--query-menu-edge-inset: 12px'));
+assert.ok(ui.includes('sourceRect.right - menuRect.width - 10'));
+assert.ok(ui.includes('const gap = 13'));
 assert.ok(integrations.includes('export const ENTRY_CONTEXT_VERSION = 2'));
 assert.ok(integrations.includes('const MAX_CONTEXT_RELATIONS = 16'));
 for (const excluded of ['PIN', '学习日期', 'AI 标注', '全量 Membership', '原始关系组件']) assert.ok(integrations.includes(excluded));
@@ -143,10 +152,11 @@ assert.ok(!ui.includes('restoreAppDialog'));
 assert.ok(css.includes('.sheet-dialog::backdrop'));
 assert.ok(css.includes('.confirm-dialog::backdrop'));
 
-// Sticky uses one zero-height presentation layer and metric/binary-search state, not sticky real headings.
-assert.ok(index.includes('sticky-letter-heading'));
-assert.ok(css.includes('.sticky-letter-heading'));
-assert.ok(css.includes('.letter-heading {\n  position: relative !important'));
+// Alphabet headings are native sticky again; JS metrics only synchronize the alphabet bar.
+assert.ok(!index.includes('sticky-letter-heading'));
+assert.ok(css.includes('.letter-heading {'));
+assert.ok(css.includes('position: sticky !important'));
+assert.ok(css.includes('top: var(--content-sticky-top) !important'));
 assert.ok(ui.includes('refreshAlphabetSectionMetrics'));
 assert.ok(ui.includes('alphabetSectionMetrics'));
 assert.ok(ui.includes('while (low <= high)'));
@@ -155,14 +165,26 @@ assert.ok(ui.includes("const navHeight = Math.max(0, nav.getBoundingClientRect()
 assert.ok(ui.includes('return baseBottom + navHeight'));
 assert.ok(ui.includes('function alphabetNavAttached()'));
 assert.ok(ui.includes('const stickyEngaged = navAttached && activeIndex >= 0'));
+assert.ok(!ui.includes('renderStickyAlphabetHeading'));
+assert.ok(!ui.includes("elements['sticky-letter-heading']"));
 assert.ok(!ui.includes('Math.max(bottom, viewportTop + 72)'));
 assert.ok(css.includes('.letter-nav-track button:first-child'));
 assert.ok(css.includes('border-top: 1px solid var(--line) !important'));
 assert.ok(css.includes('.letter-nav-track button.empty'));
 assert.ok(css.includes('opacity: 1 !important'));
-assert.ok(css.includes('top: var(--content-sticky-top, var(--chrome-bottom))'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
+// Root navigation is distinct from recursive Back and invalidates old page snapshots.
+assert.ok(index.includes('id="home-button"'));
+assert.ok(ui.includes('resetNavigationToHome'));
+assert.ok(ui.includes('finalizeNavigationResetToHome'));
+assert.ok(ui.includes('navigationEpoch'));
+assert.ok(ui.includes("history.go(-appNavigationDepth)"));
+assert.ok(ui.includes('expandedLettersByCollection.clear()'));
+assert.ok(ui.includes('expandedRelations.clear()'));
+assert.ok(ui.includes("elements['home-button'].classList.toggle('hidden', appNavigationDepth < 2)"));
+assert.ok(index.includes('aria-label="返回上一页"'));
+assert.ok(index.includes('aria-label="返回首页并清空页面历史"'));
 
 // Date-mode study-date refresh is an in-place mutation, not a navigation jump.
 assert.ok(ui.includes("const preserveDateViewport = mode === 'date'"));
@@ -170,15 +192,13 @@ assert.ok(ui.includes("window.scrollTo({ top: preservedScrollY, behavior: 'auto'
 assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
 assert.ok(!ui.includes('学习日期已刷新并移到今天'));
 
-// Modal shell derives a cumulative surface from the same 48% / 20% retained-stack backdrops.
-assert.ok(ui.includes('const MODAL_BACKDROP_ALPHA = 0.48'));
-assert.ok(ui.includes('const NESTED_MODAL_BACKDROP_ALPHA = 0.20'));
-assert.ok(ui.includes('function compositeShellSurface'));
-assert.ok(ui.includes('function syncSystemShellSurface'));
-assert.ok(ui.includes('syncSystemShellSurface()'));
-assert.ok(css.includes('--system-shell-surface'));
-assert.ok(css.includes('html.system-modal-surface .topbar'));
-assert.ok(css.includes('inset: var(--modal-backdrop-top'));
+// 4.1.0 dynamic shell tint experiment is retired: real backdrops own Web-layer dimming.
+assert.ok(!ui.includes('function compositeShellSurface'));
+assert.ok(!ui.includes('function syncSystemShellSurface'));
+assert.ok(!ui.includes('MODAL_BACKDROP_ALPHA'));
+assert.ok(css.includes('.modal-layer-backdrop { inset: 0 !important; }'));
+assert.ok(css.includes('.sheet-dialog::backdrop'));
+assert.ok(index.includes('theme-color" content="#fafafa'));
 
 // Bottom toolbar size remains accepted 58px, but layout code can measure it.
 assert.ok(css.includes('--bottom-toolbar-height: 58px'));

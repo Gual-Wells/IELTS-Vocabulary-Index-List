@@ -1,6 +1,6 @@
 # Vocabulary Index 4.0.x 数据格式
 
-> 4.1.0 runtime note：Schema 6 / DB 5 / Seed 4 / VIX 2 与 4.0.0 完全相同；本版只更新运行时/PWA identity/展示文案，内容格式无迁移。
+> 4.2.0 runtime note：Schema 6 / DB 5 / Seed 4 / VIX 2 与 4.0.0 完全相同；本版只更新运行时导航/Sticky/浮层/Home UI，内容格式无迁移。
 
 ## 1. 版本
 
@@ -95,7 +95,7 @@ Membership 记录 Entry 属于某普通 Collection 的事实：
 
 ## 8. Full Backup Schema 6
 
-完整备份包含 Domain、Collection、Entry、Membership、RelationComponent、PIN、Annotation、StudyStamp、Settings。API Key 继续留在浏览器本地存储，不写 Seed/VIX；旧世代 Full Backup 不可导入 4.1.0。
+完整备份包含 Domain、Collection、Entry、Membership、RelationComponent、PIN、Annotation、StudyStamp、Settings。API Key 继续留在浏览器本地存储，不写 Seed/VIX；旧世代 Full Backup 不可导入 4.2.0。
 
 ## 9. VIX JSON v2
 

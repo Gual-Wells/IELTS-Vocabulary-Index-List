@@ -17,13 +17,13 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 
-const APP_VERSION = '4.1.0';
+const APP_VERSION = '4.2.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
-  'boot-screen', 'app', 'back-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
+  'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
-  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'sticky-letter-heading', 'entry-list',
+  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog',
   'search-dialog', 'search-close', 'search-body',
@@ -66,6 +66,8 @@ let openModalCount = 0;
 let modalScrollY = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
+let navigationEpoch = 1;
+let pendingRootReset = false;
 let pendingPageSnapshot = null;
 let pageTransitionTimer = 0;
 let renderRevision = 0;
@@ -109,6 +111,7 @@ function button(text, className, handler, options = {}) {
 
 const ICONS = {
   back: '<path d="M14.8 5.4 8.2 12l6.6 6.6"></path>',
+  home: '<path d="m4.8 11.1 7.2-6.2 7.2 6.2"></path><path d="M6.7 10.2v8.7h10.6v-8.7M10 18.9v-5.2h4v5.2"></path>',
   search: '<circle cx="10.7" cy="10.7" r="6.2"></circle><path d="m15.4 15.4 4.4 4.4"></path>',
   target: '<circle cx="12" cy="12" r="6.4"></circle><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"></circle><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4"></path>',
   relation: '<path d="M8 7.2h8M8.2 16.8h7.6"></path><circle cx="6" cy="7.2" r="2"></circle><circle cx="18" cy="7.2" r="2"></circle><circle cx="6" cy="16.8" r="2"></circle><circle cx="18" cy="16.8" r="2"></circle>',
@@ -133,7 +136,7 @@ const ICONS = {
   groq: '<path d="M7.2 5.3h9.6M5.2 8.8h13.6v8.6H5.2z"></path><path d="M8.2 12h7.6M8.2 14.8h4.5"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<rect x="4.2" y="2.5" width="15.3" height="16.2" rx="1.25"></rect><path d="M8.1 7.8h7.7M4.9 21h14.8"></path>',
+  dictionary: '<path d="M6 5.2h11.2c.9 0 1.6.7 1.6 1.6v10.4H7.6c-.9 0-1.6-.7-1.6-1.6V5.2Z"></path><path d="M8.7 9h6.8M6 16.4h12.8M7.6 19h11.2"></path>',
   switchParallel: '<path d="M5 8h12.2M14.4 5.2 17.2 8l-2.8 2.8"></path><path d="M19 16H6.8M9.6 13.2 6.8 16l2.8 2.8"></path>',
   aiChat: '<path d="M5.2 5.3h13.6v10.6H11l-4.1 2.8v-2.8H5.2z"></path><path d="M8.2 9.1h7.6M8.2 12.1h5.1"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
@@ -288,7 +291,6 @@ function updateOverlayLayout() {
     const sealedBottom = Math.floor(bottom + .01);
     document.documentElement.style.setProperty('--sticky-base-top', `${sealedBaseBottom}px`);
     document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
-    document.documentElement.style.setProperty('--modal-backdrop-top', `${sealedBaseBottom}px`);
     document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
     document.documentElement.style.setProperty('--content-sticky-top', `${sealedBottom}px`);
     cachedChromeBottom = sealedBottom;
@@ -296,41 +298,6 @@ function updateOverlayLayout() {
     if (activeRelationTargetMenu) positionRelationTargetMenu();
     syncActiveAlphabetHeading();
   });
-}
-
-const BASE_THEME_COLOR = '#fafafa';
-const MODAL_BACKDROP_RGB = [28, 27, 25];
-const MODAL_BACKDROP_ALPHA = 0.48;
-const NESTED_MODAL_BACKDROP_ALPHA = 0.20;
-
-function activeShellBackdropAlphas() {
-  const alphas = [];
-  if (dialogStack.length) {
-    alphas.push(MODAL_BACKDROP_ALPHA);
-    for (let index = 1; index < dialogStack.length; index += 1) alphas.push(NESTED_MODAL_BACKDROP_ALPHA);
-  }
-  if (elements['search-dialog']?.open) alphas.push(MODAL_BACKDROP_ALPHA);
-  if (elements['confirm-dialog']?.open) alphas.push(MODAL_BACKDROP_ALPHA);
-  return alphas;
-}
-
-function compositeShellSurface(alphas = []) {
-  let rgb = [250, 250, 250];
-  for (const alpha of alphas) {
-    rgb = rgb.map((channel, channelIndex) => Math.round(channel * (1 - alpha) + MODAL_BACKDROP_RGB[channelIndex] * alpha));
-  }
-  return `#${rgb.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function syncSystemShellSurface() {
-  const alphas = activeShellBackdropAlphas();
-  const active = alphas.length > 0;
-  const surface = active ? compositeShellSurface(alphas) : BASE_THEME_COLOR;
-  const meta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="theme-color"]'));
-  if (meta) meta.content = surface;
-  document.documentElement.style.setProperty('--system-shell-surface', surface);
-  document.documentElement.dataset.modalDepth = String(alphas.length);
-  document.documentElement.classList.toggle('system-modal-surface', active);
 }
 
 function lockPageForModal() {
@@ -355,12 +322,10 @@ function showModalStable(dialog) {
   // reserved for real keyboard/viewport changes.
   updateVisualViewportVars({ immediate: true });
   dialog.showModal();
-  syncSystemShellSurface();
 }
 
 function unlockPageForModal() {
   openModalCount = Math.max(0, openModalCount - 1);
-  syncSystemShellSurface();
   if (openModalCount) return;
   const body = document.body;
   document.documentElement.classList.remove('modal-open');
@@ -484,8 +449,7 @@ function closeDialog({ all = false } = {}) {
   frame.layer.remove();
   const parent = dialogStack.at(-1);
   if (parent) {
-    syncSystemShellSurface();
-    parent.layer.inert = false;
+      parent.layer.inert = false;
     parent.layer.removeAttribute('aria-hidden');
     parent.onRestore?.();
     requestAnimationFrame(() => {
@@ -520,7 +484,6 @@ function openDialog({
   }
   const frame = createAppDialogFrame({ title, description, body, submitText, cancelText, destructive, onSubmit, showCancel, onRestore, variant, kind });
   dialogStack.push(frame);
-  syncSystemShellSurface();
   host.append(frame.layer);
   revealAppDialogFrame(frame);
   return frame;
@@ -626,7 +589,7 @@ function currentSnapshot() {
 
 function persistCurrentHistorySnapshot() {
   const snapshot = currentSnapshot();
-  const state = { ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: snapshot };
+  const state = { ...(history.state || {}), vix: true, depth: appNavigationDepth, epoch: navigationEpoch, pageSnapshot: snapshot };
   history.replaceState(state, '', location.href);
 }
 
@@ -710,7 +673,7 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   prepareTargetExpansion(collection, entry, nextView, reason);
   const depth = appNavigationDepth + 1;
   const hash = collectionRoute(collectionId, entryId, collection.type === 'normal' ? nextView : '');
-  history.pushState({ vix: true, depth }, '', hash);
+  history.pushState({ vix: true, depth, epoch: navigationEpoch }, '', hash);
   appNavigationDepth = depth;
   currentCollectionId = collectionId;
   currentViewKind = nextView;
@@ -737,11 +700,62 @@ function goHome() {
   currentCollectionId = '';
   currentViewKind = 'word';
   appNavigationDepth = 0;
-  history.replaceState({ vix: true, depth: 0, pageSnapshot: { type: 'home', scrollY: homeScrollY } }, '', location.pathname + location.search);
+  history.replaceState({ vix: true, depth: 0, epoch: navigationEpoch, pageSnapshot: { type: 'home', scrollY: homeScrollY } }, '', location.pathname + location.search);
   renderApp();
 }
 
+function finalizeNavigationResetToHome() {
+  pendingRootReset = false;
+  homeGlobalMode = 'structured';
+  homeScrollY = 0;
+  restoreHomeScrollPending = false;
+  closeReview();
+  closeQueryMenu();
+  closeRelationTargetMenu();
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'home';
+  pendingPageSnapshot = null;
+  persistentJumpEntryId = '';
+  expandedRelations.clear();
+  expandedLettersByCollection.clear();
+  currentCollectionId = '';
+  currentViewKind = 'word';
+  activeSection = 'main';
+  appNavigationDepth = 0;
+  history.replaceState({
+    vix: true, depth: 0, epoch: navigationEpoch,
+    pageSnapshot: { type: 'home', scrollY: 0 },
+  }, '', location.pathname + location.search);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+  renderApp();
+}
+
+function resetNavigationToHome() {
+  persistCurrentHistorySnapshot();
+  navigationEpoch += 1;
+  try { sessionStorage.setItem('vocabulary-index:navigation-epoch', String(navigationEpoch)); } catch {}
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'home';
+  pendingPageSnapshot = null;
+  persistentJumpEntryId = '';
+  if (appNavigationDepth > 0) {
+    pendingRootReset = true;
+    history.go(-appNavigationDepth);
+    return;
+  }
+  finalizeNavigationResetToHome();
+}
+
 async function handleHistoryNavigation(event) {
+  if (pendingRootReset) {
+    finalizeNavigationResetToHome();
+    return;
+  }
+  const eventEpoch = Number(event.state?.epoch || 0);
+  if (event.state?.vix && eventEpoch !== navigationEpoch) {
+    finalizeNavigationResetToHome();
+    return;
+  }
   appNavigationDepth = Number(event.state?.depth || 0);
   pendingPageSnapshot = event.state?.pageSnapshot || null;
   const snapshot = pendingPageSnapshot;
@@ -1387,16 +1401,18 @@ function renderHome(token = renderRevision) {
   const state = getState();
   currentCollectionId = '';
   elements.app.classList.remove('is-collection', 'has-pin', 'has-review');
+  elements.app.classList.add('is-home');
   elements['collection-view'].classList.remove('system-collection-view', 'global-system-view', 'domain-system-view', 'has-letter-nav');
   elements['home-view'].classList.remove('hidden');
   elements['collection-view'].classList.add('hidden');
   elements['back-button'].classList.add('hidden');
+  elements['home-button'].classList.add('hidden');
   elements['search-button'].classList.remove('hidden');
   elements['bottom-toolbar'].classList.add('hidden');
   elements['pin-bar'].classList.add('hidden');
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = 'Vocabulary Index';
-  elements['page-subtitle'].textContent = '4.1.0';
+  elements['page-subtitle'].textContent = '4.2.0';
   renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
@@ -1470,9 +1486,11 @@ function renderCollection(token = renderRevision) {
   elements['collection-view'].classList.toggle('domain-system-view', domainSystemView);
   elements['collection-view'].dataset.viewKind = currentViewKind;
   elements.app.classList.add('is-collection');
+  elements.app.classList.remove('is-home');
   elements['home-view'].classList.add('hidden');
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
+  elements['home-button'].classList.toggle('hidden', appNavigationDepth < 2);
   elements['home-annotation-banner'].classList.add('hidden');
   elements['search-button'].classList.add('hidden');
   elements['bottom-toolbar'].classList.remove('hidden');
@@ -1951,8 +1969,7 @@ function populateNavigationBar(nav, controls) {
     trackState.manualLocked = true;
     trackState.manualLockScrollY = window.scrollY;
     trackState.manualLockLetter = track.querySelector('[data-letter].active')?.dataset.letter || '';
-    const stickyHost = elements['sticky-letter-heading'];
-    trackState.manualLockStickyEngaged = Boolean(stickyHost && !stickyHost.classList.contains('hidden'));
+    trackState.manualLockStickyEngaged = alphabetNavAttached();
   };
   track.addEventListener('pointerdown', () => {
     trackState.pointerActive = true;
@@ -2221,8 +2238,6 @@ function renderDateContent(context, sectionContext) {
 function renderEntryList(collection, domain, entries, section = currentViewKind) {
   resetEntryChunking();
   alphabetSectionMetrics = [];
-  elements['sticky-letter-heading']?.classList.add('hidden');
-  elements['sticky-letter-heading']?.replaceChildren();
   collectionRenderContext = null;
   const mode = getViewMode(collection.id, section);
   const sections = new Map();
@@ -2241,8 +2256,6 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   } else {
     elements['letter-nav'].classList.add('hidden');
     elements['letter-nav'].replaceChildren();
-    elements['sticky-letter-heading']?.classList.add('hidden');
-    elements['sticky-letter-heading']?.replaceChildren();
   }
 
   const output = [];
@@ -2477,7 +2490,6 @@ function refreshAlphabetSectionMetrics() {
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet') {
     alphabetSectionMetrics = [];
-    elements['sticky-letter-heading']?.classList.add('hidden');
     return;
   }
   const scrollY = window.scrollY;
@@ -2497,32 +2509,6 @@ function refreshAlphabetSectionMetrics() {
   syncActiveAlphabetHeading();
 }
 
-function renderStickyAlphabetHeading(metric, engaged) {
-  const host = elements['sticky-letter-heading'];
-  if (!host) return;
-  if (!engaged || !metric?.heading?.isConnected) {
-    host.classList.add('hidden');
-    host.replaceChildren();
-    host.setAttribute('aria-hidden', 'true');
-    return;
-  }
-  const expanded = metric.heading.getAttribute('aria-expanded') === 'true';
-  const count = metric.heading.querySelector('.letter-count')?.textContent || '';
-  const buttonNode = button('', 'sticky-letter-heading-button', () => {
-    const liveHeading = metric.node.querySelector('.letter-heading');
-    if (liveHeading) toggleLetterSectionWithAnchor(metric.section, metric.letter, liveHeading);
-  });
-  buttonNode.setAttribute('aria-label', `${metric.letter}，${count} 项${expanded ? '，已展开' : '，已收起'}`);
-  buttonNode.append(
-    el('span', { className: 'letter-title', text: metric.letter }),
-    el('span', { className: 'letter-count', text: count }),
-    el('span', { className: `letter-indicator${expanded ? ' open' : ''}` }, [svgIcon('chevron')]),
-  );
-  host.replaceChildren(buttonNode);
-  host.classList.remove('hidden');
-  host.setAttribute('aria-hidden', 'false');
-}
-
 function syncActiveAlphabetHeading() {
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet' || !alphabetSectionMetrics.length) return;
@@ -2540,7 +2526,6 @@ function syncActiveAlphabetHeading() {
   const active = alphabetSectionMetrics[Math.max(0, activeIndex)];
   if (!active) return;
   const stickyEngaged = navAttached && activeIndex >= 0;
-  renderStickyAlphabetHeading(active, stickyEngaged);
   activeSection = active.section;
   const track = elements['letter-nav'].querySelector('.letter-nav-track');
   const state = track ? letterTrackState(track) : null;
@@ -3027,7 +3012,7 @@ function positionQueryMenu() {
   const bounds = readingViewportBounds();
   const viewportBottom = bounds.bottom;
   const chromeBottom = bounds.top;
-  const gap = 9;
+  const gap = 13;
   let top = sourceRect.top - menuRect.height - gap;
   let below = false;
   if (top < chromeBottom + 8) {
@@ -3035,9 +3020,11 @@ function positionQueryMenu() {
     below = true;
   }
   top = Math.max(chromeBottom + 8, Math.min(top, viewportBottom - menuRect.height - 8));
-  const cssInset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--query-menu-edge-inset')) || 22;
-  const sideInset = Math.max(18, cssInset);
-  const idealLeft = sourceRect.left + sourceRect.width / 2 - menuRect.width / 2 - 16;
+  const cssInset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--query-menu-edge-inset')) || 12;
+  const sideInset = Math.max(10, cssInset);
+  // Match the proven relation-target popover language: hang the menu from the
+  // source action's right edge, then nudge it slightly farther left.
+  const idealLeft = sourceRect.right - menuRect.width - 10;
   const left = Math.min(
     Math.max(viewportLeft + sideInset, idealLeft),
     viewportRight - menuRect.width - sideInset,
@@ -4261,6 +4248,7 @@ function handleWindowScroll() {
 
 export async function initializeUI() {
   elements['back-button']?.replaceChildren(svgIcon('back'));
+  elements['home-button']?.replaceChildren(svgIcon('home'));
   elements['search-button']?.replaceChildren(svgIcon('search'));
   elements['back-to-top']?.replaceChildren(svgIcon('top'));
   elements['search-close']?.replaceChildren(svgIcon('close'));
@@ -4273,6 +4261,7 @@ export async function initializeUI() {
   elements['search-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeSearchDialog(); });
   elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
   elements['back-button'].addEventListener('click', navigateBack);
+  elements['home-button'].addEventListener('click', resetNavigationToHome);
   elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', () => {
@@ -4336,9 +4325,13 @@ export async function initializeUI() {
   if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
   subscribe(handleStoreEvent);
   await initializeStore();
-  const initialDepth = Number(history.state?.depth || 0);
+  const storedEpoch = (() => { try { return Number(sessionStorage.getItem('vocabulary-index:navigation-epoch') || 0); } catch { return 0; } })();
+  const stateEpoch = Number(history.state?.epoch || 0);
+  navigationEpoch = Math.max(1, storedEpoch, stateEpoch);
+  try { sessionStorage.setItem('vocabulary-index:navigation-epoch', String(navigationEpoch)); } catch {}
+  const initialDepth = stateEpoch && stateEpoch !== navigationEpoch ? 0 : Number(history.state?.depth || 0);
   appNavigationDepth = Number.isFinite(initialDepth) ? initialDepth : 0;
-  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: history.state?.pageSnapshot || null }, '', location.href);
+  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, epoch: navigationEpoch, pageSnapshot: stateEpoch && stateEpoch !== navigationEpoch ? null : (history.state?.pageSnapshot || null) }, '', location.href);
   updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');

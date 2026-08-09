@@ -1,0 +1,112 @@
+/* Vocabulary Index 4.2.0 native-sticky/navigation convergence layer.
+   No data/schema/seed/relation semantics change. */
+
+:root {
+  --query-menu-edge-inset: 12px;
+}
+
+/* Topbar navigation is an application-level cluster. The centered product/page
+   title remains physically centered because both side columns reserve the same
+   width even when Home is hidden at shallow depth. */
+.topbar {
+  grid-template-columns: 96px minmax(0, 1fr) 96px !important;
+  grid-template-areas: "navigation title actions" !important;
+}
+.topbar .brand-block {
+  width: min(calc(100vw - 200px), 300px) !important;
+}
+.topbar-navigation {
+  grid-area: navigation;
+  justify-self: start;
+  align-self: center;
+  width: 96px;
+  min-width: 96px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.topbar-navigation .icon-button { flex: 0 0 44px; }
+.topbar .topbar-actions {
+  min-width: 96px;
+  justify-content: flex-end;
+}
+@media (max-width: 390px) {
+  .topbar { grid-template-columns: 92px minmax(0, 1fr) 92px !important; }
+  .topbar-navigation, .topbar .topbar-actions { width: 92px; min-width: 92px; }
+}
+
+/* Home product wordmark: related to the editorial/index character of the app,
+   but intentionally distinct from the green uppercase hero eyebrow. */
+.app.is-home #page-title {
+  font-family: ui-serif, "New York", Georgia, serif;
+  font-size: 19px !important;
+  line-height: 1.05 !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.018em !important;
+}
+
+/* Global scope is no longer a partially dismantled legacy box. It uses the same
+   heading scale as a Domain, plus a light index-rule connecting the scope name
+   to its actions. */
+.global-scope {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.global-scope .scope-heading {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+.global-scope .scope-heading h3 {
+  flex: 0 0 auto;
+  font-size: 15px !important;
+  font-weight: 740 !important;
+  letter-spacing: .02em !important;
+}
+.global-scope .scope-heading::after {
+  content: "";
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 16px;
+  height: 1px;
+  background: color-mix(in srgb, var(--line-strong) 58%, transparent);
+}
+.global-scope .scope-actions { order: 2; flex: 0 0 auto; }
+
+/* Restore the browser's native sticky contract for alphabet headings. The real
+   heading remains inside its letter-section, so collapsed sections naturally
+   have no sustained sticky interval and expanded sections naturally push off at
+   their containing-block bottom, matching date mode. */
+.letter-heading {
+  position: sticky !important;
+  top: var(--content-sticky-top) !important;
+  z-index: 38 !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  border: 0 !important;
+  border-top: 1px solid var(--line-strong) !important;
+  border-bottom: 1px solid var(--line-strong) !important;
+  border-radius: 0 !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+/* The parent section owns the side rails; do not strip the heading top border
+   merely because the alphabet bar exists. */
+.collection-view.has-letter-nav .letter-heading { border-top: 0 !important; }
+
+/* 4.1.0 shell tint experiment is retired. Real backdrops darken every DOM-
+   reachable surface, including Topbar; each child modal adds only its own
+   backdrop while its card remains independently surfaced. */
+.modal-layer-backdrop { inset: 0 !important; }
+.sheet-dialog::backdrop,
+.confirm-dialog::backdrop {
+  background: rgb(28 27 25 / 48%) !important;
+}
+
+/* Query chooser follows the relation-target popover's hanging geometry. Its
+   vertical gap keeps the floating card and the entry frame visually distinct. */
+.query-menu {
+  max-width: calc(100vw - (2 * var(--query-menu-edge-inset))) !important;
+}

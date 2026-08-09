@@ -14,7 +14,7 @@ const criticalFunctions = [
   'switchCollectionMode', 'bindBrowseAnchorButton', 'calendarForSection', 'topChromeBottom',
   'relationNavigationMode', 'normalDestinationsForEntries', 'openSearchDialog', 'startProviderQuery',
   'providerQueryIsCurrent', 'beginLongpressGuard', 'endLongpressGuardWithGrace', 'alphabetNavAttached',
-  'compositeShellSurface', 'syncSystemShellSurface',
+  'resetNavigationToHome', 'finalizeNavigationResetToHome',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\bfunction\\s+${name}\\s*\\(`, 'g'))];
@@ -51,19 +51,19 @@ assert.ok(ui.includes('sealedBottom'));
 assert.ok(ui.includes('return baseBottom + navHeight'));
 assert.ok(!ui.includes('Math.max(bottom, viewportTop + 72)'));
 assert.ok(ui.includes('const stickyEngaged = navAttached && activeIndex >= 0'));
-assert.ok(ui.includes("setProperty('--modal-backdrop-top'"));
 assert.ok(!ui.includes("setProperty('--content-sticky-top', '52px')"));
-assert.ok(ui.includes("const stickyHost = elements['sticky-letter-heading']"));
-assert.ok(ui.includes("trackState.manualLockStickyEngaged = Boolean(stickyHost && !stickyHost.classList.contains('hidden'))"));
+assert.ok(!ui.includes("elements['sticky-letter-heading']"));
+assert.ok(ui.includes('trackState.manualLockStickyEngaged = alphabetNavAttached()'));
 assert.ok(ui.includes('if (state && !state.manualLocked) state.manualLockStickyEngaged = stickyEngaged'));
 assert.ok(!ui.includes("querySelector('.letter-heading.active-sticky')"));
 
 assert.ok(ui.includes("const preserveDateViewport = mode === 'date'"));
 assert.ok(ui.includes('preservedScrollY'));
 assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
-assert.ok(ui.includes('syncSystemShellSurface()'));
-assert.ok(ui.includes('const MODAL_BACKDROP_ALPHA = 0.48'));
-assert.ok(ui.includes('const NESTED_MODAL_BACKDROP_ALPHA = 0.20'));
+assert.ok(!ui.includes('syncSystemShellSurface'));
+assert.ok(!ui.includes('MODAL_BACKDROP_ALPHA'));
+assert.ok(ui.includes('resetNavigationToHome'));
+assert.ok(ui.includes('navigationEpoch'));
 assert.ok(ui.includes('switchParallel:'));
 assert.ok(ui.includes("[toggleGlobal, ...homeActions]"));
 

@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.1.0（2026-08-08）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.2.0（2026-08-09）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.1.0 完整源码实际行为。
+- **[当前实现]**：4.2.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -107,7 +107,7 @@ Schema6 / DB5 / Seed4 / VIX2、优先级占有、搜索/关系、四态导航和
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider 语义均不变。
 
-## 4.1.0：[当前实现]
+## 4.1.0：[历史稳定基线]
 
 4.1.0 汇总 4.0.2 后连续 iPhone 真机反馈与本轮视觉/PWA shell 决策，不改变内容世代：
 
@@ -121,6 +121,24 @@ Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provid
 - 全局 content virtual projection 的显示名从“全局非结构内容”改为“全局非结构总表”，稳定 ID 不变；
 - System Shell Surface Controller 取代 boolean `#8f8f8e`：按 retained modal depth 用 48% 第一层 + 20% 后续层逐层 alpha compositing，同步 theme-color/root/fixed topbar；custom backdrop 从 topbar 实测底边以下开始，避免 topbar 二次蒙版；
 - WebKit 调研确认 Safari 26 会参考 viewport-edge fixed/sticky opaque surface 做顶栏颜色延伸；同时 iOS 26.5.2 仍有 Home Screen standalone viewport 外 system strip 的公开复现，因此本版对可控信号做完整同步，最终系统 strip 仍以真机为准。
+
+Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
+
+## 4.2.0：[当前实现]
+
+4.2.0 是 4.1.0 真机暴露的 Sticky mirror/系统壳实验问题与后续导航/首页视觉讨论的统一收口，不改变 4.0 内容世代：
+
+- Alphabet Sticky 放弃独立 mirror，真实 `.letter-heading` 恢复 native `position:sticky`；浏览器重新承担 containing-block 限制、collapsed 自然退出、section-bottom push-off/退场和真实 heading 点击锚点。
+- 4.1.0 的 `alphabetSectionMetrics + ResizeObserver + 二分查找` 保留，但只负责字母栏 active/横向轨道，不再模拟视觉 Sticky；覆盖 global/domain/normal 与 word/phrase/content。
+- 点吸顶字母 heading 收起时继续走与日期模式同一 `toggle*WithAnchor + overflow-anchor` 补偿，因此收起后的真实 heading 留在字母栏正下方，不再跳到其他字母。
+- Query chooser 改用 relation multi-target 风格的右缘挂接并再左退 10px，viewport inset 12px；上方弹出与 Entry 框线 gap 13px，不再故意探出列表边框，也不让底层框线穿过浮层。
+- Oxford 放弃旧参考图几何忠实，保留“合上的书”语义并按 Collins/Groq/ChatGPT 的 optical box 重新设计紧凑 outline。
+- 4.1.0 System Shell Surface Controller 判定失败并撤销：不再动态染 theme-color/root/topbar；custom/native backdrop 恢复 full Web viewport，正文/Topbar/父 modal 的变暗完全由真实 48%/20% alpha compositing 产生。iOS viewport 外 system strip 维持静态平台边界。
+- Home topbar `Vocabulary Index` 改为独立 serif Product Wordmark，不复用 hero eyebrow；Hero 大字“词汇索引”保持。
+- `全局` heading 恢复和 Domain 一样的 15px/740；3.x 遗留淡完整矩形框退出，改成标题—hairline—动作的轻量 Index Rule。
+- 首页 parallel switch 继续在“管理”左侧；PWA 安装名 `Vocabulary Index`、`全局非结构总表`、字母 cell border、Entry secondary gap、日期 StudyStamp 原位刷新全部保留。
+- 新增 Root Home：递归深度 >=2 时在 Back 右侧出现 Home；一次 `history.go(-depth)` 回根，并以 `navigationEpoch` 失效全部旧 VIX pageSnapshot/forward history 语义。只清 Navigation History/临时展开状态，不清数据 Undo/Redo、PIN、StudyStamp、Annotation、设置或浏览锚点。
+- Topbar 左/右各预留 96px 导航/动作宽度，中央标题继续物理居中；Back aria-label 明确为“返回上一页”。
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
 
@@ -175,21 +193,18 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.1.0 当前待真机事项
+# 八、4.2.0 当前待真机事项
 
-- retained modal stack 在 iPhone 17 standalone 父层不消失、四角完整、无首帧闪现；
-- alphabet/date Top Chrome 无漏内容带；global/domain/normal、word/phrase/content Sticky 正确；
-- 字母栏 top/A-left/分隔线完整，disabled `#` 不灰结构线；
-- 日期刷新学习日期后保持原视口，无目标跳转、闪动或二次滚动；
-- Query chooser 右侧有稳定呼吸空间，Oxford 参考图重绘通过；一级 row secondary gap 通过；
-- Home switch 图标左/管理右，Home 大字“词汇索引”、topbar/PWA 名称 `Vocabulary Index`；
-- retained modal depth 1/2 时 fixed topbar/system shell 与实际 48%/20% 蒙版逐层一致；iOS 26.5.2 若仍有 viewport 外 system strip 不响应动态 tint，记录平台限制；
-- 长按成功/失败/取消后无系统 Selection/callout/click 泄漏；
-- Home Indicator、系统返回手势；
-- Oxford/ChatGPT Shortcuts 外跳返回；
-- Collins API Key + standalone CORS；
-- Service Worker 更新、V icon 缓存、离线与进程回收。
+- Alphabet native sticky：展开组吸附、collapsed 不持续、section-bottom push-off、下一组接管；global/domain/normal + word/phrase/content 全覆盖。
+- 点击吸顶字母 heading 收起：真实标题留在字母栏正下方，无闪跳、无 max-scroll clamp。
+- 字母栏 cell top/A-left/分隔线与 disabled `#` 结构线继续正确。
+- Query chooser：relation-style 横向位置、再左退幅度、13px 垂直呼吸缝；Oxford 新 optical size 与另外三枚一致。
+- Home Root：depth1 仅 Back，depth>=2 Back+Home；Home 一次回首页顶部，旧递归 snapshot/forward 不复活，业务数据与 Undo/Redo 不受影响。
+- Home Product Wordmark、Global Index Rule、“全局”与 Domain 同级字号在 402px iPhone 上视觉成立且不挤 Topbar。
+- retained modal depth 1/2：Topbar/正文/父 modal 由真实 backdrop 自然逐层变暗；当前最上层 card 正常显色；iOS system strip 若仍白记录平台边界。
+- 日期 StudyStamp 原位刷新、Entry secondary gap、PWA 主屏幕名 `Vocabulary Index`、全局非结构总表文案继续回归。
+- 长按、Home Indicator、系统返回手势、Shortcuts、Collins CORS、Service Worker/离线/进程回收继续真机验收。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.1.0.md`、`SEMANTIC_IMPACT_MATRIX_4.1.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.1.0.md`、`PRODUCT_MANUAL_4.1.0.md`、`AUDIT_REPORT_4.1.0.md`、`CHANGE_REPORT_4.1.0.md` 与 `TEST_REPORT_4.1.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.2.0.md`、`SEMANTIC_IMPACT_MATRIX_4.2.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.2.0.md`、`PRODUCT_MANUAL_4.2.0.md`、`AUDIT_REPORT_4.2.0.md`、`CHANGE_REPORT_4.2.0.md` 与 `TEST_REPORT_4.2.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

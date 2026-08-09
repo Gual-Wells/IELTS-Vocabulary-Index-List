@@ -8,10 +8,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Vocabulary Index">
-  <meta name="application-version" content="4.1.0">
+  <meta name="application-version" content="4.2.0">
   <meta name="description" content="本地优先、按词域组织的英语词汇、短语与非结构内容索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.groq.com https://api.collinsdictionary.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Vocabulary Index 4.1.0</title>
+  <title>Vocabulary Index 4.2.0</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/vix-icon-180-v4.png">
   <link rel="icon" href="./assets/icons/vix-icon-192-v4.png" sizes="192x192">
@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="./css/v4.0.1.css">
   <link rel="stylesheet" href="./css/v4.0.2.css">
   <link rel="stylesheet" href="./css/v4.1.0.css">
+  <link rel="stylesheet" href="./css/v4.2.0.css">
 </head>
 <body>
   <noscript>此工具需要 JavaScript 才能运行。</noscript>
@@ -34,10 +35,13 @@
 
   <div id="app" class="app hidden">
     <header class="topbar">
-      <button id="back-button" class="icon-button hidden" type="button" aria-label="返回首页"></button>
+      <div class="topbar-navigation" aria-label="页面导航">
+        <button id="back-button" class="icon-button hidden" type="button" aria-label="返回上一页"></button>
+        <button id="home-button" class="icon-button hidden" type="button" aria-label="返回首页并清空页面历史"></button>
+      </div>
       <div class="brand-block">
         <h1 id="page-title">Vocabulary Index</h1>
-        <p id="page-subtitle">4.1.0</p>
+        <p id="page-subtitle">4.2.0</p>
       </div>
       <div class="topbar-actions">
         <button id="search-button" class="icon-button" type="button" aria-label="搜索"></button>
@@ -71,7 +75,6 @@
         <section id="pin-bar" class="context-bar pin-bar hidden" aria-label="PIN 导航"></section>
         <section id="annotation-review-bar" class="context-bar review-bar hidden" aria-live="polite"></section>
         <nav id="letter-nav" class="letter-nav hidden" aria-label="字母索引"></nav>
-        <div id="sticky-letter-heading" class="sticky-letter-heading hidden" aria-hidden="true"></div>
         <div id="entry-list" class="entry-list"></div>
       </section>
     </main>

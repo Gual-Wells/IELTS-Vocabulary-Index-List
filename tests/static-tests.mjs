@@ -7,31 +7,33 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
 const store = read('js/v3-store.js');
 const exchange = read('js/v3-exchange.js');
 const integrations = read('js/v3-integrations.js');
+const upgrade = read('js/v3-upgrade.js');
 const sw = read('sw.js');
 const manifest = JSON.parse(read('manifest.webmanifest'));
 const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.2.0');
-assert.ok(index.includes('Vocabulary Index 4.2.0'));
+assert.equal(pkg.version, '4.3.0');
+assert.ok(index.includes('Vocabulary Index 4.3.0'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
 assert.ok(index.includes('css/v4.2.0.css'));
+assert.ok(index.includes('css/v4.3.0.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.2.0-native-sticky-navigation'));
+assert.ok(sw.includes('v4.3.0-runtime-convergence'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
@@ -60,7 +62,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -103,7 +105,7 @@ assert.ok(model.includes("left.kind === 'word' && lowLevelLexemes.has(left.norma
 
 // Fresh Home navigation is not a hidden page-state restore.
 assert.ok(ui.includes("pendingJumpReason = 'home'"));
-assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet', nextView)"));
+assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet')"));
 assert.ok(ui.includes("homeGlobalMode = 'structured'"));
 assert.ok(ui.includes('global-mode-toggle'));
 assert.ok(ui.includes('switchParallel:'));
@@ -138,19 +140,29 @@ assert.ok(integrations.includes('export const ENTRY_CONTEXT_VERSION = 2'));
 assert.ok(integrations.includes('const MAX_CONTEXT_RELATIONS = 16'));
 for (const excluded of ['PIN', '学习日期', 'AI 标注', '全量 Membership', '原始关系组件']) assert.ok(integrations.includes(excluded));
 
-// Application dialogs use a retained custom modal stack; native action/search/confirm remain top-layer utilities.
+// Blocking surfaces converge on one retained custom modal lifecycle.
 assert.ok(index.includes('id="app-dialog" class="modal-host hidden"'));
+assert.ok(!index.includes('id="search-dialog"'));
+assert.ok(!index.includes('id="confirm-dialog"'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('.modal-layer-backdrop'));
 assert.ok(css.includes('.modal-card-management'));
-assert.ok(css.includes('.modal-card-pending'));
+assert.ok(css.includes('.modal-card-search'));
+assert.ok(css.includes('.modal-card-confirm'));
+assert.ok(css.includes('.modal-layer-entering'));
+assert.ok(css.includes('.modal-layer-closing'));
 assert.ok(ui.includes('createAppDialogFrame'));
 assert.ok(ui.includes('parent.layer.inert = true'));
 assert.ok(ui.includes('parent.onRestore?.()'));
+assert.ok(ui.includes("variant: 'search'"));
+assert.ok(ui.includes("variant: 'confirm', kind: 'confirm'"));
+assert.ok(!ui.includes('showModalStable'));
+assert.ok(!ui.includes('.showModal('));
+assert.ok(!ui.includes("body.style.position = 'fixed'"));
+assert.ok(!ui.includes("body.style.top ="));
+assert.ok(!ui.includes('modal-card-pending'));
 assert.ok(!ui.includes('snapshotAppDialog'));
 assert.ok(!ui.includes('restoreAppDialog'));
-assert.ok(css.includes('.sheet-dialog::backdrop'));
-assert.ok(css.includes('.confirm-dialog::backdrop'));
 
 // Alphabet headings are native sticky again; JS metrics only synchronize the alphabet bar.
 assert.ok(!index.includes('sticky-letter-heading'));
@@ -174,12 +186,24 @@ assert.ok(css.includes('.letter-nav-track button.empty'));
 assert.ok(css.includes('opacity: 1 !important'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
-// Root navigation is distinct from recursive Back and invalidates old page snapshots.
+// Navigation is a one-way VIX-owned destructive stack; browser history is only the gesture rail.
 assert.ok(index.includes('id="home-button"'));
+assert.ok(index.includes('id="navigation-underlay"'));
+assert.ok(index.includes('id="navigation-guard-feedback"'));
+assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v1'"));
+assert.ok(upgrade.includes("history.scrollRestoration = 'manual'"));
+assert.ok(ui.includes('navigationStack'));
+assert.ok(ui.includes('discardNavigationFramesFrom'));
+assert.ok(ui.includes('discardedNavigationTokens'));
+assert.ok(ui.includes('discardedForwardAvailable'));
 assert.ok(ui.includes('resetNavigationToHome'));
 assert.ok(ui.includes('finalizeNavigationResetToHome'));
-assert.ok(ui.includes('navigationEpoch'));
-assert.ok(ui.includes("history.go(-appNavigationDepth)"));
+assert.ok(ui.includes('enterHomeRoot'));
+assert.ok(ui.includes('if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0))'));
+assert.ok(ui.includes('const forwardIsForbidden = isForward'));
+assert.ok(ui.includes("event.preventDefault()"));
+assert.ok(ui.includes("{ passive: false, capture: true }"));
+assert.ok(!ui.includes('pageSnapshot'));
 assert.ok(ui.includes('expandedLettersByCollection.clear()'));
 assert.ok(ui.includes('expandedRelations.clear()'));
 assert.ok(ui.includes("elements['home-button'].classList.toggle('hidden', appNavigationDepth < 2)"));
@@ -197,7 +221,7 @@ assert.ok(!ui.includes('function compositeShellSurface'));
 assert.ok(!ui.includes('function syncSystemShellSurface'));
 assert.ok(!ui.includes('MODAL_BACKDROP_ALPHA'));
 assert.ok(css.includes('.modal-layer-backdrop { inset: 0 !important; }'));
-assert.ok(css.includes('.sheet-dialog::backdrop'));
+assert.ok(css.includes('.modal-layer-backdrop { inset: 0 !important; }'));
 assert.ok(index.includes('theme-color" content="#fafafa'));
 
 // Bottom toolbar size remains accepted 58px, but layout code can measure it.
@@ -240,6 +264,26 @@ assert.ok(ui.includes("className: 'vix-checkbox'"));
 assert.ok(css.includes('.vix-checkbox:checked'));
 assert.ok(!ui.includes('仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制'));
 assert.ok(!ui.includes('默认开启。只逻辑隐藏代词'));
+
+// 4.3.0 collection mode ownership and collapse/presentation transactions.
+assert.ok(store.includes('export function getViewMode(collectionId)'));
+assert.ok(store.includes('export async function setViewMode(collectionId, mode)'));
+assert.ok(!store.includes('getViewMode(collectionId, section'));
+assert.ok(ui.includes('function collapseNativeStickySection'));
+assert.ok(!ui.includes('compensateCollapsedSection'));
+assert.ok(ui.includes('collapse();'));
+assert.ok(ui.includes("window.scrollTo({ top: targetScrollY, behavior: 'auto' })"));
+assert.ok(css.includes('.navigation-underlay'));
+assert.ok(css.includes('.navigation-guard-feedback'));
+assert.ok(css.includes('.pin-bar.dock-visible'));
+assert.ok(css.includes('.review-bar.dock-visible'));
+assert.ok(css.includes('@keyframes vix-popover-in'));
+assert.ok(css.includes('@keyframes vix-popover-out'));
+const pinToggleStart = ui.indexOf('async function toggleEntryPin');
+const pinToggleEnd = ui.indexOf('\nfunction ', pinToggleStart + 1);
+const pinToggleSource = ui.slice(pinToggleStart, pinToggleEnd > pinToggleStart ? pinToggleEnd : undefined);
+assert.ok(pinToggleStart >= 0);
+assert.ok(!pinToggleSource.includes('replaceWith('), 'PIN 状态切换不得重建整个 Entry row');
 
 // Product package sources must not contain NUL bytes.
 for (const dir of ['js', 'css', 'data', 'tests', 'tools']) {

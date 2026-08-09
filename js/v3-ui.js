@@ -17,7 +17,7 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 
-const APP_VERSION = '4.2.0';
+const APP_VERSION = '4.3.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -25,9 +25,7 @@ const elements = Object.fromEntries([
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
-  'app-dialog',
-  'search-dialog', 'search-close', 'search-body',
-  'confirm-dialog', 'confirm-form', 'confirm-title', 'confirm-description', 'confirm-body', 'confirm-cancel', 'confirm-submit',
+  'app-dialog', 'navigation-underlay', 'navigation-guard-feedback',
   'hidden-file-input',
 ].map((id) => [id, document.getElementById(id)]));
 
@@ -45,9 +43,8 @@ let pinIndex = 0;
 let pinCollectionId = '';
 let activeTask = null;
 let review = { ids: [], index: 0, collectionId: '', viewKind: '' };
-let confirmSubmitHandler = null;
-let confirmCancelHandler = null;
-let confirmChoiceRequired = false;
+let activeSearchFrame = null;
+let activeConfirmFrame = null;
 let collectionRenderContext = null;
 let scrollPersistenceTimer = 0;
 let suppressScrollPersistenceUntil = 0;
@@ -58,16 +55,24 @@ let activeSection = 'main';
 let navigationRevision = 0;
 const expandedRelations = new Set();
 const dialogStack = [];
+const dockHideTimers = new WeakMap();
+const popoverHideTimers = new WeakMap();
 let alphabetSectionMetrics = [];
 let alphabetMetricsRevision = 0;
 let alphabetResizeObserver = null;
 let cachedChromeBottom = 0;
 let openModalCount = 0;
-let modalScrollY = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
 let navigationEpoch = 1;
 let pendingRootReset = false;
+const NAVIGATION_MODEL = 'destructive-v1';
+const NAVIGATION_SESSION_KEY = 'vocabulary-index:navigation-stack:4.3.0';
+const navigationStack = [];
+const discardedNavigationTokens = new Set();
+let navigationRootToken = '';
+let discardedForwardAvailable = false;
+let navigationEdgeGesture = null;
 let pendingPageSnapshot = null;
 let pageTransitionTimer = 0;
 let renderRevision = 0;
@@ -224,7 +229,7 @@ function applyVisualViewportVars() {
   document.documentElement.style.setProperty('--visual-center-y', `${Math.round(top + height / 2)}px`);
   const keyboardVisible = height < window.innerHeight - 120;
   document.documentElement.classList.toggle('keyboard-visible', keyboardVisible);
-  elements['search-dialog']?.classList.toggle('keyboard-visible', keyboardVisible);
+  activeSearchFrame?.layer?.classList.toggle('keyboard-visible', keyboardVisible);
 }
 
 function updateVisualViewportVars({ immediate = false } = {}) {
@@ -300,42 +305,22 @@ function updateOverlayLayout() {
   });
 }
 
-function lockPageForModal() {
-  openModalCount += 1;
-  if (openModalCount !== 1) return;
-  modalScrollY = window.scrollY;
-  const body = document.body;
-  body.style.position = 'fixed';
-  body.style.top = `-${modalScrollY}px`;
-  body.style.left = '0';
-  body.style.right = '0';
-  body.style.width = '100%';
-  document.documentElement.classList.add('modal-open');
-  body.classList.add('modal-open');
-}
+const PRESENTATION_EXIT_MS = 140;
 
-function showModalStable(dialog) {
-  if (!dialog || dialog.open) return;
-  lockPageForModal();
-  // Geometry is sampled once after scroll-lock is established. The first
-  // painted frame is already final; later VisualViewport resize events are
-  // reserved for real keyboard/viewport changes.
-  updateVisualViewportVars({ immediate: true });
-  dialog.showModal();
+function lockPageForModal() {
+  if (openModalCount) return;
+  openModalCount = 1;
+  document.documentElement.classList.add('modal-open');
+  document.body.classList.add('modal-open');
 }
 
 function unlockPageForModal() {
-  openModalCount = Math.max(0, openModalCount - 1);
-  if (openModalCount) return;
-  const body = document.body;
+  if (!openModalCount) return;
+  openModalCount = 0;
   document.documentElement.classList.remove('modal-open');
-  body.classList.remove('modal-open');
-  body.style.position = '';
-  body.style.top = '';
-  body.style.left = '';
-  body.style.right = '';
-  body.style.width = '';
-  window.scrollTo({ top: modalScrollY, behavior: 'auto' });
+  document.body.classList.remove('modal-open');
+  // Deliberately do not write body.position/top and do not scrollTo(). The
+  // document keeps the same geometry for the entire modal lifetime.
 }
 
 function modalScrollableTarget(target) {
@@ -361,43 +346,64 @@ function handleModalTouchMove(event) {
   if ((atTop && delta > 0) || (atBottom && delta < 0)) event.preventDefault();
 }
 
+function focusableModalNodes(form) {
+  return [...form.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((node) => node instanceof HTMLElement && !node.hidden && getComputedStyle(node).visibility !== 'hidden');
+}
+
 function createAppDialogFrame({
   title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false,
-  onSubmit = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
+  onSubmit = null, onCancel = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
+  dismissible = true, showClose = true,
 }) {
   const layer = el('section', {
-    className: 'modal-layer',
+    className: 'modal-layer modal-layer-entering',
     dataset: { depth: String(dialogStack.length + 1), variant, kind },
     role: 'dialog',
     'aria-modal': 'true',
     'aria-label': title,
   });
   const backdrop = el('div', { className: 'modal-layer-backdrop', 'aria-hidden': 'true' });
-  const form = el('form', { className: `modal-card modal-card-${variant} modal-card-pending` });
+  const form = el('form', { className: `modal-card modal-card-${variant}`, tabindex: '-1' });
   const titleNode = el('h2', { text: title });
   const descriptionNode = el('p', { className: `muted${description ? '' : ' hidden'}`, text: description });
-  const closeButton = iconButton('close', 'icon-button modal-close', '关闭', () => closeDialog());
-  const header = el('header', { className: 'dialog-header' }, [el('div', {}, [titleNode, descriptionNode]), closeButton]);
+  const closeButton = showClose ? iconButton('close', 'icon-button modal-close', '关闭', () => closeDialog()) : null;
+  const headerChildren = [el('div', {}, [titleNode, descriptionNode])];
+  if (closeButton) headerChildren.push(closeButton);
+  const header = el('header', { className: 'dialog-header' }, headerChildren);
   const bodyNode = el('div', { className: 'dialog-body' }, Array.isArray(body) ? body : [body]);
   const actions = el('footer', { className: 'dialog-actions' });
   const includeCancel = showCancel == null ? Boolean(onSubmit) : Boolean(showCancel);
-  if (includeCancel) actions.append(button(cancelText, 'secondary-button', () => closeDialog()));
-  let submitButton = null;
+  const frame = {
+    layer, form, body: bodyNode, actions, closeButton, onSubmit, onCancel, onRestore,
+    submitButton: null, kind, dismissible, closing: false,
+    returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  };
+  if (includeCancel) {
+    actions.append(button(cancelText, 'secondary-button', () => {
+      const handler = frame.onCancel;
+      closeDialog();
+      if (handler) Promise.resolve().then(handler).catch(displayError);
+    }));
+  }
   if (onSubmit) {
-    submitButton = el('button', { type: 'submit', className: destructive ? 'danger-button' : 'primary-button', text: submitText });
-    actions.append(submitButton);
+    frame.submitButton = el('button', { type: 'submit', className: destructive ? 'danger-button' : 'primary-button', text: submitText });
+    actions.append(frame.submitButton);
   }
   if (!actions.childNodes.length) actions.classList.add('hidden');
   form.append(header, bodyNode, actions);
   layer.append(backdrop, form);
-  const frame = { layer, form, body: bodyNode, actions, closeButton, onSubmit, onRestore, submitButton, kind, returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
-  backdrop.addEventListener('click', () => closeDialog());
+
+  backdrop.addEventListener('click', () => { if (frame.dismissible) closeDialog(); });
   layer.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); closeDialog(); return; }
+    if (event.key === 'Escape') {
+      if (frame.dismissible) closeDialog();
+      event.preventDefault();
+      return;
+    }
     if (event.key !== 'Tab') return;
-    const focusable = [...form.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-      .filter((node) => node instanceof HTMLElement && !node.hidden && getComputedStyle(node).visibility !== 'hidden');
-    if (!focusable.length) { event.preventDefault(); closeButton.focus({ preventScroll: true }); return; }
+    const focusable = focusableModalNodes(form);
+    if (!focusable.length) { event.preventDefault(); form.focus({ preventScroll: true }); return; }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus({ preventScroll: true }); }
@@ -426,30 +432,10 @@ function createAppDialogFrame({
   return frame;
 }
 
-function revealAppDialogFrame(frame) {
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (!frame?.form?.isConnected) return;
-    frame.form.classList.remove('modal-card-pending');
-    frame.closeButton?.focus({ preventScroll: true });
-  }));
-}
-
-function closeDialog({ all = false } = {}) {
-  if (!dialogStack.length) return;
-  const host = elements['app-dialog'];
-  if (all) {
-    while (dialogStack.length) dialogStack.pop().layer.remove();
-    host.classList.add('hidden');
-    host.setAttribute('aria-hidden', 'true');
-    if (elements.app) elements.app.inert = false;
-    unlockPageForModal();
-    return;
-  }
-  const frame = dialogStack.pop();
+function finishModalLayerClose(frame, parent) {
   frame.layer.remove();
-  const parent = dialogStack.at(-1);
-  if (parent) {
-      parent.layer.inert = false;
+  if (parent && dialogStack.includes(parent)) {
+    parent.layer.inert = false;
     parent.layer.removeAttribute('aria-hidden');
     parent.onRestore?.();
     requestAnimationFrame(() => {
@@ -458,6 +444,8 @@ function closeDialog({ all = false } = {}) {
     });
     return;
   }
+  if (dialogStack.length) return;
+  const host = elements['app-dialog'];
   host.classList.add('hidden');
   host.setAttribute('aria-hidden', 'true');
   if (elements.app) elements.app.inert = false;
@@ -465,9 +453,41 @@ function closeDialog({ all = false } = {}) {
   requestAnimationFrame(() => frame.returnFocus?.isConnected && frame.returnFocus.focus({ preventScroll: true }));
 }
 
+function closeDialog({ all = false } = {}) {
+  if (!dialogStack.length) return;
+  const host = elements['app-dialog'];
+  if (all) {
+    const frames = dialogStack.splice(0, dialogStack.length);
+    activeSearchFrame = null;
+    activeConfirmFrame = null;
+    for (const frame of frames) {
+      frame.closing = true;
+      frame.layer.classList.add('modal-layer-closing');
+    }
+    window.setTimeout(() => {
+      for (const frame of frames) frame.layer.remove();
+      if (dialogStack.length) return;
+      host.classList.add('hidden');
+      host.setAttribute('aria-hidden', 'true');
+      if (elements.app) elements.app.inert = false;
+      unlockPageForModal();
+    }, PRESENTATION_EXIT_MS);
+    return;
+  }
+  const frame = dialogStack.pop();
+  if (!frame || frame.closing) return;
+  frame.closing = true;
+  if (frame === activeSearchFrame) activeSearchFrame = null;
+  if (frame === activeConfirmFrame) activeConfirmFrame = null;
+  const parent = dialogStack.at(-1) || null;
+  frame.layer.classList.add('modal-layer-closing');
+  window.setTimeout(() => finishModalLayerClose(frame, parent), PRESENTATION_EXIT_MS);
+}
+
 function openDialog({
   title, description = '', body = [], submitText = '保存', cancelText = '取消', destructive = false,
-  onSubmit = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
+  onSubmit = null, onCancel = null, showCancel = null, onRestore = null, variant = 'compact', kind = 'form',
+  dismissible = true, showClose = true,
 }) {
   const host = elements['app-dialog'];
   const parent = dialogStack.at(-1);
@@ -482,10 +502,16 @@ function openDialog({
     parent.layer.inert = true;
     parent.layer.setAttribute('aria-hidden', 'true');
   }
-  const frame = createAppDialogFrame({ title, description, body, submitText, cancelText, destructive, onSubmit, showCancel, onRestore, variant, kind });
+  const frame = createAppDialogFrame({ title, description, body, submitText, cancelText, destructive, onSubmit, onCancel, showCancel, onRestore, variant, kind, dismissible, showClose });
   dialogStack.push(frame);
   host.append(frame.layer);
-  revealAppDialogFrame(frame);
+  requestAnimationFrame(() => {
+    if (!frame.layer.isConnected || frame.closing) return;
+    frame.layer.classList.remove('modal-layer-entering');
+    const focusable = focusableModalNodes(frame.form);
+    const safeFocus = frame.closeButton || focusable.find((node) => node.tagName === 'BUTTON') || frame.form;
+    safeFocus?.focus?.({ preventScroll: true });
+  });
   return frame;
 }
 
@@ -496,47 +522,32 @@ function closeActionDialog() {
 }
 
 function openActionDialog({ title, description = '', body = [] }) {
-  const frame = openDialog({ title, description, body, showCancel: false, variant: 'action', kind: 'action' });
-  return frame;
+  return openDialog({ title, description, body, showCancel: false, variant: 'action', kind: 'action' });
 }
 
 function closeSearchDialog() {
-  if (elements['search-dialog'].open) {
-    elements['search-dialog'].close();
-    unlockPageForModal();
-  }
+  if (activeSearchFrame && dialogStack.at(-1) === activeSearchFrame) closeDialog();
+  activeSearchFrame = null;
 }
 
 function closeConfirmDialog({ force = false } = {}) {
-  if (confirmChoiceRequired && !force) return false;
-  if (elements['confirm-dialog'].open) {
-    elements['confirm-dialog'].close();
-    unlockPageForModal();
-  }
-  confirmSubmitHandler = null;
-  confirmCancelHandler = null;
-  confirmChoiceRequired = false;
+  const frame = activeConfirmFrame;
+  if (!frame) return true;
+  if (frame.choiceRequired && !force) return false;
+  if (dialogStack.at(-1) === frame) closeDialog();
+  activeConfirmFrame = null;
   return true;
 }
 
 function openConfirmDialog({ title, description = '', body = [], submitText = '确认', cancelText = '取消', onSubmit, onCancel = null, choiceRequired = false, destructive = true }) {
-  elements['confirm-title'].textContent = title;
-  elements['confirm-description'].textContent = description;
-  elements['confirm-description'].classList.toggle('hidden', !description);
-  elements['confirm-body'].replaceChildren(...(Array.isArray(body) ? body : [body]));
-  elements['confirm-submit'].textContent = submitText;
-  elements['confirm-submit'].className = destructive ? 'danger-button' : 'primary-button';
-  elements['confirm-cancel'].textContent = cancelText;
-  confirmSubmitHandler = onSubmit;
-  confirmCancelHandler = onCancel;
-  confirmChoiceRequired = Boolean(choiceRequired);
-  showModalStable(elements['confirm-dialog']);
-}
-
-function handleConfirmCancel() {
-  const handler = confirmCancelHandler;
-  closeConfirmDialog({ force: true });
-  if (handler) Promise.resolve().then(handler).catch(displayError);
+  const frame = openDialog({
+    title, description, body, submitText, cancelText, onSubmit, onCancel,
+    destructive, showCancel: true, showClose: false, dismissible: !choiceRequired,
+    variant: 'confirm', kind: 'confirm',
+  });
+  frame.choiceRequired = Boolean(choiceRequired);
+  activeConfirmFrame = frame;
+  return frame;
 }
 
 function collectionRoute(collectionId, entryId = '', viewKind = '') {
@@ -570,12 +581,103 @@ function viewKindForCollection(collection, entry = null, requested = '') {
   return isPhraseCollection(collection) ? 'phrase' : 'word';
 }
 
+function newNavigationToken(prefix = 'nav') {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${suffix}`;
+}
+
+function navigationHistoryState(depth = appNavigationDepth, token = navigationRootToken) {
+  return {
+    vix: true,
+    navModel: NAVIGATION_MODEL,
+    depth,
+    epoch: navigationEpoch,
+    navToken: token || navigationRootToken,
+  };
+}
+
+function persistNavigationSession() {
+  try {
+    sessionStorage.setItem(NAVIGATION_SESSION_KEY, JSON.stringify({
+      epoch: navigationEpoch,
+      rootToken: navigationRootToken,
+      homeScrollY,
+      discardedForwardAvailable,
+      discardedTokens: [...discardedNavigationTokens],
+      frames: navigationStack,
+    }));
+  } catch {
+    // Navigation remains correct in-memory when sessionStorage is unavailable.
+  }
+}
+
+function loadNavigationSession() {
+  try {
+    const raw = sessionStorage.getItem(NAVIGATION_SESSION_KEY);
+    if (!raw) return false;
+    const stored = JSON.parse(raw);
+    if (!stored || stored.epoch !== navigationEpoch || !Array.isArray(stored.frames)) return false;
+    navigationStack.splice(0, navigationStack.length, ...stored.frames.filter((frame) => frame && typeof frame.token === 'string'));
+    discardedNavigationTokens.clear();
+    for (const token of stored.discardedTokens || []) if (typeof token === 'string') discardedNavigationTokens.add(token);
+    navigationRootToken = typeof stored.rootToken === 'string' ? stored.rootToken : '';
+    homeScrollY = Math.max(0, Number(stored.homeScrollY || 0));
+    discardedForwardAvailable = Boolean(stored.discardedForwardAvailable);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearNavigationSessionState({ keepDiscarded = false } = {}) {
+  if (!keepDiscarded) {
+    discardedNavigationTokens.clear();
+    discardedForwardAvailable = false;
+  }
+  navigationStack.length = 0;
+  appNavigationDepth = 0;
+  persistNavigationSession();
+}
+
+function currentNavigationFrame() {
+  if (!appNavigationDepth) return null;
+  const token = history.state?.navToken || '';
+  const frame = navigationStack[appNavigationDepth - 1] || null;
+  return frame?.token === token ? frame : (navigationStack.find((item) => item.token === token) || null);
+}
+
+function discardFrameRuntimeState(frame) {
+  const snapshot = frame?.snapshot;
+  if (!snapshot || snapshot.type !== 'collection') return;
+  expandedLettersByCollection.delete(`${snapshot.collectionId}:${snapshot.viewKind}`);
+  clearExpandedRelationsForView(snapshot.collectionId, snapshot.viewKind);
+}
+
+function discardNavigationFramesFrom(depth) {
+  const removed = navigationStack.splice(Math.max(0, depth));
+  for (const frame of removed) {
+    if (frame?.token) discardedNavigationTokens.add(frame.token);
+    discardFrameRuntimeState(frame);
+  }
+  if (removed.length) discardedForwardAvailable = true;
+  appNavigationDepth = navigationStack.length;
+  persistNavigationSession();
+  return removed;
+}
+
+function invalidateDiscardedForwardBranchForFreshPush() {
+  // A fresh pushState from the current history position truncates the browser's
+  // forward branch. Once that happens the old tokens no longer need guarding.
+  discardedNavigationTokens.clear();
+  discardedForwardAvailable = false;
+}
+
 function currentSnapshot() {
   if (!currentCollectionId) return { type: 'home', scrollY: window.scrollY };
   const collection = getState().collectionById.get(currentCollectionId);
   if (!collection) return null;
   const section = currentViewKind;
-  const mode = getViewMode(currentCollectionId, section);
+  const mode = getViewMode(currentCollectionId);
   return {
     type: 'collection', collectionId: currentCollectionId, viewKind: section,
     mode,
@@ -589,8 +691,15 @@ function currentSnapshot() {
 
 function persistCurrentHistorySnapshot() {
   const snapshot = currentSnapshot();
-  const state = { ...(history.state || {}), vix: true, depth: appNavigationDepth, epoch: navigationEpoch, pageSnapshot: snapshot };
-  history.replaceState(state, '', location.href);
+  if (!snapshot) return;
+  if (!currentCollectionId) {
+    homeScrollY = Math.max(0, Number(snapshot.scrollY || 0));
+  } else {
+    const frame = currentNavigationFrame();
+    if (frame) frame.snapshot = snapshot;
+  }
+  history.replaceState(navigationHistoryState(), '', location.href);
+  persistNavigationSession();
 }
 
 function applySnapshotBeforeRender(snapshot, collection, viewKind) {
@@ -628,7 +737,7 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
   if (entry && ['search', 'relation', 'route', 'annotation', 'pin', 'last'].includes(reason)) {
     clearExpandedRelationsForView(collection.id, viewKind);
     expanded.clear();
-    if (getViewMode(collection.id, viewKind) === 'alphabet') expanded.add(letterForEntry(entry));
+    if (getViewMode(collection.id) === 'alphabet') expanded.add(letterForEntry(entry));
     else expanded.add(dateExpansionKey(getStudyStamp(entry, collection.id)?.reviewDateKey || 'unmarked'));
   }
 }
@@ -663,7 +772,7 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
       const visible = getVisibleEntries(collection.id);
       nextView = visible.some((item) => item.kind === 'word') ? 'word' : 'phrase';
     }
-    await setViewMode(collection.id, 'alphabet', nextView);
+    await setViewMode(collection.id, 'alphabet');
   }
   const pageChanged = currentCollectionId !== collectionId || currentViewKind !== nextView;
   persistCurrentHistorySnapshot();
@@ -671,10 +780,19 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   closeQueryMenu();
   closeRelationTargetMenu();
   prepareTargetExpansion(collection, entry, nextView, reason);
-  const depth = appNavigationDepth + 1;
+
+  // A new recursive target is a real PUSH. If the user previously backed out of
+  // pages, pushState itself truncates that stale browser-forward branch; mirror
+  // the same fact in the VIX destructive-stack bookkeeping before pushing.
+  invalidateDiscardedForwardBranchForFreshPush();
+  const depth = navigationStack.length + 1;
+  const token = newNavigationToken('page');
   const hash = collectionRoute(collectionId, entryId, collection.type === 'normal' ? nextView : '');
-  history.pushState({ vix: true, depth, epoch: navigationEpoch }, '', hash);
+  navigationStack.push({ token, snapshot: null });
   appNavigationDepth = depth;
+  history.pushState(navigationHistoryState(depth, token), '', hash);
+  persistNavigationSession();
+
   currentCollectionId = collectionId;
   currentViewKind = nextView;
   pendingJumpEntryId = entryId;
@@ -686,32 +804,10 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
 function navigateBack() {
   persistCurrentHistorySnapshot();
   if (appNavigationDepth > 0) history.back();
-  else goHome();
+  else enterHomeRoot({ resetScroll: false });
 }
 
-function goHome() {
-  homeGlobalMode = 'structured';
-  closeReview();
-  closeQueryMenu();
-  closeRelationTargetMenu();
-  restoreHomeScrollPending = Boolean(currentCollectionId);
-  pendingJumpEntryId = '';
-  pendingPageSnapshot = null;
-  currentCollectionId = '';
-  currentViewKind = 'word';
-  appNavigationDepth = 0;
-  history.replaceState({ vix: true, depth: 0, epoch: navigationEpoch, pageSnapshot: { type: 'home', scrollY: homeScrollY } }, '', location.pathname + location.search);
-  renderApp();
-}
-
-function finalizeNavigationResetToHome() {
-  pendingRootReset = false;
-  homeGlobalMode = 'structured';
-  homeScrollY = 0;
-  restoreHomeScrollPending = false;
-  closeReview();
-  closeQueryMenu();
-  closeRelationTargetMenu();
+function clearRecursivePresentationState() {
   pendingJumpEntryId = '';
   pendingJumpReason = 'home';
   pendingPageSnapshot = null;
@@ -722,18 +818,41 @@ function finalizeNavigationResetToHome() {
   currentViewKind = 'word';
   activeSection = 'main';
   appNavigationDepth = 0;
-  history.replaceState({
-    vix: true, depth: 0, epoch: navigationEpoch,
-    pageSnapshot: { type: 'home', scrollY: 0 },
-  }, '', location.pathname + location.search);
-  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+function enterHomeRoot({ resetScroll = true } = {}) {
+  // Home is the VIX root invariant: reaching it by any route destroys every
+  // recursive frame. The browser may still retain physical forward entries,
+  // but those tokens are dead and are blocked before they can become VIX pages.
+  if (navigationStack.length) discardNavigationFramesFrom(0);
+  homeGlobalMode = 'structured';
+  if (resetScroll) homeScrollY = 0;
+  restoreHomeScrollPending = false;
+  closeReview();
+  closeQueryMenu({ immediate: true });
+  closeRelationTargetMenu({ immediate: true });
+  clearRecursivePresentationState();
+  history.replaceState(navigationHistoryState(0, navigationRootToken), '', location.pathname + location.search);
+  if (resetScroll) window.scrollTo({ top: 0, behavior: 'auto' });
+  persistNavigationSession();
   renderApp();
+}
+
+function goHome() {
+  if (appNavigationDepth > 0) {
+    resetNavigationToHome();
+    return;
+  }
+  enterHomeRoot({ resetScroll: false });
+}
+
+function finalizeNavigationResetToHome() {
+  pendingRootReset = false;
+  enterHomeRoot({ resetScroll: true });
 }
 
 function resetNavigationToHome() {
   persistCurrentHistorySnapshot();
-  navigationEpoch += 1;
-  try { sessionStorage.setItem('vocabulary-index:navigation-epoch', String(navigationEpoch)); } catch {}
   pendingJumpEntryId = '';
   pendingJumpReason = 'home';
   pendingPageSnapshot = null;
@@ -746,36 +865,156 @@ function resetNavigationToHome() {
   finalizeNavigationResetToHome();
 }
 
+async function restoreNavigationSnapshot(snapshot) {
+  if (snapshot?.type !== 'collection') return;
+  try {
+    if (['alphabet', 'date'].includes(snapshot.mode) && getViewMode(snapshot.collectionId) !== snapshot.mode) {
+      await setViewMode(snapshot.collectionId, snapshot.mode);
+    }
+    if (snapshot.mode === 'date' && /^\d{4}-\d{2}$/.test(String(snapshot.calendarMonth || ''))
+      && getCalendarMonth(snapshot.collectionId, snapshot.viewKind) !== snapshot.calendarMonth) {
+      await setCalendarMonth(snapshot.collectionId, snapshot.viewKind, snapshot.calendarMonth);
+    }
+  } catch (error) {
+    displayError(error);
+  }
+}
+
 async function handleHistoryNavigation(event) {
+  const targetState = event.state || {};
+  const targetDepth = Math.max(0, Number(targetState.depth || 0));
+  const oldDepth = appNavigationDepth;
+
+  if (targetState.vix !== true || targetState.navModel !== NAVIGATION_MODEL || Number(targetState.epoch || 0) !== navigationEpoch) {
+    // 4.3.0 intentionally does not revive pre-destructive-stack navigation.
+    // If an unexpected same-document history entry ever commits, converge it
+    // to a new clean root instead of guessing a history delta and bouncing.
+    navigationEpoch = Math.max(navigationEpoch + 1, Date.now());
+    navigationRootToken = newNavigationToken('root');
+    discardedNavigationTokens.clear();
+    discardedForwardAvailable = false;
+    clearNavigationSessionState();
+    enterHomeRoot({ resetScroll: true });
+    return;
+  }
+
   if (pendingRootReset) {
     finalizeNavigationResetToHome();
     return;
   }
-  const eventEpoch = Number(event.state?.epoch || 0);
-  if (event.state?.vix && eventEpoch !== navigationEpoch) {
-    finalizeNavigationResetToHome();
+
+  if (targetDepth > oldDepth) {
+    // Forward into a page that was already destructively popped. The Navigation
+    // API/touch edge guards are expected to stop this before commit; this is the
+    // last-resort state guard and deliberately does not render the stale route.
+    discardedForwardAvailable = true;
+    persistNavigationSession();
+    history.go(oldDepth - targetDepth);
     return;
   }
-  appNavigationDepth = Number(event.state?.depth || 0);
-  pendingPageSnapshot = event.state?.pageSnapshot || null;
-  const snapshot = pendingPageSnapshot;
-  historyRestoreInProgress = true;
-  try {
-    if (snapshot?.type === 'collection' && ['alphabet', 'date'].includes(snapshot.mode)) {
-      if (getViewMode(snapshot.collectionId, snapshot.viewKind) !== snapshot.mode) {
-        await setViewMode(snapshot.collectionId, snapshot.mode, snapshot.viewKind);
-      }
-      if (snapshot.mode === 'date' && /^\d{4}-\d{2}$/.test(String(snapshot.calendarMonth || ''))
-        && getCalendarMonth(snapshot.collectionId, snapshot.viewKind) !== snapshot.calendarMonth) {
-        await setCalendarMonth(snapshot.collectionId, snapshot.viewKind, snapshot.calendarMonth);
-      }
-    }
-  } catch (error) {
-    displayError(error);
-  } finally {
-    historyRestoreInProgress = false;
+
+  if (targetDepth === 0) {
+    discardNavigationFramesFrom(0);
+    enterHomeRoot({ resetScroll: true });
+    return;
   }
+
+  const targetToken = String(targetState.navToken || '');
+  const targetFrame = navigationStack[targetDepth - 1];
+  if (!targetFrame || targetFrame.token !== targetToken || discardedNavigationTokens.has(targetToken)) {
+    // A target without a live VIX frame is not a valid recursive destination.
+    // Do not render it and do not guess which old entry should be revived.
+    navigationEpoch = Math.max(navigationEpoch + 1, Date.now());
+    navigationRootToken = newNavigationToken('root');
+    discardedForwardAvailable = true;
+    enterHomeRoot({ resetScroll: true });
+    return;
+  }
+
+  if (targetDepth < oldDepth) discardNavigationFramesFrom(targetDepth);
+  appNavigationDepth = targetDepth;
+  pendingPageSnapshot = targetFrame.snapshot || null;
+  await restoreNavigationSnapshot(pendingPageSnapshot);
   renderApp();
+}
+
+function navigationEntryStateFromDestination(destination) {
+  try { return destination?.getState?.() || null; } catch { return null; }
+}
+
+function activateNavigationGuardFeedback(side) {
+  const node = elements['navigation-guard-feedback'];
+  if (!node) return;
+  node.dataset.side = side;
+  node.classList.remove('guard-settling');
+  node.classList.add('guard-active');
+}
+
+function settleNavigationGuardFeedback() {
+  const node = elements['navigation-guard-feedback'];
+  if (!node) return;
+  node.classList.remove('guard-active');
+  node.classList.add('guard-settling');
+  window.setTimeout(() => node.classList.remove('guard-settling'), 120);
+}
+
+function handleNavigationApiNavigate(event) {
+  if (event?.navigationType !== 'traverse' || !event.destination?.sameDocument) return;
+  const navigationApi = globalThis.navigation;
+  const currentIndex = Number(navigationApi?.currentEntry?.index ?? -1);
+  const destinationIndex = Number(event.destination.index ?? -1);
+  if (currentIndex < 0 || destinationIndex < 0) return;
+  const destinationState = navigationEntryStateFromDestination(event.destination);
+  const isForward = destinationIndex > currentIndex;
+  const isBackward = destinationIndex < currentIndex;
+  const leavingRoot = appNavigationDepth === 0 && isBackward;
+  const forwardIsForbidden = isForward; // VIX navigation is intentionally one-way after POP.
+  const staleDestination = destinationState?.vix === true && (
+    destinationState.navModel !== NAVIGATION_MODEL
+    || Number(destinationState.epoch || 0) !== navigationEpoch
+    || discardedNavigationTokens.has(String(destinationState.navToken || ''))
+    || Number(destinationState.depth || 0) > appNavigationDepth
+  );
+  if (!(leavingRoot || forwardIsForbidden || staleDestination)) return;
+  if (event.cancelable) event.preventDefault();
+  if (leavingRoot) activateNavigationGuardFeedback('left');
+  else activateNavigationGuardFeedback('right');
+  window.setTimeout(settleNavigationGuardFeedback, 90);
+}
+
+function navigationEdgeGuardSide(touch) {
+  if (!touch || openModalCount) return '';
+  if (!document.documentElement.classList.contains('standalone-pwa')) return '';
+  const width = window.visualViewport?.width || window.innerWidth;
+  const edge = Math.max(14, Math.min(22, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navigation-guard-size')) || 18));
+  if (appNavigationDepth === 0 && touch.clientX <= edge) return 'left';
+  if (discardedForwardAvailable && touch.clientX >= width - edge) return 'right';
+  return '';
+}
+
+function handleNavigationEdgeTouchStart(event) {
+  if (event.touches?.length !== 1) return;
+  const touch = event.touches[0];
+  const side = navigationEdgeGuardSide(touch);
+  if (!side) return;
+  // iOS history gestures compete at the gesture start. This listener is
+  // intentionally pre-registered and non-passive; waiting for touchmove is too
+  // late to guarantee that a discarded Forward surface has not begun preview.
+  event.preventDefault();
+  navigationEdgeGesture = { side, startX: touch.clientX };
+  activateNavigationGuardFeedback(side);
+}
+
+function handleNavigationEdgeTouchMove(event) {
+  if (!navigationEdgeGesture) return;
+  event.preventDefault();
+}
+
+function finishNavigationEdgeGesture(event) {
+  if (!navigationEdgeGesture) return;
+  event?.preventDefault?.();
+  navigationEdgeGesture = null;
+  settleNavigationGuardFeedback();
 }
 
 function projectionCollectionForEntry(entryId) {
@@ -1409,10 +1648,10 @@ function renderHome(token = renderRevision) {
   elements['home-button'].classList.add('hidden');
   elements['search-button'].classList.remove('hidden');
   elements['bottom-toolbar'].classList.add('hidden');
-  elements['pin-bar'].classList.add('hidden');
+  setContextDockVisible(elements['pin-bar'], 'has-pin', false, { clearAfterHide: true });
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = 'Vocabulary Index';
-  elements['page-subtitle'].textContent = '4.2.0';
+  elements['page-subtitle'].textContent = APP_VERSION;
   renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
@@ -1538,11 +1777,11 @@ function renderCollectionToolbar(collection) {
 }
 
 function currentMode(collection, section = currentViewKind) {
-  return getViewMode(collection.id, section);
+  return getViewMode(collection.id);
 }
 
 function browseAnchorEntryId(collection, section = currentViewKind) {
-  const mode = getViewMode(collection.id, section);
+  const mode = getViewMode(collection.id);
   return getLastPosition(positionDomainId(collection), collection.id, { mode, section }) || '';
 }
 
@@ -1595,7 +1834,7 @@ function cancelBrowseAnchorPress({ suppressClick = false, grace = false } = {}) 
 }
 
 async function saveBrowseAnchor(collection, section, buttonNode) {
-  const mode = getViewMode(collection.id, section);
+  const mode = getViewMode(collection.id);
   const entryId = firstVisibleEntryId() || '';
   const entry = entryId ? getState().entryById.get(entryId) : null;
   if (!entry || sectionForEntry(entry) !== section) {
@@ -1735,13 +1974,16 @@ function switchCollectionView(collection, nextKind) {
   pendingJumpEntryId = '';
   pendingJumpReason = 'home';
   const nextHash = collectionRoute(collection.id, '', nextKind);
-  const mode = getViewMode(collection.id, nextKind);
+  const mode = getViewMode(collection.id);
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
     calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, nextKind) : '',
     scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
   };
-  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, pageSnapshot: freshSnapshot }, '', nextHash);
+  const frame = currentNavigationFrame();
+  if (frame) frame.snapshot = freshSnapshot;
+  history.replaceState(navigationHistoryState(), '', nextHash);
+  persistNavigationSession();
   performPageTransition(renderApp, true);
 }
 
@@ -1773,6 +2015,36 @@ function syncPinIndexForEntry(collectionId, entryId) {
   else pinIndex = Math.max(0, Math.min(pinIndex, Math.max(0, pins.length - 1)));
 }
 
+function setContextDockVisible(node, appClass, visible, { clearAfterHide = false } = {}) {
+  if (!node) return;
+  const pending = dockHideTimers.get(node);
+  if (pending) {
+    clearTimeout(pending);
+    dockHideTimers.delete(node);
+  }
+  node.classList.remove('hidden');
+  if (visible) {
+    node.inert = false;
+    node.setAttribute('aria-hidden', 'false');
+    elements.app?.classList.add(appClass);
+    requestAnimationFrame(() => node.classList.add('dock-visible'));
+    updateOverlayLayout();
+    return;
+  }
+  node.classList.remove('dock-visible');
+  node.inert = true;
+  node.setAttribute('aria-hidden', 'true');
+  const timer = window.setTimeout(() => {
+    dockHideTimers.delete(node);
+    if (!node.classList.contains('dock-visible')) {
+      elements.app?.classList.remove(appClass);
+      if (clearAfterHide) node.replaceChildren();
+      updateOverlayLayout();
+    }
+  }, PRESENTATION_EXIT_MS);
+  dockHideTimers.set(node, timer);
+}
+
 function renderPinBar(collection) {
   const state = getState();
   const pins = getPinsForCollection(collection.id).filter((pin) => {
@@ -1784,10 +2056,8 @@ function renderPinBar(collection) {
     pinIndex = 0;
   }
   if (review.ids.length || !pins.length) {
-    elements['pin-bar'].classList.add('hidden');
-    elements.app.classList.remove('has-pin');
+    setContextDockVisible(elements['pin-bar'], 'has-pin', false, { clearAfterHide: !pins.length });
     if (!pins.length) pinIndex = 0;
-    updateOverlayLayout();
     return;
   }
   if (pendingJumpEntryId) syncPinIndexForEntry(collection.id, pendingJumpEntryId);
@@ -1798,9 +2068,6 @@ function renderPinBar(collection) {
     && state.globalConflictKeys.has(`${entry.kind}\u0000${entry.normalizedText}`)
     ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
     : '';
-  elements['pin-bar'].classList.remove('hidden');
-  elements.app.classList.add('has-pin');
-  elements.app.classList.remove('has-review');
   elements['pin-bar'].replaceChildren(
     iconButton('chevron', 'pin-nav-button pin-prev', '上一个 PIN', () => jumpPinned(collection.id, -1)),
     el('button', { type: 'button', className: 'pin-current', 'aria-label': '重新定位当前 PIN', on: { click: () => entry && jumpToEntry(entry.id, { reason: 'pin' }) } }, [
@@ -1809,8 +2076,9 @@ function renderPinBar(collection) {
     ]),
     iconButton('chevron', 'pin-nav-button pin-next', '下一个 PIN', () => jumpPinned(collection.id, 1)),
   );
-  updateOverlayLayout();
+  setContextDockVisible(elements['pin-bar'], 'has-pin', true);
 }
+
 
 function letterForEntry(entry) {
   const letter = entry.normalizedText.charAt(0).toUpperCase();
@@ -1844,7 +2112,7 @@ function jumpToSection(section) {
 }
 
 async function switchCollectionMode(collection, section = currentViewKind) {
-  const currentModeValue = getViewMode(collection.id, section);
+  const currentModeValue = getViewMode(collection.id);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
   collapseTransactionRevision += 1;
   expandedLettersFor(collection.id, section).clear();
@@ -1861,15 +2129,16 @@ async function switchCollectionMode(collection, section = currentViewKind) {
     const fallback = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     await setCalendarMonth(collection.id, section, months[0] || fallback);
   }
-  await setViewMode(collection.id, nextMode, section);
-  history.replaceState({
-    ...(history.state || {}), vix: true, depth: appNavigationDepth,
-    pageSnapshot: {
-      type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
-      calendarMonth: nextMode === 'date' ? getCalendarMonth(collection.id, section) : '',
-      scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: section,
-    },
-  }, '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
+  await setViewMode(collection.id, nextMode);
+  const freshSnapshot = {
+    type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
+    calendarMonth: nextMode === 'date' ? getCalendarMonth(collection.id, section) : '',
+    scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: section,
+  };
+  const frame = currentNavigationFrame();
+  if (frame) frame.snapshot = freshSnapshot;
+  history.replaceState(navigationHistoryState(), '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
+  persistNavigationSession();
 }
 
 function monthShift(monthKey, delta) {
@@ -2239,7 +2508,7 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   resetEntryChunking();
   alphabetSectionMetrics = [];
   collectionRenderContext = null;
-  const mode = getViewMode(collection.id, section);
+  const mode = getViewMode(collection.id);
   const sections = new Map();
   const sectionContext = createSectionContext(section, entries, collection, mode);
   sections.set(section, sectionContext);
@@ -2280,7 +2549,7 @@ function releaseChunksInBody(body) {
   }
 }
 
-function setDateSectionOpen(section, dateKey, open) {
+function setDateSectionOpen(section, dateKey, open, { persist = true } = {}) {
   const context = collectionRenderContext;
   if (!context || context.collection.id !== currentCollectionId || context.mode !== 'date') return false;
   const sectionContext = context.sections.get(section);
@@ -2310,22 +2579,49 @@ function setDateSectionOpen(section, dateKey, open) {
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   indicator?.classList.toggle('open', open);
-  persistCurrentHistorySnapshot();
+  if (persist) persistCurrentHistorySnapshot();
   return true;
 }
 
-function compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor = '') {
+function collapseNativeStickySection({ sectionNode, heading, collapse }) {
+  if (!sectionNode || !heading || typeof collapse !== 'function') return false;
+  const headingRect = heading.getBoundingClientRect();
+  const sectionRect = sectionNode.getBoundingClientRect();
+  if (!Number.isFinite(headingRect.top) || !Number.isFinite(sectionRect.top)) return false;
+
+  // Read every geometry value before the mutation. The heading is the first
+  // in-flow child of both alphabet and date sections, so sectionRect.top is its
+  // natural (non-sticky) Y. Preserve the heading's *current visual Y* by moving
+  // the document exactly by naturalTop - visualTop after the body disappears.
+  // Alphabet/date differ only in the visual Y they arrive with: the alphabet
+  // heading is constrained below LetterNav, while date is constrained below the
+  // base chrome. No magic height or mode branch belongs in this transaction.
+  const currentScrollY = window.scrollY;
+  const targetScrollY = Math.max(0, currentScrollY + sectionRect.top - headingRect.top);
   const root = document.documentElement;
+  const previousOverflowAnchor = root.style.overflowAnchor;
+  const transaction = ++collapseTransactionRevision;
+  root.style.overflowAnchor = 'none';
+
+  // Commit height mutation + scroll correction in one rendering callback and
+  // perform no layout read between them. 4.2.0 deliberately split these writes
+  // across frames (remove -> rAF -> measure -> scroll), which exposes WebKit's
+  // known two-pass DOM/scroll update path as a visible flash.
   requestAnimationFrame(() => {
-    if (transaction !== collapseTransactionRevision || !heading?.isConnected || !Number.isFinite(beforeTop)) return;
-    const delta = heading.getBoundingClientRect().top - beforeTop;
-    if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
-    requestAnimationFrame(() => {
+    if (transaction !== collapseTransactionRevision || !heading.isConnected) {
+      root.style.overflowAnchor = previousOverflowAnchor;
+      return;
+    }
+    collapse();
+    window.scrollTo({ top: targetScrollY, behavior: 'auto' });
+    queueMicrotask(() => {
       if (transaction !== collapseTransactionRevision) return;
       root.style.overflowAnchor = previousOverflowAnchor;
+      persistCurrentHistorySnapshot();
       syncActiveAlphabetHeading();
     });
   });
+  return true;
 }
 
 function toggleDateSectionWithAnchor(section, dateKey, heading) {
@@ -2338,15 +2634,15 @@ function toggleDateSectionWithAnchor(section, dateKey, heading) {
     setDateSectionOpen(section, dateKey, true);
     return;
   }
-  const beforeTop = heading?.getBoundingClientRect().top;
-  const previousOverflowAnchor = document.documentElement.style.overflowAnchor;
-  document.documentElement.style.overflowAnchor = 'none';
-  const transaction = ++collapseTransactionRevision;
-  setDateSectionOpen(section, dateKey, false);
-  compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor);
+  const sectionNode = context.sections.get(section)?.sectionByKey.get(dateKey);
+  collapseNativeStickySection({
+    sectionNode,
+    heading,
+    collapse: () => setDateSectionOpen(section, dateKey, false, { persist: false }),
+  });
 }
 
-function setLetterSectionOpen(section, letter, open) {
+function setLetterSectionOpen(section, letter, open, { persist = true } = {}) {
   const context = collectionRenderContext;
   if (!context || context.collection.id !== currentCollectionId || context.mode !== 'alphabet') return false;
   const sectionContext = context.sections.get(section);
@@ -2375,7 +2671,7 @@ function setLetterSectionOpen(section, letter, open) {
   if (indicator) indicator.classList.toggle('open', open);
   updateActiveLetter(section, letter);
   scheduleAlphabetSectionMetricsRefresh();
-  persistCurrentHistorySnapshot();
+  if (persist) persistCurrentHistorySnapshot();
   return true;
 }
 
@@ -2388,12 +2684,12 @@ function toggleLetterSectionWithAnchor(section, letter, heading) {
     setLetterSectionOpen(section, letter, true);
     return;
   }
-  const beforeTop = heading?.getBoundingClientRect().top;
-  const previousOverflowAnchor = document.documentElement.style.overflowAnchor;
-  document.documentElement.style.overflowAnchor = 'none';
-  const transaction = ++collapseTransactionRevision;
-  setLetterSectionOpen(section, letter, false);
-  compensateCollapsedSection(heading, beforeTop, transaction, previousOverflowAnchor);
+  const sectionNode = context.sections.get(section)?.sectionByKey.get(letter);
+  collapseNativeStickySection({
+    sectionNode,
+    heading,
+    collapse: () => setLetterSectionOpen(section, letter, false, { persist: false }),
+  });
 }
 
 function letterTrackState(track) {
@@ -2621,12 +2917,46 @@ function relationNavigationMode(sourceEntry, destinations) {
   return 'external';
 }
 
-function closeRelationTargetMenu({ restoreFocus = false } = {}) {
+function showPopoverSurface(node) {
+  const pending = popoverHideTimers.get(node);
+  if (pending) {
+    clearTimeout(pending);
+    popoverHideTimers.delete(node);
+  }
+  node.classList.remove('hidden', 'popover-closing');
+}
+
+function hidePopoverSurface(node, { immediate = false, onHidden = null } = {}) {
+  const pending = popoverHideTimers.get(node);
+  if (pending) clearTimeout(pending);
+  popoverHideTimers.delete(node);
+  const finish = () => {
+    if (!node.classList.contains('popover-closing') && !immediate) return;
+    node.classList.add('hidden');
+    node.classList.remove('popover-closing');
+    onHidden?.();
+  };
+  if (immediate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    node.classList.add('popover-closing');
+    finish();
+    return;
+  }
+  node.classList.add('popover-closing');
+  const timer = window.setTimeout(() => {
+    popoverHideTimers.delete(node);
+    finish();
+  }, PRESENTATION_EXIT_MS);
+  popoverHideTimers.set(node, timer);
+}
+
+function closeRelationTargetMenu({ restoreFocus = false, immediate = false } = {}) {
   if (!activeRelationTargetMenu) return;
   const source = activeRelationTargetMenu.source;
-  elements['relation-target-menu'].classList.add('hidden');
-  elements['relation-target-menu'].replaceChildren();
   activeRelationTargetMenu = null;
+  hidePopoverSurface(elements['relation-target-menu'], {
+    immediate,
+    onHidden: () => elements['relation-target-menu'].replaceChildren(),
+  });
   if (restoreFocus && source?.isConnected) source.focus({ preventScroll: true });
 }
 
@@ -2674,7 +3004,7 @@ function openRelationTargetMenu(item, sourceEntry, source) {
       return option;
     }),
   );
-  elements['relation-target-menu'].classList.remove('hidden');
+  showPopoverSurface(elements['relation-target-menu']);
   requestAnimationFrame(() => {
     positionRelationTargetMenu();
     elements['relation-target-menu'].querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
@@ -2778,9 +3108,8 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
     throw error;
   }
   syncPinIndexForEntry(collection.id, entry.id);
-  const context = collectionRenderContext;
-  const current = document.getElementById(`entry-${entry.id}`);
-  if (context && current) current.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
+  // The PIN button was already updated optimistically. Re-rendering the whole
+  // Entry row here destroys DOM identity and creates an avoidable iOS repaint.
   renderPinBar(collection);
   showToast(wasPinned ? 'PIN 已取消' : existingPin ? 'PIN 已移到当前词表' : 'PIN 已设置');
 }
@@ -2795,7 +3124,7 @@ function displayGlossForEntry(entry, collection, domain) {
 async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   closeQueryMenu();
   const section = sectionForEntry(entry);
-  const mode = getViewMode(collection.id, section);
+  const mode = getViewMode(collection.id);
   const preserveDateViewport = mode === 'date';
   const root = document.documentElement;
   const preservedScrollY = preserveDateViewport ? window.scrollY : 0;
@@ -2816,7 +3145,7 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
     }
     const token = renderRevision;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (token === renderRevision && currentCollectionId === collection.id && getViewMode(collection.id, section) === 'date') {
+      if (token === renderRevision && currentCollectionId === collection.id && getViewMode(collection.id) === 'date') {
         window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
       }
       root.style.overflowAnchor = previousOverflowAnchor;
@@ -2893,7 +3222,7 @@ function openChatGPTEntryQuery(entry, collection) {
   const state = getState();
   const context = createEntryContext(state, entry, collection.id, {
     appVersion: APP_VERSION,
-    viewMode: getViewMode(collection.id, sectionForEntry(entry)),
+    viewMode: getViewMode(collection.id),
     section: sectionForEntry(entry),
   });
   const prompt = buildChatGPTPrompt(context);
@@ -2987,14 +3316,18 @@ function createTextViewport(entry, collection, gloss, annotationRecord, layoutKi
   return viewport;
 }
 
-function closeQueryMenu({ restoreFocus = false } = {}) {
+function closeQueryMenu({ restoreFocus = false, immediate = false } = {}) {
   if (!activeQueryMenu) return;
   const source = activeQueryMenu.source;
-  elements['query-menu'].classList.add('hidden');
-  elements['query-menu'].classList.remove('below');
-  elements['query-menu'].replaceChildren();
   activeQueryMenu.source?.setAttribute('aria-expanded', 'false');
   activeQueryMenu = null;
+  hidePopoverSurface(elements['query-menu'], {
+    immediate,
+    onHidden: () => {
+      elements['query-menu'].classList.remove('below');
+      elements['query-menu'].replaceChildren();
+    },
+  });
   if (restoreFocus && source?.isConnected) source.focus({ preventScroll: true });
 }
 
@@ -3061,7 +3394,7 @@ function openQueryMenu(entry, collection, source) {
     option.append(el('span', { className: 'query-provider-label', text: label }));
   }
   elements['query-menu'].replaceChildren(...providerOptions.map(([option]) => option));
-  elements['query-menu'].classList.remove('hidden');
+  showPopoverSurface(elements['query-menu']);
   requestAnimationFrame(() => { positionQueryMenu(); oxford.focus({ preventScroll: true }); });
 }
 
@@ -3879,8 +4212,7 @@ async function clearCurrentReviewAnnotations() {
 
 function renderReviewBar() {
   if (!review.ids.length) {
-    elements['annotation-review-bar'].classList.add('hidden');
-    elements.app.classList.remove('has-review');
+    setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: true });
     if (currentCollectionId) {
       const collection = getState().collectionById.get(currentCollectionId);
       if (collection) renderPinBar(collection);
@@ -3903,10 +4235,7 @@ function renderReviewBar() {
     navigateCollection(targetCollectionId, displayEntryId);
     return;
   }
-  elements['pin-bar'].classList.add('hidden');
-  elements.app.classList.remove('has-pin');
-  elements['annotation-review-bar'].classList.remove('hidden');
-  elements.app.classList.add('has-review');
+  setContextDockVisible(elements['pin-bar'], 'has-pin', false);
   const previous = iconButton('chevron', 'review-nav review-prev', '上一个标注', () => navigateReview(-1));
   const next = iconButton('chevron', 'review-nav review-next', '下一个标注', () => navigateReview(1));
   const editCollectionId = review.collectionId && !isGlobalCollection(review.collectionId) ? review.collectionId : projectionCollectionForEntry(entryId);
@@ -3923,7 +4252,7 @@ function renderReviewBar() {
     next,
     el('div', { className: 'review-actions' }, [edit, dismiss, clearCurrent, close]),
   );
-  updateOverlayLayout();
+  setContextDockVisible(elements['annotation-review-bar'], 'has-review', true);
 }
 
 function navigateReview(direction) {
@@ -3954,13 +4283,11 @@ async function dismissCurrentReviewAnnotation() {
 
 function closeReview() {
   review = { ids: [], index: 0, collectionId: '', viewKind: '' };
-  elements['annotation-review-bar'].classList.add('hidden');
-  elements.app.classList.remove('has-review');
+  setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: true });
   if (currentCollectionId) {
     const collection = getState().collectionById.get(currentCollectionId);
     if (collection) renderPinBar(collection);
   }
-  updateOverlayLayout();
 }
 
 
@@ -4031,7 +4358,7 @@ function openSearchDialog() {
   };
   const selectResult = (entry, collectionId) => {
     closeSearchDialog();
-    requestAnimationFrame(() => requestAnimationFrame(() => navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError)));
+    window.setTimeout(() => navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError), PRESENTATION_EXIT_MS);
   };
   const showEntries = (entries, label = '') => {
     status.textContent = label || (entries.length ? entries.length.toLocaleString() : '无结果');
@@ -4050,15 +4377,17 @@ function openSearchDialog() {
     const query = input.value.trim(); if (!query) return;
     const sequence = ++requestSequence; aiButton.disabled=true; aiButton.textContent='联想中…'; status.textContent='';
     try {
-      const terms = await suggestSearchTerms(query); if (sequence !== requestSequence || !elements['search-dialog'].open) return;
+      const terms = await suggestSearchTerms(query); if (sequence !== requestSequence || !activeSearchFrame?.layer?.isConnected || activeSearchFrame.closing) return;
       const allowed = visibleIds(), seen = new Set(), found=[];
       for (const term of terms) { for (const entry of search(term,{limit:80,entryIds:allowed})) { if(seen.has(entry.id)) continue; seen.add(entry.id); found.push(entry); if(found.length>=80) break; } if(found.length>=80) break; }
       showEntries(found);
     } catch (error) { if (sequence === requestSequence) displayError(error); }
     finally { if(sequence===requestSequence){ aiButton.disabled=false; aiButton.textContent='AI 联想'; } }
   });
-  elements['search-body'].replaceChildren(el('div', { className: 'search-controls' }, [input, scope, aiButton]), status, results);
-  showModalStable(elements['search-dialog']);
+  const searchContent = el('div', { className: 'search-modal-content' }, [el('div', { className: 'search-controls' }, [input, scope, aiButton]), status, results]);
+  activeSearchFrame = openDialog({
+    title: '搜索内容', body: [searchContent], showCancel: false, variant: 'search', kind: 'search',
+  });
 }
 
 function openSettingsDialog() {
@@ -4135,33 +4464,21 @@ function dismissUpdateBanner() {
   updateOverlayLayout();
 }
 
-async function handleConfirmSubmit(event) {
-  event.preventDefault();
-  if (!confirmSubmitHandler) return;
-  const submit = elements['confirm-submit'];
-  const oldText = submit.textContent;
-  try {
-    submit.disabled = true;
-    submit.textContent = '处理中…';
-    await confirmSubmitHandler();
-    closeConfirmDialog({ force: true });
-  } catch (error) {
-    displayError(error);
-  } finally {
-    if (submit.isConnected) {
-      submit.disabled = false;
-      submit.textContent = oldText || '确认';
-    }
-  }
-}
-
-function closeDialogFromBackdrop(event, dialog, close) {
-  if (event.target === dialog) close();
-}
 
 function renderApp() {
   const token = ++renderRevision;
   const route = parseRoute();
+
+  // Hard product invariant: Home is the destructive navigation root.  A root
+  // URL can also be reached by an external/manual same-document hash change,
+  // not only by our Back/Home controls.  Never render Home while recursive VIX
+  // frames are still alive; converge the current history entry to the clean
+  // root first.  This deliberately does not guess a browser-history delta.
+  if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0)) {
+    enterHomeRoot({ resetScroll: true });
+    return;
+  }
+
   const previousCollectionId = currentCollectionId;
   if (!route.collectionId && previousCollectionId) restoreHomeScrollPending = true;
   currentCollectionId = route.collectionId;
@@ -4211,7 +4528,7 @@ function handleStoreEvent({ type, detail }) {
   if (type === 'mutation' && detail?.kind === 'pin') return;
   if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
     const collection = getState().collectionById.get(currentCollectionId);
-    if (collection && getViewMode(collection.id, currentViewKind) === 'alphabet') return;
+    if (collection && getViewMode(collection.id) === 'alphabet') return;
   }
   if (type === 'annotation-change') {
     if (activeTask && detail?.kind !== 'batch') {
@@ -4233,8 +4550,8 @@ function handleStoreEvent({ type, detail }) {
 
 function handleWindowScroll() {
   if (browseAnchorPress) cancelBrowseAnchorPress({ suppressClick: true });
-  if (activeQueryMenu) closeQueryMenu();
-  if (activeRelationTargetMenu) closeRelationTargetMenu();
+  if (activeQueryMenu) closeQueryMenu({ immediate: true });
+  if (activeRelationTargetMenu) closeRelationTargetMenu({ immediate: true });
   if (!scrollUiFrame) {
     scrollUiFrame = requestAnimationFrame(() => {
       scrollUiFrame = 0;
@@ -4246,20 +4563,59 @@ function handleWindowScroll() {
   if (!('onscrollend' in window)) persistScrollPosition();
 }
 
+function initializeNavigationModel() {
+  const state = history.state || {};
+  const stateEpoch = Number(state.epoch || 0);
+  const stateDepth = Math.max(0, Number(state.depth || 0));
+  const stateToken = String(state.navToken || '');
+  const currentModel = state.vix === true && state.navModel === NAVIGATION_MODEL && Number.isFinite(stateEpoch) && stateEpoch > 0;
+
+  if (currentModel) {
+    navigationEpoch = stateEpoch;
+    const loaded = loadNavigationSession();
+    if (loaded) {
+      const frame = stateDepth > 0 ? navigationStack[stateDepth - 1] : null;
+      const validDepth = stateDepth === 0 || (frame && frame.token === stateToken && !discardedNavigationTokens.has(stateToken));
+      if (validDepth) {
+        appNavigationDepth = stateDepth;
+        if (!navigationRootToken) navigationRootToken = stateDepth === 0 ? stateToken : newNavigationToken('root');
+        if (stateDepth === 0) {
+          navigationStack.length = 0;
+          currentCollectionId = '';
+          currentViewKind = 'word';
+        } else {
+          navigationStack.splice(stateDepth);
+          pendingPageSnapshot = frame.snapshot || null;
+        }
+        history.replaceState(navigationHistoryState(stateDepth, stateDepth ? stateToken : navigationRootToken), '', location.href);
+        persistNavigationSession();
+        return;
+      }
+    }
+  }
+
+  // 4.3.0 deliberately has no compatibility path for 4.2 navigation state. A
+  // missing/mismatched destructive-stack session becomes a clean Home root;
+  // business data and manually saved browse anchors are untouched.
+  navigationEpoch = Date.now();
+  navigationRootToken = newNavigationToken('root');
+  navigationStack.length = 0;
+  discardedNavigationTokens.clear();
+  discardedForwardAvailable = false;
+  appNavigationDepth = 0;
+  currentCollectionId = '';
+  currentViewKind = 'word';
+  pendingPageSnapshot = null;
+  history.replaceState(navigationHistoryState(0, navigationRootToken), '', location.pathname + location.search);
+  persistNavigationSession();
+}
+
 export async function initializeUI() {
   elements['back-button']?.replaceChildren(svgIcon('back'));
   elements['home-button']?.replaceChildren(svgIcon('home'));
   elements['search-button']?.replaceChildren(svgIcon('search'));
   elements['back-to-top']?.replaceChildren(svgIcon('top'));
-  elements['search-close']?.replaceChildren(svgIcon('close'));
   elements['update-later-button']?.replaceChildren(svgIcon('close'));
-  elements['confirm-form'].addEventListener('submit', handleConfirmSubmit);
-  elements['search-close'].addEventListener('click', closeSearchDialog);
-  elements['confirm-cancel'].addEventListener('click', handleConfirmCancel);
-  elements['search-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['search-dialog'], closeSearchDialog));
-  elements['confirm-dialog'].addEventListener('click', (event) => closeDialogFromBackdrop(event, elements['confirm-dialog'], closeConfirmDialog));
-  elements['search-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeSearchDialog(); });
-  elements['confirm-dialog'].addEventListener('cancel', (event) => { event.preventDefault(); closeConfirmDialog(); });
   elements['back-button'].addEventListener('click', navigateBack);
   elements['home-button'].addEventListener('click', resetNavigationToHome);
   elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
@@ -4277,6 +4633,7 @@ export async function initializeUI() {
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
   window.addEventListener('hashchange', () => { if (!history.state?.vix) scheduleRouteRender(); });
   window.addEventListener('popstate', handleHistoryNavigation);
+  globalThis.navigation?.addEventListener?.('navigate', handleNavigationApiNavigate);
   window.visualViewport?.addEventListener('resize', () => updateVisualViewportVars());
   window.visualViewport?.addEventListener('scroll', () => updateVisualViewportVars(), { passive: true });
   window.addEventListener('resize', () => { updateVisualViewportVars(); scheduleAlphabetSectionMetricsRefresh(); }, { passive: true });
@@ -4320,18 +4677,19 @@ export async function initializeUI() {
   };
   document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
   document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
+  // Edge history guards are registered once, before any gesture begins. Root
+  // listeners must be explicitly non-passive on iOS for preventDefault() to own
+  // the gesture. Modal and navigation guards are orthogonal and share capture.
+  document.addEventListener('touchstart', handleNavigationEdgeTouchStart, { passive: false, capture: true });
+  document.addEventListener('touchmove', handleNavigationEdgeTouchMove, { passive: false, capture: true });
+  document.addEventListener('touchend', finishNavigationEdgeGesture, { passive: false, capture: true });
+  document.addEventListener('touchcancel', finishNavigationEdgeGesture, { passive: false, capture: true });
   document.addEventListener('touchstart', handleModalTouchStart, { passive: true, capture: true });
   document.addEventListener('touchmove', handleModalTouchMove, { passive: false, capture: true });
   if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
   subscribe(handleStoreEvent);
   await initializeStore();
-  const storedEpoch = (() => { try { return Number(sessionStorage.getItem('vocabulary-index:navigation-epoch') || 0); } catch { return 0; } })();
-  const stateEpoch = Number(history.state?.epoch || 0);
-  navigationEpoch = Math.max(1, storedEpoch, stateEpoch);
-  try { sessionStorage.setItem('vocabulary-index:navigation-epoch', String(navigationEpoch)); } catch {}
-  const initialDepth = stateEpoch && stateEpoch !== navigationEpoch ? 0 : Number(history.state?.depth || 0);
-  appNavigationDepth = Number.isFinite(initialDepth) ? initialDepth : 0;
-  history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth, epoch: navigationEpoch, pageSnapshot: stateEpoch && stateEpoch !== navigationEpoch ? null : (history.state?.pageSnapshot || null) }, '', location.href);
+  initializeNavigationModel();
   updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');

@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 6,
-    appVersion: '4.2.0',
+    appVersion: '4.3.0',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -53,7 +53,7 @@ async function ensureLowLevelLexemes() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.2.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.3.0', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -808,19 +808,22 @@ export function getLastPosition(domainId, collectionId, { mode = 'alphabet', sec
   return entryId;
 }
 
-export function getViewMode(collectionId, section = 'main') {
-  const key = `${collectionId}:${section}`;
-  const value = state.settings.viewModes?.[key] ?? state.settings.viewModes?.[collectionId];
+export function getViewMode(collectionId) {
+  // 4.3.0: alphabet/date is Collection state, not a word/phrase/content state.
+  // Historical section-qualified keys are intentionally ignored; this release
+  // does not migrate or infer old per-view mode preferences.
+  const value = state.settings.viewModes?.[collectionId];
   return value === 'date' ? 'date' : 'alphabet';
 }
 
-export async function setViewMode(collectionId, mode, section = 'main') {
+export async function setViewMode(collectionId, mode) {
   if (!['alphabet', 'date'].includes(mode)) throw new Error('无效浏览模式');
-  const key = `${collectionId}:${section}`;
-  const next = { ...(state.settings.viewModes || {}), [key]: mode };
+  const previous = state.settings.viewModes || {};
+  const next = Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${collectionId}:`)));
+  next[collectionId] = mode;
   await setSettings({ viewModes: next });
   state.settings.viewModes = next;
-  emit('view-mode', { collectionId, section, mode });
+  emit('view-mode', { collectionId, mode });
   return mode;
 }
 

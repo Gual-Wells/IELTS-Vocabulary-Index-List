@@ -1,6 +1,6 @@
-# Vocabulary Index 4.2.0 数据报告
+# Vocabulary Index 4.3.0 数据报告
 
-> 4.2.0 未修改 Seed 内容、计数、来源、关系组件或数据模型；数据结论继承 4.0.0/4.1.0。
+> 4.3.0 未修改 Seed 内容、计数、来源、关系组件或数据模型；数据结论继承 4.0.0–4.2.0。
 
 - Domain：3
 - Collection：17
@@ -12,4 +12,4 @@
 - Seed revision：4
 - VIX：2
 
-4.2.0 新增的 `navigationEpoch` 只属于浏览器 Navigation History 运行时，不写入 Seed/IndexedDB/VIX/Full Backup，也不属于数据 Undo/Redo History。
+4.3.0 的 `navigationStack/navigationEpoch/navToken/discardedNavigationTokens` 都只属于页面导航运行时/session，不写入 Seed/IndexedDB/VIX/Full Backup，也不属于数据 Undo/Redo History。Collection-level `viewModes[collectionId]` 仍是普通 Settings；旧 section-keyed mode 不做推断迁移。

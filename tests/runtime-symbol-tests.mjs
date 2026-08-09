@@ -8,13 +8,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ui = fs.readFileSync(path.join(root, 'js/v3-ui.js'), 'utf8');
 
 const criticalFunctions = [
-  'openDialog', 'showModalStable', 'renderAlphabetContent', 'renderDateContent',
+  'openDialog', 'renderAlphabetContent', 'renderDateContent',
   'setLetterSectionOpen', 'toggleLetterSectionWithAnchor', 'setDateSectionOpen', 'toggleDateSectionWithAnchor',
   'updateActiveLetter', 'syncActiveAlphabetHeading', 'renderEntryRow', 'switchCollectionView',
   'switchCollectionMode', 'bindBrowseAnchorButton', 'calendarForSection', 'topChromeBottom',
   'relationNavigationMode', 'normalDestinationsForEntries', 'openSearchDialog', 'startProviderQuery',
   'providerQueryIsCurrent', 'beginLongpressGuard', 'endLongpressGuardWithGrace', 'alphabetNavAttached',
-  'resetNavigationToHome', 'finalizeNavigationResetToHome',
+  'resetNavigationToHome', 'finalizeNavigationResetToHome', 'initializeNavigationModel',
+  'handleNavigationApiNavigate', 'handleNavigationEdgeTouchStart', 'collapseNativeStickySection',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\bfunction\\s+${name}\\s*\\(`, 'g'))];
@@ -29,7 +30,7 @@ assert.ok(ui.includes("toggleDateSectionWithAnchor(section, 'unmarked', event.cu
 
 // Fresh navigation and recursive history are separate semantics.
 assert.ok(ui.includes("if (reason === 'home')"));
-assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet', nextView)"));
+assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet')"));
 assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
 assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('restoreSnapshotAfterRender'));
@@ -64,6 +65,13 @@ assert.ok(!ui.includes('syncSystemShellSurface'));
 assert.ok(!ui.includes('MODAL_BACKDROP_ALPHA'));
 assert.ok(ui.includes('resetNavigationToHome'));
 assert.ok(ui.includes('navigationEpoch'));
+assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v1'"));
+assert.ok(ui.includes('discardNavigationFramesFrom'));
+assert.ok(ui.includes('if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0))'));
+assert.ok(ui.includes('const forwardIsForbidden = isForward'));
+assert.ok(!ui.includes('pageSnapshot'));
+assert.ok(!ui.includes('showModalStable'));
+assert.ok(!ui.includes("body.style.position = 'fixed'"));
 assert.ok(ui.includes('switchParallel:'));
 assert.ok(ui.includes("[toggleGlobal, ...homeActions]"));
 

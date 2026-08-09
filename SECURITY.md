@@ -1,4 +1,4 @@
-# Vocabulary Index 4.2.0 安全与数据边界
+# Vocabulary Index 4.3.0 安全与数据边界
 
 Vocabulary Index 是个人本地 PWA，不提供服务端账户或云同步。
 
@@ -27,6 +27,10 @@ Full Backup 可能包含完整个人学习状态，但不包含 Groq/Collins API
 
 当前大型 Seed 数据的质量/来源记录与公开再分发授权是两个不同问题。项目长期自用时可先以质量和可重建性为主，但任何未来公开提交第三方大词表前应重新审核其公开分发条件。
 
-## 4.2.0 Navigation History
+## 4.3.0 Navigation / Presentation 边界
 
-`navigationEpoch` 只用于失效浏览器递归页面状态，不上传、不写业务数据库，也不触碰数据 Undo/Redo。Root Home 不删除 Entry/PIN/Annotation/StudyStamp/API Key/Settings。
+- Browser history state 只保存最小导航 token/depth/epoch；完整 page snapshot 保存在 session-scoped VIX navigation state，不写业务数据库。
+- 被 destructive POP 的 token 不得通过 Forward 恢复；standalone edge guard 与 Navigation API 只用于导航安全，不收集触摸轨迹或上传数据。
+- `navigation-underlay` 是纯本地视觉层，不是隐藏网页或外部内容。
+- Modal 打开不再写 body fixed/top；App inert + non-passive touch guard 只阻止本地背景交互/滚动，不改变网络权限。
+- Search/Confirm 迁入 custom Modal Stack 不改变其业务权限或数据发送范围。

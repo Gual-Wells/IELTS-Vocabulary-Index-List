@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.2.0（2026-08-09）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.3.0（2026-08-09）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.2.0 完整源码实际行为。
+- **[当前实现]**：4.3.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -124,7 +124,7 @@ Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provid
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
 
-## 4.2.0：[当前实现]
+## 4.2.0：[历史稳定基线]
 
 4.2.0 是 4.1.0 真机暴露的 Sticky mirror/系统壳实验问题与后续导航/首页视觉讨论的统一收口，不改变 4.0 内容世代：
 
@@ -141,6 +141,24 @@ Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provid
 - Topbar 左/右各预留 96px 导航/动作宽度，中央标题继续物理居中；Back aria-label 明确为“返回上一页”。
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
+
+## 4.3.0：[当前实现]
+
+4.3.0 来自 4.2.0 首轮真机反馈及随后对源码、历史设计意图、WebKit/WHATWG/W3C 与社区工程案例的再次审计；数据世代不变：
+
+- 4.2.0 Date/Alphabet 收起仍采用 `remove → rAF → measure → scroll` 的跨帧补偿，真机两种模式都出现闪现。4.3.0 保留 native Sticky，删除旧补偿器，统一为 pre-read geometry + collapse/final-scroll 单提交 transaction；Alphabet 的 LetterNav 差异继续由 `--content-sticky-top` 实测体系表达。
+- `viewModes` 从 `collection:viewKind` 提升为 Collection-level，word/phrase 共享 alphabet/date；scroll/expanded/calendar/browse anchor/recursive snapshot 继续具体 view 独立。按用户决策不迁移旧 section mode。
+- 4.2.0 epoch-only Root Home 无法让 Safari forward slot 消失，真机可右边缘拖出旧页面。4.3.0 把 Safari history 降级为 gesture rail，VIX 维护 destructive navigationStack：Back commit POP 并销毁离开 frame，任何 Home 清空 recursive stack，Forward/stale destination 被 edge guard + Navigation API + dead-token state guard 拒绝。
+- Home hard invariant 扩展到所有 root route：即使通过同文档 hash/外部路由直接落到 root，`renderApp()` 也先 destructive clear，再渲染首页，避免 URL 与递归栈生命不同步。
+- `history.scrollRestoration='manual'`，VIX 成为 recursive snapshot scroll 的唯一恢复者。
+- `navigation-underlay` 从启动即常驻，是纯视觉底层而非 History blank/sentinel 页面；不在非法手势发生后临时 render。
+- Presentation Layer 收敛为 Popover/Modal/Dock。Query/Relation 共用轻浮层生命周期；Search/Confirm 从 native `<dialog>` 迁入 retained custom Modal Stack；PIN/Review 保持 context dock。
+- 保住 4.0.1 retained parent DOM、48%/20% nested backdrop、VisualViewport card geometry，以及 4.2 full-Web backdrop/system-strip 边界；删除 body fixed/top modal scroll-lock 和 double-rAF hard reveal。
+- PIN mutation 不再 whole-entry `replaceWith(renderEntryRow)`；Pin/Review Dock DOM 常驻，用 opacity/visibility/transform reveal/exit。
+- 被明确拒绝的方案包括：Sticky 多加 rAF/默认遮罩、viewMode 猜旧状态迁移、每层 History blank sentinel、继续 body-fixed modal、为了 Modal 改全 App scroll container。
+- 自动测试升级为 4.3 行为契约，但 edge system preview、Sticky 首次 compositor 帧、modal PWA background lock 仍明确要求 iPhone 17 / iOS 26.5.2 standalone reduced tests。
+
+Schema6 / DB5 / Seed4 / VIX2、数据投影、Search/Relation、Provider、Home 视觉、58px toolbar、longpress 等继续不变。
 
 # 三、4.0.x 当前数据模型
 
@@ -193,18 +211,18 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.2.0 当前待真机事项
+# 八、4.3.0 当前待真机事项
 
-- Alphabet native sticky：展开组吸附、collapsed 不持续、section-bottom push-off、下一组接管；global/domain/normal + word/phrase/content 全覆盖。
-- 点击吸顶字母 heading 收起：真实标题留在字母栏正下方，无闪跳、无 max-scroll clamp。
-- 字母栏 cell top/A-left/分隔线与 disabled `#` 结构线继续正确。
-- Query chooser：relation-style 横向位置、再左退幅度、13px 垂直呼吸缝；Oxford 新 optical size 与另外三枚一致。
-- Home Root：depth1 仅 Back，depth>=2 Back+Home；Home 一次回首页顶部，旧递归 snapshot/forward 不复活，业务数据与 Undo/Redo 不受影响。
-- Home Product Wordmark、Global Index Rule、“全局”与 Domain 同级字号在 402px iPhone 上视觉成立且不挤 Topbar。
-- retained modal depth 1/2：Topbar/正文/父 modal 由真实 backdrop 自然逐层变暗；当前最上层 card 正常显色；iOS system strip 若仍白记录平台边界。
-- 日期 StudyStamp 原位刷新、Entry secondary gap、PWA 主屏幕名 `Vocabulary Index`、全局非结构总表文案继续回归。
-- 长按、Home Indicator、系统返回手势、Shortcuts、Collins CORS、Service Worker/离线/进程回收继续真机验收。
+- Sticky collapse：Date/Alphabet 冷启动第一次收起、连续收起、section tail/document bottom、fling/rubber-band 后收起均无闪帧；Alphabet 最终边界为 LetterNav 下缘，Date 为 Top Chrome 下缘。
+- Collection-level mode：word/phrase 共享 alphabet/date，而 scroll/expanded/calendar/browse anchor 仍各 view 独立。
+- Destructive navigation：Back button 与 iOS swipe commit 都 POP 离开 frame；合法 Back 只出现一次 Safari 原生动画；Forward 不复活旧页。
+- Edge safety：右边缘 guard 是否在 iOS 26.5.2 standalone 100% 早于 system history preview；Home 左边缘不退入产品外页面。
+- Home：任何路径进入即 recursive stack=0，业务数据/浏览锚点/UndoRedo 不受影响。
+- Modal：首开 Settings/Search/Confirm/nested 无 flash；无 body-fixed 情况下 backdrop/header/footer 拖动不移动背景，dialog-body 可滚且边界不链给正文；keyboard/VisualViewport 正常。
+- PIN/Review：第一个 Dock、最后一个取消、document bottom 均无 whole-row repaint/scroll clamp；Dock 常驻 reveal/exit 稳定。
+- Popover：Query/Relation motion 统一但各自 anchor 不回归；4.2 Query/Oxford 视觉保留。
+- 4.2 Home wordmark/Global Index Rule、字母 cell border、StudyStamp 原位刷新、Entry secondary gap、58px toolbar、longpress、Shortcuts/Collins CORS、Service Worker/离线/进程回收继续回归。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.2.0.md`、`SEMANTIC_IMPACT_MATRIX_4.2.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.2.0.md`、`PRODUCT_MANUAL_4.2.0.md`、`AUDIT_REPORT_4.2.0.md`、`CHANGE_REPORT_4.2.0.md` 与 `TEST_REPORT_4.2.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.3.0.md`、`SEMANTIC_IMPACT_MATRIX_4.3.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.3.0.md`、`PRODUCT_MANUAL_4.3.0.md`、`AUDIT_REPORT_4.3.0.md`、`TECHNICAL_RESEARCH_4.3.0.md`、`CHANGE_REPORT_4.3.0.md`、`TEST_REPORT_4.3.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.3.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

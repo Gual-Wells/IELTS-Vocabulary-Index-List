@@ -1,0 +1,180 @@
+/* Vocabulary Index 4.3.0 runtime convergence layer.
+   Presentation-only refactor: native sticky ownership is preserved; browser
+   history is no longer the recursive-state store; modal presentation keeps
+   document scroll geometry intact; PIN/Review remain context docks. */
+
+:root {
+  --presentation-motion-ms: 140ms;
+  --presentation-exit-ms: 140ms;
+  --navigation-guard-size: 18px;
+}
+
+/* Permanent visual safety substrate. It is not a history entry and is never
+   created on demand; an invalid edge gesture therefore has no cold-render path. */
+.navigation-underlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--bg);
+  pointer-events: none;
+}
+
+
+/* Keep the product surface above the permanent underlay without creating a
+   transformed ancestor; fixed Topbar/Dock/Popover descendants keep viewport
+   semantics. */
+#app,
+.boot-screen {
+  position: relative;
+  z-index: 1;
+}
+
+.navigation-guard-feedback {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: var(--navigation-guard-size);
+  z-index: 180;
+  pointer-events: none;
+  opacity: 0;
+  background: var(--bg);
+  box-shadow: 0 0 18px rgb(28 27 25 / 10%);
+  transition: opacity 90ms ease-out, transform 90ms ease-out;
+}
+.navigation-guard-feedback[data-side="right"] { right: 0; transform: translateX(100%); }
+.navigation-guard-feedback[data-side="left"] { left: 0; transform: translateX(-100%); }
+.navigation-guard-feedback.guard-active { opacity: .94; transform: translateX(0); transition: none; }
+.navigation-guard-feedback.guard-settling { opacity: 0; }
+
+/* Modal surface contract. The backdrop owns dimming for the complete Web
+   drawable viewport; card positioning consumes VisualViewport variables only.
+   No modal rule changes body/document position or scroll offset. */
+.modal-layer {
+  overflow: hidden;
+}
+.modal-layer-backdrop {
+  opacity: 1;
+  transition: opacity var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1);
+  touch-action: none;
+}
+.modal-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1),
+    transform var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1);
+}
+.modal-layer-entering .modal-layer-backdrop { opacity: 0; }
+.modal-layer-entering .modal-card { opacity: 0; transform: translateY(4px) scale(.985); }
+.modal-layer-closing .modal-layer-backdrop { opacity: 0; transition-duration: var(--presentation-exit-ms); }
+.modal-layer-closing .modal-card {
+  opacity: 0;
+  transform: translateY(2px) scale(.99);
+  transition-duration: var(--presentation-exit-ms);
+  pointer-events: none;
+}
+.modal-layer .dialog-header,
+.modal-layer .dialog-actions { touch-action: none; }
+.modal-layer .dialog-body {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Search and confirm now use the retained application modal engine rather than
+   native <dialog>; keep their established iPhone geometry and visual hierarchy. */
+.modal-layer[data-variant="search"] {
+  place-items: start center;
+  padding:
+    calc(var(--visual-top) + var(--safe-top) + 76px)
+    max(16px, env(safe-area-inset-right, 0px))
+    max(14px, var(--safe-bottom))
+    max(16px, env(safe-area-inset-left, 0px));
+}
+.modal-layer[data-variant="search"].keyboard-visible {
+  padding-top: calc(var(--visual-top) + var(--safe-top) + 12px);
+}
+.modal-card-search {
+  width: min(500px, calc(var(--visual-width, 100vw) - 32px)) !important;
+  max-width: min(500px, calc(var(--visual-width, 100vw) - 32px)) !important;
+  max-height: calc(var(--visual-height) - var(--safe-top) - var(--safe-bottom) - 108px) !important;
+  border-radius: 21px !important;
+}
+.modal-layer[data-variant="search"].keyboard-visible .modal-card-search {
+  max-height: calc(var(--visual-height) - var(--safe-top) - 24px) !important;
+}
+.search-modal-content { min-width: 0; display: grid; gap: 12px; }
+
+.modal-card-confirm {
+  width: min(322px, calc(var(--visual-width, 100vw) - 48px)) !important;
+  max-width: min(322px, calc(var(--visual-width, 100vw) - 48px)) !important;
+  max-height: min(calc(var(--visual-height) - 64px), 520px) !important;
+  border-radius: 19px !important;
+}
+
+/* Keep the document geometry static while a retained modal is open. Scroll
+   blocking is owned by inert + the pre-registered non-passive touch guard. */
+html.modal-open,
+body.modal-open {
+  overflow-y: auto !important;
+  overscroll-behavior: none !important;
+}
+
+/* PIN/Review are persistent DOM docks. Hidden state no longer destroys the CSS
+   box with display:none; content is prepared before reveal and the Entry row is
+   never recreated just to change its PIN button. */
+.pin-bar,
+.review-bar {
+  display: grid !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(6px) !important;
+  transition:
+    opacity var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1),
+    transform var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1),
+    visibility 0s linear var(--presentation-motion-ms);
+}
+.pin-bar.dock-visible,
+.review-bar.dock-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) !important;
+  transition-delay: 0s;
+}
+.keyboard-visible .pin-bar,
+.keyboard-visible .review-bar {
+  display: grid !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Query and relation target are the same lightweight presentation family even
+   though their anchor geometry remains intentionally different. */
+.query-menu,
+.relation-target-menu {
+  animation: vix-popover-in var(--presentation-motion-ms) cubic-bezier(.2,.75,.25,1) !important;
+}
+.query-menu.popover-closing,
+.relation-target-menu.popover-closing {
+  animation: vix-popover-out var(--presentation-exit-ms) ease-in forwards !important;
+  pointer-events: none !important;
+}
+@keyframes vix-popover-in {
+  from { opacity: 0; transform: translateY(4px) scale(.96); }
+}
+@keyframes vix-popover-out {
+  to { opacity: 0; transform: translateY(2px) scale(.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-layer-backdrop,
+  .modal-card,
+  .pin-bar,
+  .review-bar,
+  .navigation-guard-feedback { transition-duration: 0ms !important; }
+  .query-menu,
+  .relation-target-menu { animation: none !important; }
+}

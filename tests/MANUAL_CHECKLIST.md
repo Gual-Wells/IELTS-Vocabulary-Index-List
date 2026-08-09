@@ -1,83 +1,90 @@
-# Vocabulary Index 4.2.0 · iPhone 17 主屏幕 PWA 人工验收清单
+# Vocabulary Index 4.3.0 · iPhone 17 主屏幕 PWA 人工验收清单
 
-> 目标：iPhone 17 标准版 / iOS WebKit / Home Screen standalone。自动测试不等于本清单通过。
+> 目标：iPhone 17 标准版 / iOS 26.5.2 WebKit / Home Screen standalone。自动测试不等于本清单通过；帧级/手势 reduced cases 另见 `IPHONE_REDUCED_TESTS_4.3.0.md`。
 
-## A. 安装与基础数据
+## A. 安装与数据边界
 
-- [ ] 页面/设置显示 4.2.0；Home Screen 名称为 `Vocabulary Index`。
-- [ ] 4.1.0 → 4.2.0 后 Entry、PIN、StudyStamp、Annotation、Settings、API Key、用户内容均保留。
+- [ ] 页面/设置显示 4.3.0；Home Screen 名称为 `Vocabulary Index`。
+- [ ] Entry、PIN、StudyStamp、Annotation、Settings、API Key、用户内容均保留。
+- [ ] 旧 4.2 页面导航状态不被复活；进入干净 Home 不影响业务数据。
 - [ ] PWA `V` icon、离线启动、进程回收后重开正常。
 
-## B. Home 视觉
+## B. Collection mode
 
-- [ ] Topbar `Vocabulary Index` 为独立产品 wordmark，明显区别于普通 Collection 标题，也不复制绿色 uppercase eyebrow。
-- [ ] Hero 仍为 `VOCABULARY INDEX` + 大字“词汇索引”。
-- [ ] “全局”字号/字重与“通用英语”等 Domain heading 同级。
-- [ ] Global 不再有完整淡矩形框；标题和右侧动作之间只有轻量 Index Rule，整体不显空散或突兀。
-- [ ] Parallel switch 在“管理”左侧；structured/nonStructured 切换正常。
-- [ ] nonStructured 入口名称为“全局非结构总表”。
+- [ ] 普通 Collection 词汇页切 Date → 切短语仍是 Date。
+- [ ] 短语页切 Alphabet → 切词汇仍是 Alphabet。
+- [ ] 两页各自 scroll/展开字母或日期组不被强行同步。
+- [ ] Date calendarMonth 在 word/phrase 间仍可独立。
 
-## C. Back / Root Home
+## C. Native Sticky / Collapse
 
-- [ ] Home→A（depth 1）：只显示 Back，不显示 Home。
-- [ ] Home→A→B（depth 2+）：左上为 Back + Home，中央标题仍物理居中，长标题省略不压按钮。
-- [ ] Back 只回上一页并恢复原页面 mode/scroll/expandedGroups/calendar 等快照。
-- [ ] Home 从任意深度一次回首页顶部，不逐层播放返回。
-- [ ] Home 后再尝试系统 forward/历史恢复，旧 A/B/C pageSnapshot 不得复活。
-- [ ] Home 不清 PIN、Annotation、StudyStamp、Settings、API Key、手动浏览锚点或 Undo/Redo。
+在全局词汇、全局短语、域总表、普通词表/短语、nonStructured content 中抽样：
 
-## D. Alphabet native Sticky
+- [ ] Alphabet heading Sticky 在 LetterNav 正下方；Date heading 在 Top Chrome 正下方。
+- [ ] collapsed section 不持续 Sticky；expanded section 到 parent bottom 自然 push-off。
+- [ ] 第一次收起 Sticky 不出现字母栏/页面闪现、错误内容一帧、白帧或标题重影。
+- [ ] 后续连续展开/收起 20 次同样稳定。
+- [ ] 靠近 section 尾部/document bottom、fling/rubber-band 后立即收起仍稳定。
+- [ ] Alphabet active letter/横向轨道仍正确。
+- [ ] 字母 cell top/right/bottom + first left border 保留；disabled 只灰 glyph。
 
-在全局词汇总表、全局短语总表、域总表、普通词表、普通短语表、非结构 content 表至少各抽一类验证：
+## D. Destructive Back / Home
 
-- [ ] 字母栏 sticky 到 Top Chrome 后，真实展开字母 heading 吸附在字母栏无缝正下方。
-- [ ] 收起的字母 section 不形成持续 Sticky。
-- [ ] 展开 section 的内容触底时，Sticky heading 被 section 底部带着向上退场；下一 section 自然接管。
-- [ ] Sticky heading 左右边界来自 section side rails，无 4.1.0 mirror 两侧缺线。
-- [ ] 点击吸顶的展开字母 heading 收起：真实 collapsed heading 留在字母栏正下方，不跳到后续字母、不闪现、不被 document max-scroll clamp。
-- [ ] 点击屏幕内普通真实 heading 收起同样保持原视觉位置。
-- [ ] fling / rubber-band / 快速连续展开收起无镂空、无 ghost、无双标题。
-- [ ] 字母栏 active 与真实当前 section 同步，横向轨道自动跟随不迟滞。
+构造 Home→A→B→C：
 
-## E. Alphabet cell 边框回归
+- [ ] Back 按钮 C→B：B snapshot 恢复；C 状态销毁。
+- [ ] iPhone 左边缘 Back C→B：只有一次 Safari 原生连续动画，没有 App 第二次 page transition。
+- [ ] 从 B 尝试右边缘 Forward：C 不得重新成为可交互/可提交页面。
+- [ ] Back B→A 后 B 同样不可 Forward 恢复。
+- [ ] A→Home（按钮或手势）后 recursive stack 清空。
+- [ ] C 点 Home 一次回首页顶部，不逐层播放。
+- [ ] Home 后 PIN/Annotation/StudyStamp/Settings/API Key/浏览锚点/UndoRedo 不变。
+- [ ] Home root 左边缘手势不进入产品无语义的更早页面。
+- [ ] 在递归页直接把同文档 hash 改回 root（或等效外部 root 路由）后，必须先清空 recursive stack 再显示 Home；随后旧页不得成为有效 VIX 返回目标。
+- [ ] POP 后 fresh 进入新页面会截断旧 forward branch 语义。
 
-- [ ] 每个字母 cell 顶/右/底结构线完整；A/首格左线完整。
-- [ ] disabled/empty 字母只灰文字，结构线不灰；重点看 `#`、首尾以及相邻竖线。
-- [ ] active fill/下强调线不破坏 cell 边框连续性。
+## E. Navigation visual safety
 
-## F. Date 模式
+- [ ] 非法 edge gesture 时没有临时创建的白页/旧页；背景只可能露出常驻 `#fafafa` underlay/轻量 edge feedback。
+- [ ] 快速/慢速/半拖取消/连续 edge gesture 不出现跳跃、旧 route 闪现或 URL/页面语义错位。
+- [ ] 若仍能看到系统旧 history preview surface，必须记录为目标机平台边界，不得误报为通过。
 
-- [ ] 日期/未标注 heading native Sticky 继续吸附、触底退场、收起自然退出。
-- [ ] 刷新某 Entry StudyStamp 后保持当前 viewport，不跟随 Entry 新排序位置跳转。
-- [ ] 更新前后无二次滚动、overflow-anchor 回弹或闪动。
+## F. Popover
 
-## G. Query / Relation
+- [ ] Query Oxford→Collins→Groq→ChatGPT 顺序、4.2 位置、12px edge inset、13px Entry gap 保留。
+- [ ] Relation multi-target 位置不被 Query 统一几何破坏。
+- [ ] Query/Relation 打开/普通关闭具有同类轻柔 enter/exit。
+- [ ] 页面滚动时浮层立即消失，无 trailing menu。
+- [ ] Oxford closed-book 视觉继续与 Collins/Groq/ChatGPT 对齐。
 
-- [ ] Query chooser Oxford→Collins→Groq→ChatGPT 顺序不变。
-- [ ] Query chooser 从右侧动作区向左展开，位置比 4.1.0 更自然；不故意探出列表右边框，也不过度贴屏幕左/右边缘。
-- [ ] Query chooser 底边与一级 Entry 框线之间存在清楚的小空隙；底层框线不穿过浮层。
-- [ ] viewport 顶/底空间不足时 above/below fallback 正常。
-- [ ] Oxford 新 closed-book icon 与 Collins/Groq/ChatGPT 的视觉尺寸、线宽、留白、重心一致。
-- [ ] 四态 relation multi-target 菜单继续保持现有正确视觉与导航。
+## G. Retained Modal Engine
 
-## H. Entry 密度
+依次测试 Settings、Manager、Entry Action、Provider Result、Search、Confirm、nested child：
 
-- [ ] 无副信息 Entry 不被无意义压矮。
-- [ ] 仅繁体、仅来源、繁体+来源同时存在时，secondary line 间距紧凑且左右同 Y。
-- [ ] phrase/content two-line/extreme 不遮控件，44px action hit target 保持。
+- [ ] 冷启动第一次打开不出现整页闪、白帧、先黑两帧再硬出 card。
+- [ ] backdrop 与 card 同步柔和进入；close 动画结束后才移除。
+- [ ] 第一层 48% full-Web backdrop；child 再 20%；top card 正常 surface。
+- [ ] 父层在 child 下是真实 DOM；关闭 child 后输入值、内部 scroll、状态原样恢复。
+- [ ] Search/Confirm 与其他 Modal 使用同一 backdrop/focus/close 语义，不再表现为另一套 native dialog。
+- [ ] backdrop/header/footer 上拖动背景不滚；dialog body 可滚且顶/底不向背景链式传递。
+- [ ] 打开/关闭 modal 前后页面 scrollY 不跳；body 不出现 fixed/top 复位视觉。
+- [ ] Search 键盘打开/关闭时 card 留在 VisualViewport 内，backdrop 仍覆盖完整 Web viewport。
+- [ ] iOS system strip 若不随 Web backdrop 变暗，只记录平台边界，Topbar 不人工染灰。
 
-## I. Modal / PWA 顶部
+## H. PIN / Review Dock
 
-- [ ] 第一层 custom modal：正文和 Topbar 由同一个真实 48% backdrop 自然变暗，Topbar 不再被人工单独染色。
-- [ ] 第二层 modal：父 modal + 页面再自然叠 20%，当前子 card 保持正常 surface；父层 DOM/滚动/输入仍真实保留。
-- [ ] 关闭子层后父层状态原样恢复；关闭最后一层后页面颜色恢复 `#fafafa`。
-- [ ] native Search/Confirm dialog backdrop 同样覆盖完整 Web DOM。
-- [ ] iOS 最顶部 system strip 若仍保持白色，记录为 Web viewport 外平台边界；不得把 Web Topbar 再改成错误的人工灰色。
+- [ ] 第一个 PIN：Entry row 无闪/无 whole-row rebuild；PIN button 原位更新。
+- [ ] Pin Dock 柔和出现；已有 PIN 间切换/新增连续操作稳定。
+- [ ] 页面底部设置/取消最后一个 PIN 不发生 scroll clamp 跳跃。
+- [ ] Review Dock 同样为常驻 DOM reveal/exit，不 hard display 闪现。
+- [ ] keyboard-visible 时 Dock 隐藏逻辑正确。
 
-## J. 既有运行时回归
+## I. 4.2/4.0 既有回归
 
-- [ ] 58px bottom toolbar 与 Home Indicator 无冲突。
-- [ ] 520ms 保存浏览锚点 + 350ms grace，无系统 Selection/callout/click 泄漏。
-- [ ] Oxford/ChatGPT Shortcut 外跳返回正常。
-- [ ] Collins real key standalone CORS/外链 fallback 正常。
-- [ ] Search fuzzy / Relation exact、四态关系、PIN/Annotation/Undo/Redo 无回归。
+- [ ] Home wordmark、Hero、“全局”Index Rule、parallel switch+管理、`全局非结构总表`保持。
+- [ ] 日期 StudyStamp 刷新保持当前 viewport。
+- [ ] Entry Traditional gloss/source secondary line 同 Y；phrase/content two-line/extreme 无破坏。
+- [ ] 58px bottom toolbar/Home Indicator 正常。
+- [ ] 520ms browse-anchor + 350ms grace 无 selection/callout/click 泄漏。
+- [ ] Search fuzzy / Relation exact / 四态关系 / Provider abort/stale protection 正常。
+- [ ] 数据交换、备份、Undo/Redo、Seed reset 无回归。

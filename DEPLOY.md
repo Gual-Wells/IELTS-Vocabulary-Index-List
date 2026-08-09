@@ -1,19 +1,31 @@
-# Vocabulary Index 4.2.0 iPhone PWA 部署与回滚
+# Vocabulary Index 4.3.0 iPhone PWA 部署与回滚
 
 ## 部署
 
-1. 部署完整 4.2.0 文件树，不做局部覆盖。
-2. 确认 `index.html` 最后加载 `css/v4.2.0.css`。
-3. 确认 `package.json` / application-version / runtime version 为 4.2.0。
-4. 确认 Service Worker cache 为 `gual-vocabulary-index-v4.2.0-native-sticky-navigation-20260809-1`。
-5. Safari 打开 Pages URL 并确认 4.2.0 更新；真机 Home Screen 验收使用 `tests/MANUAL_CHECKLIST.md`。
+1. 部署完整 4.3.0 文件树，不做局部覆盖。
+2. 确认 `index.html` 在 4.2 样式之后最后加载 `css/v4.3.0.css`。
+3. 确认 `package.json` / application-version / runtime version 为 4.3.0。
+4. 确认 Service Worker cache generation 为 `gual-vocabulary-index-v4.3.0-runtime-convergence-20260809-1`。
+5. Safari 打开 Pages URL 并确认新 SW 生效；Home Screen 真机验收使用 `tests/MANUAL_CHECKLIST.md` 与 `tests/IPHONE_REDUCED_TESTS_4.3.0.md`。
 
-## 4.1.0 → 4.2.0
+## 4.2.0 → 4.3.0
 
-无 IndexedDB/Seed/VIX 数据迁移。更新前仍建议按既有流程下载完整备份，尤其当主屏幕 PWA 需要删除/重新添加以排查缓存时。
+业务数据世代不变：Schema6 / DB5 / Seed4 / VIX2。Entry、PIN、StudyStamp、Annotation、Settings、API Key、用户内容不需要迁移。
+
+4.3.0 有意不恢复两类旧运行时状态：
+
+- 旧 `collection:viewKind` viewMode；
+- 4.2 pageSnapshot/history navigation session。
+
+升级后若导航状态不能验证，页面收敛到干净 Home；业务数据库不受影响。
 
 ## 回滚
 
-4.2.0 与 4.0.x/4.1.0 同属 Schema 6 / DB 5 / Seed 4 / VIX 2。代码级回滚到 4.1.0 不应修改业务数据，但会恢复旧 Alphabet mirror/System Shell 实验，不建议作为长期运行方案。Service Worker/PWA shell 需重新刷新。
+回滚前先导出完整备份。代码级回滚到 4.2.0 不改变业务 schema，但会恢复：
 
-从 4.x 回退 3.5.x 仍属于内容世代回退，必须使用对应旧世代备份与站点数据处理流程。
+- section-keyed word/phrase mode；
+- epoch-only navigation/Forward 残留语义；
+- Sticky 跨帧 collapse 补偿；
+- body-fixed modal scroll lock、native Search/Confirm split、PIN whole-row rerender。
+
+因此 4.2.0 只可作为诊断回滚，不建议作为本轮问题修复后的长期运行版本。回滚/再升级都需注意 Service Worker cache generation 变化。

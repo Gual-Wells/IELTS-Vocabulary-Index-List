@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.3.0 — 2026-08-09
+
+- Sticky collapse 从跨帧 remove/measure/scroll 补偿重构为 Date/Alphabet 共用 pre-read + 单提交事务；保留 native Sticky 与 LetterNav 动态几何。
+- alphabet/date mode 提升为 Collection-level；word/phrase 共享 mode，页面位置类状态继续 viewKind 独立；不迁移旧 section mode。
+- 建立 VIX destructive navigation stack：Back POP 销毁离开 frame，Home clear all recursive state，Forward/stale destination 三层防护；browser history 只保存最小 token/depth/epoch。
+- 增加常驻 `navigation-underlay` 与 standalone edge guard；启用 `history.scrollRestoration=manual`。
+- Presentation 收敛为 Popover/Modal/Dock；Search/Confirm 迁入 retained custom Modal Stack。
+- 删除 body-fixed modal scroll lock 与 double-rAF hard reveal；保留 parent DOM、48%/20% backdrop、VisualViewport geometry、full-Web backdrop。
+- PIN 不再 whole-entry rerender；PIN/Review Dock 改常驻 DOM reveal/exit。
+- 同步 4.3.0 需求、UX、架构、审计、调研、迁移、手册、测试、影响矩阵与 iPhone reduced-test 文档。
+- Schema6 / DB5 / Seed4 / VIX2 与 4.0.0 业务语义不变。
+
 ## 4.2.0 — 2026-08-09
 
 - Alphabet Sticky 从独立 mirror 回归真实 `.letter-heading` native sticky；浏览器恢复 collapsed 自然退出、section-bottom push-off、真实点击锚点与 section side rails；JS metrics 只负责 active 字母；

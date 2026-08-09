@@ -1,10 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.3.0（2026-08-09）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.4.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.3.0 完整源码实际行为。
+- **[当前实现]**：4.4.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -142,7 +142,7 @@ Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provid
 
 Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provider session/Modal Stack/长按模型均不变。
 
-## 4.3.0：[当前实现]
+## 4.3.0：[历史运行时基线]
 
 4.3.0 来自 4.2.0 首轮真机反馈及随后对源码、历史设计意图、WebKit/WHATWG/W3C 与社区工程案例的再次审计；数据世代不变：
 
@@ -159,6 +159,23 @@ Schema6 / DB5 / Seed4 / VIX2、关系/搜索/优先级占有/四态导航/Provid
 - 自动测试升级为 4.3 行为契约，但 edge system preview、Sticky 首次 compositor 帧、modal PWA background lock 仍明确要求 iPhone 17 / iOS 26.5.2 standalone reduced tests。
 
 Schema6 / DB5 / Seed4 / VIX2、数据投影、Search/Relation、Provider、Home 视觉、58px toolbar、longpress 等继续不变。
+
+## 4.4.0：[当前实现]
+
+4.4.0 来自 4.3.0 真机后反馈以及对源码、WebKit/WHATWG/W3C、社区工程案例和布局研究的最后一次交叉审计；数据世代不变：
+
+- Sticky 不再把 section border-box 顶部当 heading natural Y。Alphabet/Date 每个 section 新增零高度 `.section-flow-anchor`，目标滚动由真实 flow rect 与 sticky visual rect 计算，并对 post-collapse document max scroll 做 clamp；4.3 每次约 1px 的累计漂移从模型上消失。
+- WebKit 已有官方同型缺陷记录：iOS 在 DOM layout change 与同步 `window.scrollTo()` 组合下可能提交旧 exposedContentRect，造成 composited backing store 一帧缺失。4.4 因此退出 4.3 的 collapse+scroll 同提交；支持时用无动画 View Transition rendering suppression，完整旧布局先 scroll settle，再 collapse。
+- “第一次更严重”不再作为根因；真机验收按 0/100/500/1500/3000px displacement 分档，并要求第二次重新滚深后重复大 delta。
+- Navigation 升为 `destructive-v2`：browser entry identity 为 generation+navToken，depth 只诊断；root/page state 构造分离，snapshot persistence 不再 `replaceState()` 改 token；frame/snapshot 继续由 VIX stack/session cache 拥有。
+- 合法 Back 在 Navigation API 可用时由 destination pre-classify + `intercept()` 同步 hydrate runtime view state 并一次 render；mode/calendar 持久化延后，`historyRestoreInProgress` 恢复真实 transaction guard；UA `after-transition` 恢复物理 scroll，VIX scroll snapshot只做 fallback。
+- Home 删除 `history.go(-appNavigationDepth)`，改新 generation root PUSH；Forward/stale pre-commit 拒绝，右缘 guard 优先检查 `navigation.entries()` 实际右邻；已提交异常不再 bounce 旧页。
+- 4.3 permanent `navigation-underlay` 从 DOM 删除，`#app/.boot-screen` whole-app stacking context 撤销，html/body canvas 成为永久底色。
+- Modal 生命周期不再给 html/body 增删 `modal-open`，VisualViewport 更新拆成 modal geometry/page Sticky geometry；root App inert 和 nested retained modal inert 暂保留，若真机仍复现 Sticky paint 缺失才进入 inert A/B fallback。
+- 新增 `v3-runtime-geometry.js`、`v3-navigation-runtime.js` 与 `runtime-behavior-tests.mjs`，让关键几何和导航分类具备可执行纯行为测试。
+- PIN/Review、Popover、Collection-level mode、Home/Entry 视觉、Provider、Search/Relation、58px toolbar、longpress、StudyStamp 全部保持，不借运行时修复扩大产品。
+
+自动化全 PASS 仍不冒充 iPhone system gesture/compositor 验收；最终真机项记录于 `tests/IPHONE_REDUCED_TESTS_4.4.0.md`。
 
 # 三、4.0.x 当前数据模型
 
@@ -205,24 +222,23 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 
 - 修改前保留冻结基线和工作快照。
 - 不直接修改用户 GitHub 仓库；当前工作仅本地交付完整源码 ZIP。
-- 产品测试自动机是独立项目，本次不修改其源码/合同。
+- 外部产品测试自动机仍是独立项目；本次只更新源码包内随版本维护的 tests/fixtures/contracts。
 - 每个正式包必须生成 `FILE_MANIFEST.txt`、`SHA256SUMS.txt` 和 ZIP SHA-256。
 - 最终 ZIP 必须全新解压后重新跑全测试和 hash。
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.3.0 当前待真机事项
+# 八、4.4.0 当前待真机事项
 
-- Sticky collapse：Date/Alphabet 冷启动第一次收起、连续收起、section tail/document bottom、fling/rubber-band 后收起均无闪帧；Alphabet 最终边界为 LetterNav 下缘，Date 为 Top Chrome 下缘。
-- Collection-level mode：word/phrase 共享 alphabet/date，而 scroll/expanded/calendar/browse anchor 仍各 view 独立。
-- Destructive navigation：Back button 与 iOS swipe commit 都 POP 离开 frame；合法 Back 只出现一次 Safari 原生动画；Forward 不复活旧页。
-- Edge safety：右边缘 guard 是否在 iOS 26.5.2 standalone 100% 早于 system history preview；Home 左边缘不退入产品外页面。
-- Home：任何路径进入即 recursive stack=0，业务数据/浏览锚点/UndoRedo 不受影响。
-- Modal：首开 Settings/Search/Confirm/nested 无 flash；无 body-fixed 情况下 backdrop/header/footer 拖动不移动背景，dialog-body 可滚且边界不链给正文；keyboard/VisualViewport 正常。
-- PIN/Review：第一个 Dock、最后一个取消、document bottom 均无 whole-row repaint/scroll clamp；Dock 常驻 reveal/exit 稳定。
-- Popover：Query/Relation motion 统一但各自 anchor 不回归；4.2 Query/Oxford 视觉保留。
-- 4.2 Home wordmark/Global Index Rule、字母 cell border、StudyStamp 原位刷新、Entry secondary gap、58px toolbar、longpress、Shortcuts/Collins CORS、Service Worker/离线/进程回收继续回归。
+- Sticky displacement：Alphabet/Date 以 0–1 / 100 / 500 / 1500 / 3000px 分档；第二次必须重新滚深再收起，验证“大位移而非首次”模型；100 次开合无累计漂移；section tail/document bottom/fling 后不闪。
+- Sticky transaction：目标机验证无动画 View Transition rendering suppression 在 iOS 26.5.2 standalone 不引入新的 snapshot/momentum 问题；若失败，只允许 operation-local fallback，不恢复 mirror/预热/永久遮罩。
+- destructive-v2 Back：Home→A→B→C 的 button/swipe/slow/fast/half-cancel 均只恢复一次 B；mode/calendar/expanded/relations/scroll 首个可见状态正确。
+- Forward/edge：POP 后 C 绝不复活；右缘 guard 在真实 forbidden neighbor 时生效，无 forbidden neighbor 时不产生永久死区；记录系统 preview 是否早于 JS 接管。
+- Legal Back visual surface：删除 4.3 underlay/whole-app stacking context 后，慢速 interactive Back 不应再人为揭露纯色 substrate；若仍在 JS 前露 blank，记录为 Safari UA visual-history boundary。
+- Home：深层 Home 立即生成新 root generation，不清业务数据；新 root 左缘不回旧 generation VIX page。
+- Modal：已吸顶 Alphabet/Date heading 上打开 Settings/Search/Confirm/nested，背景 scrollY/Sticky top/Entry DOM identity 不变；keyboard 只改变 modal card。若仍只有 `#app.inert` 组合失败，再执行 inert A/B。
+- PIN/Review、Popover、Collection-level mode、Home/Entry visual、StudyStamp、58px toolbar、longpress、Shortcuts/Collins CORS、Service Worker/离线/进程回收继续全量回归。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.3.0.md`、`SEMANTIC_IMPACT_MATRIX_4.3.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.3.0.md`、`PRODUCT_MANUAL_4.3.0.md`、`AUDIT_REPORT_4.3.0.md`、`TECHNICAL_RESEARCH_4.3.0.md`、`CHANGE_REPORT_4.3.0.md`、`TEST_REPORT_4.3.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.3.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.4.0.md`、`SEMANTIC_IMPACT_MATRIX_4.4.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.4.0.md`、`PRODUCT_MANUAL_4.4.0.md`、`AUDIT_REPORT_4.4.0.md`、`TECHNICAL_RESEARCH_4.4.0.md`、`CHANGE_REPORT_4.4.0.md`、`TEST_REPORT_4.4.0.md`、`MIGRATION_4.4.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.4.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。

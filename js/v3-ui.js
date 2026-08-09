@@ -2,7 +2,7 @@ import {
   acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
   clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getRelationComponents, getRelatedEntries, getState,
-  getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, importEntries, initializeStore, moveCollection, redo,
+  getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
 } from './v3-store.js';
@@ -16,8 +16,10 @@ import {
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
+import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
+import { classifyNavigationDestination } from './v3-navigation-runtime.js';
 
-const APP_VERSION = '4.3.0';
+const APP_VERSION = '4.4.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -25,7 +27,7 @@ const elements = Object.fromEntries([
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
-  'app-dialog', 'navigation-underlay', 'navigation-guard-feedback',
+  'app-dialog', 'navigation-guard-feedback',
   'hidden-file-input',
 ].map((id) => [id, document.getElementById(id)]));
 
@@ -64,16 +66,16 @@ let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
-let navigationEpoch = 1;
-let pendingRootReset = false;
-const NAVIGATION_MODEL = 'destructive-v1';
-const NAVIGATION_SESSION_KEY = 'vocabulary-index:navigation-stack:4.3.0';
+let navigationGeneration = 1;
+const NAVIGATION_MODEL = 'destructive-v2';
+const NAVIGATION_SESSION_KEY = 'vocabulary-index:navigation-stack:4.4.0';
 const navigationStack = [];
 const discardedNavigationTokens = new Set();
 let navigationRootToken = '';
 let discardedForwardAvailable = false;
 let navigationEdgeGesture = null;
 let pendingPageSnapshot = null;
+let pendingUaScrollRestore = false;
 let pageTransitionTimer = 0;
 let renderRevision = 0;
 let homeScrollY = 0;
@@ -232,7 +234,17 @@ function applyVisualViewportVars() {
   activeSearchFrame?.layer?.classList.toggle('keyboard-visible', keyboardVisible);
 }
 
-function updateVisualViewportVars({ immediate = false } = {}) {
+function updateModalViewportGeometry({ immediate = false } = {}) {
+  cancelAnimationFrame(viewportUpdateFrame);
+  const apply = () => {
+    viewportUpdateFrame = 0;
+    applyVisualViewportVars();
+  };
+  if (immediate) apply();
+  else viewportUpdateFrame = requestAnimationFrame(apply);
+}
+
+function updatePageViewportGeometry({ immediate = false } = {}) {
   cancelAnimationFrame(viewportUpdateFrame);
   const apply = () => {
     viewportUpdateFrame = 0;
@@ -243,6 +255,11 @@ function updateVisualViewportVars({ immediate = false } = {}) {
   };
   if (immediate) apply();
   else viewportUpdateFrame = requestAnimationFrame(apply);
+}
+
+function updateVisualViewportVars({ immediate = false } = {}) {
+  if (openModalCount) updateModalViewportGeometry({ immediate });
+  else updatePageViewportGeometry({ immediate });
 }
 
 function topChromeBottom({ includeLetterNav = true } = {}) {
@@ -310,17 +327,13 @@ const PRESENTATION_EXIT_MS = 140;
 function lockPageForModal() {
   if (openModalCount) return;
   openModalCount = 1;
-  document.documentElement.classList.add('modal-open');
-  document.body.classList.add('modal-open');
+  // Modality is owned by the retained overlay + inert/touch/focus guards.
+  // Never mutate html/body overflow, scroll container or page Sticky geometry.
 }
 
 function unlockPageForModal() {
   if (!openModalCount) return;
   openModalCount = 0;
-  document.documentElement.classList.remove('modal-open');
-  document.body.classList.remove('modal-open');
-  // Deliberately do not write body.position/top and do not scrollTo(). The
-  // document keeps the same geometry for the entire modal lifetime.
 }
 
 function modalScrollableTarget(target) {
@@ -493,7 +506,7 @@ function openDialog({
   const parent = dialogStack.at(-1);
   if (!dialogStack.length) {
     lockPageForModal();
-    updateVisualViewportVars({ immediate: true });
+    updateModalViewportGeometry({ immediate: true });
     if (elements.app) elements.app.inert = true;
     host.classList.remove('hidden');
     host.setAttribute('aria-hidden', 'false');
@@ -586,20 +599,39 @@ function newNavigationToken(prefix = 'nav') {
   return `${prefix}-${suffix}`;
 }
 
-function navigationHistoryState(depth = appNavigationDepth, token = navigationRootToken) {
+function rootNavigationHistoryState() {
   return {
     vix: true,
     navModel: NAVIGATION_MODEL,
-    depth,
-    epoch: navigationEpoch,
-    navToken: token || navigationRootToken,
+    generation: navigationGeneration,
+    navToken: navigationRootToken,
+    routeKind: 'root',
+    depth: 0,
   };
+}
+
+function pageNavigationHistoryState(depth, token) {
+  if (!token) throw new Error('Navigation page identity requires an explicit token');
+  return {
+    vix: true,
+    navModel: NAVIGATION_MODEL,
+    generation: navigationGeneration,
+    navToken: token,
+    routeKind: 'page',
+    depth: Math.max(1, Number(depth || 1)),
+  };
+}
+
+function navigationStateForCurrentFrame() {
+  if (!appNavigationDepth) return rootNavigationHistoryState();
+  const frame = currentNavigationFrame();
+  return frame ? pageNavigationHistoryState(appNavigationDepth, frame.token) : rootNavigationHistoryState();
 }
 
 function persistNavigationSession() {
   try {
     sessionStorage.setItem(NAVIGATION_SESSION_KEY, JSON.stringify({
-      epoch: navigationEpoch,
+      generation: navigationGeneration,
       rootToken: navigationRootToken,
       homeScrollY,
       discardedForwardAvailable,
@@ -616,7 +648,7 @@ function loadNavigationSession() {
     const raw = sessionStorage.getItem(NAVIGATION_SESSION_KEY);
     if (!raw) return false;
     const stored = JSON.parse(raw);
-    if (!stored || stored.epoch !== navigationEpoch || !Array.isArray(stored.frames)) return false;
+    if (!stored || stored.generation !== navigationGeneration || !Array.isArray(stored.frames)) return false;
     navigationStack.splice(0, navigationStack.length, ...stored.frames.filter((frame) => frame && typeof frame.token === 'string'));
     discardedNavigationTokens.clear();
     for (const token of stored.discardedTokens || []) if (typeof token === 'string') discardedNavigationTokens.add(token);
@@ -642,8 +674,14 @@ function clearNavigationSessionState({ keepDiscarded = false } = {}) {
 function currentNavigationFrame() {
   if (!appNavigationDepth) return null;
   const token = history.state?.navToken || '';
-  const frame = navigationStack[appNavigationDepth - 1] || null;
-  return frame?.token === token ? frame : (navigationStack.find((item) => item.token === token) || null);
+  return navigationStack.find((item) => item.token === token)
+    || navigationStack[appNavigationDepth - 1]
+    || null;
+}
+
+function navigationFrameByToken(token) {
+  if (!token || discardedNavigationTokens.has(token)) return null;
+  return navigationStack.find((frame) => frame?.token === token) || null;
 }
 
 function discardFrameRuntimeState(frame) {
@@ -666,8 +704,8 @@ function discardNavigationFramesFrom(depth) {
 }
 
 function invalidateDiscardedForwardBranchForFreshPush() {
-  // A fresh pushState from the current history position truncates the browser's
-  // forward branch. Once that happens the old tokens no longer need guarding.
+  // A fresh same-document PUSH truncates the browser-forward branch. Mirror
+  // that browser fact into the destructive VIX stack before creating the page.
   discardedNavigationTokens.clear();
   discardedForwardAvailable = false;
 }
@@ -698,7 +736,8 @@ function persistCurrentHistorySnapshot() {
     const frame = currentNavigationFrame();
     if (frame) frame.snapshot = snapshot;
   }
-  history.replaceState(navigationHistoryState(), '', location.href);
+  // Browser history owns only immutable transport identity. Runtime snapshots
+  // live in the VIX frame/session cache and must never rewrite navToken/key.
   persistNavigationSession();
 }
 
@@ -790,7 +829,7 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   const hash = collectionRoute(collectionId, entryId, collection.type === 'normal' ? nextView : '');
   navigationStack.push({ token, snapshot: null });
   appNavigationDepth = depth;
-  history.pushState(navigationHistoryState(depth, token), '', hash);
+  history.pushState(pageNavigationHistoryState(depth, token), '', hash);
   persistNavigationSession();
 
   currentCollectionId = collectionId;
@@ -811,6 +850,7 @@ function clearRecursivePresentationState() {
   pendingJumpEntryId = '';
   pendingJumpReason = 'home';
   pendingPageSnapshot = null;
+  pendingUaScrollRestore = false;
   persistentJumpEntryId = '';
   expandedRelations.clear();
   expandedLettersByCollection.clear();
@@ -820,10 +860,7 @@ function clearRecursivePresentationState() {
   appNavigationDepth = 0;
 }
 
-function enterHomeRoot({ resetScroll = true } = {}) {
-  // Home is the VIX root invariant: reaching it by any route destroys every
-  // recursive frame. The browser may still retain physical forward entries,
-  // but those tokens are dead and are blocked before they can become VIX pages.
+function enterHomeRoot({ resetScroll = true, rewriteHistory = true } = {}) {
   if (navigationStack.length) discardNavigationFramesFrom(0);
   homeGlobalMode = 'structured';
   if (resetScroll) homeScrollY = 0;
@@ -832,7 +869,7 @@ function enterHomeRoot({ resetScroll = true } = {}) {
   closeQueryMenu({ immediate: true });
   closeRelationTargetMenu({ immediate: true });
   clearRecursivePresentationState();
-  history.replaceState(navigationHistoryState(0, navigationRootToken), '', location.pathname + location.search);
+  if (rewriteHistory) history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
   if (resetScroll) window.scrollTo({ top: 0, behavior: 'auto' });
   persistNavigationSession();
   renderApp();
@@ -846,96 +883,109 @@ function goHome() {
   enterHomeRoot({ resetScroll: false });
 }
 
-function finalizeNavigationResetToHome() {
-  pendingRootReset = false;
-  enterHomeRoot({ resetScroll: true });
-}
-
 function resetNavigationToHome() {
   persistCurrentHistorySnapshot();
-  pendingJumpEntryId = '';
-  pendingJumpReason = 'home';
-  pendingPageSnapshot = null;
-  persistentJumpEntryId = '';
-  if (appNavigationDepth > 0) {
-    pendingRootReset = true;
-    history.go(-appNavigationDepth);
-    return;
+  for (const frame of navigationStack) {
+    if (frame?.token) discardedNavigationTokens.add(frame.token);
+    discardFrameRuntimeState(frame);
   }
-  finalizeNavigationResetToHome();
+  navigationGeneration = Math.max(navigationGeneration + 1, Date.now());
+  navigationRootToken = newNavigationToken('root');
+  navigationStack.length = 0;
+  discardedForwardAvailable = false;
+  clearRecursivePresentationState();
+  homeGlobalMode = 'structured';
+  homeScrollY = 0;
+  restoreHomeScrollPending = false;
+  history.pushState(rootNavigationHistoryState(), '', location.pathname + location.search);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+  persistNavigationSession();
+  renderApp();
 }
 
-async function restoreNavigationSnapshot(snapshot) {
+function hydrateNavigationSnapshot(snapshot) {
   if (snapshot?.type !== 'collection') return;
+  hydrateRuntimeViewState(snapshot.collectionId, {
+    mode: snapshot.mode,
+    section: snapshot.viewKind,
+    calendarMonth: snapshot.calendarMonth || '',
+  });
+}
+
+async function reconcileNavigationSnapshot(snapshot) {
+  if (snapshot?.type !== 'collection') return;
+  historyRestoreInProgress = true;
   try {
-    if (['alphabet', 'date'].includes(snapshot.mode) && getViewMode(snapshot.collectionId) !== snapshot.mode) {
-      await setViewMode(snapshot.collectionId, snapshot.mode);
-    }
-    if (snapshot.mode === 'date' && /^\d{4}-\d{2}$/.test(String(snapshot.calendarMonth || ''))
-      && getCalendarMonth(snapshot.collectionId, snapshot.viewKind) !== snapshot.calendarMonth) {
-      await setCalendarMonth(snapshot.collectionId, snapshot.viewKind, snapshot.calendarMonth);
-    }
+    await persistRuntimeViewState(snapshot.collectionId, {
+      mode: snapshot.mode,
+      section: snapshot.viewKind,
+      calendarMonth: snapshot.calendarMonth || '',
+    });
   } catch (error) {
     displayError(error);
+  } finally {
+    historyRestoreInProgress = false;
   }
 }
 
-async function handleHistoryNavigation(event) {
-  const targetState = event.state || {};
-  const targetDepth = Math.max(0, Number(targetState.depth || 0));
-  const oldDepth = appNavigationDepth;
+function invalidateNavigationGenerationToHome() {
+  navigationGeneration = Math.max(navigationGeneration + 1, Date.now());
+  navigationRootToken = newNavigationToken('root');
+  discardedNavigationTokens.clear();
+  discardedForwardAvailable = false;
+  clearNavigationSessionState();
+  currentCollectionId = '';
+  currentViewKind = 'word';
+  pendingPageSnapshot = null;
+  history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
+  enterHomeRoot({ resetScroll: true, rewriteHistory: false });
+}
 
-  if (targetState.vix !== true || targetState.navModel !== NAVIGATION_MODEL || Number(targetState.epoch || 0) !== navigationEpoch) {
-    // 4.3.0 intentionally does not revive pre-destructive-stack navigation.
-    // If an unexpected same-document history entry ever commits, converge it
-    // to a new clean root instead of guessing a history delta and bouncing.
-    navigationEpoch = Math.max(navigationEpoch + 1, Date.now());
-    navigationRootToken = newNavigationToken('root');
-    discardedNavigationTokens.clear();
-    discardedForwardAvailable = false;
-    clearNavigationSessionState();
-    enterHomeRoot({ resetScroll: true });
-    return;
+function restoreCommittedNavigationDestination(targetState, { useUaScroll = false } = {}) {
+  const classification = classifyCurrentNavigationDestination(targetState);
+  const token = classification.token;
+  if (classification.kind === 'stale' || classification.kind === 'forward') {
+    // Forward/stale traversal should have been prevented before commit. Never
+    // render a dead destination; converge to a fresh root rather than bounce.
+    invalidateNavigationGenerationToHome();
+    return false;
   }
-
-  if (pendingRootReset) {
-    finalizeNavigationResetToHome();
-    return;
+  if (classification.kind === 'back-root' || classification.kind === 'same-root') {
+    if (navigationStack.length) discardNavigationFramesFrom(0);
+    enterHomeRoot({ resetScroll: !useUaScroll, rewriteHistory: false });
+    return true;
   }
-
-  if (targetDepth > oldDepth) {
-    // Forward into a page that was already destructively popped. The Navigation
-    // API/touch edge guards are expected to stop this before commit; this is the
-    // last-resort state guard and deliberately does not render the stale route.
-    discardedForwardAvailable = true;
-    persistNavigationSession();
-    history.go(oldDepth - targetDepth);
-    return;
+  const targetFrame = navigationFrameByToken(token);
+  if (!targetFrame) {
+    invalidateNavigationGenerationToHome();
+    return false;
   }
-
-  if (targetDepth === 0) {
-    discardNavigationFramesFrom(0);
-    enterHomeRoot({ resetScroll: true });
-    return;
-  }
-
-  const targetToken = String(targetState.navToken || '');
-  const targetFrame = navigationStack[targetDepth - 1];
-  if (!targetFrame || targetFrame.token !== targetToken || discardedNavigationTokens.has(targetToken)) {
-    // A target without a live VIX frame is not a valid recursive destination.
-    // Do not render it and do not guess which old entry should be revived.
-    navigationEpoch = Math.max(navigationEpoch + 1, Date.now());
-    navigationRootToken = newNavigationToken('root');
-    discardedForwardAvailable = true;
-    enterHomeRoot({ resetScroll: true });
-    return;
-  }
-
-  if (targetDepth < oldDepth) discardNavigationFramesFrom(targetDepth);
+  const targetDepth = classification.targetDepth;
+  if (targetDepth < appNavigationDepth) discardNavigationFramesFrom(targetDepth);
   appNavigationDepth = targetDepth;
   pendingPageSnapshot = targetFrame.snapshot || null;
-  await restoreNavigationSnapshot(pendingPageSnapshot);
+  pendingUaScrollRestore = Boolean(useUaScroll);
+  hydrateNavigationSnapshot(pendingPageSnapshot);
   renderApp();
+  reconcileNavigationSnapshot(pendingPageSnapshot);
+  return true;
+}
+
+const navigationApiHandledTokens = new Set();
+function markNavigationApiHandledToken(token) {
+  if (!token) return;
+  navigationApiHandledTokens.add(token);
+  window.setTimeout(() => navigationApiHandledTokens.delete(token), 1200);
+}
+
+function handleHistoryNavigation(event) {
+  const targetState = event.state || {};
+  const token = String(targetState.navToken || '');
+  if (navigationApiHandledTokens.has(token)) {
+    navigationApiHandledTokens.delete(token);
+    return;
+  }
+  restoreCommittedNavigationDestination(targetState, { useUaScroll: true });
 }
 
 function navigationEntryStateFromDestination(destination) {
@@ -958,6 +1008,23 @@ function settleNavigationGuardFeedback() {
   window.setTimeout(() => node.classList.remove('guard-settling'), 120);
 }
 
+function classifyCurrentNavigationDestination(destinationState) {
+  return classifyNavigationDestination({
+    targetState: destinationState,
+    frames: navigationStack,
+    discardedTokens: discardedNavigationTokens,
+    currentDepth: appNavigationDepth,
+    generation: navigationGeneration,
+    rootToken: navigationRootToken,
+    navModel: NAVIGATION_MODEL,
+  });
+}
+
+function navigationDestinationIsStale(destinationState) {
+  const kind = classifyCurrentNavigationDestination(destinationState).kind;
+  return kind === 'stale' || kind === 'forward';
+}
+
 function handleNavigationApiNavigate(event) {
   if (event?.navigationType !== 'traverse' || !event.destination?.sameDocument) return;
   const navigationApi = globalThis.navigation;
@@ -968,18 +1035,37 @@ function handleNavigationApiNavigate(event) {
   const isForward = destinationIndex > currentIndex;
   const isBackward = destinationIndex < currentIndex;
   const leavingRoot = appNavigationDepth === 0 && isBackward;
-  const forwardIsForbidden = isForward; // VIX navigation is intentionally one-way after POP.
-  const staleDestination = destinationState?.vix === true && (
-    destinationState.navModel !== NAVIGATION_MODEL
-    || Number(destinationState.epoch || 0) !== navigationEpoch
-    || discardedNavigationTokens.has(String(destinationState.navToken || ''))
-    || Number(destinationState.depth || 0) > appNavigationDepth
-  );
-  if (!(leavingRoot || forwardIsForbidden || staleDestination)) return;
-  if (event.cancelable) event.preventDefault();
-  if (leavingRoot) activateNavigationGuardFeedback('left');
-  else activateNavigationGuardFeedback('right');
-  window.setTimeout(settleNavigationGuardFeedback, 90);
+  const forbidden = leavingRoot || isForward || navigationDestinationIsStale(destinationState);
+  if (forbidden) {
+    if (event.cancelable) event.preventDefault();
+    activateNavigationGuardFeedback(leavingRoot ? 'left' : 'right');
+    window.setTimeout(settleNavigationGuardFeedback, 90);
+    return;
+  }
+  if (!isBackward || event.canIntercept === false || typeof event.intercept !== 'function') return;
+  const token = String(destinationState.navToken || '');
+  markNavigationApiHandledToken(token);
+  event.intercept({
+    scroll: 'after-transition',
+    focusReset: 'manual',
+    handler: () => {
+      restoreCommittedNavigationDestination(destinationState, { useUaScroll: true });
+    },
+  });
+}
+
+function forbiddenForwardNeighborExists() {
+  const navigationApi = globalThis.navigation;
+  try {
+    const entries = navigationApi?.entries?.() || [];
+    const current = navigationApi?.currentEntry;
+    const currentIndex = Number(current?.index ?? -1);
+    const next = entries.find((entry) => Number(entry.index) === currentIndex + 1);
+    if (!next) return false;
+    return navigationDestinationIsStale(navigationEntryStateFromDestination(next));
+  } catch {
+    return discardedForwardAvailable;
+  }
 }
 
 function navigationEdgeGuardSide(touch) {
@@ -988,7 +1074,7 @@ function navigationEdgeGuardSide(touch) {
   const width = window.visualViewport?.width || window.innerWidth;
   const edge = Math.max(14, Math.min(22, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navigation-guard-size')) || 18));
   if (appNavigationDepth === 0 && touch.clientX <= edge) return 'left';
-  if (discardedForwardAvailable && touch.clientX >= width - edge) return 'right';
+  if (forbiddenForwardNeighborExists() && touch.clientX >= width - edge) return 'right';
   return '';
 }
 
@@ -1757,10 +1843,12 @@ function renderCollection(token = renderRevision) {
   const jumpEntryId = pendingJumpEntryId;
   const jumpReason = pendingJumpReason;
   const restoreSnapshot = pendingPageSnapshot;
+  const useUaScrollRestore = pendingUaScrollRestore;
   if (jumpEntryId) queueMicrotask(() => { if (token === renderRevision) jumpToEntry(jumpEntryId, { collectionId: collection.id, reason: jumpReason }); });
-  else if (restoreSnapshot) restoreSnapshotAfterRender(restoreSnapshot, token);
-  else if (jumpReason === 'home') requestAnimationFrame(() => { if (token === renderRevision) window.scrollTo({ top: 0, behavior: 'auto' }); });
+  else if (restoreSnapshot && !useUaScrollRestore) restoreSnapshotAfterRender(restoreSnapshot, token);
+  else if (!restoreSnapshot && jumpReason === 'home') requestAnimationFrame(() => { if (token === renderRevision) window.scrollTo({ top: 0, behavior: 'auto' }); });
   pendingPageSnapshot = null;
+  pendingUaScrollRestore = false;
   if (!jumpEntryId) pendingJumpReason = 'jump';
 }
 
@@ -1982,7 +2070,7 @@ function switchCollectionView(collection, nextKind) {
   };
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = freshSnapshot;
-  history.replaceState(navigationHistoryState(), '', nextHash);
+  history.replaceState(navigationStateForCurrentFrame(), '', nextHash);
   persistNavigationSession();
   performPageTransition(renderApp, true);
 }
@@ -2137,7 +2225,7 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   };
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = freshSnapshot;
-  history.replaceState(navigationHistoryState(), '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
+  history.replaceState(navigationStateForCurrentFrame(), '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
   persistNavigationSession();
 }
 
@@ -2406,6 +2494,7 @@ function renderAlphabetContent(context, sectionContext) {
     const sectionNode = el('section', {
       className: 'letter-section', id: `letter-${section}-${letter === '#' ? 'other' : letter}`, dataset: { letter, section },
     });
+    const flowAnchor = el('span', { className: 'section-flow-anchor', 'aria-hidden': 'true' });
     const heading = button('', 'letter-heading', (event) => toggleLetterSectionWithAnchor(section, letter, event.currentTarget));
     heading.setAttribute('aria-expanded', expandedLetters.has(letter) ? 'true' : 'false');
     heading.append(
@@ -2413,7 +2502,7 @@ function renderAlphabetContent(context, sectionContext) {
       el('span', { className: 'letter-count', text: uniqueEntryCountForDisplay(sectionContext.grouped.get(letter), collection).toLocaleString() }),
       el('span', { className: 'letter-indicator' }, [svgIcon('chevron')]),
     );
-    sectionNode.append(heading);
+    sectionNode.append(flowAnchor, heading);
     if (expandedLetters.has(letter)) {
       const body = el('div', { className: 'letter-body' });
       const groupEntries = sectionContext.grouped.get(letter);
@@ -2468,7 +2557,8 @@ function renderDateContent(context, sectionContext) {
       el('span', { className: 'date-group-count', text: uniqueEntryCountForDisplay(entries, collection).toLocaleString() }),
       el('span', { className: `date-group-indicator${open ? ' open' : ''}` }, [svgIcon('chevron')]),
     );
-    const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [heading]);
+    const flowAnchor = el('span', { className: 'section-flow-anchor', 'aria-hidden': 'true' });
+    const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [flowAnchor, heading]);
     if (open) {
       const dayBody = el('div', { className: 'letter-body date-day-body' });
       dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection) }));
@@ -2489,7 +2579,8 @@ function renderDateContent(context, sectionContext) {
       el('span', { className: 'date-group-count', text: uniqueEntryCountForDisplay(unmarked, collection).toLocaleString() }),
       el('span', { className: `date-group-indicator${open ? ' open' : ''}` }, [svgIcon('chevron')]),
     );
-    const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [heading]);
+    const flowAnchor = el('span', { className: 'section-flow-anchor', 'aria-hidden': 'true' });
+    const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [flowAnchor, heading]);
     if (open) {
       const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
       unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection) }));
@@ -2583,43 +2674,108 @@ function setDateSectionOpen(section, dateKey, open, { persist = true } = {}) {
   return true;
 }
 
+function waitForRootScrollSettle(targetY, timeoutMs = 260) {
+  const root = document.scrollingElement || document.documentElement;
+  const settled = () => Math.abs(window.scrollY - targetY) <= .5
+    || Math.abs(root.scrollTop - targetY) <= .5;
+  if (settled()) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    let timer = 0;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      window.removeEventListener('scrollend', onScrollEnd);
+      resolve();
+    };
+    const onScrollEnd = () => finish();
+    if ('onscrollend' in window) window.addEventListener('scrollend', onScrollEnd, { once: true });
+    else requestAnimationFrame(() => requestAnimationFrame(finish));
+    timer = window.setTimeout(finish, timeoutMs);
+  });
+}
+
+function stickyCollapseGeometry(sectionNode, heading) {
+  const flowAnchor = sectionNode?.querySelector(':scope > .section-flow-anchor');
+  const body = sectionNode?.querySelector(':scope > .letter-body, :scope > .date-day-body, :scope > .unmarked-body');
+  if (!flowAnchor || !heading || !body) return null;
+  const headingRect = heading.getBoundingClientRect();
+  const flowRect = flowAnchor.getBoundingClientRect();
+  const bodyRect = body.getBoundingClientRect();
+  if (![headingRect.top, flowRect.top, bodyRect.height].every(Number.isFinite)) return null;
+  const scroller = document.scrollingElement || document.documentElement;
+  return computeStickyCollapseTarget({
+    currentY: Math.max(0, Number(window.scrollY || scroller.scrollTop || 0)),
+    flowTop: flowRect.top,
+    visualTop: headingRect.top,
+    bodyHeight: bodyRect.height,
+    scrollHeight: Number(scroller.scrollHeight || 0),
+    clientHeight: Number(scroller.clientHeight || window.innerHeight || 0),
+  });
+}
+
+async function runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, previousOverflowAnchor }) {
+  const root = document.documentElement;
+  try {
+    const geometry = stickyCollapseGeometry(sectionNode, heading);
+    if (!geometry || transaction !== collapseTransactionRevision || !heading.isConnected) return;
+    const commitCollapse = () => {
+      if (transaction !== collapseTransactionRevision || !heading.isConnected) return;
+      collapse();
+    };
+
+    // No physical scroll means no compositor coupling is needed at all.
+    if (Math.abs(geometry.delta) <= .5) {
+      commitCollapse();
+      return;
+    }
+
+    // On engines with View Transitions, use the API only for its rendering
+    // suppression contract: scroll while the old full layout still exists,
+    // wait for that programmatic root scroll to settle, then remove the body.
+    // This avoids the iOS/WebKit failure shape "layout shrink + scrollTo in the
+    // same compositor commit" without introducing a visual animation.
+    if (typeof document.startViewTransition === 'function') {
+      root.classList.add('sticky-collapse-transition');
+      const transition = document.startViewTransition(async () => {
+        if (transaction !== collapseTransactionRevision || !heading.isConnected) return;
+        window.scrollTo({ top: geometry.targetY, behavior: 'auto' });
+        await waitForRootScrollSettle(geometry.targetY);
+        commitCollapse();
+      });
+      await transition.updateCallbackDone;
+      await transition.finished.catch(() => {});
+      root.classList.remove('sticky-collapse-transition');
+      return;
+    }
+
+    // Compatibility fallback for engines without View Transitions: split the
+    // two writes into ordered phases rather than recreating the 4.4.0
+    // synchronous mutation+scroll trigger.
+    window.scrollTo({ top: geometry.targetY, behavior: 'auto' });
+    await waitForRootScrollSettle(geometry.targetY);
+    commitCollapse();
+  } finally {
+    if (transaction === collapseTransactionRevision) {
+      root.style.overflowAnchor = previousOverflowAnchor;
+      persistCurrentHistorySnapshot();
+      syncActiveAlphabetHeading();
+    }
+    root.classList.remove('sticky-collapse-transition');
+  }
+}
+
 function collapseNativeStickySection({ sectionNode, heading, collapse }) {
   if (!sectionNode || !heading || typeof collapse !== 'function') return false;
-  const headingRect = heading.getBoundingClientRect();
-  const sectionRect = sectionNode.getBoundingClientRect();
-  if (!Number.isFinite(headingRect.top) || !Number.isFinite(sectionRect.top)) return false;
-
-  // Read every geometry value before the mutation. The heading is the first
-  // in-flow child of both alphabet and date sections, so sectionRect.top is its
-  // natural (non-sticky) Y. Preserve the heading's *current visual Y* by moving
-  // the document exactly by naturalTop - visualTop after the body disappears.
-  // Alphabet/date differ only in the visual Y they arrive with: the alphabet
-  // heading is constrained below LetterNav, while date is constrained below the
-  // base chrome. No magic height or mode branch belongs in this transaction.
-  const currentScrollY = window.scrollY;
-  const targetScrollY = Math.max(0, currentScrollY + sectionRect.top - headingRect.top);
   const root = document.documentElement;
   const previousOverflowAnchor = root.style.overflowAnchor;
   const transaction = ++collapseTransactionRevision;
   root.style.overflowAnchor = 'none';
-
-  // Commit height mutation + scroll correction in one rendering callback and
-  // perform no layout read between them. 4.2.0 deliberately split these writes
-  // across frames (remove -> rAF -> measure -> scroll), which exposes WebKit's
-  // known two-pass DOM/scroll update path as a visible flash.
-  requestAnimationFrame(() => {
-    if (transaction !== collapseTransactionRevision || !heading.isConnected) {
-      root.style.overflowAnchor = previousOverflowAnchor;
-      return;
-    }
-    collapse();
-    window.scrollTo({ top: targetScrollY, behavior: 'auto' });
-    queueMicrotask(() => {
-      if (transaction !== collapseTransactionRevision) return;
-      root.style.overflowAnchor = previousOverflowAnchor;
-      persistCurrentHistorySnapshot();
-      syncActiveAlphabetHeading();
-    });
+  runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, previousOverflowAnchor }).catch((error) => {
+    root.style.overflowAnchor = previousOverflowAnchor;
+    root.classList.remove('sticky-collapse-transition');
+    displayError(error);
   });
   return true;
 }
@@ -3631,7 +3787,7 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   syncPinIndexForEntry(currentCollectionId, entryId);
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
-  if (location.hash.includes('entry=')) history.replaceState({ ...(history.state || {}), vix: true, depth: appNavigationDepth }, '', collectionRoute(currentCollectionId, '', getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentViewKind : ''));
+  if (location.hash.includes('entry=')) history.replaceState(history.state || navigationStateForCurrentFrame(), '', collectionRoute(currentCollectionId, '', getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentViewKind : ''));
   const collection = state.collectionById.get(currentCollectionId);
   if (collection) renderPinBar(collection);
   const row = ensureEntryRendered(entryId);
@@ -4474,7 +4630,7 @@ function renderApp() {
   // not only by our Back/Home controls.  Never render Home while recursive VIX
   // frames are still alive; converge the current history entry to the clean
   // root first.  This deliberately does not guess a browser-history delta.
-  if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0)) {
+  if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0)) {
     enterHomeRoot({ resetScroll: true });
     return;
   }
@@ -4565,39 +4721,40 @@ function handleWindowScroll() {
 
 function initializeNavigationModel() {
   const state = history.state || {};
-  const stateEpoch = Number(state.epoch || 0);
-  const stateDepth = Math.max(0, Number(state.depth || 0));
+  const stateGeneration = Number(state.generation || 0);
   const stateToken = String(state.navToken || '');
-  const currentModel = state.vix === true && state.navModel === NAVIGATION_MODEL && Number.isFinite(stateEpoch) && stateEpoch > 0;
+  const currentModel = state.vix === true && state.navModel === NAVIGATION_MODEL
+    && Number.isFinite(stateGeneration) && stateGeneration > 0 && stateToken;
 
   if (currentModel) {
-    navigationEpoch = stateEpoch;
+    navigationGeneration = stateGeneration;
     const loaded = loadNavigationSession();
     if (loaded) {
-      const frame = stateDepth > 0 ? navigationStack[stateDepth - 1] : null;
-      const validDepth = stateDepth === 0 || (frame && frame.token === stateToken && !discardedNavigationTokens.has(stateToken));
-      if (validDepth) {
-        appNavigationDepth = stateDepth;
-        if (!navigationRootToken) navigationRootToken = stateDepth === 0 ? stateToken : newNavigationToken('root');
-        if (stateDepth === 0) {
-          navigationStack.length = 0;
-          currentCollectionId = '';
-          currentViewKind = 'word';
-        } else {
-          navigationStack.splice(stateDepth);
-          pendingPageSnapshot = frame.snapshot || null;
-        }
-        history.replaceState(navigationHistoryState(stateDepth, stateDepth ? stateToken : navigationRootToken), '', location.href);
+      navigationRootToken = navigationRootToken || (state.routeKind === 'root' ? stateToken : newNavigationToken('root'));
+      if (state.routeKind === 'root' && stateToken === navigationRootToken) {
+        navigationStack.length = 0;
+        appNavigationDepth = 0;
+        currentCollectionId = '';
+        currentViewKind = 'word';
+        persistNavigationSession();
+        return;
+      }
+      const frame = navigationFrameByToken(stateToken);
+      if (frame) {
+        const index = navigationStack.indexOf(frame);
+        navigationStack.splice(index + 1);
+        appNavigationDepth = index + 1;
+        pendingPageSnapshot = frame.snapshot || null;
+        hydrateNavigationSnapshot(pendingPageSnapshot);
         persistNavigationSession();
         return;
       }
     }
   }
 
-  // 4.3.0 deliberately has no compatibility path for 4.2 navigation state. A
-  // missing/mismatched destructive-stack session becomes a clean Home root;
-  // business data and manually saved browse anchors are untouched.
-  navigationEpoch = Date.now();
+  // 4.4.0 intentionally starts a new navigation generation when a previous
+  // runtime/session cannot prove immutable identity. Business data is untouched.
+  navigationGeneration = Date.now();
   navigationRootToken = newNavigationToken('root');
   navigationStack.length = 0;
   discardedNavigationTokens.clear();
@@ -4606,7 +4763,7 @@ function initializeNavigationModel() {
   currentCollectionId = '';
   currentViewKind = 'word';
   pendingPageSnapshot = null;
-  history.replaceState(navigationHistoryState(0, navigationRootToken), '', location.pathname + location.search);
+  history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
   persistNavigationSession();
 }
 

@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -21,19 +21,20 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.3.0');
-assert.ok(index.includes('Vocabulary Index 4.3.0'));
+assert.equal(pkg.version, '4.4.0');
+assert.ok(index.includes('Vocabulary Index 4.4.0'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
 assert.ok(index.includes('css/v4.2.0.css'));
 assert.ok(index.includes('css/v4.3.0.css'));
+assert.ok(index.includes('css/v4.4.0.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.3.0-runtime-convergence'));
+assert.ok(sw.includes('v4.4.0-runtime-correctness'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
@@ -62,7 +63,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -188,19 +189,19 @@ assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
 // Navigation is a one-way VIX-owned destructive stack; browser history is only the gesture rail.
 assert.ok(index.includes('id="home-button"'));
-assert.ok(index.includes('id="navigation-underlay"'));
+assert.ok(!index.includes('id="navigation-underlay"'));
 assert.ok(index.includes('id="navigation-guard-feedback"'));
-assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v1'"));
-assert.ok(upgrade.includes("history.scrollRestoration = 'manual'"));
+assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v2'"));
+assert.ok(upgrade.includes("history.scrollRestoration = 'auto'"));
 assert.ok(ui.includes('navigationStack'));
 assert.ok(ui.includes('discardNavigationFramesFrom'));
 assert.ok(ui.includes('discardedNavigationTokens'));
 assert.ok(ui.includes('discardedForwardAvailable'));
 assert.ok(ui.includes('resetNavigationToHome'));
-assert.ok(ui.includes('finalizeNavigationResetToHome'));
 assert.ok(ui.includes('enterHomeRoot'));
-assert.ok(ui.includes('if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0))'));
-assert.ok(ui.includes('const forwardIsForbidden = isForward'));
+assert.ok(ui.includes('if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0))'));
+assert.ok(ui.includes('navigationDestinationIsStale'));
+assert.ok(ui.includes('forbiddenForwardNeighborExists'));
 assert.ok(ui.includes("event.preventDefault()"));
 assert.ok(ui.includes("{ passive: false, capture: true }"));
 assert.ok(!ui.includes('pageSnapshot'));
@@ -265,15 +266,20 @@ assert.ok(css.includes('.vix-checkbox:checked'));
 assert.ok(!ui.includes('仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制'));
 assert.ok(!ui.includes('默认开启。只逻辑隐藏代词'));
 
-// 4.3.0 collection mode ownership and collapse/presentation transactions.
+// 4.4.0 runtime-correctness ownership.
 assert.ok(store.includes('export function getViewMode(collectionId)'));
 assert.ok(store.includes('export async function setViewMode(collectionId, mode)'));
+assert.ok(store.includes('export function hydrateRuntimeViewState'));
+assert.ok(store.includes('export async function persistRuntimeViewState'));
 assert.ok(!store.includes('getViewMode(collectionId, section'));
-assert.ok(ui.includes('function collapseNativeStickySection'));
+assert.ok(ui.includes('function stickyCollapseGeometry'));
+assert.ok(ui.includes("querySelector(':scope > .section-flow-anchor')"));
+assert.ok(ui.includes("document.startViewTransition"));
+assert.ok(ui.includes('waitForRootScrollSettle'));
 assert.ok(!ui.includes('compensateCollapsedSection'));
-assert.ok(ui.includes('collapse();'));
-assert.ok(ui.includes("window.scrollTo({ top: targetScrollY, behavior: 'auto' })"));
-assert.ok(css.includes('.navigation-underlay'));
+assert.ok(!index.includes('navigation-underlay'));
+assert.ok(css.includes('.section-flow-anchor'));
+assert.ok(css.includes('sticky-collapse-transition::view-transition-old(root)'));
 assert.ok(css.includes('.navigation-guard-feedback'));
 assert.ok(css.includes('.pin-bar.dock-visible'));
 assert.ok(css.includes('.review-bar.dock-visible'));

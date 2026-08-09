@@ -1,0 +1,40 @@
+/* Vocabulary Index 4.4.0 runtime correctness layer.
+   Data generation is unchanged. This layer removes the 4.3 permanent history
+   underlay/whole-app stacking boundary, keeps Modal geometry out of the root
+   scroll environment, and gives Sticky collapse a true in-flow anchor plus a
+   no-animation View Transition rendering-suppression path. */
+
+/* Browser canvas is the permanent visual substrate. No extra fixed underlay is
+   allowed to become the surface revealed by iOS interactive Back. */
+#app,
+.boot-screen {
+  position: static !important;
+  z-index: auto !important;
+}
+
+/* Zero-height source-of-truth for a Sticky heading's natural flow position.
+   It deliberately has no border/padding/margin so parent border/padding remain
+   represented by real browser geometry instead of a hard-coded pixel offset. */
+.section-flow-anchor {
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+/* 4.4 uses View Transitions only as a rendering-suppression transaction for a
+   long Sticky collapse. There is intentionally no product animation/crossfade. */
+html.sticky-collapse-transition::view-transition-old(root),
+html.sticky-collapse-transition::view-transition-new(root) {
+  animation: none !important;
+  mix-blend-mode: normal;
+}
+html.sticky-collapse-transition::view-transition-old(root) { opacity: 0; }
+html.sticky-collapse-transition::view-transition-new(root) { opacity: 1; }
+
+/* Modal does not own html/body overflow or overscroll in 4.4. Historical
+   .modal-open rules remain in older CSS as version history, but the runtime no
+   longer applies that class to the root document. */

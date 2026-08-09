@@ -1,36 +1,19 @@
-# Vocabulary Index 4.3.0 安全与数据边界
+# Vocabulary Index 4.4.0 安全与数据边界
 
-Vocabulary Index 是个人本地 PWA，不提供服务端账户或云同步。
+## 数据
 
-## 本地数据
+- 业务数据与 API Key 继续本地保存；GitHub Pages 静态部署不拥有服务器端用户数据库。
+- Oxford 为外部跳转；Collins/Groq 调用沿用既有 session/cancel/stale-response 约束；ChatGPT context 只带必要条目上下文。
+- 完整备份/VIX 继续按既有 schema 校验。
 
-业务内容与个人状态保存在 IndexedDB。Groq/Collins API Key 保存在浏览器本地存储；这是便捷的单设备存储，不是硬件级/服务端秘密存储，用户应按可被当前站点脚本读取的凭据理解。
+## Navigation
 
-## 外部请求
+- VIX token/generation 只是本地 session identity，不是认证凭证。
+- dead/stale destination 永不 render；Forward guard 只保护产品导航语义，不承诺控制 iOS 私有 history preview surface。
+- root edge guard 不替代浏览器安全边界，也不拦截普通网页外链权限。
 
-- Oxford：外部 App URL scheme，只发送当前英文文本。
-- Collins：向 `api.collinsdictionary.com` 发送 Key 与查询词；若直接 API 失败，可跳转 Collins 网站。
-- Groq：向 Groq API 发送用户发起的查询/核查内容。
-- ChatGPT：通过 iOS Shortcuts URL 发送紧凑 Entry context。
+## Modal / Accessibility
 
-查询 Provider 不自动写入 Seed；Groq 单条查询与 Collins 结果是临时 UI。
-
-## DOM 与文本
-
-普通应用文本默认不可原生选择和 iOS callout；可编辑控件显式恢复选择。动态内容使用 DOM 构造/文本节点而不是持久化 HTML 拼接作为主要路径。CSP 仅开放当前需要的网络来源。
-
-## 备份
-
-Full Backup 可能包含完整个人学习状态，但不包含 Groq/Collins API Key。VIX 只包含内容，不含个人状态。删除、整代替换等大范围操作继续提供备份选择。
-
-## 公开仓库注意
-
-当前大型 Seed 数据的质量/来源记录与公开再分发授权是两个不同问题。项目长期自用时可先以质量和可重建性为主，但任何未来公开提交第三方大词表前应重新审核其公开分发条件。
-
-## 4.3.0 Navigation / Presentation 边界
-
-- Browser history state 只保存最小导航 token/depth/epoch；完整 page snapshot 保存在 session-scoped VIX navigation state，不写业务数据库。
-- 被 destructive POP 的 token 不得通过 Forward 恢复；standalone edge guard 与 Navigation API 只用于导航安全，不收集触摸轨迹或上传数据。
-- `navigation-underlay` 是纯本地视觉层，不是隐藏网页或外部内容。
-- Modal 打开不再写 body fixed/top；App inert + non-passive touch guard 只阻止本地背景交互/滚动，不改变网络权限。
-- Search/Confirm 迁入 custom Modal Stack 不改变其业务权限或数据发送范围。
+- root App `inert` 当前保留，使 modal 外内容不可交互/聚焦；nested modal parent 继续 inert。
+- 4.4 不再通过 root overflow mutation 锁背景；物理手势由 overlay/touch-action/non-passive touch boundary 处理。
+- 如果目标机证明 root inert 与 Sticky compositor 冲突，fallback 必须同时补齐 pointer/touch/focus containment，不能只删除 inert 后放任背景交互。

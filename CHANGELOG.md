@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.4.0 — 2026-08-10
+
+- Sticky 收起改用真实 in-flow anchor 几何，消除父 1px border 导致的累计上移；
+- 长位移 collapse 改为 scroll-settle → collapse，支持时使用无动画 View Transition rendering suppression，退出 4.3 同步 DOM shrink + root scrollTo；
+- Navigation 升为 destructive-v2：generation+token 为身份，depth 降级为诊断，snapshot persistence 不再改写 browser token；
+- Back 恢复同步 hydrate runtime state、单次 render，随后异步 persistence；Home 改新 generation root PUSH，不再 history.go(-depth)；
+- Forward/stale destination 由 Navigation API + 实际右邻 edge guard 拒绝，不再 commit 后 history bounce；
+- 删除 permanent navigation underlay 与 whole-app stacking context；
+- Modal 不再改变 html/body modal class/overflow，并拆分 modal/page viewport geometry；
+- 新增 Sticky geometry / Navigation classifier 纯 runtime 模块与行为测试；
+- Schema6 / DB5 / Seed4 / VIX2 及业务语义不变。
+
 ## 4.3.0 — 2026-08-09
 
 - Sticky collapse 从跨帧 remove/measure/scroll 补偿重构为 Date/Alphabet 共用 pre-read + 单提交事务；保留 native Sticky 与 LetterNav 动态几何。

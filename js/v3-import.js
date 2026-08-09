@@ -107,10 +107,10 @@ export function parseJsonContent(text) {
       return { kind: 'backup', backup: canonicalizeBackup(parsed), errors: [] };
     }
     if (Number(parsed.schemaVersion) && Number(parsed.schemaVersion) !== 6) {
-      throw new Error('完整备份版本不兼容；4.3.0 仅接受 Schema 6 完整备份');
+      throw new Error('完整备份版本不兼容；4.4.0 仅接受 Schema 6 完整备份');
     }
     if (Array.isArray(parsed.categories) || Array.isArray(parsed.domains)) {
-      throw new Error('旧世代完整备份不兼容 4.3.0；请使用对应旧版本回滚');
+      throw new Error('旧世代完整备份不兼容 4.4.0；请使用对应旧版本回滚');
     }
   }
   throw new Error('JSON 既不是内容数组、VIX 内容文件，也不是受支持的完整备份');

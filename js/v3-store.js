@@ -22,7 +22,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 6,
-    appVersion: '4.3.0',
+    appVersion: '4.4.0',
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -53,7 +53,7 @@ async function ensureLowLevelLexemes() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.3.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.4.0', exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -809,7 +809,7 @@ export function getLastPosition(domainId, collectionId, { mode = 'alphabet', sec
 }
 
 export function getViewMode(collectionId) {
-  // 4.3.0: alphabet/date is Collection state, not a word/phrase/content state.
+  // 4.4.0: alphabet/date remains Collection state, not a word/phrase/content state.
   // Historical section-qualified keys are intentionally ignored; this release
   // does not migrate or infer old per-view mode preferences.
   const value = state.settings.viewModes?.[collectionId];
@@ -825,6 +825,26 @@ export async function setViewMode(collectionId, mode) {
   state.settings.viewModes = next;
   emit('view-mode', { collectionId, mode });
   return mode;
+}
+
+export function hydrateRuntimeViewState(collectionId, { mode = '', section = 'main', calendarMonth = '' } = {}) {
+  if (['alphabet', 'date'].includes(mode)) {
+    const previous = state.settings.viewModes || {};
+    const next = Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${collectionId}:`)));
+    next[collectionId] = mode;
+    state.settings.viewModes = next;
+  }
+  if (mode === 'date' && /^\d{4}-\d{2}$/.test(String(calendarMonth || ''))) {
+    const key = `${collectionId}:${section}`;
+    state.settings.calendarMonths = { ...(state.settings.calendarMonths || {}), [key]: calendarMonth };
+  }
+}
+
+export async function persistRuntimeViewState(collectionId, { mode = '', section = 'main', calendarMonth = '' } = {}) {
+  if (['alphabet', 'date'].includes(mode)) await setViewMode(collectionId, mode);
+  if (mode === 'date' && /^\d{4}-\d{2}$/.test(String(calendarMonth || ''))) {
+    await setCalendarMonth(collectionId, section, calendarMonth);
+  }
 }
 
 export function getCalendarMonth(collectionId, section = 'main') {

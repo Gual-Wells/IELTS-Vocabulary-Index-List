@@ -14,8 +14,8 @@ const criticalFunctions = [
   'switchCollectionMode', 'bindBrowseAnchorButton', 'calendarForSection', 'topChromeBottom',
   'relationNavigationMode', 'normalDestinationsForEntries', 'openSearchDialog', 'startProviderQuery',
   'providerQueryIsCurrent', 'beginLongpressGuard', 'endLongpressGuardWithGrace', 'alphabetNavAttached',
-  'resetNavigationToHome', 'finalizeNavigationResetToHome', 'initializeNavigationModel',
-  'handleNavigationApiNavigate', 'handleNavigationEdgeTouchStart', 'collapseNativeStickySection',
+  'resetNavigationToHome', 'initializeNavigationModel',
+  'handleNavigationApiNavigate', 'handleNavigationEdgeTouchStart', 'collapseNativeStickySection', 'stickyCollapseGeometry',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\bfunction\\s+${name}\\s*\\(`, 'g'))];
@@ -34,6 +34,9 @@ assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet')"));
 assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
 assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('restoreSnapshotAfterRender'));
+assert.ok(ui.includes('pendingUaScrollRestore'));
+assert.ok(ui.includes('hydrateNavigationSnapshot'));
+assert.ok(ui.includes('reconcileNavigationSnapshot'));
 
 // Longpress is a lifecycle, not a single timeout + click suppression patch.
 assert.ok(ui.includes("classList.add('longpress-active', 'longpress-guard')"));
@@ -64,16 +67,38 @@ assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
 assert.ok(!ui.includes('syncSystemShellSurface'));
 assert.ok(!ui.includes('MODAL_BACKDROP_ALPHA'));
 assert.ok(ui.includes('resetNavigationToHome'));
-assert.ok(ui.includes('navigationEpoch'));
-assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v1'"));
+assert.ok(ui.includes('navigationGeneration'));
+assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v2'"));
 assert.ok(ui.includes('discardNavigationFramesFrom'));
-assert.ok(ui.includes('if (!route.collectionId && !pendingRootReset && (appNavigationDepth > 0 || navigationStack.length > 0))'));
-assert.ok(ui.includes('const forwardIsForbidden = isForward'));
+assert.ok(ui.includes('if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0))'));
+assert.ok(ui.includes('navigationDestinationIsStale'));
+assert.ok(ui.includes('forbiddenForwardNeighborExists'));
+assert.ok(ui.includes("scroll: 'after-transition'"));
 assert.ok(!ui.includes('pageSnapshot'));
 assert.ok(!ui.includes('showModalStable'));
 assert.ok(!ui.includes("body.style.position = 'fixed'"));
 assert.ok(ui.includes('switchParallel:'));
 assert.ok(ui.includes("[toggleGlobal, ...homeActions]"));
+
+// Browser history identity is explicit and snapshots do not rewrite it.
+assert.ok(ui.includes('function rootNavigationHistoryState'));
+assert.ok(ui.includes('function pageNavigationHistoryState'));
+assert.ok(ui.includes("if (!token) throw new Error('Navigation page identity requires an explicit token')"));
+const persistStart = ui.indexOf('function persistCurrentHistorySnapshot');
+const persistEnd = ui.indexOf('function applySnapshotBeforeRender', persistStart);
+const persistSource = ui.slice(persistStart, persistEnd);
+assert.ok(!persistSource.includes('history.replaceState'), 'scroll/snapshot persistence must not rewrite browser identity');
+assert.ok(ui.includes('history.pushState(rootNavigationHistoryState()'));
+assert.ok(!ui.includes('history.go(-appNavigationDepth)'));
+assert.ok(ui.includes('historyRestoreInProgress = true'));
+assert.ok(ui.includes('updateModalViewportGeometry({ immediate: true })'));
+const lockStart = ui.indexOf('function lockPageForModal');
+const lockEnd = ui.indexOf('function modalScrollableTarget', lockStart);
+const lockSource = ui.slice(lockStart, lockEnd);
+assert.ok(!lockSource.includes("classList.add('modal-open')"));
+assert.ok(!lockSource.includes('document.documentElement.classList'));
+assert.ok(!lockSource.includes('document.body.classList'));
+assert.ok(!lockSource.includes('style.overflow'));
 
 // Four-state relation classification uses complete canonical target sets.
 for (const value of ["'intra'", "'external'", "'nonstruct'", "'multi'"]) assert.ok(ui.includes(`return ${value}`));

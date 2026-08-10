@@ -151,20 +151,36 @@ export function physicalScrollDuration(pixelDistance = 0) {
   return Math.round(Math.max(170, Math.min(500, 168 + Math.log1p(pixels / 420) * 92)));
 }
 
-export function letterRailFocusRatio(semanticVelocity = 0) {
-  // Positive motion leaves slightly more room in the forward (right) direction;
-  // negative motion mirrors it. The bias is continuous rather than first/second
-  // cell guard logic.
-  const velocity = Math.max(-8, Math.min(8, Number(semanticVelocity || 0)));
-  return Math.max(0.36, Math.min(0.64, 0.5 - velocity * 0.018));
-}
-
-export function cameraTargetForLocus({ locusCenter, viewportWidth, scrollWidth, semanticVelocity = 0 }) {
+/**
+ * @param {{
+ *   cellCenter?: number,
+ *   viewportWidth?: number,
+ *   scrollWidth?: number,
+ *   currentScrollLeft?: number,
+ *   safeStartRatio?: number,
+ *   safeEndRatio?: number,
+ *   hysteresisPx?: number,
+ * }} options
+ */
+export function cameraTargetForActiveCell({
+  cellCenter = 0, viewportWidth = 0, scrollWidth = 0, currentScrollLeft = 0,
+  safeStartRatio = 0.38, safeEndRatio = 0.62, hysteresisPx = 3,
+} = {}) {
   const width = Math.max(0, Number(viewportWidth || 0));
   const content = Math.max(width, Number(scrollWidth || 0));
-  if (!width) return 0;
-  const focus = letterRailFocusRatio(semanticVelocity);
-  const desired = Number(locusCenter || 0) - width * focus;
+  const current = Math.max(0, Math.min(Math.max(0, content - width), Number(currentScrollLeft || 0)));
+  const center = Number(cellCenter);
+  if (!width || !Number.isFinite(center)) return current;
+
+  const start = Math.max(0, Math.min(1, Number(safeStartRatio || 0.38)));
+  const end = Math.max(start, Math.min(1, Number(safeEndRatio || 0.62)));
+  const hysteresis = Math.max(0, Number(hysteresisPx || 0));
+  const local = center - current;
+  const safeLeft = width * start;
+  const safeRight = width * end;
+
+  if (local >= safeLeft - hysteresis && local <= safeRight + hysteresis) return current;
+  const desired = center - width * 0.5;
   return Math.max(0, Math.min(Math.max(0, content - width), desired));
 }
 

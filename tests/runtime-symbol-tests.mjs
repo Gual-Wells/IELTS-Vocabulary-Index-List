@@ -18,21 +18,26 @@ const criticalFunctions = [
   'resetNavigationToHome', 'initializeNavigationModel', 'jumpToAlphabetLetter', 'captureSemanticPosition',
   'collapseNativeStickySection', 'stickyCollapseGeometry', 'animateRootToSemanticPosition',
   'prepareSemanticPositionGeometry', 'alphabetAxisForSection', 'renderLetterRailSemanticPosition',
-  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition',
+  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition', 'runBufferedCollectionCommit', 'runRootBufferedCommit', 'readingChromeBottom', 'toggleEntryRelations',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\b(?:async\\s+)?function\\s+${name}\\s*\\(`, 'g'))];
   assert.equal(declarations.length, 1, `${name} 必须且只能定义一次`);
 }
 
-// Current-page state only: ordinary view/mode switching creates fresh TOP+collapsed state;
-// recursive Back restores the one frame that was actually left.
+// 4.7.1 current-page switches use one-shot semantic anchors and buffered commits;
+// no hidden four-state snapshots and no forced TOP reset.
 assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
 assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('hydrateNavigationSnapshot'));
 assert.ok(ui.includes('persistHydratedViewState'));
 assert.ok(ui.includes('prepareBackFrame'));
-assert.ok(ui.includes("position: { kind: 'top', scrollYFallback: 0 }"));
+assert.ok(ui.includes('transientModeSwitchAnchor'));
+assert.ok(ui.includes('transientViewSwitchTarget'));
+assert.ok(ui.includes('restoreTransientSemanticPosition'));
+assert.ok(ui.includes('runBufferedCollectionCommit'));
+assert.ok(!ui.includes('view-switch-top'));
+assert.ok(!ui.includes('mode-switch-top'));
 assert.ok(!ui.includes('viewStateSnapshots'));
 assert.ok(!ui.includes('savedAlphabetState'));
 assert.ok(!ui.includes('savedDateState'));
@@ -50,18 +55,23 @@ for (const retired of ['rootBrowserKey', 'deadBrowserKeys', 'browserKey', 'handl
   assert.ok(!ui.includes(retired), `已退役 Browser History Rail 符号仍在 active UI：${retired}`);
 }
 
-// LetterNav: real flow anchors -> semantic axis -> continuous locus/camera.
+// LetterNav: semantic axis remains internal; visible state is one discrete active cell
+// and camera movement is safe-zone gated rather than continuous locus chasing.
 assert.ok(ui.includes("querySelector(':scope > .section-flow-anchor')"));
 assert.ok(ui.includes('createSemanticAxis(points)'));
 assert.ok(ui.includes('semanticAtPhysical(axis, boundary)'));
 assert.ok(ui.includes('physicalAtSemantic(axis, semantic)'));
-assert.ok(ui.includes('letter-nav-locus'));
-assert.ok(ui.includes('cameraTargetForLocus'));
+assert.ok(!ui.includes('letter-nav-locus'));
+assert.ok(!ui.includes('cameraTargetForLocus'));
+assert.ok(!ui.includes('semanticVelocity'));
+assert.ok(ui.includes('cameraTargetForActiveCell'));
+assert.ok(ui.includes('safeStartRatio: .38'));
+assert.ok(ui.includes('safeEndRatio: .62'));
+assert.ok(ui.includes('activeChanged'));
 assert.ok(ui.includes('exponentialApproach'));
-assert.ok(ui.includes('semanticVelocity'));
-assert.ok(!ui.includes('leftGuard'));
-assert.ok(!ui.includes('rightGuard'));
-assert.ok(!ui.includes('reversalWindow'));
+assert.ok(!motion.includes('letterRailFocusRatio'));
+assert.ok(!motion.includes('cameraTargetForLocus'));
+assert.ok(ui.includes('cachedChromeBottom > 0 ? cachedChromeBottom : topChromeBottom()'));
 
 // Manual rail drag is one-way: horizontal drag never moves root; its location persists until page motion.
 assert.ok(ui.includes('manualLocked: false'));
@@ -98,12 +108,19 @@ assert.ok(!ui.includes('function restoreScrollAnchor('));
 assert.equal((ui.match(/window\.scrollTo\s*\(/g) || []).length, 2);
 assert.equal((ui.match(/window\.scrollBy\s*\(/g) || []).length, 0);
 
-// Page-level semantic motions are distinct, not one generic fade.
-for (const kind of ['push', 'pop', 'home', 'sibling-forward', 'sibling-back', 'reindex-to-date', 'reindex-to-alphabet']) {
-  assert.ok(ui.includes(`'${kind}'`) || ui.includes('presentationMotionClass'), `缺少 motion 语义：${kind}`);
-}
+// Page-level motion is gated by semantics: Push/Pop use View Transition;
+// Home and representation/category switches use non-overlapping buffered commits.
+assert.ok(ui.includes("runPresentationTransition('push'"));
+assert.ok(ui.includes("runPresentationTransition('pop'"));
+assert.ok(ui.includes('runRootBufferedCommit'));
+assert.ok(ui.includes('runBufferedCollectionCommit'));
+assert.ok(!ui.includes("runPresentationTransition('home'"));
+assert.ok(!ui.includes("runPresentationTransition('sibling-forward'"));
+assert.ok(!ui.includes("runPresentationTransition('reindex-to-date'"));
 assert.ok(ui.includes('document.startViewTransition'));
 assert.ok(ui.includes('closeSearchDialogForNavigation'));
+assert.ok(ui.includes('closeRelationTargetMenu({ immediate: true })'));
+assert.ok(ui.includes("panel?.animate?.(["));
 
 // Modal geometry lock remains retained; no root overflow/position mutation is reintroduced.
 assert.ok(ui.includes('updateModalViewportGeometry({ immediate: true })'));
@@ -121,7 +138,7 @@ assert.ok(ui.includes('activeProviderQuery.controller.abort()'));
 assert.ok(ui.includes('providerQueryIsCurrent(sequence)'));
 
 // DOM-free motion math remains isolated and testable.
-for (const symbol of ['createSemanticAxis', 'semanticAtPhysical', 'physicalAtSemantic', 'semanticScrollDuration', 'physicalScrollDuration', 'cameraTargetForLocus', 'exponentialApproach']) {
+for (const symbol of ['createSemanticAxis', 'semanticAtPhysical', 'physicalAtSemantic', 'semanticScrollDuration', 'physicalScrollDuration', 'cameraTargetForActiveCell', 'exponentialApproach']) {
   assert.ok(motion.includes(`function ${symbol}`) || motion.includes(`export function ${symbol}`), `motion primitive missing: ${symbol}`);
 }
 

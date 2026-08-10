@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = "\n".join((ROOT / p).read_text() for p in [
-    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css', 'css/v4.0.2.css', 'css/v4.1.0.css', 'css/v4.2.0.css', 'css/v4.3.0.css', 'css/v4.4.0.css', 'css/v4.5.0.css', 'css/v4.6.0.css', 'css/v4.7.0.css'
+    'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css', 'css/v4.0.2.css', 'css/v4.1.0.css', 'css/v4.2.0.css', 'css/v4.3.0.css', 'css/v4.4.0.css', 'css/v4.5.0.css', 'css/v4.6.0.css', 'css/v4.7.0.css', 'css/v4.7.1.css'
 ])
 
 ACTIONS = '<div class="entry-actions"><span class="entry-action-placeholder relation-placeholder"></span><button></button><button></button><button></button><button></button></div>'

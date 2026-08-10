@@ -63,7 +63,7 @@ const visibleCollection = seed.collections
   .filter((item) => item.domainId === dataEntry.domainId && item.type === 'normal')
   .find((item) => state.visibleEntryIdsByCollection.get(item.id)?.has(dataEntry.id));
 assert.ok(visibleCollection);
-const context = createEntryContext(state, dataEntry, visibleCollection.id, { appVersion: '4.7.0' });
+const context = createEntryContext(state, dataEntry, visibleCollection.id, { appVersion: '4.7.1' });
 assert.equal(context.format, ENTRY_CONTEXT_FORMAT);
 assert.equal(context.version, ENTRY_CONTEXT_VERSION);
 assert.equal(context.subject.entryId, dataEntry.id);
@@ -89,7 +89,7 @@ for (const entry of seed.entries) {
   const collection = seed.collections.filter((item) => item.domainId === entry.domainId && item.type === 'normal')
     .find((item) => state.visibleEntryIdsByCollection.get(item.id)?.has(entry.id));
   if (!collection) continue;
-  const ctx = createEntryContext(state, entry, collection.id, { appVersion: '4.7.0' });
+  const ctx = createEntryContext(state, entry, collection.id, { appVersion: '4.7.1' });
   const url = buildChatGPTShortcutUrl(buildChatGPTPrompt(ctx));
   if (url.length > maxUrl.length) maxUrl = { length: url.length, text: entry.text };
 }
@@ -98,7 +98,7 @@ assert.ok(maxUrl.length < 30636 * 0.5, `紧凑上下文应显著低于 3.5.x 约
 
 const globalAccess = state.projection.get(SYSTEM_GLOBAL_WORDS_ID).find((item) => item.normalizedText === 'access');
 if (globalAccess) {
-  const globalContext = createEntryContext(state, globalAccess, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '4.7.0' });
+  const globalContext = createEntryContext(state, globalAccess, SYSTEM_GLOBAL_WORDS_ID, { appVersion: '4.7.1' });
   assert.equal(globalContext.subject.entryId, globalAccess.id, '总表查询仍针对具体 Entry');
   assert.equal(globalContext.subject.projectedFromTotal, true);
 }

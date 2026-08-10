@@ -1,5 +1,9 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
+## 4.7.1：[当前实现 / 待真机]
+
+4.7.0真机进一步证明“给每种状态变化分配一种运动”过度扩张了Motion Semantics：新Collection Push通过，但Back感知偏快；Home双scale语义不符；Word/Phrase与Alphabet/Date在深位置因snapshot overlap + TOP reset出现旧页重叠、toolbar覆盖与高风险重启反馈；LetterRail continuous locus与categorical index冲突且velocity camera放大噪声；Modal close拖尾、可见backdrop抢注意力；Relation反而缺少局部展开反馈。4.7.1因此建立Semantic Motion Gate：Push冻结、Pop独立retime；无空间语义的view/mode/global switch改非重叠Buffered State Commit并用一次性semantic anchor保持阅读邻域；Home改Root Buffer；LetterRail删除locus、改离散active+safe-zone camera；普通Modal backdrop透明并快速退出；Relation补Local Reveal；Reduce Motion与token/lifecycle统一修正。Schema6 / DB5 / Seed4 / VIX2不变。
+
 ## 4.7.0：[当前实现 / 待真机]
 
 4.6.0 真机已证明 ScrollCoordinator / semantic position / flow-anchor / measured virtualization显著收敛最终位置，但硬切presentation仍普遍轻闪；顺序A→…→X仍有轻度目标几何再求解；Safari History Rail继续带来 frozen Search snapshot、snapshot→live handoff与深层50MiB bitmap淘汰后的纯背景。4.7.0据此撤销Browser History transport：standalone runtime只保留一个root browser slot，VIX自己POP/clear recursive stack；同时建立DOM-free Alphabet Semantic Axis与semantic motion、Target Geometry Prewarm、continuous LetterRail camera，并为Page Push/Pop、Home、Word/Phrase sibling、Alphabet/Date reindex、Modal spring定义不同运动语义。普通View/Mode切换TOP+collapsed，不保留四份隐藏状态；Calendar继续query/jump-only。Schema6 / DB5 / Seed4 / VIX2不变。
@@ -8,11 +12,11 @@
 
 4.5.0 真机证明 Navigation Automaton 主体成立，但暴露 root scroll ownership 分裂：Back 重复 traversal 可从 42/123/354/4995/5322 正确位置退化；LetterNav 使用 Sticky visual rect，W→X 可被旧 42-chunk correction 拉回 W141；active LetterNav/Sticky/正文存在明显分帧刷新。4.6 不重做 Navigation/Sticky/Modal，而建立 ScrollCoordinator + SemanticPosition + measured VirtualEntryList：42/960 lazy 性能路径保留，Virtualizer 永久失去 root-scroll 权，Back 使用 UA first-pass 后按 VIX semantic anchor 最终验证；cross-Collection Search 清洁 history snapshot，首次 SW claim 不再双启动。Schema6 / DB5 / Seed4 / VIX2 不变。
 
-> 当前权威版本：Vocabulary Index 4.7.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.7.1（2026-08-11）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.7.0 完整源码实际行为。
+- **[当前实现]**：4.7.1 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -256,22 +260,22 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.7.0 当前待真机事项
+# 八、4.7.1 当前待真机事项
 
-- Single-slot：5+ 层 VIX recursive path 只通过 App Back/Home 返回；内部不再生成 Safari VIX history snapshot 或第 4 层纯色 VIX page。
-- Back restore：42 / 123 / 354 / 4995 / 5322 的 Page Pop 第一次 live target 就在正确 semantic position，无 TOP→target 二跳。
-- Alphabet semantic motion：direct X、A→…→X、W 深展开/关系展开→X 连续收敛；不再可见 W/Y 二次纠正。
-- Equal semantic rate：相邻逻辑字母的进度权重不受真实 section 物理高度影响；整个长跳转只有一次自然加速/减速。
-- Manual LetterNav：横拖不动正文，pointerup 后不复原；仅下一次 page vertical motion 才重新接管。
-- Same-page motion：Letter/Entry/PIN/Date/Return Top 都是真实连续 vertical scroll，Sticky自然 handoff。
-- Cross-page target：先 Page Push 到目标 TOP，再连续 scroll 到目标；不叠播。
-- Word/Phrase：Sibling Swap，目标 TOP+collapsed；切回不恢复隐藏 target view。
-- Alphabet/Date：Reindex Morph，目标 TOP+collapsed；Calendar query-only，不随正文滚动。
-- Page motion：Push/Pop 对称，Home为独立 hierarchy reset；过渡完成后无第二次 correction。
-- Modal：open scale/fade/克制 spring，close 更快；4.4 背景 Sticky/scroll 几何冻结继续成立。
-- Performance：42/960 virtual path 保持，motion/prewarm 不恢复全量 5k+ DOM。
-- Service Worker：全新安装只 `V→Home` 一次；显式“立即更新”只 reload 一次。
+- Push：4.7.0新Collection Push保持原手感，无回归。
+- Pop：Back约282ms新时序比4.7.0更从容；第一次live target即正确，无TOP→target二跳。
+- Root Home：无scale/translate；context release→root-neutral→Home恢复，不被感知为loading。
+- Buffered View/Mode：TOP/500/1500/3000px及深展开位置切换均不得old/new文字同帧重叠、不得先回TOP、Bottom Toolbar全程live。
+- Transient anchor：Alphabet/Date首次可见保持同Entry/邻域；Word/Phrase保持同/近letter或date，不形成四份hidden state。
+- Restart P1：深位置快速连续View/Mode切换20次不得出现boot screen、Home重置、白屏或工具栏覆盖。
+- LetterRail：无continuous 52px locus；同一letter section内camera不持续微抖，active越出safe zone才发生有限重定位。
+- Manual LetterNav：横拖不动正文，pointerup后不复原；仅下一次page vertical motion才重新接管。
+- Modal：普通backdrop不明显变暗；连续开关20–30次close无残影式注意力拖尾，视觉消失后背景立即恢复可操作。
+- Relation：Panel/chevron有轻量local reveal，row无慢height animation；multi-target导航时旧Popover不跟随Push。
+- Same-page Semantic Scroll：正常模式继续连续；Reduce Motion直接提交最终位置。
+- Performance：42/960 virtual path保持，Buffered Commit隐藏期prewarm不恢复全量5k+ DOM。
+- Service Worker：全新安装只`V→Home`一次；显式“立即更新”只reload一次。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.7.0.md`、`SEMANTIC_IMPACT_MATRIX_4.7.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.0.md`、`PRODUCT_MANUAL_4.7.0.md`、`AUDIT_REPORT_4.7.0.md`、`TECHNICAL_RESEARCH_4.7.0.md`、`CHANGE_REPORT_4.7.0.md`、`TEST_REPORT_4.7.0.md`、`MIGRATION_4.7.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.0.md` 共同组成当前实现与验证记录。4.6.0及更早文档保留为生命周期事实；其中 `destructive-v3` Browser History Rail、instant-nearest LetterNav 等已被4.7当前规范覆盖。
+`REQUIREMENT_BASELINE_4.7.1.md`、`SEMANTIC_IMPACT_MATRIX_4.7.1.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.1.md`、`PRODUCT_MANUAL_4.7.1.md`、`AUDIT_REPORT_4.7.1.md`、`TECHNICAL_RESEARCH_4.7.1.md`、`CHANGE_REPORT_4.7.1.md`、`TEST_REPORT_4.7.1.md`、`MIGRATION_4.7.1.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.1.md` 共同组成当前实现与验证记录。4.7.0及更早文档保留为生命周期事实；其中4.7.0 Sibling/Reindex TOP-reset、continuous Letter locus 与旧Modal presentation已被4.7.1当前规范覆盖。

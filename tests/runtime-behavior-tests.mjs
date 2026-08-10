@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { computeStickyCollapseTarget } from '../js/v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from '../js/v3-scroll-runtime.js';
 import {
-  alphabetOrdinal, cameraTargetForLocus, createSemanticAxis, exponentialApproach,
-  letterRailFocusRatio, MOTION_EASE, physicalAtSemantic, physicalScrollDuration,
+  alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach,
+  MOTION_EASE, physicalAtSemantic, physicalScrollDuration,
   semanticAtPhysical, semanticScrollDuration,
 } from '../js/v3-motion-runtime.js';
 
@@ -67,11 +67,10 @@ assert.equal(MOTION_EASE.scroll(0), 0);
 assert.equal(MOTION_EASE.scroll(1), 1);
 assert.ok(MOTION_EASE.scroll(0.5) > 0.5, 'scroll curve should accelerate decisively then soften');
 
-// Dynamic LetterRail camera is continuous and direction-aware, not first/second-cell guards.
-assert.ok(letterRailFocusRatio(4) < 0.5);
-assert.ok(letterRailFocusRatio(-4) > 0.5);
-const centerTarget = cameraTargetForLocus({ locusCenter: 700, viewportWidth: 300, scrollWidth: 1400, semanticVelocity: 0 });
-assert.equal(centerTarget, 550);
+// 4.7.1 LetterRail camera is categorical and safe-zone gated.
+assert.equal(cameraTargetForActiveCell({ cellCenter: 150, viewportWidth: 300, scrollWidth: 1400, currentScrollLeft: 0 }), 0);
+assert.equal(cameraTargetForActiveCell({ cellCenter: 200, viewportWidth: 300, scrollWidth: 1400, currentScrollLeft: 0 }), 50);
+assert.equal(cameraTargetForActiveCell({ cellCenter: 550, viewportWidth: 300, scrollWidth: 1400, currentScrollLeft: 400 }), 400);
 const approached = exponentialApproach(0, 100, 16, 70);
 assert.ok(approached > 0 && approached < 100);
 assert.ok(exponentialApproach(approached, 100, 16, 70) > approached);

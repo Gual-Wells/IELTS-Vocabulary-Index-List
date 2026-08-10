@@ -18,9 +18,9 @@ import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
-import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForLocus, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
+import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.0';
+const APP_VERSION = '4.7.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -76,6 +76,7 @@ let pendingPageSnapshot = null;
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
+let bufferedStateCommitInProgress = false;
 let renderRevision = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
@@ -424,7 +425,13 @@ function updateOverlayLayout({ immediate = false } = {}) {
   return null;
 }
 
-const PRESENTATION_EXIT_MS = 180;
+const MODAL_EXIT_MS = 108;
+const POPOVER_EXIT_MS = 140;
+const DOCK_EXIT_MS = 140;
+const BUFFER_OUT_MS = 42;
+const BUFFER_IN_MS = 58;
+const ROOT_BUFFER_OUT_MS = 60;
+const ROOT_BUFFER_IN_MS = 88;
 
 function lockPageForModal() {
   if (openModalCount) return;
@@ -472,7 +479,7 @@ function createAppDialogFrame({
   dismissible = true, showClose = true,
 }) {
   const layer = el('section', {
-    className: 'modal-layer modal-layer-entering',
+    className: 'modal-layer',
     dataset: { depth: String(dialogStack.length + 1), variant, kind },
     role: 'dialog',
     'aria-modal': 'true',
@@ -586,7 +593,7 @@ function closeDialog({ all = false } = {}) {
       host.setAttribute('aria-hidden', 'true');
       if (elements.app) elements.app.inert = false;
       unlockPageForModal();
-    }, PRESENTATION_EXIT_MS);
+    }, MODAL_EXIT_MS);
     return;
   }
   const frame = dialogStack.pop();
@@ -596,7 +603,7 @@ function closeDialog({ all = false } = {}) {
   if (frame === activeConfirmFrame) activeConfirmFrame = null;
   const parent = dialogStack.at(-1) || null;
   frame.layer.classList.add('modal-layer-closing');
-  window.setTimeout(() => finishModalLayerClose(frame, parent), PRESENTATION_EXIT_MS);
+  window.setTimeout(() => finishModalLayerClose(frame, parent), MODAL_EXIT_MS);
 }
 
 function openDialog({
@@ -622,7 +629,6 @@ function openDialog({
   host.append(frame.layer);
   requestAnimationFrame(() => {
     if (!frame.layer.isConnected || frame.closing) return;
-    frame.layer.classList.remove('modal-layer-entering');
     const focusable = focusableModalNodes(frame.form);
     const safeFocus = frame.closeButton || focusable.find((node) => node.tagName === 'BUTTON') || frame.form;
     safeFocus?.focus?.({ preventScroll: true });
@@ -686,11 +692,11 @@ async function closeSearchDialogForNavigation() {
   const card = frame.form;
   const startedAt = performance.now();
   closeSearchDialog();
-  await waitForMotionEnd(card, PRESENTATION_EXIT_MS + 80);
+  await waitForMotionEnd(card, MODAL_EXIT_MS + 80);
   // Page motion starts only after the modal lifecycle has actually finished,
   // not merely after transform/opacity emitted transitionend. This keeps the
   // modal layer, app inert state and next page transition in one clean order.
-  const remaining = Math.max(0, PRESENTATION_EXIT_MS + 8 - (performance.now() - startedAt));
+  const remaining = Math.max(0, MODAL_EXIT_MS + 8 - (performance.now() - startedAt));
   if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
 }
 
@@ -898,6 +904,83 @@ async function runPresentationTransition(kind, update) {
   }
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+async function animateSurfaceOpacity(node, from, to, duration, easing = 'cubic-bezier(.2,.7,.2,1)', { delay = 0 } = {}) {
+  if (!node?.isConnected) return;
+  node.style.opacity = String(from);
+  if (prefersReducedMotion() || duration <= 0 || typeof node.animate !== 'function') {
+    node.style.opacity = String(to);
+    return;
+  }
+  const animation = node.animate([{ opacity: from }, { opacity: to }], {
+    duration, delay, easing, fill: 'forwards',
+  });
+  try { await animation.finished; } catch { /* interrupted buffer is allowed to finish at the committed state */ }
+  node.style.opacity = String(to);
+  animation.cancel();
+}
+
+async function restoreTransientSemanticPosition(position, source = 'buffered-switch') {
+  if (!position) return;
+  const transaction = beginRootScrollTransaction(source, position);
+  const epoch = transaction.epoch;
+  prepareSemanticPositionGeometry(position, { reason: `${source}-prewarm`, passes: 3 });
+  restoreSemanticPosition(position, epoch, { tolerance: .5, source });
+  await settleSemanticPosition(epoch, position, { maxFrames: 4, tolerance: .75, source });
+  if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
+}
+
+async function runBufferedCollectionCommit(update, { position = null, source = 'buffered-switch', outMs = BUFFER_OUT_MS, inMs = BUFFER_IN_MS } = {}) {
+  const surface = elements['collection-view'];
+  const toolbar = elements['bottom-toolbar'];
+  bufferedStateCommitInProgress = true;
+  if (surface) surface.inert = true;
+  if (toolbar) toolbar.inert = true;
+  try {
+    if (!surface?.isConnected || prefersReducedMotion()) {
+      await update();
+      if (position) await restoreTransientSemanticPosition(position, source);
+      surface?.style.removeProperty('opacity');
+      return;
+    }
+    await animateSurfaceOpacity(surface, 1, 0, outMs, 'cubic-bezier(.4,0,1,1)');
+    surface.style.opacity = '0';
+    await update();
+    if (position) await restoreTransientSemanticPosition(position, source);
+    await nextPresentationFrame();
+    await animateSurfaceOpacity(surface, 0, 1, inMs, 'cubic-bezier(.2,.72,.2,1)');
+    surface.style.removeProperty('opacity');
+  } finally {
+    if (surface) surface.inert = false;
+    if (toolbar) toolbar.inert = false;
+    bufferedStateCommitInProgress = false;
+  }
+}
+
+async function runRootBufferedCommit(update) {
+  const app = elements.app;
+  if (!app?.isConnected || prefersReducedMotion()) { await update(); return; }
+  await animateSurfaceOpacity(app, 1, 0, ROOT_BUFFER_OUT_MS, 'cubic-bezier(.4,0,1,1)');
+  app.style.opacity = '0';
+  await update();
+  const topbar = app.querySelector('.topbar');
+  const main = elements['main-content'];
+  app.style.opacity = '1';
+  if (topbar) topbar.style.opacity = '0';
+  if (main) main.style.opacity = '0';
+  await nextPresentationFrame();
+  const tasks = [];
+  if (topbar) tasks.push(animateSurfaceOpacity(topbar, 0, 1, 72, 'cubic-bezier(.2,.72,.2,1)'));
+  if (main) tasks.push(animateSurfaceOpacity(main, 0, 1, ROOT_BUFFER_IN_MS, 'cubic-bezier(.2,.72,.2,1)', { delay: 12 }));
+  await Promise.all(tasks);
+  topbar?.style.removeProperty('opacity');
+  main?.style.removeProperty('opacity');
+  app.style.removeProperty('opacity');
+}
+
 function resetRootScrollForPreparedPage(source = 'page-top') {
   const transaction = beginRootScrollTransaction(source, { kind: 'top', scrollYFallback: 0 });
   rootScrollToY(0, { epoch: transaction.epoch, source });
@@ -974,7 +1057,7 @@ function prepareBackFrame(frame) {
 }
 
 async function navigateBack() {
-  if (appNavigationDepth <= 0) return;
+  if (bufferedStateCommitInProgress || appNavigationDepth <= 0) return;
   persistCurrentHistorySnapshot();
   navigationTraversalInProgress = true;
   const leaving = navigationStack.pop() || null;
@@ -1001,6 +1084,7 @@ async function navigateBack() {
 }
 
 async function resetNavigationToHome() {
+  while (bufferedStateCommitInProgress) await nextPresentationFrame();
   if (!currentCollectionId && !appNavigationDepth) {
     homeGlobalMode = 'structured';
     homeScrollY = 0;
@@ -1012,7 +1096,7 @@ async function resetNavigationToHome() {
   try {
     const removed = navigationStack.splice(0, navigationStack.length);
     appNavigationDepth = 0;
-    await runPresentationTransition('home', () => {
+    await runRootBufferedCommit(() => {
       for (const frame of removed) discardFrameRuntimeState(frame);
       renderCommittedRoot({ resetScroll: true });
     });
@@ -1026,6 +1110,7 @@ function goHome() {
 }
 
 async function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
+  if (bufferedStateCommitInProgress) return;
   const state = getState();
   const collection = state.collectionById.get(collectionId);
   const entry = entryId ? state.entryById.get(entryId) : null;
@@ -1063,12 +1148,16 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
     clearExpandedRelationsForView(collection.id, previousView);
     expandedLettersFor(collection.id, nextView).clear();
     clearExpandedRelationsForView(collection.id, nextView);
-    // Explicit target navigation is still a fresh target presentation, but its
-    // target group must exist before the subsequent semantic scroll begins.
     prepareTargetExpansion(collection, entry, nextView, reason);
-    const motionKind = currentViewKind === 'word' && nextView === 'phrase' ? 'sibling-forward' : 'sibling-back';
     const targetMode = getViewMode(collection.id);
-    const freshMonth = targetMode === 'date' ? initialCalendarMonthForView(collection.id, nextView) : '';
+    const fallbackTarget = transientViewSwitchTarget(nextView);
+    const targetPosition = entryId
+      ? { kind: 'entry', entryId, offsetFromContentTop: 0, scrollYFallback: window.scrollY }
+      : fallbackTarget.position;
+    const targetStampMonth = entry ? getStudyStamp(entry, collection.id)?.reviewDateKey?.slice(0, 7) || '' : '';
+    const freshMonth = targetMode === 'date'
+      ? (targetStampMonth || fallbackTarget.calendarMonth || initialCalendarMonthForView(collection.id, nextView))
+      : '';
     if (targetMode === 'date') hydrateRuntimeViewState(collection.id, { mode: targetMode, section: nextView, calendarMonth: freshMonth });
     currentViewKind = nextView;
     activeSection = nextView;
@@ -1079,13 +1168,14 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
     if (frame) {
       frame.collectionId = collectionId;
       frame.viewKind = nextView;
-      frame.snapshot = targetSnapshot(collection, nextView);
     }
     navigationTraversalInProgress = true;
     try {
-      await runPresentationTransition(motionKind, () => {
-        renderApp();
-        resetRootScrollForPreparedPage('view-target-top');
+      await runBufferedCollectionCommit(() => renderApp(), {
+        position: targetPosition,
+        source: `view-target-${previousView}-to-${nextView}`,
+        outMs: 38,
+        inMs: 54,
       });
     } finally {
       navigationTraversalInProgress = false;
@@ -1096,7 +1186,8 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
       finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
     }
     if (entryId) await jumpToEntry(entryId, { collectionId, reason });
-    if (needsHomeModePersistence) persistHydratedViewState(targetSnapshot(collection, nextView));
+    persistCurrentHistorySnapshot();
+    if (needsHomeModePersistence) persistHydratedViewState(currentSnapshot());
     return;
   }
 
@@ -1755,6 +1846,34 @@ function renderHomeAnnotationBanner() {
   updateOverlayLayout();
 }
 
+async function switchHomeGlobalMode(sourceButton = null) {
+  const scope = elements['home-view']?.querySelector('.global-scope');
+  const grid = scope?.querySelector('.global-grid');
+  if (!scope || !grid || sourceButton?.dataset.buffering === 'true') return;
+  if (sourceButton) { sourceButton.dataset.buffering = 'true'; sourceButton.disabled = true; }
+  try {
+    await animateSurfaceOpacity(grid, 1, 0, prefersReducedMotion() ? 0 : 34, 'cubic-bezier(.4,0,1,1)');
+    homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
+    const state = getState();
+    const cards = homeGlobalMode === 'structured'
+      ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]
+      : [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_CONTENT_ID))];
+    scope.dataset.mode = homeGlobalMode;
+    grid.replaceChildren(...cards.filter(Boolean));
+    const buttonNode = sourceButton?.isConnected ? sourceButton : scope.querySelector('.global-mode-toggle');
+    if (buttonNode) {
+      const label = homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表';
+      buttonNode.title = label;
+      buttonNode.setAttribute('aria-label', label);
+    }
+    await nextPresentationFrame();
+    await animateSurfaceOpacity(grid, 0, 1, prefersReducedMotion() ? 0 : 52, 'cubic-bezier(.2,.72,.2,1)');
+    grid.style.removeProperty('opacity');
+  } finally {
+    if (sourceButton?.isConnected) { sourceButton.disabled = false; delete sourceButton.dataset.buffering; }
+  }
+}
+
 function renderHome(token = renderRevision) {
   const state = getState();
   currentCollectionId = '';
@@ -1781,10 +1900,7 @@ function renderHome(token = renderRevision) {
     className: 'secondary-button compact-button global-mode-toggle',
     title: homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表',
     'aria-label': homeGlobalMode === 'structured' ? '切换到非结构全局表' : '切换到结构化全局表',
-    on: { click: () => {
-      homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
-      renderHome(renderRevision);
-    } },
+    on: { click: (event) => { switchHomeGlobalMode(event.currentTarget).catch(displayError); } },
   }, [svgIcon('switchParallel')]);
   const globalCards = homeGlobalMode === 'structured'
     ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]
@@ -2100,11 +2216,11 @@ function renderBottomToolbar(collection, section = currentViewKind) {
 }
 
 async function switchCollectionView(collection, nextKind) {
+  if (bufferedStateCommitInProgress) return;
   if (collection.type !== 'normal' || !['word', 'phrase'].includes(nextKind) || nextKind === currentViewKind) return;
+  const target = transientViewSwitchTarget(nextKind);
   collapseTransactionRevision += 1;
   const previousKind = currentViewKind;
-  // A normal sibling switch does not keep a hidden state for either projection.
-  // The source frame is being replaced, not parked for later restoration.
   expandedLettersFor(collection.id, previousKind).clear();
   clearExpandedRelationsForView(collection.id, previousKind);
   expandedLettersFor(collection.id, nextKind).clear();
@@ -2114,22 +2230,22 @@ async function switchCollectionView(collection, nextKind) {
   pendingPageSnapshot = null;
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
+  suppressScrollPersistence(700);
   const mode = getViewMode(collection.id);
-  const freshMonth = mode === 'date' ? initialCalendarMonthForView(collection.id, nextKind) : '';
+  const freshMonth = mode === 'date'
+    ? (target.calendarMonth || initialCalendarMonthForView(collection.id, nextKind))
+    : '';
   if (mode === 'date') hydrateRuntimeViewState(collection.id, { mode, section: nextKind, calendarMonth: freshMonth });
-  const freshSnapshot = {
-    type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
-    calendarMonth: freshMonth,
-    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
-  };
   const frame = currentNavigationFrame();
-  if (frame) { frame.viewKind = nextKind; frame.snapshot = freshSnapshot; }
-  const motionKind = previousKind === 'word' && nextKind === 'phrase' ? 'sibling-forward' : 'sibling-back';
+  if (frame) frame.viewKind = nextKind;
+
   navigationTraversalInProgress = true;
   try {
-    await runPresentationTransition(motionKind, () => {
-      renderApp();
-      resetRootScrollForPreparedPage('view-switch-top');
+    await runBufferedCollectionCommit(() => renderApp(), {
+      position: target.position,
+      source: `view-switch-${previousKind}-to-${nextKind}`,
+      outMs: 38,
+      inMs: 54,
     });
   } finally {
     navigationTraversalInProgress = false;
@@ -2196,7 +2312,7 @@ function setContextDockVisible(node, appClass, visible, { clearAfterHide = false
       if (clearAfterHide) node.replaceChildren();
       updateOverlayLayout();
     }
-  }, PRESENTATION_EXIT_MS);
+  }, DOCK_EXIT_MS);
   dockHideTimers.set(node, timer);
 }
 
@@ -2263,6 +2379,106 @@ function initialCalendarMonthForView(collectionId, section) {
   return months[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 }
 
+function switchAnchorOffset(position) {
+  return Number.isFinite(Number(position?.offsetFromContentTop)) ? Number(position.offsetFromContentTop) : 0;
+}
+
+function readingDateKeyForPosition(position, section = currentViewKind) {
+  if (position?.kind === 'entry' && position.entryId) {
+    const entry = getState().entryById.get(position.entryId);
+    if (entry) return getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked';
+  }
+  if (position?.kind === 'section' && position.sectionId) {
+    const node = document.getElementById(position.sectionId);
+    if (node?.dataset?.date) return node.dataset.date;
+    if (node?.classList?.contains('date-unmarked-section')) return 'unmarked';
+  }
+  const bounds = readingViewportBounds();
+  const probe = document.elementFromPoint(Math.max(24, window.innerWidth * .22), Math.min(bounds.bottom - 2, bounds.top + 8));
+  const sectionNode = probe?.closest?.(`.date-day-section[data-section="${section}"], .date-unmarked-section[data-section="${section}"]`);
+  if (sectionNode instanceof HTMLElement && sectionNode.dataset.date) return sectionNode.dataset.date;
+  if (sectionNode?.classList?.contains('date-unmarked-section')) return 'unmarked';
+  return '';
+}
+
+function nearestAlphabetGroup(entries, preferredLetter = '') {
+  if (!entries.length) return '';
+  const available = [...new Set(entries.map(letterForEntry))];
+  if (available.includes(preferredLetter)) return preferredLetter;
+  const preferredOrdinal = alphabetOrdinal(preferredLetter);
+  if (preferredOrdinal < 0) return available[0] || '';
+  return available.sort((a, b) => {
+    const da = Math.abs(alphabetOrdinal(a) - preferredOrdinal);
+    const db = Math.abs(alphabetOrdinal(b) - preferredOrdinal);
+    return da - db || alphabetOrdinal(a) - alphabetOrdinal(b);
+  })[0] || '';
+}
+
+function nearestDateGroup(entries, preferredDate = '') {
+  if (!entries.length) return '';
+  const keys = [...new Set(entries.map((entry) => getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked'))];
+  if (keys.includes(preferredDate)) return preferredDate;
+  if (preferredDate === 'unmarked' && keys.includes('unmarked')) return 'unmarked';
+  const preferredTime = /^\d{4}-\d{2}-\d{2}$/.test(preferredDate) ? Date.parse(`${preferredDate}T00:00:00`) : Number.NaN;
+  const dated = keys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key));
+  if (Number.isFinite(preferredTime) && dated.length) {
+    return dated.sort((a, b) => Math.abs(Date.parse(`${a}T00:00:00`) - preferredTime) - Math.abs(Date.parse(`${b}T00:00:00`) - preferredTime) || b.localeCompare(a))[0];
+  }
+  return dated.sort((a, b) => b.localeCompare(a))[0] || (keys.includes('unmarked') ? 'unmarked' : keys[0] || '');
+}
+
+function entryAnchorForGroup(entries, key, mode, position) {
+  const candidates = entries.filter((entry) => mode === 'alphabet'
+    ? letterForEntry(entry) === key
+    : (getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked') === key)
+    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
+  const entry = candidates[0] || entries[0] || null;
+  if (!entry) return { kind: 'top', scrollYFallback: 0 };
+  return {
+    kind: 'entry', entryId: entry.id,
+    offsetFromContentTop: switchAnchorOffset(position),
+    scrollYFallback: Math.max(0, Number(position?.scrollYFallback || window.scrollY || 0)),
+  };
+}
+
+function transientModeSwitchAnchor(section = currentViewKind) {
+  const position = captureSemanticPosition();
+  if (['top', 'bottom'].includes(position?.kind)) return position;
+  if (position?.kind === 'entry' && position.entryId) return position;
+  const entries = entriesForCollectionView(currentCollectionId, section);
+  const mode = getViewMode(currentCollectionId);
+  if (mode === 'alphabet') {
+    const letter = activeAlphabetMetricAtReadingBoundary(section)?.letter || nearestAlphabetGroup(entries, 'A');
+    return entryAnchorForGroup(entries, letter, 'alphabet', position);
+  }
+  const dateKey = readingDateKeyForPosition(position, section) || nearestDateGroup(entries, '');
+  return entryAnchorForGroup(entries, dateKey, 'date', position);
+}
+
+function transientViewSwitchTarget(nextKind) {
+  const position = captureSemanticPosition();
+  if (['top', 'bottom'].includes(position?.kind)) return { position, calendarMonth: '' };
+  const entries = entriesForCollectionView(currentCollectionId, nextKind);
+  if (!entries.length) return { position: { kind: 'top', scrollYFallback: 0 }, calendarMonth: '' };
+  const mode = getViewMode(currentCollectionId);
+  if (mode === 'alphabet') {
+    let preferredLetter = '';
+    if (position?.kind === 'entry' && position.entryId) {
+      const source = getState().entryById.get(position.entryId);
+      if (source) preferredLetter = letterForEntry(source);
+    }
+    preferredLetter ||= activeAlphabetMetricAtReadingBoundary(currentViewKind)?.letter || '';
+    const key = nearestAlphabetGroup(entries, preferredLetter);
+    return { position: entryAnchorForGroup(entries, key, 'alphabet', position), calendarMonth: '' };
+  }
+  const preferredDate = readingDateKeyForPosition(position, currentViewKind);
+  const key = nearestDateGroup(entries, preferredDate);
+  return {
+    position: entryAnchorForGroup(entries, key, 'date', position),
+    calendarMonth: /^\d{4}-\d{2}-\d{2}$/.test(key) ? key.slice(0, 7) : '',
+  };
+}
+
 function jumpToSection(section) {
   const context = collectionRenderContext;
   if (!context?.sections?.has(section)) return;
@@ -2275,35 +2491,33 @@ function jumpToSection(section) {
 }
 
 async function switchCollectionMode(collection, section = currentViewKind) {
+  if (bufferedStateCommitInProgress) return;
   const currentModeValue = getViewMode(collection.id);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
+  const anchor = transientModeSwitchAnchor(section);
   collapseTransactionRevision += 1;
   expandedLettersFor(collection.id, section).clear();
   clearExpandedRelationsForView(collection.id, section);
   pendingPageSnapshot = null;
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
-  suppressScrollPersistence(700);
+  suppressScrollPersistence(800);
 
-  const nextMonth = nextMode === 'date' ? initialCalendarMonthForView(collection.id, section) : '';
+  let nextMonth = '';
+  if (nextMode === 'date') {
+    const anchorEntry = anchor?.kind === 'entry' ? getState().entryById.get(anchor.entryId) : null;
+    nextMonth = getStudyStamp(anchorEntry, collection.id)?.reviewDateKey?.slice(0, 7)
+      || initialCalendarMonthForView(collection.id, section);
+  }
 
-  // Presentation state changes in memory first. Durable settings persistence is
-  // intentionally outside the visible transition so IndexedDB latency cannot
-  // become part of the motion curve.
   hydrateRuntimeViewState(collection.id, { mode: nextMode, section, calendarMonth: nextMonth });
-  const freshSnapshot = {
-    type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
-    calendarMonth: nextMode === 'date' ? nextMonth : '',
-    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: section,
-  };
-  const frame = currentNavigationFrame();
-  if (frame) frame.snapshot = freshSnapshot;
-
   navigationTraversalInProgress = true;
   try {
-    await runPresentationTransition(nextMode === 'date' ? 'reindex-to-date' : 'reindex-to-alphabet', () => {
-      renderApp();
-      resetRootScrollForPreparedPage('mode-switch-top');
+    await runBufferedCollectionCommit(() => renderApp(), {
+      position: anchor,
+      source: `mode-switch-${currentModeValue}-to-${nextMode}`,
+      outMs: 44,
+      inMs: 62,
     });
   } finally {
     navigationTraversalInProgress = false;
@@ -2316,7 +2530,6 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   } finally {
     presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
   }
-  if (frame) frame.snapshot = freshSnapshot;
   persistCurrentHistorySnapshot();
 }
 
@@ -2427,8 +2640,6 @@ function navigationControls(collection, section, sectionContext, mode) {
 
 function populateNavigationBar(nav, controls) {
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
-  const locus = el('span', { className: 'letter-nav-locus', 'aria-hidden': 'true' });
-  track.append(locus);
   const trackState = {
     programmaticUntil: 0,
     pointerActive: false,
@@ -2437,9 +2648,8 @@ function populateNavigationBar(nav, controls) {
     cameraFrame: 0,
     cameraTarget: 0,
     cameraLastAt: 0,
-    lastSemantic: Number.NaN,
-    lastSemanticAt: 0,
-    semanticVelocity: 0,
+    activeLetter: '',
+    activeSection: '',
   };
   letterTrackStates.set(track, trackState);
   const lockManualPosition = () => {
@@ -3077,9 +3287,8 @@ function letterTrackState(track) {
       cameraFrame: 0,
       cameraTarget: 0,
       cameraLastAt: 0,
-      lastSemantic: Number.NaN,
-      lastSemanticAt: 0,
-      semanticVelocity: 0,
+      activeLetter: '',
+      activeSection: '',
     };
     letterTrackStates.set(track, state);
   }
@@ -3099,24 +3308,14 @@ function alphabetAxisForSection(section = currentViewKind) {
   return createSemanticAxis(points);
 }
 
-function semanticLetterPositionForReadingBoundary(section = currentViewKind) {
-  const axis = alphabetAxisForSection(section);
-  const boundary = window.scrollY + topChromeBottom() + 1;
-  return semanticAtPhysical(axis, boundary);
+function readingChromeBottom() {
+  return cachedChromeBottom > 0 ? cachedChromeBottom : topChromeBottom();
 }
 
-function letterButtonCenterAtSemantic(track, semantic) {
-  const buttons = ALPHABET_KEYS.map((key) => track.querySelector(`[data-letter="${key}"]`)).filter(Boolean);
-  if (!buttons.length || !Number.isFinite(semantic)) return Number.NaN;
-  const clamped = Math.max(0, Math.min(ALPHABET_KEYS.length - 1, semantic));
-  const lowIndex = Math.floor(clamped);
-  const highIndex = Math.ceil(clamped);
-  const low = track.querySelector(`[data-letter="${ALPHABET_KEYS[lowIndex]}"]`);
-  const high = track.querySelector(`[data-letter="${ALPHABET_KEYS[highIndex]}"]`);
-  if (!low || !high) return Number.NaN;
-  const lowCenter = low.offsetLeft + low.offsetWidth / 2;
-  const highCenter = high.offsetLeft + high.offsetWidth / 2;
-  return lowCenter + (highCenter - lowCenter) * (clamped - lowIndex);
+function semanticLetterPositionForReadingBoundary(section = currentViewKind) {
+  const axis = alphabetAxisForSection(section);
+  const boundary = window.scrollY + readingChromeBottom() + 1;
+  return semanticAtPhysical(axis, boundary);
 }
 
 function scheduleLetterRailCamera(track, targetLeft) {
@@ -3124,6 +3323,13 @@ function scheduleLetterRailCamera(track, targetLeft) {
   if (state.manualLocked || state.pointerActive || !track.isConnected) return;
   const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
   state.cameraTarget = Math.max(0, Math.min(maxLeft, Number(targetLeft || 0)));
+  if (prefersReducedMotion()) {
+    if (state.cameraFrame) cancelAnimationFrame(state.cameraFrame);
+    state.cameraFrame = 0;
+    state.programmaticUntil = Date.now() + 40;
+    track.scrollLeft = state.cameraTarget;
+    return;
+  }
   if (state.cameraFrame) return;
   state.cameraLastAt = performance.now();
   const step = (now) => {
@@ -3131,7 +3337,7 @@ function scheduleLetterRailCamera(track, targetLeft) {
     if (!track.isConnected || state.manualLocked || state.pointerActive) return;
     const dt = Math.max(1, now - (state.cameraLastAt || now));
     state.cameraLastAt = now;
-    const next = exponentialApproach(track.scrollLeft, state.cameraTarget, dt, 62);
+    const next = exponentialApproach(track.scrollLeft, state.cameraTarget, dt, 68);
     state.programmaticUntil = Date.now() + 90;
     track.scrollLeft = Math.abs(next - state.cameraTarget) < .3 ? state.cameraTarget : next;
     if (Math.abs(track.scrollLeft - state.cameraTarget) > .35) state.cameraFrame = requestAnimationFrame(step);
@@ -3139,44 +3345,46 @@ function scheduleLetterRailCamera(track, targetLeft) {
   state.cameraFrame = requestAnimationFrame(step);
 }
 
-function renderLetterRailSemanticPosition(section, semantic, { activeLetter = '', semanticVelocity = Number.NaN, forceCamera = false } = {}) {
+function renderLetterRailSemanticPosition(section, _semantic, { activeLetter = '', forceCamera = false } = {}) {
   const track = elements['letter-nav']?.querySelector('.letter-nav-track');
-  if (!track || !Number.isFinite(semantic)) return;
+  if (!track || !activeLetter) return;
   const state = letterTrackState(track);
-  const now = performance.now();
-  if (!Number.isFinite(semanticVelocity)) {
-    if (Number.isFinite(state.lastSemantic) && state.lastSemanticAt > 0 && now > state.lastSemanticAt) {
-      semanticVelocity = (semantic - state.lastSemantic) / ((now - state.lastSemanticAt) / 1000);
-    } else semanticVelocity = 0;
-  }
-  state.lastSemantic = semantic;
-  state.lastSemanticAt = now;
-  state.semanticVelocity = Number(semanticVelocity || 0);
+  const activeChanged = state.activeLetter !== activeLetter || state.activeSection !== section;
 
-  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
-    const active = item.dataset.section === section && Boolean(activeLetter) && item.dataset.letter === activeLetter;
-    item.classList.toggle('active', active);
-    item.setAttribute('aria-current', active ? 'true' : 'false');
-  });
-
-  const locus = track.querySelector('.letter-nav-locus');
-  const locusCenter = letterButtonCenterAtSemantic(track, semantic);
-  if (locus && Number.isFinite(locusCenter)) {
-    const width = Number(track.querySelector('[data-letter]')?.offsetWidth || 52);
-    locus.style.width = `${width}px`;
-    locus.style.transform = `translate3d(${locusCenter - width / 2}px,0,0)`;
-    locus.classList.add('ready');
+  if (activeChanged) {
+    const previous = state.activeLetter
+      ? track.querySelector(`[data-section="${state.activeSection}"][data-letter="${state.activeLetter}"]`)
+      : null;
+    const next = track.querySelector(`[data-section="${section}"][data-letter="${activeLetter}"]`);
+    if (previous && previous !== next) {
+      previous.classList.remove('active');
+      previous.setAttribute('aria-current', 'false');
+    }
+    if (next) {
+      next.classList.add('active');
+      next.setAttribute('aria-current', 'true');
+    }
+    state.activeLetter = activeLetter;
+    state.activeSection = section;
   }
 
   if (state.manualLocked && !forceCamera) return;
   if (forceCamera) state.manualLocked = false;
-  const cameraTarget = cameraTargetForLocus({
-    locusCenter,
+  if (!activeChanged && !forceCamera) return;
+
+  const activeButton = track.querySelector(`[data-section="${section}"][data-letter="${activeLetter}"]`);
+  if (!activeButton) return;
+  const cellCenter = activeButton.offsetLeft + activeButton.offsetWidth / 2;
+  const cameraTarget = cameraTargetForActiveCell({
+    cellCenter,
     viewportWidth: track.clientWidth,
     scrollWidth: track.scrollWidth,
-    semanticVelocity: state.semanticVelocity,
+    currentScrollLeft: track.scrollLeft,
+    safeStartRatio: .38,
+    safeEndRatio: .62,
+    hysteresisPx: 3,
   });
-  scheduleLetterRailCamera(track, cameraTarget);
+  if (Math.abs(cameraTarget - track.scrollLeft) > .5) scheduleLetterRailCamera(track, cameraTarget);
 }
 
 function releaseLetterTrackManualLock(section = '', { follow = true } = {}) {
@@ -3219,7 +3427,7 @@ function updateActiveLetter(section, letter = '', { ensureVisible = false, force
 function activeAlphabetMetricAtReadingBoundary(section = currentViewKind) {
   const metrics = alphabetSectionMetrics.filter((item) => item.section === section);
   if (!metrics.length) return null;
-  const boundary = window.scrollY + topChromeBottom() + 1;
+  const boundary = window.scrollY + readingChromeBottom() + 1;
   let low = 0;
   let high = metrics.length - 1;
   let activeIndex = -1;
@@ -3351,7 +3559,7 @@ async function copyText(text) {
 }
 
 function navigateRelationDestination(destination) {
-  closeRelationTargetMenu();
+  closeRelationTargetMenu({ immediate: true });
   closeActionDialog();
   navigateCollection(destination.collectionId, destination.entry.id, 'relation', destination.entry.kind);
 }
@@ -3394,7 +3602,7 @@ function hidePopoverSurface(node, { immediate = false, onHidden = null } = {}) {
   const timer = window.setTimeout(() => {
     popoverHideTimers.delete(node);
     finish();
-  }, PRESENTATION_EXIT_MS);
+  }, POPOVER_EXIT_MS);
   popoverHideTimers.set(node, timer);
 }
 
@@ -3524,20 +3732,51 @@ function indexesForRenderedEntry(context, entry) {
   return { groupIndex: groupedNumberIndex(group, context.collection).get(entry.id) || 1, globalIndex };
 }
 
-function toggleEntryRelations(entryId) {
+async function toggleEntryRelations(entryId) {
   closeQueryMenu();
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
-  const current = document.getElementById(`entry-${entryId}`);
-  if (!context || !entry || !current) return;
+  let current = document.getElementById(`entry-${entryId}`);
+  if (!context || !entry || !current || current.dataset.relationTransitioning === 'true') return;
+  const key = relationExpansionKey(currentCollectionId, entryId);
+  const opening = !expandedRelations.has(key);
+  current.dataset.relationTransitioning = 'true';
+
+  if (!opening && !prefersReducedMotion()) {
+    const panel = current.querySelector('.relation-panel');
+    const icon = current.querySelector('.entry-relations .ui-icon');
+    const animations = [];
+    if (panel?.animate) animations.push(panel.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: 72, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards',
+    }).finished.catch(() => {}));
+    if (icon?.animate) animations.push(icon.animate([
+      { transform: 'rotate(90deg)' }, { transform: 'rotate(0deg)' },
+    ], { duration: 82, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished.catch(() => {}));
+    if (animations.length) await Promise.all(animations);
+  }
+
+  current = document.getElementById(`entry-${entryId}`);
+  if (!current) return;
   const position = captureSemanticPosition();
   const transaction = beginRootScrollTransaction('row-mutation', position);
   const epoch = transaction.epoch;
-  const key = relationExpansionKey(currentCollectionId, entryId);
-  if (expandedRelations.has(key)) expandedRelations.delete(key);
-  else expandedRelations.add(key);
+  if (opening) expandedRelations.add(key);
+  else expandedRelations.delete(key);
   const next = renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry));
   current.replaceWith(next);
+
+  if (opening && !prefersReducedMotion()) {
+    const panel = next.querySelector('.relation-panel');
+    const icon = next.querySelector('.entry-relations .ui-icon');
+    panel?.animate?.([
+      { opacity: 0, transform: 'translateY(-3px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ], { duration: 118, easing: 'cubic-bezier(.2,.72,.2,1)' });
+    icon?.animate?.([
+      { transform: 'rotate(0deg)' }, { transform: 'rotate(90deg)' },
+    ], { duration: 108, easing: 'cubic-bezier(.2,.72,.2,1)' });
+  }
+
   requestAnimationFrame(async () => {
     if (!scrollCoordinator.owns(epoch)) return;
     const chunk = next.closest('.entry-chunk');
@@ -3895,7 +4134,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
   const actionItems = [];
   if (hasRelations) {
-    const relationButton = iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id));
+    const relationButton = iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id).catch(displayError));
     relationButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     actionItems.push(relationButton);
   } else {
@@ -4170,6 +4409,20 @@ async function animateRootToSemanticPosition(position, {
     if (!Number.isFinite(targetY)) targetY = Math.max(0, Number(position?.scrollYFallback || 0));
     const startY = window.scrollY;
     const alphabetMotion = semanticAlphabet && collectionRenderContext?.mode === 'alphabet' && currentCollectionId && alphabetSectionMetrics.length;
+    if (prefersReducedMotion()) {
+      targetY = prepareSemanticPositionGeometry(position, { reason: `${source}-reduced`, passes: 2 });
+      restoreSemanticPosition(position, epoch, { tolerance: .5, source: `${source}-reduced` });
+      if (collectionRenderContext?.mode === 'alphabet') {
+        refreshAlphabetSectionMetrics();
+        const active = Number.isFinite(targetSemantic)
+          ? activeAlphabetMetricForSemantic(currentViewKind, targetSemantic)
+          : activeAlphabetMetricAtReadingBoundary(currentViewKind);
+        const semantic = Number.isFinite(targetSemantic) ? targetSemantic : semanticLetterPositionForReadingBoundary(currentViewKind);
+        renderLetterRailSemanticPosition(currentViewKind, semantic, { activeLetter: active?.letter || '', forceCamera: true });
+      }
+      finishRootScrollTransaction(epoch, { persist: true });
+      return true;
+    }
     const startAt = performance.now();
 
     if (alphabetMotion) {
@@ -4185,8 +4438,6 @@ async function animateRootToSemanticPosition(position, {
         const logicalDistance = Math.abs(targetSemantic - startSemantic);
         const duration = semanticScrollDuration(logicalDistance, targetY - startY);
         if (duration > 0) {
-          let previousSemantic = startSemantic;
-          let previousAt = startAt;
           while (true) {
             await nextPresentationFrame();
             if (!scrollCoordinator.owns(epoch)) return false;
@@ -4200,12 +4451,8 @@ async function animateRootToSemanticPosition(position, {
             axis = alphabetAxisForSection(section);
             const liveY = semanticScrollYForPosition(section, semantic);
             if (Number.isFinite(liveY)) rootScrollToY(liveY, { epoch, source });
-            const dt = Math.max(1, now - previousAt) / 1000;
-            const velocity = (semantic - previousSemantic) / dt;
             const active = activeAlphabetMetricForSemantic(section, semantic);
-            renderLetterRailSemanticPosition(section, semantic, { activeLetter: active?.letter || '', semanticVelocity: velocity, forceCamera: true });
-            previousSemantic = semantic;
-            previousAt = now;
+            renderLetterRailSemanticPosition(section, semantic, { activeLetter: active?.letter || '', forceCamera: true });
             if (raw >= 1) break;
           }
         }

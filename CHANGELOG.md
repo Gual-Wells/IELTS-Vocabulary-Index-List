@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.7.1 — 2026-08-11
+
+- 建立 Semantic Motion Gate：运动只用于真实空间/层级/局部来源关系；representation/category switch退出人为方向动画；
+- 4.7.0新 Collection Push完全冻结；Back拆出约282ms独立Pop时序，降低前半程过快完成；
+- Home撤销双surface scale Hierarchy Reset，改为Root Buffered Commit；
+- Word/Phrase、Alphabet/Date撤销named View Transition + TOP reset，改为非重叠Buffered State Commit；
+- 新增transient semantic anchor，在隐藏render/measure阶段保持当前Entry/letter/date邻域，不维护四份隐藏view state；
+- Home global structured/non-structured只buffer `.global-grid`，不再full Home硬切；
+- LetterRail删除continuous 52px locus与raw semanticVelocity camera bias，改唯一active cell + 38–62% safe-zone camera；
+- Modal普通backdrop视觉透明，Card open使用`@starting-style`，close收缩到86/102ms级并同步108ms retained lifecycle；
+- Relation Panel新增轻量local reveal；multi-target relation导航前immediate hide popover；
+- Reduce Motion覆盖JS semantic scroll与LetterRail camera；4.7.0意外扩散的Dock/Popover token恢复140ms；
+- Service Worker升级到`v4.7.1-semantic-motion-gate-20260811-1`；同步完整4.7.1 Requirement/Impact/Audit/Research/Change/Migration/UX/Manual/Test/iPhone Reduced生命周期文档；
+- Schema6 / DB5 / Seed4 / VIX2、42/960 virtualization、native Sticky、Single Browser Slot和业务语义不变。
+
 ## 4.7.0 — 2026-08-10
 
 - 撤销 Safari History Rail：standalone runtime 只有一个 root browser slot；内部页面不再 `pushState`/`traverseTo`，Back/Home 完全由 VIX recursive stack 执行；

@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -21,20 +21,21 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.4.0');
-assert.ok(index.includes('Vocabulary Index 4.4.0'));
+assert.equal(pkg.version, '4.5.0');
+assert.ok(index.includes('Vocabulary Index 4.5.0'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
 assert.ok(index.includes('css/v4.2.0.css'));
 assert.ok(index.includes('css/v4.3.0.css'));
 assert.ok(index.includes('css/v4.4.0.css'));
+assert.ok(index.includes('css/v4.5.0.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.4.0-runtime-correctness'));
+assert.ok(sw.includes('v4.5.0-navigation-rail'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
@@ -63,7 +64,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -106,7 +107,7 @@ assert.ok(model.includes("left.kind === 'word' && lowLevelLexemes.has(left.norma
 
 // Fresh Home navigation is not a hidden page-state restore.
 assert.ok(ui.includes("pendingJumpReason = 'home'"));
-assert.ok(ui.includes("await setViewMode(collection.id, 'alphabet')"));
+assert.ok(ui.includes("hydrateRuntimeViewState(collection.id, { mode: 'alphabet', section: nextView })"));
 assert.ok(ui.includes("homeGlobalMode = 'structured'"));
 assert.ok(ui.includes('global-mode-toggle'));
 assert.ok(ui.includes('switchParallel:'));
@@ -187,24 +188,26 @@ assert.ok(css.includes('.letter-nav-track button.empty'));
 assert.ok(css.includes('opacity: 1 !important'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
-// Navigation is a one-way VIX-owned destructive stack; browser history is only the gesture rail.
+// 4.5 navigation: VIX owns the logical stack; UA entry.key owns browser-rail identity.
 assert.ok(index.includes('id="home-button"'));
 assert.ok(!index.includes('id="navigation-underlay"'));
 assert.ok(index.includes('id="navigation-guard-feedback"'));
-assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v2'"));
+assert.ok(ui.includes("const NAVIGATION_MODEL = 'destructive-v3'"));
 assert.ok(upgrade.includes("history.scrollRestoration = 'auto'"));
 assert.ok(ui.includes('navigationStack'));
+assert.ok(ui.includes('rootBrowserKey'));
+assert.ok(ui.includes('deadBrowserKeys'));
 assert.ok(ui.includes('discardNavigationFramesFrom'));
-assert.ok(ui.includes('discardedNavigationTokens'));
-assert.ok(ui.includes('discardedForwardAvailable'));
 assert.ok(ui.includes('resetNavigationToHome'));
-assert.ok(ui.includes('enterHomeRoot'));
-assert.ok(ui.includes('if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0))'));
-assert.ok(ui.includes('navigationDestinationIsStale'));
+assert.ok(ui.includes('globalThis.navigation.traverseTo(targetKey)'));
+assert.ok(ui.includes('parentBrowserKey({ rootKey: rootBrowserKey'));
+assert.ok(ui.includes('classifyCurrentNavigationKey'));
 assert.ok(ui.includes('forbiddenForwardNeighborExists'));
 assert.ok(ui.includes("event.preventDefault()"));
 assert.ok(ui.includes("{ passive: false, capture: true }"));
-assert.ok(!ui.includes('pageSnapshot'));
+assert.ok(!ui.includes('event.destination?.getState'));
+assert.ok(!ui.includes('navigationApiHandledTokens'));
+assert.ok(!ui.includes('if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0))'));
 assert.ok(ui.includes('expandedLettersByCollection.clear()'));
 assert.ok(ui.includes('expandedRelations.clear()'));
 assert.ok(ui.includes("elements['home-button'].classList.toggle('hidden', appNavigationDepth < 2)"));
@@ -266,7 +269,7 @@ assert.ok(css.includes('.vix-checkbox:checked'));
 assert.ok(!ui.includes('仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制'));
 assert.ok(!ui.includes('默认开启。只逻辑隐藏代词'));
 
-// 4.4.0 runtime-correctness ownership.
+// 4.5.0 keeps 4.4 Sticky/Modal runtime correctness ownership.
 assert.ok(store.includes('export function getViewMode(collectionId)'));
 assert.ok(store.includes('export async function setViewMode(collectionId, mode)'));
 assert.ok(store.includes('export function hydrateRuntimeViewState'));

@@ -17,9 +17,9 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
-import { classifyNavigationDestination } from './v3-navigation-runtime.js';
+import { classifyNavigationKey, parentBrowserKey, planCommittedTraversal } from './v3-navigation-runtime.js';
 
-const APP_VERSION = '4.4.0';
+const APP_VERSION = '4.5.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -66,17 +66,17 @@ let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
-let navigationGeneration = 1;
-const NAVIGATION_MODEL = 'destructive-v2';
-const NAVIGATION_SESSION_KEY = 'vocabulary-index:navigation-stack:4.4.0';
+const NAVIGATION_MODEL = 'destructive-v3';
 const navigationStack = [];
-const discardedNavigationTokens = new Set();
+const deadBrowserKeys = new Set();
+let navigationRuntimeId = '';
 let navigationRootToken = '';
-let discardedForwardAvailable = false;
+let rootBrowserKey = '';
 let navigationEdgeGesture = null;
+let pendingNavigationIntent = null;
+let navigationTraversalInProgress = false;
 let pendingPageSnapshot = null;
 let pendingUaScrollRestore = false;
-let pageTransitionTimer = 0;
 let renderRevision = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
@@ -599,88 +599,55 @@ function newNavigationToken(prefix = 'nav') {
   return `${prefix}-${suffix}`;
 }
 
+function navigationApiAvailable() {
+  const api = globalThis.navigation;
+  return Boolean(api?.currentEntry?.key && typeof api.traverseTo === 'function' && typeof api.addEventListener === 'function');
+}
+
+function currentBrowserKey() {
+  try { return String(globalThis.navigation?.currentEntry?.key || ''); } catch { return ''; }
+}
+
 function rootNavigationHistoryState() {
   return {
     vix: true,
     navModel: NAVIGATION_MODEL,
-    generation: navigationGeneration,
+    runtimeId: navigationRuntimeId,
     navToken: navigationRootToken,
     routeKind: 'root',
-    depth: 0,
   };
 }
 
-function pageNavigationHistoryState(depth, token) {
+function pageNavigationHistoryState(token) {
   if (!token) throw new Error('Navigation page identity requires an explicit token');
   return {
     vix: true,
     navModel: NAVIGATION_MODEL,
-    generation: navigationGeneration,
+    runtimeId: navigationRuntimeId,
     navToken: token,
     routeKind: 'page',
-    depth: Math.max(1, Number(depth || 1)),
   };
-}
-
-function navigationStateForCurrentFrame() {
-  if (!appNavigationDepth) return rootNavigationHistoryState();
-  const frame = currentNavigationFrame();
-  return frame ? pageNavigationHistoryState(appNavigationDepth, frame.token) : rootNavigationHistoryState();
-}
-
-function persistNavigationSession() {
-  try {
-    sessionStorage.setItem(NAVIGATION_SESSION_KEY, JSON.stringify({
-      generation: navigationGeneration,
-      rootToken: navigationRootToken,
-      homeScrollY,
-      discardedForwardAvailable,
-      discardedTokens: [...discardedNavigationTokens],
-      frames: navigationStack,
-    }));
-  } catch {
-    // Navigation remains correct in-memory when sessionStorage is unavailable.
-  }
-}
-
-function loadNavigationSession() {
-  try {
-    const raw = sessionStorage.getItem(NAVIGATION_SESSION_KEY);
-    if (!raw) return false;
-    const stored = JSON.parse(raw);
-    if (!stored || stored.generation !== navigationGeneration || !Array.isArray(stored.frames)) return false;
-    navigationStack.splice(0, navigationStack.length, ...stored.frames.filter((frame) => frame && typeof frame.token === 'string'));
-    discardedNavigationTokens.clear();
-    for (const token of stored.discardedTokens || []) if (typeof token === 'string') discardedNavigationTokens.add(token);
-    navigationRootToken = typeof stored.rootToken === 'string' ? stored.rootToken : '';
-    homeScrollY = Math.max(0, Number(stored.homeScrollY || 0));
-    discardedForwardAvailable = Boolean(stored.discardedForwardAvailable);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function clearNavigationSessionState({ keepDiscarded = false } = {}) {
-  if (!keepDiscarded) {
-    discardedNavigationTokens.clear();
-    discardedForwardAvailable = false;
-  }
-  navigationStack.length = 0;
-  appNavigationDepth = 0;
-  persistNavigationSession();
 }
 
 function currentNavigationFrame() {
   if (!appNavigationDepth) return null;
-  const token = history.state?.navToken || '';
-  return navigationStack.find((item) => item.token === token)
-    || navigationStack[appNavigationDepth - 1]
-    || null;
+  if (navigationApiAvailable()) {
+    const key = currentBrowserKey();
+    if (!key) return null;
+    return navigationStack.find((item) => item?.browserKey === key) || null;
+  }
+  const token = String(history.state?.navToken || '');
+  if (!token) return null;
+  return navigationStack.find((item) => item?.token === token) || null;
+}
+
+function navigationFrameByBrowserKey(key) {
+  if (!key || deadBrowserKeys.has(key)) return null;
+  return navigationStack.find((frame) => frame?.browserKey === key) || null;
 }
 
 function navigationFrameByToken(token) {
-  if (!token || discardedNavigationTokens.has(token)) return null;
+  if (!token) return null;
   return navigationStack.find((frame) => frame?.token === token) || null;
 }
 
@@ -692,22 +659,20 @@ function discardFrameRuntimeState(frame) {
 }
 
 function discardNavigationFramesFrom(depth) {
-  const removed = navigationStack.splice(Math.max(0, depth));
+  const keep = Math.max(0, Number(depth || 0));
+  const removed = navigationStack.splice(keep);
   for (const frame of removed) {
-    if (frame?.token) discardedNavigationTokens.add(frame.token);
+    if (frame?.browserKey) deadBrowserKeys.add(frame.browserKey);
     discardFrameRuntimeState(frame);
   }
-  if (removed.length) discardedForwardAvailable = true;
   appNavigationDepth = navigationStack.length;
-  persistNavigationSession();
   return removed;
 }
 
-function invalidateDiscardedForwardBranchForFreshPush() {
-  // A fresh same-document PUSH truncates the browser-forward branch. Mirror
-  // that browser fact into the destructive VIX stack before creating the page.
-  discardedNavigationTokens.clear();
-  discardedForwardAvailable = false;
+function invalidateDeadForwardBranchForFreshPush() {
+  // A browser PUSH from the current slot physically truncates its forward
+  // branch. All keys previously marked dead were necessarily in that branch.
+  deadBrowserKeys.clear();
 }
 
 function currentSnapshot() {
@@ -728,17 +693,17 @@ function currentSnapshot() {
 }
 
 function persistCurrentHistorySnapshot() {
+  if (navigationTraversalInProgress) return;
   const snapshot = currentSnapshot();
   if (!snapshot) return;
   if (!currentCollectionId) {
     homeScrollY = Math.max(0, Number(snapshot.scrollY || 0));
-  } else {
-    const frame = currentNavigationFrame();
-    if (frame) frame.snapshot = snapshot;
+    return;
   }
-  // Browser history owns only immutable transport identity. Runtime snapshots
-  // live in the VIX frame/session cache and must never rewrite navToken/key.
-  persistNavigationSession();
+  // Never guess frame identity. If the browser slot cannot be proven to match a
+  // live VIX frame, skip this persistence event instead of corrupting a parent.
+  const frame = currentNavigationFrame();
+  if (frame) frame.snapshot = snapshot;
 }
 
 function applySnapshotBeforeRender(snapshot, collection, viewKind) {
@@ -786,17 +751,39 @@ function dateExpansionKey(dateKey) {
 }
 
 function performPageTransition(callback, enabled = true) {
-  clearTimeout(pageTransitionTimer);
-  if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { callback(); return; }
-  elements['collection-view']?.classList.add('page-transition-out');
-  pageTransitionTimer = window.setTimeout(() => {
-    callback();
-    requestAnimationFrame(() => {
-      elements['collection-view']?.classList.remove('page-transition-out');
-      elements['collection-view']?.classList.add('page-transition-in');
-      requestAnimationFrame(() => elements['collection-view']?.classList.remove('page-transition-in'));
+  // 4.5.0 removes the orphaned 70ms transition timer. The CSS page opacity
+  // transition has been intentionally disabled since 4.0; delaying a complete
+  // Collection rebuild only creates an avoidable stale-frame commit on iOS.
+  callback();
+}
+
+function targetSnapshot(collection, viewKind) {
+  const mode = getViewMode(collection.id);
+  return {
+    type: 'collection', collectionId: collection.id, viewKind,
+    mode,
+    calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, viewKind) : '',
+    scrollY: 0,
+    expandedGroups: [...expandedLettersFor(collection.id, viewKind)],
+    expandedRelations: [...expandedRelations].filter((key) => key.startsWith(`${collection.id}\u0000${viewKind}\u0000`)),
+    activeSection: viewKind,
+  };
+}
+
+async function persistHydratedViewState(snapshot) {
+  if (snapshot?.type !== 'collection') return;
+  historyRestoreInProgress = true;
+  try {
+    await persistRuntimeViewState(snapshot.collectionId, {
+      mode: snapshot.mode,
+      section: snapshot.viewKind,
+      calendarMonth: snapshot.calendarMonth || '',
     });
-  }, 70);
+  } catch (error) {
+    displayError(error);
+  } finally {
+    historyRestoreInProgress = false;
+  }
 }
 
 async function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
@@ -806,44 +793,104 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   if (!collection) return;
   const domain = collection.domainId ? state.domainById.get(collection.domainId) : null;
   let nextView = viewKindForCollection(collection, entry, requestedView);
+
+  // Home -> Collection is a presentation reset, but it must not put an IndexedDB
+  // await in front of browser-entry creation. Hydrate memory synchronously; the
+  // persistent settings write is reconciled after the navigation commit/render.
+  let needsHomeModePersistence = false;
   if (reason === 'home') {
     if (collection.type === 'normal' && domain?.contentMode !== 'nonStructured') {
       const visible = getVisibleEntries(collection.id);
       nextView = visible.some((item) => item.kind === 'word') ? 'word' : 'phrase';
     }
-    await setViewMode(collection.id, 'alphabet');
+    if (getViewMode(collection.id) !== 'alphabet') {
+      hydrateRuntimeViewState(collection.id, { mode: 'alphabet', section: nextView });
+      needsHomeModePersistence = true;
+    }
   }
-  const pageChanged = currentCollectionId !== collectionId || currentViewKind !== nextView;
+
   persistCurrentHistorySnapshot();
   if (!currentCollectionId) homeScrollY = window.scrollY;
   closeQueryMenu();
   closeRelationTargetMenu();
   prepareTargetExpansion(collection, entry, nextView, reason);
 
-  // A new recursive target is a real PUSH. If the user previously backed out of
-  // pages, pushState itself truncates that stale browser-forward branch; mirror
-  // the same fact in the VIX destructive-stack bookkeeping before pushing.
-  invalidateDiscardedForwardBranchForFreshPush();
-  const depth = navigationStack.length + 1;
+  // Page identity is Collection identity. A word/phrase change or a search /
+  // relation target inside the same Collection is only current-frame
+  // presentation state and must never create a browser history slot.
+  if (currentCollectionId === collectionId) {
+    currentViewKind = nextView;
+    activeSection = nextView;
+    pendingJumpEntryId = entryId;
+    pendingJumpReason = reason;
+    pendingPageSnapshot = null;
+    const frame = currentNavigationFrame();
+    if (frame) {
+      frame.collectionId = collectionId;
+      frame.viewKind = nextView;
+      frame.snapshot = targetSnapshot(collection, nextView);
+    }
+    renderApp();
+    if (needsHomeModePersistence) persistHydratedViewState(targetSnapshot(collection, nextView));
+    return;
+  }
+
+  // A real recursive PUSH must happen synchronously inside the initiating user
+  // action. Do not await persistence, modal exit, animation timers, or database
+  // work before this call: WebKit may mark delayed JS-created entries skippable.
   const token = newNavigationToken('page');
-  const hash = collectionRoute(collectionId, entryId, collection.type === 'normal' ? nextView : '');
-  navigationStack.push({ token, snapshot: null });
-  appNavigationDepth = depth;
-  history.pushState(pageNavigationHistoryState(depth, token), '', hash);
-  persistNavigationSession();
+  const route = collectionRoute(collectionId);
+  history.pushState(pageNavigationHistoryState(token), '', route);
+  invalidateDeadForwardBranchForFreshPush();
+  const browserKey = currentBrowserKey();
 
   currentCollectionId = collectionId;
   currentViewKind = nextView;
+  activeSection = nextView;
   pendingJumpEntryId = entryId;
   pendingJumpReason = reason;
   pendingPageSnapshot = null;
-  performPageTransition(renderApp, pageChanged);
+
+  const frame = {
+    token,
+    browserKey,
+    collectionId,
+    viewKind: nextView,
+    snapshot: targetSnapshot(collection, nextView),
+  };
+  navigationStack.push(frame);
+  appNavigationDepth = navigationStack.length;
+  renderApp();
+
+  if (needsHomeModePersistence) persistHydratedViewState(frame.snapshot);
+}
+
+function requestTraverseToKey(targetKey, intent = 'back') {
+  if (!targetKey) return false;
+  if (navigationApiAvailable()) {
+    pendingNavigationIntent = { type: intent, targetKey };
+    try {
+      const result = globalThis.navigation.traverseTo(targetKey);
+      Promise.resolve(result?.finished).catch((error) => {
+        if (pendingNavigationIntent?.targetKey === targetKey) pendingNavigationIntent = null;
+        displayError(error);
+      });
+      return true;
+    } catch (error) {
+      pendingNavigationIntent = null;
+      displayError(error);
+      return false;
+    }
+  }
+  return false;
 }
 
 function navigateBack() {
   persistCurrentHistorySnapshot();
-  if (appNavigationDepth > 0) history.back();
-  else enterHomeRoot({ resetScroll: false });
+  if (appNavigationDepth <= 0) return;
+  const targetKey = parentBrowserKey({ rootKey: rootBrowserKey, frames: navigationStack, currentDepth: appNavigationDepth });
+  if (requestTraverseToKey(targetKey, 'back')) return;
+  history.back();
 }
 
 function clearRecursivePresentationState() {
@@ -860,19 +907,20 @@ function clearRecursivePresentationState() {
   appNavigationDepth = 0;
 }
 
-function enterHomeRoot({ resetScroll = true, rewriteHistory = true } = {}) {
-  if (navigationStack.length) discardNavigationFramesFrom(0);
-  homeGlobalMode = 'structured';
-  if (resetScroll) homeScrollY = 0;
-  restoreHomeScrollPending = false;
+function renderCommittedRoot({ resetScroll = false } = {}) {
   closeReview();
   closeQueryMenu({ immediate: true });
   closeRelationTargetMenu({ immediate: true });
   clearRecursivePresentationState();
-  if (rewriteHistory) history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
-  if (resetScroll) window.scrollTo({ top: 0, behavior: 'auto' });
-  persistNavigationSession();
+  if (resetScroll) {
+    homeGlobalMode = 'structured';
+    homeScrollY = 0;
+  } else {
+    // Navigation API traversal owns physical root scroll restoration.
+    restoreHomeScrollPending = false;
+  }
   renderApp();
+  if (resetScroll) requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
 }
 
 function goHome() {
@@ -880,27 +928,23 @@ function goHome() {
     resetNavigationToHome();
     return;
   }
-  enterHomeRoot({ resetScroll: false });
+  homeGlobalMode = 'structured';
+  homeScrollY = 0;
+  renderApp();
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 function resetNavigationToHome() {
-  persistCurrentHistorySnapshot();
-  for (const frame of navigationStack) {
-    if (frame?.token) discardedNavigationTokens.add(frame.token);
-    discardFrameRuntimeState(frame);
+  if (appNavigationDepth <= 0) {
+    goHome();
+    return;
   }
-  navigationGeneration = Math.max(navigationGeneration + 1, Date.now());
-  navigationRootToken = newNavigationToken('root');
-  navigationStack.length = 0;
-  discardedForwardAvailable = false;
-  clearRecursivePresentationState();
-  homeGlobalMode = 'structured';
-  homeScrollY = 0;
-  restoreHomeScrollPending = false;
-  history.pushState(rootNavigationHistoryState(), '', location.pathname + location.search);
-  window.scrollTo({ top: 0, behavior: 'auto' });
-  persistNavigationSession();
-  renderApp();
+  persistCurrentHistorySnapshot();
+  if (requestTraverseToKey(rootBrowserKey, 'home')) return;
+  // Fallback browsers do not expose stable entry keys. Their transport remains
+  // depth-based, but this path is not used by the target iOS 26.5+ runtime.
+  pendingNavigationIntent = { type: 'home-fallback', targetKey: '' };
+  history.go(-appNavigationDepth);
 }
 
 function hydrateNavigationSnapshot(snapshot) {
@@ -912,84 +956,48 @@ function hydrateNavigationSnapshot(snapshot) {
   });
 }
 
-async function reconcileNavigationSnapshot(snapshot) {
-  if (snapshot?.type !== 'collection') return;
-  historyRestoreInProgress = true;
-  try {
-    await persistRuntimeViewState(snapshot.collectionId, {
-      mode: snapshot.mode,
-      section: snapshot.viewKind,
-      calendarMonth: snapshot.calendarMonth || '',
-    });
-  } catch (error) {
-    displayError(error);
-  } finally {
-    historyRestoreInProgress = false;
-  }
-}
+function commitNavigationToBrowserKey(destinationKey, { useUaScroll = true, resetHome = false } = {}) {
+  if (!destinationKey) return false;
+  const plan = planCommittedTraversal({
+    destinationKey,
+    rootKey: rootBrowserKey,
+    frames: navigationStack,
+    deadKeys: deadBrowserKeys,
+    currentDepth: appNavigationDepth,
+  });
+  if (!plan.accepted) return false;
 
-function invalidateNavigationGenerationToHome() {
-  navigationGeneration = Math.max(navigationGeneration + 1, Date.now());
-  navigationRootToken = newNavigationToken('root');
-  discardedNavigationTokens.clear();
-  discardedForwardAvailable = false;
-  clearNavigationSessionState();
-  currentCollectionId = '';
-  currentViewKind = 'word';
-  pendingPageSnapshot = null;
-  history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
-  enterHomeRoot({ resetScroll: true, rewriteHistory: false });
-}
-
-function restoreCommittedNavigationDestination(targetState, { useUaScroll = false } = {}) {
-  const classification = classifyCurrentNavigationDestination(targetState);
-  const token = classification.token;
-  if (classification.kind === 'stale' || classification.kind === 'forward') {
-    // Forward/stale traversal should have been prevented before commit. Never
-    // render a dead destination; converge to a fresh root rather than bounce.
-    invalidateNavigationGenerationToHome();
-    return false;
-  }
-  if (classification.kind === 'back-root' || classification.kind === 'same-root') {
-    if (navigationStack.length) discardNavigationFramesFrom(0);
-    enterHomeRoot({ resetScroll: !useUaScroll, rewriteHistory: false });
+  if (plan.kind === 'root') {
+    discardNavigationFramesFrom(0);
+    renderCommittedRoot({ resetScroll: resetHome });
     return true;
   }
-  const targetFrame = navigationFrameByToken(token);
-  if (!targetFrame) {
-    invalidateNavigationGenerationToHome();
-    return false;
-  }
-  const targetDepth = classification.targetDepth;
-  if (targetDepth < appNavigationDepth) discardNavigationFramesFrom(targetDepth);
-  appNavigationDepth = targetDepth;
+
+  const targetFrame = navigationFrameByBrowserKey(destinationKey);
+  if (!targetFrame) return false;
+  if (plan.keepDepth < appNavigationDepth) discardNavigationFramesFrom(plan.keepDepth);
+  appNavigationDepth = plan.keepDepth;
+  currentCollectionId = targetFrame.collectionId || targetFrame.snapshot?.collectionId || '';
+  currentViewKind = targetFrame.viewKind || targetFrame.snapshot?.viewKind || 'word';
+  activeSection = currentViewKind;
   pendingPageSnapshot = targetFrame.snapshot || null;
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'back';
   pendingUaScrollRestore = Boolean(useUaScroll);
   hydrateNavigationSnapshot(pendingPageSnapshot);
   renderApp();
-  reconcileNavigationSnapshot(pendingPageSnapshot);
+  persistHydratedViewState(pendingPageSnapshot);
   return true;
 }
 
-const navigationApiHandledTokens = new Set();
-function markNavigationApiHandledToken(token) {
-  if (!token) return;
-  navigationApiHandledTokens.add(token);
-  window.setTimeout(() => navigationApiHandledTokens.delete(token), 1200);
-}
-
-function handleHistoryNavigation(event) {
-  const targetState = event.state || {};
-  const token = String(targetState.navToken || '');
-  if (navigationApiHandledTokens.has(token)) {
-    navigationApiHandledTokens.delete(token);
-    return;
-  }
-  restoreCommittedNavigationDestination(targetState, { useUaScroll: true });
-}
-
-function navigationEntryStateFromDestination(destination) {
-  try { return destination?.getState?.() || null; } catch { return null; }
+function classifyCurrentNavigationKey(destinationKey) {
+  return classifyNavigationKey({
+    destinationKey,
+    rootKey: rootBrowserKey,
+    frames: navigationStack,
+    deadKeys: deadBrowserKeys,
+    currentDepth: appNavigationDepth,
+  });
 }
 
 function activateNavigationGuardFeedback(side) {
@@ -1008,63 +1016,101 @@ function settleNavigationGuardFeedback() {
   window.setTimeout(() => node.classList.remove('guard-settling'), 120);
 }
 
-function classifyCurrentNavigationDestination(destinationState) {
-  return classifyNavigationDestination({
-    targetState: destinationState,
-    frames: navigationStack,
-    discardedTokens: discardedNavigationTokens,
-    currentDepth: appNavigationDepth,
-    generation: navigationGeneration,
-    rootToken: navigationRootToken,
-    navModel: NAVIGATION_MODEL,
-  });
-}
-
-function navigationDestinationIsStale(destinationState) {
-  const kind = classifyCurrentNavigationDestination(destinationState).kind;
-  return kind === 'stale' || kind === 'forward';
+function recoverFromCommittedForbiddenTraversal() {
+  const liveKey = appNavigationDepth > 0
+    ? navigationStack[appNavigationDepth - 1]?.browserKey
+    : rootBrowserKey;
+  if (!liveKey || !navigationApiAvailable()) return;
+  try { globalThis.navigation.traverseTo(liveKey); } catch { /* logical state remains live */ }
 }
 
 function handleNavigationApiNavigate(event) {
   if (event?.navigationType !== 'traverse' || !event.destination?.sameDocument) return;
-  const navigationApi = globalThis.navigation;
-  const currentIndex = Number(navigationApi?.currentEntry?.index ?? -1);
+  const destinationKey = String(event.destination.key || '');
+  const api = globalThis.navigation;
+  const currentIndex = Number(api?.currentEntry?.index ?? -1);
   const destinationIndex = Number(event.destination.index ?? -1);
-  if (currentIndex < 0 || destinationIndex < 0) return;
-  const destinationState = navigationEntryStateFromDestination(event.destination);
-  const isForward = destinationIndex > currentIndex;
-  const isBackward = destinationIndex < currentIndex;
-  const leavingRoot = appNavigationDepth === 0 && isBackward;
-  const forbidden = leavingRoot || isForward || navigationDestinationIsStale(destinationState);
+  const isForward = currentIndex >= 0 && destinationIndex > currentIndex;
+  const isBackward = currentIndex >= 0 && destinationIndex < currentIndex;
+  const classification = classifyCurrentNavigationKey(destinationKey);
+  const rootLeavingBackward = appNavigationDepth === 0 && isBackward && classification.kind !== 'root';
+  const forbidden = isForward || rootLeavingBackward || ['dead', 'foreign', 'forward'].includes(classification.kind);
+
   if (forbidden) {
-    if (event.cancelable) event.preventDefault();
-    activateNavigationGuardFeedback(leavingRoot ? 'left' : 'right');
+    if (event.cancelable) {
+      event.preventDefault();
+      pendingNavigationIntent = null;
+    } else if (event.canIntercept !== false && typeof event.intercept === 'function') {
+      event.intercept({
+        scroll: 'manual',
+        focusReset: 'manual',
+        handler: () => recoverFromCommittedForbiddenTraversal(),
+      });
+    }
+    activateNavigationGuardFeedback(rootLeavingBackward ? 'left' : 'right');
     window.setTimeout(settleNavigationGuardFeedback, 90);
     return;
   }
-  if (!isBackward || event.canIntercept === false || typeof event.intercept !== 'function') return;
-  const token = String(destinationState.navToken || '');
-  markNavigationApiHandledToken(token);
-  event.intercept({
-    scroll: 'after-transition',
-    focusReset: 'manual',
-    handler: () => {
-      restoreCommittedNavigationDestination(destinationState, { useUaScroll: true });
-    },
-  });
+
+  if (!isBackward || !['root', 'back'].includes(classification.kind)) return;
+  const intent = pendingNavigationIntent?.targetKey === destinationKey ? pendingNavigationIntent.type : 'native-back';
+  const resetHome = classification.kind === 'root' && intent === 'home';
+  const useUaScroll = !resetHome;
+
+  if (event.canIntercept !== false && typeof event.intercept === 'function') {
+    navigationTraversalInProgress = true;
+    event.intercept({
+      scroll: useUaScroll ? 'after-transition' : 'manual',
+      focusReset: 'manual',
+      handler: () => {
+        try {
+          const committed = commitNavigationToBrowserKey(destinationKey, { useUaScroll, resetHome });
+          pendingNavigationIntent = null;
+          if (!committed) recoverFromCommittedForbiddenTraversal();
+        } finally {
+          navigationTraversalInProgress = false;
+        }
+      },
+    });
+  }
+}
+
+function handleHistoryNavigationFallback(event) {
+  const state = event.state || {};
+  if (state.vix !== true || state.navModel !== NAVIGATION_MODEL || state.runtimeId !== navigationRuntimeId) return;
+  const token = String(state.navToken || '');
+  if (state.routeKind === 'root' && token === navigationRootToken) {
+    const resetHome = pendingNavigationIntent?.type === 'home-fallback';
+    discardNavigationFramesFrom(0);
+    pendingNavigationIntent = null;
+    renderCommittedRoot({ resetScroll: resetHome });
+    return;
+  }
+  const frame = navigationFrameByToken(token);
+  if (!frame) return;
+  const index = navigationStack.indexOf(frame);
+  if (index < 0) return;
+  if (index + 1 < appNavigationDepth) discardNavigationFramesFrom(index + 1);
+  appNavigationDepth = index + 1;
+  currentCollectionId = frame.collectionId;
+  currentViewKind = frame.viewKind || frame.snapshot?.viewKind || 'word';
+  pendingPageSnapshot = frame.snapshot || null;
+  hydrateNavigationSnapshot(pendingPageSnapshot);
+  renderApp();
+  restoreSnapshotAfterRender(pendingPageSnapshot);
 }
 
 function forbiddenForwardNeighborExists() {
-  const navigationApi = globalThis.navigation;
+  if (!navigationApiAvailable()) return deadBrowserKeys.size > 0;
   try {
-    const entries = navigationApi?.entries?.() || [];
-    const current = navigationApi?.currentEntry;
-    const currentIndex = Number(current?.index ?? -1);
+    const entries = globalThis.navigation.entries();
+    const currentIndex = Number(globalThis.navigation.currentEntry?.index ?? -1);
     const next = entries.find((entry) => Number(entry.index) === currentIndex + 1);
     if (!next) return false;
-    return navigationDestinationIsStale(navigationEntryStateFromDestination(next));
+    const key = String(next.key || '');
+    return deadBrowserKeys.has(key) || classifyCurrentNavigationKey(key).kind === 'forward';
   } catch {
-    return discardedForwardAvailable;
+    return deadBrowserKeys.size > 0;
   }
 }
 
@@ -1083,9 +1129,6 @@ function handleNavigationEdgeTouchStart(event) {
   const touch = event.touches[0];
   const side = navigationEdgeGuardSide(touch);
   if (!side) return;
-  // iOS history gestures compete at the gesture start. This listener is
-  // intentionally pre-registered and non-passive; waiting for touchmove is too
-  // late to guarantee that a discarded Forward surface has not begun preview.
   event.preventDefault();
   navigationEdgeGesture = { side, startX: touch.clientX };
   activateNavigationGuardFeedback(side);
@@ -2061,7 +2104,6 @@ function switchCollectionView(collection, nextKind) {
   pendingPageSnapshot = null;
   pendingJumpEntryId = '';
   pendingJumpReason = 'home';
-  const nextHash = collectionRoute(collection.id, '', nextKind);
   const mode = getViewMode(collection.id);
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
@@ -2069,10 +2111,9 @@ function switchCollectionView(collection, nextKind) {
     scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
   };
   const frame = currentNavigationFrame();
-  if (frame) frame.snapshot = freshSnapshot;
-  history.replaceState(navigationStateForCurrentFrame(), '', nextHash);
-  persistNavigationSession();
-  performPageTransition(renderApp, true);
+  if (frame) { frame.viewKind = nextKind; frame.snapshot = freshSnapshot; }
+  // Presentation-only view switch: do not create or rewrite a browser slot.
+  renderApp();
 }
 
 function sectionForEntry(entry) {
@@ -2225,8 +2266,8 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   };
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = freshSnapshot;
-  history.replaceState(navigationStateForCurrentFrame(), '', collectionRoute(collection.id, '', collection.type === 'normal' ? section : ''));
-  persistNavigationSession();
+  // Mode is current-frame presentation state; browser rail identity is immutable.
+  persistCurrentHistorySnapshot();
 }
 
 function monthShift(monthKey, delta) {
@@ -3787,7 +3828,6 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   syncPinIndexForEntry(currentCollectionId, entryId);
   pendingJumpEntryId = '';
   pendingJumpReason = 'jump';
-  if (location.hash.includes('entry=')) history.replaceState(history.state || navigationStateForCurrentFrame(), '', collectionRoute(currentCollectionId, '', getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentViewKind : ''));
   const collection = state.collectionById.get(currentCollectionId);
   if (collection) renderPinBar(collection);
   const row = ensureEntryRendered(entryId);
@@ -4388,7 +4428,9 @@ function renderReviewBar() {
     ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
     : '';
   if (targetCollectionId && targetCollectionId !== currentCollectionId) {
-    navigateCollection(targetCollectionId, displayEntryId);
+    // Rendering is never allowed to create navigation. User-driven review
+    // commands perform any required Collection PUSH before this renderer runs.
+    setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: false });
     return;
   }
   setContextDockVisible(elements['pin-bar'], 'has-pin', false);
@@ -4514,7 +4556,9 @@ function openSearchDialog() {
   };
   const selectResult = (entry, collectionId) => {
     closeSearchDialog();
-    window.setTimeout(() => navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError), PRESENTATION_EXIT_MS);
+    // Cross-Collection history creation must stay in this click activation. The
+    // retained modal may finish its visual exit over the newly rendered page.
+    navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
   };
   const showEntries = (entries, label = '') => {
     status.textContent = label || (entries.length ? entries.length.toLocaleString() : '无结果');
@@ -4623,29 +4667,9 @@ function dismissUpdateBanner() {
 
 function renderApp() {
   const token = ++renderRevision;
-  const route = parseRoute();
-
-  // Hard product invariant: Home is the destructive navigation root.  A root
-  // URL can also be reached by an external/manual same-document hash change,
-  // not only by our Back/Home controls.  Never render Home while recursive VIX
-  // frames are still alive; converge the current history entry to the clean
-  // root first.  This deliberately does not guess a browser-history delta.
-  if (!route.collectionId && (appNavigationDepth > 0 || navigationStack.length > 0)) {
-    enterHomeRoot({ resetScroll: true });
-    return;
-  }
-
-  const previousCollectionId = currentCollectionId;
-  if (!route.collectionId && previousCollectionId) restoreHomeScrollPending = true;
-  currentCollectionId = route.collectionId;
-  if (route.viewKind) currentViewKind = route.viewKind;
-  if (route.entryId) {
-    pendingJumpEntryId = route.entryId;
-    if (!['search', 'relation', 'annotation', 'last', 'pin'].includes(pendingJumpReason)) pendingJumpReason = 'route';
-  } else if (route.collectionId !== previousCollectionId && !pendingPageSnapshot) {
-    pendingJumpEntryId = '';
-    if (pendingJumpReason !== 'home') pendingJumpReason = 'jump';
-  }
+  // Navigation Controller state is authoritative. URL/hash is transport only and
+  // must never be allowed to destructively rewrite the logical stack from inside
+  // the renderer.
   closeQueryMenu();
   closeRelationTargetMenu();
   if (currentCollectionId) renderCollection(token); else renderHome(token);
@@ -4720,51 +4744,21 @@ function handleWindowScroll() {
 }
 
 function initializeNavigationModel() {
-  const state = history.state || {};
-  const stateGeneration = Number(state.generation || 0);
-  const stateToken = String(state.navToken || '');
-  const currentModel = state.vix === true && state.navModel === NAVIGATION_MODEL
-    && Number.isFinite(stateGeneration) && stateGeneration > 0 && stateToken;
-
-  if (currentModel) {
-    navigationGeneration = stateGeneration;
-    const loaded = loadNavigationSession();
-    if (loaded) {
-      navigationRootToken = navigationRootToken || (state.routeKind === 'root' ? stateToken : newNavigationToken('root'));
-      if (state.routeKind === 'root' && stateToken === navigationRootToken) {
-        navigationStack.length = 0;
-        appNavigationDepth = 0;
-        currentCollectionId = '';
-        currentViewKind = 'word';
-        persistNavigationSession();
-        return;
-      }
-      const frame = navigationFrameByToken(stateToken);
-      if (frame) {
-        const index = navigationStack.indexOf(frame);
-        navigationStack.splice(index + 1);
-        appNavigationDepth = index + 1;
-        pendingPageSnapshot = frame.snapshot || null;
-        hydrateNavigationSnapshot(pendingPageSnapshot);
-        persistNavigationSession();
-        return;
-      }
-    }
-  }
-
-  // 4.4.0 intentionally starts a new navigation generation when a previous
-  // runtime/session cannot prove immutable identity. Business data is untouched.
-  navigationGeneration = Date.now();
+  navigationRuntimeId = newNavigationToken('runtime');
   navigationRootToken = newNavigationToken('root');
   navigationStack.length = 0;
-  discardedNavigationTokens.clear();
-  discardedForwardAvailable = false;
+  deadBrowserKeys.clear();
   appNavigationDepth = 0;
   currentCollectionId = '';
   currentViewKind = 'word';
   pendingPageSnapshot = null;
+  pendingNavigationIntent = null;
+
+  // A process/runtime restart intentionally starts at Home. This is the only
+  // runtime replaceState(): capture rootBrowserKey after it, then never rewrite
+  // a live browser slot again. That avoids the Safari 26.x traversal-key bug.
   history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
-  persistNavigationSession();
+  rootBrowserKey = currentBrowserKey();
 }
 
 export async function initializeUI() {
@@ -4788,9 +4782,10 @@ export async function initializeUI() {
   });
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
-  window.addEventListener('hashchange', () => { if (!history.state?.vix) scheduleRouteRender(); });
-  window.addEventListener('popstate', handleHistoryNavigation);
-  globalThis.navigation?.addEventListener?.('navigate', handleNavigationApiNavigate);
+  // Exactly one traversal owner. Navigation API owns same-document traversal
+  // on the target Safari generation; classic popstate is fallback only.
+  if (navigationApiAvailable()) globalThis.navigation.addEventListener('navigate', handleNavigationApiNavigate);
+  else window.addEventListener('popstate', handleHistoryNavigationFallback);
   window.visualViewport?.addEventListener('resize', () => updateVisualViewportVars());
   window.visualViewport?.addEventListener('scroll', () => updateVisualViewportVars(), { passive: true });
   window.addEventListener('resize', () => { updateVisualViewportVars(); scheduleAlphabetSectionMetricsRefresh(); }, { passive: true });

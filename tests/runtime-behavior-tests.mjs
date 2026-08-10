@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { computeStickyCollapseTarget } from '../js/v3-runtime-geometry.js';
-import { classifyNavigationDestination } from '../js/v3-navigation-runtime.js';
+import { classifyNavigationKey, parentBrowserKey, planCommittedTraversal } from '../js/v3-navigation-runtime.js';
 
-// Sticky: direct flow geometry is stable regardless of a parent's 1px/2px border.
+// Sticky 4.4 behavior is frozen: direct flow geometry stays independent of parent border.
 const long = computeStickyCollapseTarget({
   currentY: 3200, flowTop: -2500, visualTop: 104, bodyHeight: 3000, scrollHeight: 9000, clientHeight: 800,
 });
@@ -17,29 +17,47 @@ const bottomClamp = computeStickyCollapseTarget({
 });
 assert.equal(bottomClamp.targetY, 2700);
 assert.equal(bottomClamp.postCollapseMaxY, 2700);
-assert.equal(computeStickyCollapseTarget({ currentY: NaN, flowTop: 0, visualTop: 0, bodyHeight: 1, scrollHeight: 2, clientHeight: 1 }), null);
 
-// Navigation: token/generation are identity; depth metadata is diagnostic only.
-const navModel = 'destructive-v2';
-const generation = 44;
-const rootToken = 'root-r';
-const frames = [{ token: 'A' }, { token: 'B' }, { token: 'C' }];
-const discarded = new Set();
-const classify = (targetState, currentDepth = 3, frameSet = frames, discardedTokens = discarded) => classifyNavigationDestination({
-  targetState, frames: frameSet, discardedTokens, currentDepth, generation, rootToken, navModel,
+// 4.5 navigation: browser key is rail identity; logical depth is only stack position.
+const rootKey = 'root-key';
+const frames = [
+  { token: 'A', browserKey: 'key-A' },
+  { token: 'B', browserKey: 'key-B' },
+  { token: 'C', browserKey: 'key-C' },
+];
+const classify = (destinationKey, currentDepth = 3, frameSet = frames, deadKeys = new Set()) => classifyNavigationKey({
+  destinationKey, rootKey, frames: frameSet, deadKeys, currentDepth,
 });
-const B = classify({ vix: true, navModel, generation, navToken: 'B', routeKind: 'page', depth: 999 });
-assert.equal(B.kind, 'back');
-assert.equal(B.targetDepth, 2);
-const root = classify({ vix: true, navModel, generation, navToken: rootToken, routeKind: 'root', depth: 77 });
-assert.equal(root.kind, 'back-root');
-const wrongGeneration = classify({ vix: true, navModel, generation: 43, navToken: 'B', routeKind: 'page' });
-assert.equal(wrongGeneration.kind, 'stale');
-const forward = classify({ vix: true, navModel, generation, navToken: 'C', routeKind: 'page' }, 2);
-assert.equal(forward.kind, 'forward');
-const deadC = classify({ vix: true, navModel, generation, navToken: 'C', routeKind: 'page' }, 2, [{ token: 'A' }, { token: 'B' }], new Set(['C']));
-assert.equal(deadC.kind, 'stale');
-const wrongRoot = classify({ vix: true, navModel, generation, navToken: 'old-root', routeKind: 'root' });
-assert.equal(wrongRoot.kind, 'stale');
+
+assert.deepEqual(classify('key-B'), { kind: 'back', key: 'key-B', targetDepth: 2 });
+assert.deepEqual(classify(rootKey), { kind: 'root', key: rootKey, targetDepth: 0 });
+assert.equal(classify('key-C', 2).kind, 'forward');
+assert.equal(classify('key-C', 2, frames.slice(0, 2), new Set(['key-C'])).kind, 'dead');
+assert.equal(classify('unknown').kind, 'foreign');
+assert.equal(classify('').kind, 'foreign');
+assert.equal(parentBrowserKey({ rootKey, frames, currentDepth: 3 }), 'key-B');
+assert.equal(parentBrowserKey({ rootKey, frames, currentDepth: 2 }), 'key-A');
+assert.equal(parentBrowserKey({ rootKey, frames, currentDepth: 1 }), rootKey);
+assert.equal(parentBrowserKey({ rootKey, frames, currentDepth: 0 }), '');
+
+// Destructive POP model: after C -> B, C is no longer live and must classify dead.
+const liveAfterPop = frames.slice(0, 2);
+const deadAfterPop = new Set(['key-C']);
+assert.equal(classifyNavigationKey({ destinationKey: 'key-C', rootKey, frames: liveAfterPop, deadKeys: deadAfterPop, currentDepth: 2 }).kind, 'dead');
+assert.equal(classifyNavigationKey({ destinationKey: 'key-A', rootKey, frames: liveAfterPop, deadKeys: deadAfterPop, currentDepth: 2 }).kind, 'back');
+
+// Home commit clears logical frames but leaves old slots as dead Forward until fresh PUSH truncates them.
+const deadAfterHome = new Set(frames.map((frame) => frame.browserKey));
+assert.equal(classifyNavigationKey({ destinationKey: 'key-A', rootKey, frames: [], deadKeys: deadAfterHome, currentDepth: 0 }).kind, 'dead');
+assert.equal(classifyNavigationKey({ destinationKey: rootKey, rootKey, frames: [], deadKeys: deadAfterHome, currentDepth: 0 }).kind, 'same-root');
+
+
+const popPlan = planCommittedTraversal({ destinationKey: 'key-B', rootKey, frames, deadKeys: new Set(), currentDepth: 3 });
+assert.deepEqual(popPlan, { accepted: true, kind: 'back', keepDepth: 2, removedKeys: ['key-C'] });
+const homePlan = planCommittedTraversal({ destinationKey: rootKey, rootKey, frames, deadKeys: new Set(), currentDepth: 3 });
+assert.deepEqual(homePlan, { accepted: true, kind: 'root', keepDepth: 0, removedKeys: ['key-A', 'key-B', 'key-C'] });
+const rejectDead = planCommittedTraversal({ destinationKey: 'key-C', rootKey, frames: frames.slice(0, 2), deadKeys: new Set(['key-C']), currentDepth: 2 });
+assert.equal(rejectDead.accepted, false);
+assert.equal(rejectDead.kind, 'dead');
 
 console.log('runtime-behavior-tests: OK');

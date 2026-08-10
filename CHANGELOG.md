@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.5.0 — 2026-08-10
+
+- 4.4.0 `destructive-v2` 导航实现整体撤销，重建为 `destructive-v3`：VIX logical stack 与 Safari browser rail 分离；
+- Collection 成为唯一 recursive frame；word/phrase、alphabet/date、同 Collection Search/Relation/PIN/Annotation 定位全部不再创建 history slot；
+- browser rail identity 改用 `NavigationHistoryEntry.key`，App Back/Home 改为 `navigation.traverseTo(key)`；不再混用 `history.state` 与 `NavigationDestination.getState()`；
+- 真正跨 Collection PUSH 在用户操作同步调用栈内立即 `history.pushState()`，随后捕获 UA key；Home mode 持久化与 Modal exit 不再位于 PUSH 前；
+- Home 不再 PUSH 新 ROOT2：精确 traverse 回原 root，commit 后清 live frames 并将旧 keys 标记 dead Forward；fresh PUSH 由浏览器自然截断 Forward branch；
+- Navigation API 与 popstate 改成互斥 traversal owner，删除 4.4 token+1200ms 双事件消重；
+- runtime live history slot 不再 `replaceState()`；仅 boot root 初始化允许一次 replace，然后捕获 root key；
+- Renderer 不再依据 URL/hash 反向 destructive clear；identity mismatch 不再按 depth 猜 frame；
+- 删除 orphaned 70ms page transition timer与 Search 140ms 后置导航；
+- 4.4 真机已通过的 Sticky、Modal 与 whole-app stacking-context removal 全部冻结；Schema6 / DB5 / Seed4 / VIX2 不变。
+
 ## 4.4.0 — 2026-08-10
 
 - Sticky 收起改用真实 in-flow anchor 几何，消除父 1px border 导致的累计上移；

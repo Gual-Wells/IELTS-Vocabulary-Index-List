@@ -1,15 +1,15 @@
-// 4.5.0 lets the UA restore physical scroll for committed same-document Back
-// traversals after VIX has synchronously rebuilt the target DOM. VIX snapshots
-// remain the fallback only for the non-Navigation-API transport; recursive stack
-// recovery is intentionally not persisted across PWA runtime restarts.
+// 4.6.0 keeps browser history scroll state available as a first-pass hint, but
+// VIX semantic positions are authoritative after dynamically rebuilt virtual
+// layouts settle. Navigation API traversals opt into manual timing and invoke
+// event.scroll() only after target geometry is prepared.
 if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
 
 // Cache-generation bridge. It exists only to prevent an old service-worker
-// shell from being mixed with the 4.5.0 runtime after the runtime-generation change.
+// shell from being mixed with the 4.6.0 runtime after the runtime-generation change.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.5.0-navigation-rail-20260810-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.5.0';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.6.0-scroll-ownership-20260810-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.6.0';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

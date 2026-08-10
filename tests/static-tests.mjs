@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -21,8 +21,8 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.5.0');
-assert.ok(index.includes('Vocabulary Index 4.5.0'));
+assert.equal(pkg.version, '4.6.0');
+assert.ok(index.includes('Vocabulary Index 4.6.0'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
@@ -30,12 +30,14 @@ assert.ok(index.includes('css/v4.2.0.css'));
 assert.ok(index.includes('css/v4.3.0.css'));
 assert.ok(index.includes('css/v4.4.0.css'));
 assert.ok(index.includes('css/v4.5.0.css'));
+assert.ok(index.includes('css/v4.6.0.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.5.0-navigation-rail'));
+assert.ok(sw.includes('v4.6.0-scroll-ownership'));
+assert.ok(sw.includes('./js/v3-scroll-runtime.js'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
@@ -64,7 +66,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './js/v3-scroll-runtime.js', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
@@ -178,7 +180,10 @@ assert.ok(ui.includes("setProperty('--content-sticky-top'"));
 assert.ok(ui.includes("const navHeight = Math.max(0, nav.getBoundingClientRect().height || nav.offsetHeight || 0)"));
 assert.ok(ui.includes('return baseBottom + navHeight'));
 assert.ok(ui.includes('function alphabetNavAttached()'));
-assert.ok(ui.includes('const stickyEngaged = navAttached && activeIndex >= 0'));
+assert.ok(ui.includes('const stickyEngaged = activeIndex >= 0'));
+assert.ok(!ui.includes('const liveBoundary = navAttached'));
+assert.ok(ui.includes('if (scrollCoordinator.isActive()) return;'));
+assert.ok(ui.includes('finalizeRootScrollPresentation'));
 assert.ok(!ui.includes('renderStickyAlphabetHeading'));
 assert.ok(!ui.includes("elements['sticky-letter-heading']"));
 assert.ok(!ui.includes('Math.max(bottom, viewportTop + 72)'));
@@ -188,7 +193,7 @@ assert.ok(css.includes('.letter-nav-track button.empty'));
 assert.ok(css.includes('opacity: 1 !important'));
 assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 
-// 4.5 navigation: VIX owns the logical stack; UA entry.key owns browser-rail identity.
+// 4.6 keeps the accepted 4.5 navigation automaton; scroll restoration ownership moves below it.
 assert.ok(index.includes('id="home-button"'));
 assert.ok(!index.includes('id="navigation-underlay"'));
 assert.ok(index.includes('id="navigation-guard-feedback"'));
@@ -216,7 +221,8 @@ assert.ok(index.includes('aria-label="返回首页并清空页面历史"'));
 
 // Date-mode study-date refresh is an in-place mutation, not a navigation jump.
 assert.ok(ui.includes("const preserveDateViewport = mode === 'date'"));
-assert.ok(ui.includes("window.scrollTo({ top: preservedScrollY, behavior: 'auto' })"));
+assert.ok(ui.includes("beginRootScrollTransaction('study-date-refresh'"));
+assert.ok(ui.includes("restoreSemanticPosition(position, transaction.epoch"));
 assert.ok(!ui.includes("pendingJumpReason = 'study-date'"));
 assert.ok(!ui.includes('学习日期已刷新并移到今天'));
 
@@ -269,7 +275,7 @@ assert.ok(css.includes('.vix-checkbox:checked'));
 assert.ok(!ui.includes('仅保存在本机浏览器存储。若静态 PWA 受 CORS 限制'));
 assert.ok(!ui.includes('默认开启。只逻辑隐藏代词'));
 
-// 4.5.0 keeps 4.4 Sticky/Modal runtime correctness ownership.
+// 4.6 keeps 4.4 Sticky/Modal runtime correctness ownership.
 assert.ok(store.includes('export function getViewMode(collectionId)'));
 assert.ok(store.includes('export async function setViewMode(collectionId, mode)'));
 assert.ok(store.includes('export function hydrateRuntimeViewState'));
@@ -293,6 +299,34 @@ const pinToggleEnd = ui.indexOf('\nfunction ', pinToggleStart + 1);
 const pinToggleSource = ui.slice(pinToggleStart, pinToggleEnd > pinToggleStart ? pinToggleEnd : undefined);
 assert.ok(pinToggleStart >= 0);
 assert.ok(!pinToggleSource.includes('replaceWith('), 'PIN 状态切换不得重建整个 Entry row');
+
+// 4.6 root-scroll / virtual-layout ownership invariants.
+assert.ok(ui.includes("import { clampRootScrollTarget, createScrollCoordinator"));
+assert.ok(ui.includes("beginRootScrollTransaction('letter-jump'"));
+assert.ok(ui.includes("beginRootScrollTransaction(resetHome ? 'home-clear' : 'back-restore'"));
+assert.ok(ui.includes("scroll: 'manual'"));
+assert.ok(ui.includes('event.scroll()'));
+assert.ok(ui.includes("target.querySelector(':scope > .section-flow-anchor')") || ui.includes("querySelector(':scope > .section-flow-anchor')"));
+assert.ok(ui.includes('virtualLayoutCache: new Map()'));
+assert.ok(ui.includes('layoutCache?.set(data.chunkKey, height)'));
+assert.ok(ui.includes("rootMargin: '960px 0px 960px'"));
+assert.ok(ui.includes('const ENTRY_CHUNK_SIZE = 42'));
+assert.ok(ui.includes('flushQueuedVirtualChunksNow'));
+assert.ok(!ui.includes('function captureScrollAnchor('));
+assert.ok(!ui.includes('function restoreScrollAnchor('));
+const materializeStart = ui.indexOf('function materializeEntryChunk');
+const materializeEnd = ui.indexOf('\nfunction flushQueuedVirtualChunksNow', materializeStart);
+const materializeSource = ui.slice(materializeStart, materializeEnd);
+assert.ok(materializeStart >= 0 && materializeEnd > materializeStart);
+assert.ok(!materializeSource.includes('window.scrollTo'));
+assert.ok(!materializeSource.includes('window.scrollBy'));
+const directRootScrollWrites = [...ui.matchAll(/window\.scrollTo\s*\(/g)].map((match) => match.index);
+assert.equal(directRootScrollWrites.length, 2, 'only rootScrollToY/rootScrollByY adapters may call window.scrollTo');
+assert.equal((ui.match(/window\.scrollBy\s*\(/g) || []).length, 0, 'direct window.scrollBy is forbidden');
+assert.ok(ui.includes('if (navigationTraversalInProgress || scrollCoordinator.isActive()) return'));
+assert.ok(ui.includes("closeSearchDialog({ immediate: true })"));
+assert.ok(ui.includes('serviceWorkerReloadIsArmed'));
+assert.ok(sw.includes('clients.claim()'));
 
 // Product package sources must not contain NUL bytes.
 for (const dir of ['js', 'css', 'data', 'tests', 'tools']) {

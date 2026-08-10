@@ -1,4 +1,4 @@
-/** Pure helpers for the 4.5.0 VIX logical-stack / browser-rail split. */
+/** Pure helpers for the 4.6.0 VIX logical-stack / browser-rail split. */
 export function classifyNavigationKey({ destinationKey, rootKey, frames, deadKeys, currentDepth }) {
   const key = String(destinationKey || '');
   const root = String(rootKey || '');

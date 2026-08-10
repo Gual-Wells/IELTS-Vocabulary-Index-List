@@ -1,8 +1,8 @@
-import { initializeUI, notifyServiceWorkerUpdate } from './v3-ui.js';
+import { initializeUI, notifyServiceWorkerUpdate, serviceWorkerReloadIsArmed } from './v3-ui.js';
 import { exportLegacyGenerationBackup, getGenerationUpgradeStatus, replaceLegacyGenerationWithSeed } from './v3-db.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
-const MODULE_VERSION = '4.5.0';
+const MODULE_VERSION = '4.6.0';
 let reloadingForServiceWorker = false;
 
 const viewportMeta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="viewport"]'));
@@ -58,7 +58,9 @@ function watchServiceWorkerRegistration(registration) {
     });
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloadingForServiceWorker) return;
+    // First-install clients.claim() is not an update request. Reload only after
+    // the user explicitly armed SKIP_WAITING from the update banner.
+    if (!serviceWorkerReloadIsArmed() || reloadingForServiceWorker) return;
     reloadingForServiceWorker = true;
     location.reload();
   });
@@ -94,19 +96,19 @@ function downloadJsonFile(filename, value) {
 async function handleGenerationUpgradeIfNeeded() {
   const status = await getGenerationUpgradeStatus();
   if (!status.required) return;
-  const choice = await bootChoice('Vocabulary Index 4.5.0', '检测到 3.5.x 内容世代。4.5.0 使用新的 Schema、关系模型与 Seed，旧内容和内容绑定状态不会迁移。你可以先下载完整旧版备份。', [
+  const choice = await bootChoice('Vocabulary Index 4.6.0', '检测到 3.5.x 内容世代。4.6.0 使用新的 Schema、关系模型与 Seed，旧内容和内容绑定状态不会迁移。你可以先下载完整旧版备份。', [
     { label: '先下载备份', value: 'backup', primary: true },
     { label: '不备份继续', value: 'continue', primary: false },
   ]);
   if (choice === 'backup') {
     const backup = await exportLegacyGenerationBackup();
-    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || '3.5.2'}-Pre-4.5.0-Backup.json`, backup);
+    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || '3.5.2'}-Pre-4.6.0-Backup.json`, backup);
   }
-  const confirm = await bootChoice('确认替换内容世代', '将清除旧 Seed、用户自建内容、PIN、学习日期、标注、浏览状态与撤销历史；Groq / Collins Key、模型选择和一般显示偏好不属于旧内容数据。此操作不能由 4.5.0 撤销。', [
+  const confirm = await bootChoice('确认替换内容世代', '将清除旧 Seed、用户自建内容、PIN、学习日期、标注、浏览状态与撤销历史；Groq / Collins Key、模型选择和一般显示偏好不属于旧内容数据。此操作不能由 4.6.0 撤销。', [
     { label: '取消启动', value: 'cancel', primary: false },
-    { label: '替换并进入 4.5.0', value: 'replace', primary: true },
+    { label: '替换并进入 4.6.0', value: 'replace', primary: true },
   ]);
-  if (confirm !== 'replace') throw new Error('已取消 4.5.0 内容世代替换。旧数据保持不变。');
+  if (confirm !== 'replace') throw new Error('已取消 4.6.0 内容世代替换。旧数据保持不变。');
   await replaceLegacyGenerationWithSeed();
 }
 

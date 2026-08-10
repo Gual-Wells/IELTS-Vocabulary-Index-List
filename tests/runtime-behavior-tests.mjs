@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
 import { computeStickyCollapseTarget } from '../js/v3-runtime-geometry.js';
 import { classifyNavigationKey, parentBrowserKey, planCommittedTraversal } from '../js/v3-navigation-runtime.js';
+import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from '../js/v3-scroll-runtime.js';
+
+
+// 4.6 ScrollCoordinator: newest semantic intent owns the root viewport; stale epochs are rejected.
+const scroll = createScrollCoordinator();
+const letter = scroll.begin('letter-jump', { kind: 'section', sectionId: 'letter-X' });
+assert.equal(scroll.owns(letter.epoch), true);
+const back = scroll.begin('back-restore', { kind: 'entry', entryId: '4995' });
+assert.equal(scroll.owns(letter.epoch), false);
+assert.equal(scroll.owns(back.epoch), true);
+assert.equal(scroll.setPhase(back.epoch, 'verify'), true);
+assert.equal(scroll.current().phase, 'verify');
+assert.equal(scroll.finish(back.epoch), true);
+assert.equal(scroll.isActive(), false);
+assert.equal(clampRootScrollTarget(900, 1000, 300), 700);
+assert.equal(clampRootScrollTarget(-10, 1000, 300), 0);
+assert.equal(semanticAnchorError(120, 104), 16);
+assert.equal(geometryIsStable([50, 50.3], 0.5), true);
+assert.equal(geometryIsStable([50, 51], 0.5), false);
 
 // Sticky 4.4 behavior is frozen: direct flow geometry stays independent of parent border.
 const long = computeStickyCollapseTarget({
@@ -18,7 +37,7 @@ const bottomClamp = computeStickyCollapseTarget({
 assert.equal(bottomClamp.targetY, 2700);
 assert.equal(bottomClamp.postCollapseMaxY, 2700);
 
-// 4.5 navigation: browser key is rail identity; logical depth is only stack position.
+// 4.6 keeps 4.5 navigation: browser key is rail identity; logical depth is only stack position.
 const rootKey = 'root-key';
 const frames = [
   { token: 'A', browserKey: 'key-A' },

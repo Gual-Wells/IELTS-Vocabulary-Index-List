@@ -18,8 +18,9 @@ import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { classifyNavigationKey, parentBrowserKey, planCommittedTraversal } from './v3-navigation-runtime.js';
+import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 
-const APP_VERSION = '4.5.0';
+const APP_VERSION = '4.6.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -89,11 +90,23 @@ let longpressGuardUntil = 0;
 let longpressGuardTimer = 0;
 let routeRenderFrame = 0;
 let entryChunkObserver = null;
+let entryChunkResizeObserver = null;
 const entryChunkData = new WeakMap();
 const entryChunkByEntryId = new Map();
 const iconTemplateCache = new Map();
 const ENTRY_CHUNK_SIZE = 42;
 const ENTRY_ROW_ESTIMATE = 56;
+const scrollCoordinator = createScrollCoordinator();
+const scrollTrace = [];
+const SCROLL_TRACE_LIMIT = 180;
+const SCROLL_TRACE_ENABLED = new URLSearchParams(location.search).has('vix-scroll-debug');
+let rootUserScrollActive = false;
+let rootUserTouchReleased = true;
+let rootUserTouchMoved = false;
+let rootUserScrollReleaseTimer = 0;
+let pendingVirtualAnchor = null;
+let virtualMaterializeFrame = 0;
+const queuedVirtualChunks = new Set();
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -114,6 +127,86 @@ function el(tag, options = {}, children = []) {
 
 function button(text, className, handler, options = {}) {
   return el('button', { type: 'button', className, text, disabled: options.disabled || false, on: { click: handler }, title: options.title || '' });
+}
+
+function appendScrollTrace(event, detail = {}) {
+  if (!SCROLL_TRACE_ENABLED) return;
+  scrollTrace.push({ t: performance.now(), event, ...detail });
+  if (scrollTrace.length > SCROLL_TRACE_LIMIT) scrollTrace.splice(0, scrollTrace.length - SCROLL_TRACE_LIMIT);
+}
+
+function rootScrollMetrics() {
+  const root = document.scrollingElement || document.documentElement;
+  return {
+    root,
+    scrollHeight: Number(root?.scrollHeight || 0),
+    clientHeight: Number(root?.clientHeight || window.innerHeight || 0),
+    maxScroll: Math.max(0, Number(root?.scrollHeight || 0) - Number(root?.clientHeight || window.innerHeight || 0)),
+  };
+}
+
+function beginRootScrollTransaction(owner, target = null) {
+  clearTimeout(scrollPersistenceTimer);
+  scrollPersistenceTimer = 0;
+  const transaction = scrollCoordinator.begin(owner, target);
+  appendScrollTrace('begin', { epoch: transaction.epoch, owner: transaction.owner, target: transaction.target, scrollY: window.scrollY });
+  return transaction;
+}
+
+function rootScrollToY(top, { epoch = 0, behavior = 'auto', source = 'coordinator' } = {}) {
+  if (epoch && !scrollCoordinator.owns(epoch)) {
+    appendScrollTrace('stale-write-rejected', { epoch, source, scrollY: window.scrollY });
+    return false;
+  }
+  const metrics = rootScrollMetrics();
+  const targetY = clampRootScrollTarget(top, metrics.scrollHeight, metrics.clientHeight);
+  const before = window.scrollY;
+  window.scrollTo({ top: targetY, behavior: /** @type {ScrollBehavior} */ (behavior) });
+  appendScrollTrace('scroll-to', { epoch: epoch || scrollCoordinator.current()?.epoch || 0, source, before, targetY });
+  return true;
+}
+
+function rootScrollByY(delta, { epoch = 0, behavior = 'auto', source = 'coordinator' } = {}) {
+  if (epoch && !scrollCoordinator.owns(epoch)) {
+    appendScrollTrace('stale-write-rejected', { epoch, source, scrollY: window.scrollY });
+    return false;
+  }
+  const before = window.scrollY;
+  const metrics = rootScrollMetrics();
+  const targetY = clampRootScrollTarget(before + Number(delta || 0), metrics.scrollHeight, metrics.clientHeight);
+  window.scrollTo({ top: targetY, behavior: /** @type {ScrollBehavior} */ (behavior) });
+  appendScrollTrace('scroll-by', { epoch: epoch || scrollCoordinator.current()?.epoch || 0, source, before, delta, targetY });
+  return true;
+}
+
+function finalizeRootScrollPresentation() {
+  updateOverlayLayout({ immediate: true });
+  if (currentCollectionId && collectionRenderContext?.mode === 'alphabet') refreshAlphabetSectionMetrics();
+  updateLargeTitleState();
+  updateBackToTopVisibility();
+}
+
+function finishRootScrollTransaction(epoch, { persist = true } = {}) {
+  if (!scrollCoordinator.owns(epoch)) return false;
+  const state = scrollCoordinator.current();
+  scrollCoordinator.finish(epoch);
+  appendScrollTrace('finish', { epoch, owner: state?.owner || '', scrollY: window.scrollY });
+  // While a programmatic transaction is active, observer-driven active-letter
+  // inference is suppressed. Commit the final Chrome/Sticky/Letter state once
+  // the semantic position is stable, before persisting that state.
+  finalizeRootScrollPresentation();
+  if (persist) persistCurrentHistorySnapshot();
+  return true;
+}
+
+function cancelRootScrollTransaction(reason = 'user-input') {
+  const cancelled = scrollCoordinator.cancel(reason);
+  if (cancelled) appendScrollTrace('cancel', { epoch: cancelled.epoch, owner: cancelled.owner, reason, scrollY: window.scrollY });
+  return cancelled;
+}
+
+function nextPresentationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 const ICONS = {
@@ -300,26 +393,37 @@ function alphabetNavAttached() {
   return rect.height > 0 && rect.top <= baseBottom + 1.5 && rect.bottom > baseBottom + 1;
 }
 
-function updateOverlayLayout() {
-  if (overlayLayoutFrame) return;
+function applyOverlayLayoutNow() {
+  const updateVisible = elements['update-banner'] && !elements['update-banner'].classList.contains('hidden');
+  const updateHeight = updateVisible ? Math.ceil(elements['update-banner'].getBoundingClientRect().height + 8) : 0;
+  document.documentElement.style.setProperty('--update-overlay-offset', `${updateHeight}px`);
+  const baseBottom = topChromeBottom({ includeLetterNav: false });
+  const bottom = topChromeBottom();
+  const sealedBaseBottom = Math.floor(baseBottom + .01);
+  const sealedBottom = Math.floor(bottom + .01);
+  document.documentElement.style.setProperty('--sticky-base-top', `${sealedBaseBottom}px`);
+  document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
+  document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
+  document.documentElement.style.setProperty('--content-sticky-top', `${sealedBottom}px`);
+  cachedChromeBottom = sealedBottom;
+  if (activeQueryMenu) positionQueryMenu();
+  if (activeRelationTargetMenu) positionRelationTargetMenu();
+  syncActiveAlphabetHeading();
+  return { baseBottom: sealedBaseBottom, contentTop: sealedBottom };
+}
+
+function updateOverlayLayout({ immediate = false } = {}) {
+  if (immediate) {
+    if (overlayLayoutFrame) cancelAnimationFrame(overlayLayoutFrame);
+    overlayLayoutFrame = 0;
+    return applyOverlayLayoutNow();
+  }
+  if (overlayLayoutFrame) return null;
   overlayLayoutFrame = requestAnimationFrame(() => {
     overlayLayoutFrame = 0;
-    const updateVisible = elements['update-banner'] && !elements['update-banner'].classList.contains('hidden');
-    const updateHeight = updateVisible ? Math.ceil(elements['update-banner'].getBoundingClientRect().height + 8) : 0;
-    document.documentElement.style.setProperty('--update-overlay-offset', `${updateHeight}px`);
-    const baseBottom = topChromeBottom({ includeLetterNav: false });
-    const bottom = topChromeBottom();
-    const sealedBaseBottom = Math.floor(baseBottom + .01);
-    const sealedBottom = Math.floor(bottom + .01);
-    document.documentElement.style.setProperty('--sticky-base-top', `${sealedBaseBottom}px`);
-    document.documentElement.style.setProperty('--chrome-bottom', `${sealedBottom}px`);
-    document.documentElement.style.setProperty('--toast-top', `${Math.ceil(bottom + 8)}px`);
-    document.documentElement.style.setProperty('--content-sticky-top', `${sealedBottom}px`);
-    cachedChromeBottom = sealedBottom;
-    if (activeQueryMenu) positionQueryMenu();
-    if (activeRelationTargetMenu) positionRelationTargetMenu();
-    syncActiveAlphabetHeading();
+    applyOverlayLayoutNow();
   });
+  return null;
 }
 
 const PRESENTATION_EXIT_MS = 140;
@@ -538,9 +642,25 @@ function openActionDialog({ title, description = '', body = [] }) {
   return openDialog({ title, description, body, showCancel: false, variant: 'action', kind: 'action' });
 }
 
-function closeSearchDialog() {
-  if (activeSearchFrame && dialogStack.at(-1) === activeSearchFrame) closeDialog();
+function closeSearchDialog({ immediate = false } = {}) {
+  const frame = activeSearchFrame;
+  if (!frame) return;
+  if (dialogStack.at(-1) !== frame) { activeSearchFrame = null; return; }
+  if (!immediate) {
+    closeDialog();
+    activeSearchFrame = null;
+    return;
+  }
+  dialogStack.pop();
+  frame.closing = true;
   activeSearchFrame = null;
+  // A navigation-specific close must not focus the source Search button just
+  // before WebKit records the source history snapshot.
+  frame.returnFocus = null;
+  frame.layer.classList.remove('modal-layer-entering', 'modal-layer-closing');
+  const parent = dialogStack.at(-1) || null;
+  finishModalLayerClose(frame, parent);
+  updatePageViewportGeometry({ immediate: true });
 }
 
 function closeConfirmDialog({ force = false } = {}) {
@@ -686,6 +806,7 @@ function currentSnapshot() {
     mode,
     calendarMonth: mode === 'date' ? getCalendarMonth(currentCollectionId, section) : '',
     scrollY: window.scrollY,
+    position: captureSemanticPosition(),
     expandedGroups: [...expandedLettersFor(currentCollectionId, section)],
     expandedRelations: [...expandedRelations].filter((key) => key.startsWith(`${currentCollectionId}\u0000${section}\u0000`)),
     activeSection,
@@ -693,7 +814,7 @@ function currentSnapshot() {
 }
 
 function persistCurrentHistorySnapshot() {
-  if (navigationTraversalInProgress) return;
+  if (navigationTraversalInProgress || scrollCoordinator.isActive()) return;
   const snapshot = currentSnapshot();
   if (!snapshot) return;
   if (!currentCollectionId) {
@@ -718,12 +839,18 @@ function applySnapshotBeforeRender(snapshot, collection, viewKind) {
 
 function restoreSnapshotAfterRender(snapshot, token = renderRevision) {
   if (!snapshot) return;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (token !== renderRevision) return;
-    window.scrollTo({ top: Math.max(0, Number(snapshot.scrollY || 0)), behavior: 'auto' });
+  const position = snapshot.position || { kind: 'scroll', scrollYFallback: Math.max(0, Number(snapshot.scrollY || 0)) };
+  const transaction = beginRootScrollTransaction('history-fallback', position);
+  const epoch = transaction.epoch;
+  requestAnimationFrame(async () => {
+    if (token !== renderRevision || !scrollCoordinator.owns(epoch)) return;
+    restoreSemanticPosition(position, epoch, { source: 'history-fallback' });
+    await settleSemanticPosition(epoch, position, { maxFrames: 6, tolerance: 1, source: 'history-fallback' });
+    if (!scrollCoordinator.owns(epoch)) return;
+    finishRootScrollTransaction(epoch, { persist: true });
     syncActiveAlphabetHeading();
     updateBackToTopVisibility();
-  }));
+  });
 }
 
 function clearExpandedRelationsForView(collectionId, viewKind) {
@@ -764,6 +891,7 @@ function targetSnapshot(collection, viewKind) {
     mode,
     calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, viewKind) : '',
     scrollY: 0,
+    position: { kind: 'top', scrollYFallback: 0 },
     expandedGroups: [...expandedLettersFor(collection.id, viewKind)],
     expandedRelations: [...expandedRelations].filter((key) => key.startsWith(`${collection.id}\u0000${viewKind}\u0000`)),
     activeSection: viewKind,
@@ -857,6 +985,8 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
     collectionId,
     viewKind: nextView,
     snapshot: targetSnapshot(collection, nextView),
+    virtualLayoutCache: new Map(),
+    virtualLayoutWidth: 0,
   };
   navigationStack.push(frame);
   appNavigationDepth = navigationStack.length;
@@ -915,12 +1045,8 @@ function renderCommittedRoot({ resetScroll = false } = {}) {
   if (resetScroll) {
     homeGlobalMode = 'structured';
     homeScrollY = 0;
-  } else {
-    // Navigation API traversal owns physical root scroll restoration.
-    restoreHomeScrollPending = false;
-  }
+  } else restoreHomeScrollPending = false;
   renderApp();
-  if (resetScroll) requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
 }
 
 function goHome() {
@@ -931,7 +1057,9 @@ function goHome() {
   homeGlobalMode = 'structured';
   homeScrollY = 0;
   renderApp();
-  window.scrollTo({ top: 0, behavior: 'auto' });
+  const transaction = beginRootScrollTransaction('home-top', { kind: 'top', scrollYFallback: 0 });
+  rootScrollToY(0, { epoch: transaction.epoch, source: 'home-top' });
+  finishRootScrollTransaction(transaction.epoch, { persist: false });
 }
 
 function resetNavigationToHome() {
@@ -1055,20 +1183,46 @@ function handleNavigationApiNavigate(event) {
   if (!isBackward || !['root', 'back'].includes(classification.kind)) return;
   const intent = pendingNavigationIntent?.targetKey === destinationKey ? pendingNavigationIntent.type : 'native-back';
   const resetHome = classification.kind === 'root' && intent === 'home';
-  const useUaScroll = !resetHome;
+  const targetFrame = classification.kind === 'back' ? navigationFrameByBrowserKey(destinationKey) : null;
+  const targetSnapshot = targetFrame?.snapshot || null;
+  const targetPosition = resetHome
+    ? { kind: 'top', scrollYFallback: 0 }
+    : classification.kind === 'root'
+      ? { kind: 'scroll', scrollYFallback: homeScrollY }
+      : targetSnapshot?.position || { kind: 'scroll', scrollYFallback: Math.max(0, Number(targetSnapshot?.scrollY || 0)) };
 
   if (event.canIntercept !== false && typeof event.intercept === 'function') {
     navigationTraversalInProgress = true;
     event.intercept({
-      scroll: useUaScroll ? 'after-transition' : 'manual',
+      scroll: 'manual',
       focusReset: 'manual',
-      handler: () => {
+      handler: async () => {
+        const transaction = beginRootScrollTransaction(resetHome ? 'home-clear' : 'back-restore', targetPosition);
+        const epoch = transaction.epoch;
+        let committed = false;
         try {
-          const committed = commitNavigationToBrowserKey(destinationKey, { useUaScroll, resetHome });
+          committed = commitNavigationToBrowserKey(destinationKey, { useUaScroll: !resetHome, resetHome });
           pendingNavigationIntent = null;
-          if (!committed) recoverFromCommittedForbiddenTraversal();
+          if (!committed) {
+            recoverFromCommittedForbiddenTraversal();
+            return;
+          }
+          updateOverlayLayout({ immediate: true });
+          if (targetPosition.kind === 'entry') semanticPositionNode(targetPosition, { ensure: true });
+          flushQueuedVirtualChunksNow({ reason: 'back-restore-pre-ua' });
+          materializeChunksNearViewport({ reason: 'back-restore-pre-ua' });
+          await nextPresentationFrame();
+          if (!scrollCoordinator.owns(epoch)) return;
+          scrollCoordinator.setPhase(epoch, 'ua-scroll');
+          if (!resetHome && typeof event.scroll === 'function') {
+            try { event.scroll(); } catch { /* semantic correction remains authoritative */ }
+          } else restoreSemanticPosition(targetPosition, epoch, { source: resetHome ? 'home-clear' : 'back-restore-no-ua' });
+          scrollCoordinator.setPhase(epoch, 'verify');
+          await settleSemanticPosition(epoch, targetPosition, { maxFrames: 10, tolerance: 1, source: resetHome ? 'home-clear' : 'back-restore' });
         } finally {
+          if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
           navigationTraversalInProgress = false;
+          if (committed) persistCurrentHistorySnapshot();
         }
       },
     });
@@ -1824,7 +1978,13 @@ function renderHome(token = renderRevision) {
   renderHomeAnnotationBanner();
   if (restoreHomeScrollPending) {
     restoreHomeScrollPending = false;
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (token === renderRevision) window.scrollTo({ top: homeScrollY, behavior: 'auto' }); }));
+    const transaction = beginRootScrollTransaction('home-restore', { kind: 'scroll', scrollYFallback: homeScrollY });
+    const epoch = transaction.epoch;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (token !== renderRevision || !scrollCoordinator.owns(epoch)) return;
+      rootScrollToY(homeScrollY, { epoch, source: 'home-restore' });
+      finishRootScrollTransaction(epoch, { persist: false });
+    }));
   }
 }
 
@@ -1889,7 +2049,15 @@ function renderCollection(token = renderRevision) {
   const useUaScrollRestore = pendingUaScrollRestore;
   if (jumpEntryId) queueMicrotask(() => { if (token === renderRevision) jumpToEntry(jumpEntryId, { collectionId: collection.id, reason: jumpReason }); });
   else if (restoreSnapshot && !useUaScrollRestore) restoreSnapshotAfterRender(restoreSnapshot, token);
-  else if (!restoreSnapshot && jumpReason === 'home') requestAnimationFrame(() => { if (token === renderRevision) window.scrollTo({ top: 0, behavior: 'auto' }); });
+  else if (!restoreSnapshot && jumpReason === 'home') {
+    const transaction = beginRootScrollTransaction('collection-fresh-top', { kind: 'top', scrollYFallback: 0 });
+    const epoch = transaction.epoch;
+    requestAnimationFrame(() => {
+      if (token !== renderRevision || !scrollCoordinator.owns(epoch)) return;
+      rootScrollToY(0, { epoch, source: 'collection-fresh-top' });
+      finishRootScrollTransaction(epoch, { persist: true });
+    });
+  }
   pendingPageSnapshot = null;
   pendingUaScrollRestore = false;
   if (!jumpEntryId) pendingJumpReason = 'jump';
@@ -2108,7 +2276,7 @@ function switchCollectionView(collection, nextKind) {
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
     calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, nextKind) : '',
-    scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
+    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
   };
   const frame = currentNavigationFrame();
   if (frame) { frame.viewKind = nextKind; frame.snapshot = freshSnapshot; }
@@ -2262,7 +2430,7 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
     calendarMonth: nextMode === 'date' ? getCalendarMonth(collection.id, section) : '',
-    scrollY: 0, expandedGroups: [], expandedRelations: [], activeSection: section,
+    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: section,
   };
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = freshSnapshot;
@@ -2293,7 +2461,7 @@ function calendarForSection(collection, section, dates) {
     const dateKey = `${monthKey}-${String(day).padStart(2, '0')}`;
     const enabled = available.has(dateKey);
     grid.push(button(String(day), enabled ? 'calendar-day active' : 'calendar-day', () => {
-      setDateSectionOpen(section, dateKey, true);
+      setDateSectionOpen(section, dateKey, true, { persist: false });
       const target = document.getElementById(dateAnchorId(section, dateKey));
       if (!target) return;
       activeSection = section;
@@ -2331,6 +2499,43 @@ function calendarForSection(collection, section, dates) {
   return calendar;
 }
 
+async function jumpToAlphabetLetter(section, letter, sectionContext) {
+  const target = sectionContext?.sectionByKey.get(letter);
+  if (!target) return false;
+  const position = {
+    kind: 'section',
+    sectionId: target.id,
+    offsetFromContentTop: 0,
+    scrollYFallback: window.scrollY,
+  };
+  const transaction = beginRootScrollTransaction('letter-jump', position);
+  const epoch = transaction.epoch;
+  try {
+    activeSection = section;
+    releaseLetterTrackManualLock(section);
+    setLetterSectionOpen(section, letter, true, { persist: false });
+    updateActiveLetter(section, letter, { ensureVisible: true, force: true });
+    updateOverlayLayout({ immediate: true });
+    scrollCoordinator.setPhase(epoch, 'geometry-ready');
+    await nextPresentationFrame();
+    if (!scrollCoordinator.owns(epoch)) return false;
+    flushQueuedVirtualChunksNow({ reason: 'letter-jump-preposition' });
+    semanticPositionNode(position, { ensure: true });
+    scrollCoordinator.setPhase(epoch, 'position');
+    restoreSemanticPosition(position, epoch, { tolerance: .5, source: 'letter-jump' });
+    scrollCoordinator.setPhase(epoch, 'verify');
+    await settleSemanticPosition(epoch, position, { maxFrames: 8, tolerance: 1, source: 'letter-jump' });
+    if (!scrollCoordinator.owns(epoch)) return false;
+    updateActiveLetter(section, letter, { ensureVisible: true, force: true });
+    scheduleAlphabetSectionMetricsRefresh();
+    finishRootScrollTransaction(epoch, { persist: true });
+    return true;
+  } catch (error) {
+    if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
+    throw error;
+  }
+}
+
 function navigationControls(collection, section, sectionContext, mode) {
   const track = [];
   if (mode === 'alphabet') {
@@ -2339,14 +2544,7 @@ function navigationControls(collection, section, sectionContext, mode) {
       const enabled = sectionContext.grouped.has(letter);
       const control = button(letter, enabled ? '' : 'empty', () => {
         if (!enabled) return;
-        releaseLetterTrackManualLock(section);
-        setLetterSectionOpen(section, letter, true);
-        const target = sectionContext.sectionByKey.get(letter);
-        if (target) {
-          activeSection = section;
-          suppressScrollPersistence(300);
-          positionHeadingBelowChrome(target.querySelector('.letter-heading') || target);
-        }
+        jumpToAlphabetLetter(section, letter, sectionContext).catch(displayError);
       }, { disabled: !enabled });
       control.dataset.letter = letter;
       control.dataset.section = section;
@@ -2407,29 +2605,57 @@ function createSectionContext(section, entries, collection, mode) {
   return { section, entries, grouped, dateGroups: new Map(), sectionByKey: new Map(), root: null, dates };
 }
 
+function currentVirtualLayoutCache() {
+  const frame = currentNavigationFrame();
+  if (!frame) return null;
+  if (!(frame.virtualLayoutCache instanceof Map)) frame.virtualLayoutCache = new Map();
+  const width = Math.round(elements['entry-list']?.clientWidth || elements['collection-view']?.clientWidth || window.innerWidth || 0);
+  if (!frame.virtualLayoutWidth) frame.virtualLayoutWidth = width;
+  else if (width && Math.abs(Number(frame.virtualLayoutWidth || 0) - width) > 2) {
+    frame.virtualLayoutCache.clear();
+    frame.virtualLayoutWidth = width;
+  }
+  return frame.virtualLayoutCache;
+}
+
 function resetEntryChunking() {
   entryChunkObserver?.disconnect();
   entryChunkObserver = null;
+  entryChunkResizeObserver?.disconnect();
+  entryChunkResizeObserver = null;
+  if (virtualMaterializeFrame) cancelAnimationFrame(virtualMaterializeFrame);
+  virtualMaterializeFrame = 0;
+  queuedVirtualChunks.clear();
+  pendingVirtualAnchor = null;
   entryChunkByEntryId.clear();
 }
 
-function captureScrollAnchor() {
-  const top = readingViewportBounds().top + 1;
-  const candidates = [...elements['entry-list'].querySelectorAll('.letter-heading, .date-day-title, .date-unmarked-heading, .entry-row')];
-  const anchor = candidates.find((node) => node.getBoundingClientRect().bottom > top) || null;
-  return anchor ? { node: anchor, top: anchor.getBoundingClientRect().top } : null;
+function measureEntryChunk(chunk) {
+  const data = entryChunkData.get(chunk);
+  if (!data || data.renderToken !== renderRevision || chunk.dataset.rendered !== 'true' || !chunk.isConnected) return 0;
+  const height = chunk.getBoundingClientRect().height;
+  if (!Number.isFinite(height) || height <= 0) return 0;
+  data.measuredBlockSize = height;
+  data.layoutCache?.set(data.chunkKey, height);
+  chunk.dataset.measuredHeight = height.toFixed(2);
+  return height;
 }
 
-function restoreScrollAnchor(anchor) {
-  if (!anchor?.node?.isConnected) return;
-  const delta = anchor.node.getBoundingClientRect().top - anchor.top;
-  if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
+function ensureEntryChunkResizeObserver() {
+  if (entryChunkResizeObserver || !('ResizeObserver' in window)) return entryChunkResizeObserver;
+  entryChunkResizeObserver = new ResizeObserver((records) => {
+    for (const record of records) {
+      const chunk = record.target;
+      if (!(chunk instanceof HTMLElement)) continue;
+      measureEntryChunk(chunk);
+    }
+  });
+  return entryChunkResizeObserver;
 }
 
-function materializeEntryChunk(chunk, { anchor = null, restore = true } = {}) {
+function materializeEntryChunk(chunk, { reason = 'materialize' } = {}) {
   const data = entryChunkData.get(chunk);
   if (!data || data.renderToken !== renderRevision || chunk.dataset.rendered === 'true') return false;
-  const capturedAnchor = anchor || (chunk.isConnected ? captureScrollAnchor() : null);
   chunk.dataset.rendered = 'true';
   const rows = data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
     groupIndex,
@@ -2438,35 +2664,97 @@ function materializeEntryChunk(chunk, { anchor = null, restore = true } = {}) {
   chunk.replaceChildren(...rows);
   chunk.style.minHeight = '';
   entryChunkObserver?.unobserve(chunk);
-  if (restore && capturedAnchor) requestAnimationFrame(() => {
-    if (data.renderToken === renderRevision) restoreScrollAnchor(capturedAnchor);
+  ensureEntryChunkResizeObserver()?.observe(chunk);
+  appendScrollTrace('materialize', {
+    epoch: scrollCoordinator.current()?.epoch || 0,
+    owner: scrollCoordinator.current()?.owner || '',
+    reason,
+    chunkKey: data.chunkKey,
+    scrollY: window.scrollY,
+  });
+  requestAnimationFrame(() => {
+    if (data.renderToken !== renderRevision || chunk.dataset.rendered !== 'true') return;
+    measureEntryChunk(chunk);
   });
   return true;
+}
+
+function flushQueuedVirtualChunksNow({ reason = 'observer-flush' } = {}) {
+  if (virtualMaterializeFrame) cancelAnimationFrame(virtualMaterializeFrame);
+  virtualMaterializeFrame = 0;
+  const chunks = [...queuedVirtualChunks].filter((chunk) => chunk?.isConnected && chunk.dataset.rendered !== 'true');
+  queuedVirtualChunks.clear();
+  if (!chunks.length) return false;
+
+  let transaction = null;
+  if (!scrollCoordinator.isActive() && !rootUserScrollActive) {
+    pendingVirtualAnchor = captureSemanticPosition();
+    transaction = beginRootScrollTransaction('virtual-materialize', pendingVirtualAnchor);
+  }
+
+  let changed = false;
+  for (const chunk of chunks) changed = materializeEntryChunk(chunk, { reason }) || changed;
+  if (transaction && changed) {
+    const epoch = transaction.epoch;
+    requestAnimationFrame(async () => {
+      if (!scrollCoordinator.owns(epoch)) return;
+      await settleSemanticPosition(epoch, pendingVirtualAnchor, { maxFrames: 4, tolerance: 1, source: 'virtual-materialize' });
+      pendingVirtualAnchor = null;
+      finishRootScrollTransaction(epoch, { persist: false });
+    });
+  } else if (transaction) {
+    pendingVirtualAnchor = null;
+    finishRootScrollTransaction(transaction.epoch, { persist: false });
+  }
+  return changed;
+}
+
+function scheduleVirtualMaterializeFlush() {
+  if (virtualMaterializeFrame) return;
+  virtualMaterializeFrame = requestAnimationFrame(() => flushQueuedVirtualChunksNow());
 }
 
 function ensureEntryChunkObserver() {
   if (entryChunkObserver || !('IntersectionObserver' in window)) return entryChunkObserver;
   entryChunkObserver = new IntersectionObserver((records) => {
-    const chunks = records.filter((record) => record.isIntersecting).map((record) => record.target);
-    if (!chunks.length) return;
-    const token = renderRevision;
-    const anchor = captureScrollAnchor();
-    let changed = false;
-    for (const chunk of chunks) changed = materializeEntryChunk(chunk, { anchor, restore: false }) || changed;
-    if (changed && anchor) requestAnimationFrame(() => {
-      if (token === renderRevision) restoreScrollAnchor(anchor);
-    });
+    for (const record of records) {
+      if (record.isIntersecting && record.target instanceof HTMLElement && record.target.dataset.rendered !== 'true') queuedVirtualChunks.add(record.target);
+    }
+    if (queuedVirtualChunks.size) scheduleVirtualMaterializeFlush();
   }, { rootMargin: '960px 0px 960px' });
   return entryChunkObserver;
 }
 
-function renderEntryChunks(entries, collection, domain, globalIndexById, { startIndex = 1, renderFirst = true, groupIndexById = null } = {}) {
+function materializeChunksNearViewport({ reason = 'near-viewport' } = {}) {
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+  let changed = false;
+  for (const chunk of elements['entry-list'].querySelectorAll('.entry-chunk[data-rendered="false"]')) {
+    const rect = chunk.getBoundingClientRect();
+    if (rect.bottom < viewportTop - 960 || rect.top > viewportBottom + 960) continue;
+    queuedVirtualChunks.delete(chunk);
+    changed = materializeEntryChunk(chunk, { reason }) || changed;
+  }
+  return changed;
+}
+
+function renderEntryChunks(entries, collection, domain, globalIndexById, {
+  startIndex = 1,
+  renderFirst = true,
+  groupIndexById = null,
+  virtualGroupKey = 'group',
+} = {}) {
   const fragment = document.createDocumentFragment();
+  const layoutCache = currentVirtualLayoutCache();
+  const mode = getViewMode(collection.id);
   for (let offset = 0; offset < entries.length; offset += ENTRY_CHUNK_SIZE) {
     const slice = entries.slice(offset, offset + ENTRY_CHUNK_SIZE);
-    const chunk = el('div', { className: 'entry-chunk', dataset: { rendered: 'false' } });
+    const chunkIndex = Math.floor(offset / ENTRY_CHUNK_SIZE);
+    const chunkKey = `${collection.id}\u0000${currentViewKind}\u0000${mode}\u0000${virtualGroupKey}\u0000${chunkIndex}`;
+    const chunk = el('div', { className: 'entry-chunk', dataset: { rendered: 'false', chunkIndex: String(chunkIndex) } });
     const items = slice.map((entry, index) => ({ entry, groupIndex: groupIndexById?.get(entry.id) || startIndex + offset + index }));
-    entryChunkData.set(chunk, { items, collection, domain, globalIndexById, renderToken: renderRevision });
+    entryChunkData.set(chunk, { items, collection, domain, globalIndexById, renderToken: renderRevision, chunkKey, layoutCache, measuredBlockSize: 0 });
     for (const { entry } of items) entryChunkByEntryId.set(entry.id, chunk);
     const estimatedHeight = slice.reduce((total, entry) => {
       const gloss = displayGlossForEntry(entry, collection, domain);
@@ -2480,13 +2768,14 @@ function renderEntryChunks(entries, collection, domain, globalIndexById, { start
         : 0;
       return total + rowHeight + relationHeight;
     }, 0);
-    chunk.style.minHeight = `${estimatedHeight}px`;
+    const cachedHeight = Number(layoutCache?.get(chunkKey) || 0);
+    chunk.style.minHeight = `${cachedHeight > 0 ? cachedHeight : estimatedHeight}px`;
     fragment.append(chunk);
-    if (renderFirst && offset === 0) materializeEntryChunk(chunk);
+    if (renderFirst && offset === 0) materializeEntryChunk(chunk, { reason: 'first-chunk' });
     else {
       const observer = ensureEntryChunkObserver();
       if (observer) observer.observe(chunk);
-      else materializeEntryChunk(chunk);
+      else materializeEntryChunk(chunk, { reason: 'no-observer' });
     }
   }
   return fragment;
@@ -2547,7 +2836,7 @@ function renderAlphabetContent(context, sectionContext) {
     if (expandedLetters.has(letter)) {
       const body = el('div', { className: 'letter-body' });
       const groupEntries = sectionContext.grouped.get(letter);
-      body.append(renderEntryChunks(groupEntries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(groupEntries, collection) }));
+      body.append(renderEntryChunks(groupEntries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(groupEntries, collection), virtualGroupKey: `alphabet:${section}:${letter}` }));
       sectionNode.append(body);
     }
     sectionContext.sectionByKey.set(letter, sectionNode);
@@ -2602,7 +2891,7 @@ function renderDateContent(context, sectionContext) {
     const daySection = el('section', { className: 'date-day-section', id: dateAnchorId(section, dateKey), dataset: { date: dateKey, section } }, [flowAnchor, heading]);
     if (open) {
       const dayBody = el('div', { className: 'letter-body date-day-body' });
-      dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection) }));
+      dayBody.append(renderEntryChunks(entries, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(entries, collection), virtualGroupKey: `date:${section}:${dateKey}` }));
       daySection.append(dayBody);
     }
     root.append(daySection);
@@ -2624,7 +2913,7 @@ function renderDateContent(context, sectionContext) {
     const unmarkedSection = el('section', { className: 'date-unmarked-section', id: `unmarked-${section}`, dataset: { section } }, [flowAnchor, heading]);
     if (open) {
       const unmarkedBody = el('div', { className: 'letter-body unmarked-body' });
-      unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection) }));
+      unmarkedBody.append(renderEntryChunks(unmarked, collection, domain, globalIndexById, { groupIndexById: groupedNumberIndex(unmarked, collection), virtualGroupKey: `date:${section}:unmarked` }));
       unmarkedSection.append(unmarkedBody);
     }
     root.append(unmarkedSection);
@@ -2666,14 +2955,18 @@ function renderEntryList(collection, domain, entries, section = currentViewKind)
   alphabetResizeObserver?.disconnect();
   if (mode === 'alphabet') ensureAlphabetResizeObserver()?.observe(elements['entry-list']);
   updateBackToTopVisibility();
-  updateOverlayLayout();
-  if (mode === 'alphabet') scheduleAlphabetSectionMetricsRefresh();
+  // Seal one ChromeGeometry snapshot before the first live Collection frame.
+  // Sticky CSS and active-letter tracking therefore see the same ContentTop.
+  updateOverlayLayout({ immediate: true });
+  if (mode === 'alphabet') refreshAlphabetSectionMetrics();
 }
 
 function releaseChunksInBody(body) {
   if (!body) return;
   for (const chunk of body.querySelectorAll('.entry-chunk')) {
     entryChunkObserver?.unobserve(chunk);
+    entryChunkResizeObserver?.unobserve(chunk);
+    queuedVirtualChunks.delete(chunk);
     const data = entryChunkData.get(chunk);
     for (const item of data?.items || []) {
       if (entryChunkByEntryId.get(item.entry.id) === chunk) entryChunkByEntryId.delete(item.entry.id);
@@ -2699,6 +2992,7 @@ function setDateSectionOpen(section, dateKey, open, { persist = true } = {}) {
       body = el('div', { className: `letter-body ${dateKey === 'unmarked' ? 'unmarked-body' : 'date-day-body'}` });
       body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, {
         groupIndexById: groupedNumberIndex(entries, context.collection),
+        virtualGroupKey: `date:${section}:${dateKey}`,
       }));
       sectionNode.append(body);
     }
@@ -2756,13 +3050,13 @@ function stickyCollapseGeometry(sectionNode, heading) {
   });
 }
 
-async function runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, previousOverflowAnchor }) {
+async function runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, scrollEpoch, previousOverflowAnchor }) {
   const root = document.documentElement;
   try {
     const geometry = stickyCollapseGeometry(sectionNode, heading);
-    if (!geometry || transaction !== collapseTransactionRevision || !heading.isConnected) return;
+    if (!geometry || transaction !== collapseTransactionRevision || !heading.isConnected || !scrollCoordinator.owns(scrollEpoch)) return;
     const commitCollapse = () => {
-      if (transaction !== collapseTransactionRevision || !heading.isConnected) return;
+      if (transaction !== collapseTransactionRevision || !heading.isConnected || !scrollCoordinator.owns(scrollEpoch)) return;
       collapse();
     };
 
@@ -2780,8 +3074,8 @@ async function runStickyCollapseTransaction({ sectionNode, heading, collapse, tr
     if (typeof document.startViewTransition === 'function') {
       root.classList.add('sticky-collapse-transition');
       const transition = document.startViewTransition(async () => {
-        if (transaction !== collapseTransactionRevision || !heading.isConnected) return;
-        window.scrollTo({ top: geometry.targetY, behavior: 'auto' });
+        if (transaction !== collapseTransactionRevision || !heading.isConnected || !scrollCoordinator.owns(scrollEpoch)) return;
+        rootScrollToY(geometry.targetY, { epoch: scrollEpoch, source: 'sticky-collapse' });
         await waitForRootScrollSettle(geometry.targetY);
         commitCollapse();
       });
@@ -2794,13 +3088,14 @@ async function runStickyCollapseTransaction({ sectionNode, heading, collapse, tr
     // Compatibility fallback for engines without View Transitions: split the
     // two writes into ordered phases rather than recreating the 4.4.0
     // synchronous mutation+scroll trigger.
-    window.scrollTo({ top: geometry.targetY, behavior: 'auto' });
+    rootScrollToY(geometry.targetY, { epoch: scrollEpoch, source: 'sticky-collapse-fallback' });
     await waitForRootScrollSettle(geometry.targetY);
     commitCollapse();
   } finally {
     if (transaction === collapseTransactionRevision) {
       root.style.overflowAnchor = previousOverflowAnchor;
-      persistCurrentHistorySnapshot();
+      if (scrollCoordinator.owns(scrollEpoch)) finishRootScrollTransaction(scrollEpoch, { persist: true });
+      else persistCurrentHistorySnapshot();
       syncActiveAlphabetHeading();
     }
     root.classList.remove('sticky-collapse-transition');
@@ -2812,10 +3107,12 @@ function collapseNativeStickySection({ sectionNode, heading, collapse }) {
   const root = document.documentElement;
   const previousOverflowAnchor = root.style.overflowAnchor;
   const transaction = ++collapseTransactionRevision;
+  const scrollTransaction = beginRootScrollTransaction('sticky-collapse', null);
   root.style.overflowAnchor = 'none';
-  runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, previousOverflowAnchor }).catch((error) => {
+  runStickyCollapseTransaction({ sectionNode, heading, collapse, transaction, scrollEpoch: scrollTransaction.epoch, previousOverflowAnchor }).catch((error) => {
     root.style.overflowAnchor = previousOverflowAnchor;
     root.classList.remove('sticky-collapse-transition');
+    if (scrollCoordinator.owns(scrollTransaction.epoch)) finishRootScrollTransaction(scrollTransaction.epoch, { persist: false });
     displayError(error);
   });
   return true;
@@ -2854,7 +3151,7 @@ function setLetterSectionOpen(section, letter, open, { persist = true } = {}) {
     expandedLetters.add(letter);
     if (!body) {
       body = el('div', { className: 'letter-body' });
-      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, { groupIndexById: groupedNumberIndex(entries, context.collection) }));
+      body.append(renderEntryChunks(entries, context.collection, context.domain, context.globalIndexById, { groupIndexById: groupedNumberIndex(entries, context.collection), virtualGroupKey: `alphabet:${section}:${letter}` }));
       sectionNode.append(body);
     }
   } else {
@@ -2989,7 +3286,8 @@ function refreshAlphabetSectionMetrics() {
   alphabetSectionMetrics = [...elements['entry-list'].querySelectorAll('.letter-section[data-letter][data-section]')]
     .map((node) => {
       const heading = node.querySelector('.letter-heading');
-      const rect = node.getBoundingClientRect();
+      const flowAnchor = node.querySelector(':scope > .section-flow-anchor');
+      const rect = (flowAnchor || node).getBoundingClientRect();
       return {
         node,
         heading,
@@ -3003,10 +3301,16 @@ function refreshAlphabetSectionMetrics() {
 }
 
 function syncActiveAlphabetHeading() {
+  // Programmatic scroll transactions already know their semantic target.
+  // Observer/scroll callbacks must not infer an older visible letter midway
+  // through the transaction and paint a one-frame stale active state.
+  if (scrollCoordinator.isActive()) return;
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet' || !alphabetSectionMetrics.length) return;
-  const navAttached = alphabetNavAttached();
-  const liveBoundary = navAttached ? topChromeBottom() : topChromeBottom({ includeLetterNav: false });
+  // 4.6: one ContentTop governs Sticky, LetterNav tracking and all jumps.
+  // Whether the nav happens to be visually attached this frame is not a second
+  // coordinate system.
+  const liveBoundary = topChromeBottom();
   const boundary = window.scrollY + liveBoundary + 1;
   let low = 0;
   let high = alphabetSectionMetrics.length - 1;
@@ -3018,7 +3322,7 @@ function syncActiveAlphabetHeading() {
   }
   const active = alphabetSectionMetrics[Math.max(0, activeIndex)];
   if (!active) return;
-  const stickyEngaged = navAttached && activeIndex >= 0;
+  const stickyEngaged = activeIndex >= 0;
   activeSection = active.section;
   const track = elements['letter-nav'].querySelector('.letter-nav-track');
   const state = track ? letterTrackState(track) : null;
@@ -3274,20 +3578,25 @@ function indexesForRenderedEntry(context, entry) {
 
 function toggleEntryRelations(entryId) {
   closeQueryMenu();
-  const key = relationExpansionKey(currentCollectionId, entryId);
-  if (expandedRelations.has(key)) expandedRelations.delete(key);
-  else expandedRelations.add(key);
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
   const current = document.getElementById(`entry-${entryId}`);
   if (!context || !entry || !current) return;
-  const beforeTop = current.getBoundingClientRect().top;
+  const position = captureSemanticPosition();
+  const transaction = beginRootScrollTransaction('row-mutation', position);
+  const epoch = transaction.epoch;
+  const key = relationExpansionKey(currentCollectionId, entryId);
+  if (expandedRelations.has(key)) expandedRelations.delete(key);
+  else expandedRelations.add(key);
   const next = renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry));
   current.replaceWith(next);
-  requestAnimationFrame(() => {
-    const delta = next.getBoundingClientRect().top - beforeTop;
-    if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: 'auto' });
-    persistCurrentHistorySnapshot();
+  requestAnimationFrame(async () => {
+    if (!scrollCoordinator.owns(epoch)) return;
+    const chunk = next.closest('.entry-chunk');
+    if (chunk) measureEntryChunk(chunk);
+    restoreSemanticPosition(position, epoch, { source: 'row-mutation' });
+    await settleSemanticPosition(epoch, position, { maxFrames: 4, tolerance: 1, source: 'row-mutation' });
+    if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: true });
   });
 }
 
@@ -3324,34 +3633,39 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   const mode = getViewMode(collection.id);
   const preserveDateViewport = mode === 'date';
   const root = document.documentElement;
-  const preservedScrollY = preserveDateViewport ? window.scrollY : 0;
   const previousOverflowAnchor = preserveDateViewport ? root.style.overflowAnchor : '';
-  if (preserveDateViewport) {
-    root.style.overflowAnchor = 'none';
-    suppressScrollPersistence(700);
-  }
+  const position = preserveDateViewport ? captureSemanticPosition() : null;
+  const transaction = preserveDateViewport ? beginRootScrollTransaction('study-date-refresh', position) : null;
+  if (preserveDateViewport) root.style.overflowAnchor = 'none';
   sourceButton?.classList.add('updating');
   try {
     const stamp = await refreshStudyDate(entry.id, collection.id);
     if (mode === 'alphabet') {
       const context = collectionRenderContext;
       const row = document.getElementById(`entry-${entry.id}`);
-      if (context && row) row.replaceWith(renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry)));
+      if (context && row) {
+        const next = renderEntryRow(entry, collection, context.domain, indexesForRenderedEntry(context, entry));
+        row.replaceWith(next);
+        const chunk = next.closest('.entry-chunk');
+        if (chunk) requestAnimationFrame(() => measureEntryChunk(chunk));
+      }
       showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
       return;
     }
-    const token = renderRevision;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (token === renderRevision && currentCollectionId === collection.id && getViewMode(collection.id) === 'date') {
-        window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
+    if (transaction) {
+      await nextPresentationFrame();
+      if (scrollCoordinator.owns(transaction.epoch)) {
+        restoreSemanticPosition(position, transaction.epoch, { source: 'study-date-refresh' });
+        await settleSemanticPosition(transaction.epoch, position, { maxFrames: 6, tolerance: 1, source: 'study-date-refresh' });
+        if (scrollCoordinator.owns(transaction.epoch)) finishRootScrollTransaction(transaction.epoch, { persist: true });
       }
-      root.style.overflowAnchor = previousOverflowAnchor;
-      showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
-    }));
+    }
+    showToast(`学习日期已刷新：${formatStudyDate(stamp.reviewDateKey)}`);
   } catch (error) {
-    if (preserveDateViewport) root.style.overflowAnchor = previousOverflowAnchor;
+    if (transaction && scrollCoordinator.owns(transaction.epoch)) finishRootScrollTransaction(transaction.epoch, { persist: false });
     throw error;
   } finally {
+    if (preserveDateViewport) root.style.overflowAnchor = previousOverflowAnchor;
     sourceButton?.classList.remove('updating');
   }
 }
@@ -3719,7 +4033,7 @@ async function copyEntry(entry, collection) {
   }
 }
 
-function ensureEntryRendered(entryId) {
+function ensureEntryRendered(entryId, { persist = false } = {}) {
   let row = document.getElementById(`entry-${entryId}`);
   if (row) return row;
   const context = collectionRenderContext;
@@ -3728,16 +4042,152 @@ function ensureEntryRendered(entryId) {
   const section = sectionForEntry(entry);
   if (context.mode === 'alphabet') {
     const letter = letterForEntry(entry);
-    setLetterSectionOpen(section, letter, true);
-    updateActiveLetter(section, letter);
+    setLetterSectionOpen(section, letter, true, { persist });
+    updateActiveLetter(section, letter, { ensureVisible: false, force: true });
   } else {
     const dateKey = getStudyStamp(entry, context.collection.id)?.reviewDateKey || 'unmarked';
-    setDateSectionOpen(section, dateKey, true);
+    setDateSectionOpen(section, dateKey, true, { persist });
   }
   const chunk = entryChunkByEntryId.get(entryId);
-  if (chunk) materializeEntryChunk(chunk);
+  if (chunk) materializeEntryChunk(chunk, { reason: 'ensure-entry' });
   row = document.getElementById(`entry-${entryId}`);
   return row;
+}
+
+function semanticSectionPositionFromNode(sectionNode, bounds) {
+  const flowAnchor = sectionNode?.querySelector(':scope > .section-flow-anchor');
+  if (!flowAnchor || !sectionNode.id) return null;
+  const rect = flowAnchor.getBoundingClientRect();
+  return {
+    kind: 'section',
+    sectionId: sectionNode.id,
+    offsetFromContentTop: rect.top - bounds.top,
+    scrollYFallback: window.scrollY,
+  };
+}
+
+function captureSemanticPosition() {
+  if (!currentCollectionId || !collectionRenderContext) return { kind: 'top', scrollYFallback: Math.max(0, window.scrollY) };
+  const { maxScroll } = rootScrollMetrics();
+  const currentY = Math.max(0, window.scrollY);
+  const bottomGap = Math.max(0, maxScroll - currentY);
+  if (bottomGap <= 1.5) {
+    // Bottom is itself the semantic identity; do not walk thousands of rendered
+    // rows merely to attach a decorative last-entry id to the snapshot.
+    return { kind: 'bottom', bottomGap: 0, scrollYFallback: currentY };
+  }
+  if (currentY <= 1.5) return { kind: 'top', scrollYFallback: 0 };
+
+  const bounds = readingViewportBounds();
+  // Hot-path capture must stay independent of total rendered-row count. Probe
+  // the reading viewport first; only use a DOM scan as a defensive fallback for
+  // unusual hit-testing states (e.g. an overlay edge or a placeholder gap).
+  const x = Math.min(Math.max(24, window.innerWidth * 0.22), Math.max(24, window.innerWidth - 24));
+  const probeOffsets = [2, 18, 42, 74, 110];
+  for (const offset of probeOffsets) {
+    const y = Math.min(bounds.bottom - 2, bounds.top + offset);
+    const node = document.elementFromPoint(x, y);
+    const row = /** @type {HTMLElement | null} */ (node?.closest?.('.entry-row[data-entry-id]') || null);
+    if (!row?.dataset.entryId) continue;
+    const rect = row.getBoundingClientRect();
+    return {
+      kind: 'entry',
+      entryId: row.dataset.entryId,
+      offsetFromContentTop: rect.top - bounds.top,
+      scrollYFallback: currentY,
+    };
+  }
+
+  const renderedRows = /** @type {NodeListOf<HTMLElement>} */ (elements['entry-list'].querySelectorAll('.entry-row[data-entry-id]'));
+  for (const row of renderedRows) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom <= bounds.top + .5 || rect.top >= bounds.bottom - .5) continue;
+    return {
+      kind: 'entry',
+      entryId: row.dataset.entryId || '',
+      offsetFromContentTop: rect.top - bounds.top,
+      scrollYFallback: currentY,
+    };
+  }
+
+  const sections = [...elements['entry-list'].querySelectorAll('.letter-section, .date-day-section, .date-unmarked-section')];
+  const visibleSection = sections.find((sectionNode) => {
+    const rect = sectionNode.getBoundingClientRect();
+    return rect.bottom > bounds.top + .5 && rect.top < bounds.bottom - .5;
+  });
+  const sectionPosition = semanticSectionPositionFromNode(visibleSection, bounds);
+  return sectionPosition || { kind: 'scroll', scrollYFallback: currentY };
+}
+
+function semanticPositionNode(position, { ensure = true } = {}) {
+  if (!position) return null;
+  if (position.kind === 'entry' && position.entryId) {
+    return ensure ? ensureEntryRendered(position.entryId, { persist: false }) : document.getElementById(`entry-${position.entryId}`);
+  }
+  if (position.kind === 'section' && position.sectionId) {
+    const sectionNode = document.getElementById(position.sectionId);
+    return sectionNode?.querySelector(':scope > .section-flow-anchor') || null;
+  }
+  return null;
+}
+
+function semanticDesiredScrollY(position) {
+  if (!position) return Number.NaN;
+  const metrics = rootScrollMetrics();
+  if (position.kind === 'top') return 0;
+  if (position.kind === 'bottom') return clampRootScrollTarget(metrics.maxScroll - Math.max(0, Number(position.bottomGap || 0)), metrics.scrollHeight, metrics.clientHeight);
+  if (position.kind === 'scroll') return clampRootScrollTarget(Math.max(0, Number(position.scrollYFallback || 0)), metrics.scrollHeight, metrics.clientHeight);
+  const node = semanticPositionNode(position, { ensure: false });
+  if (!node?.isConnected) return Number.NaN;
+  const bounds = readingViewportBounds();
+  const desiredTop = bounds.top + Number(position.offsetFromContentTop || 0);
+  const rawTarget = window.scrollY + semanticAnchorError(node.getBoundingClientRect().top, desiredTop);
+  return clampRootScrollTarget(rawTarget, metrics.scrollHeight, metrics.clientHeight);
+}
+
+function semanticPositionErrorValue(position) {
+  const targetY = semanticDesiredScrollY(position);
+  if (!Number.isFinite(targetY)) return Number.POSITIVE_INFINITY;
+  return window.scrollY - targetY;
+}
+
+function semanticPositionSample(position) {
+  if (!position) return Number.NaN;
+  if (position.kind === 'top' || position.kind === 'scroll') return window.scrollY;
+  if (position.kind === 'bottom') return rootScrollMetrics().maxScroll - window.scrollY;
+  const node = semanticPositionNode(position, { ensure: false });
+  return node?.isConnected ? node.getBoundingClientRect().top : Number.NaN;
+}
+
+function restoreSemanticPosition(position, epoch, { tolerance = 1, source = 'semantic-restore' } = {}) {
+  if (!position || (epoch && !scrollCoordinator.owns(epoch))) return false;
+  if (position.kind === 'entry') semanticPositionNode(position, { ensure: true });
+  let targetY = semanticDesiredScrollY(position);
+  if (!Number.isFinite(targetY)) targetY = Math.max(0, Number(position.scrollYFallback || 0));
+  if (Math.abs(window.scrollY - targetY) <= tolerance) return false;
+  return rootScrollToY(targetY, { epoch, source });
+}
+
+async function settleSemanticPosition(epoch, position, { maxFrames = 8, tolerance = 1, source = 'semantic-settle' } = {}) {
+  const samples = [];
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    await nextPresentationFrame();
+    if (!scrollCoordinator.owns(epoch)) return false;
+    updateOverlayLayout({ immediate: true });
+    flushQueuedVirtualChunksNow({ reason: `${source}-flush` });
+    materializeChunksNearViewport({ reason: `${source}-nearby` });
+    if (position?.kind === 'entry') semanticPositionNode(position, { ensure: true });
+    const error = semanticPositionErrorValue(position);
+    if (Number.isFinite(error) && Math.abs(error) > tolerance) restoreSemanticPosition(position, epoch, { tolerance, source });
+    samples.push(semanticPositionSample(position));
+    const stable = geometryIsStable(samples, .5);
+    const finalError = semanticPositionErrorValue(position);
+    const virtualIdle = !queuedVirtualChunks.size && !virtualMaterializeFrame;
+    appendScrollTrace('verify', { epoch, source, frame, error: finalError, stable, virtualIdle, scrollY: window.scrollY });
+    if (stable && virtualIdle && Number.isFinite(finalError) && Math.abs(finalError) <= tolerance) return true;
+  }
+  restoreSemanticPosition(position, epoch, { tolerance, source: `${source}-final` });
+  return Number.isFinite(semanticPositionErrorValue(position)) && Math.abs(semanticPositionErrorValue(position)) <= Math.max(2, tolerance);
 }
 
 function suppressScrollPersistence(milliseconds = 700) {
@@ -3769,27 +4219,37 @@ function readingViewportBounds() {
 
 function positionHeadingBelowChrome(target) {
   if (!target) return false;
-  const rect = target.getBoundingClientRect();
-  const bounds = readingViewportBounds();
-  const targetY = Math.max(0, window.scrollY + rect.top - bounds.top);
-  window.scrollTo({ top: targetY, behavior: 'auto' });
-  requestAnimationFrame(() => {
-    if (!target.isConnected) return;
-    const nextRect = target.getBoundingClientRect();
+  const sectionNode = target.matches?.('.letter-section, .date-day-section, .date-unmarked-section')
+    ? target
+    : target.closest?.('.letter-section, .date-day-section, .date-unmarked-section');
+  const flowAnchor = sectionNode?.querySelector(':scope > .section-flow-anchor') || null;
+  const positioningNode = flowAnchor || target;
+  const transaction = beginRootScrollTransaction('section-jump', sectionNode?.id ? { kind: 'section', sectionId: sectionNode.id, offsetFromContentTop: 0, scrollYFallback: window.scrollY } : null);
+  const epoch = transaction.epoch;
+  requestAnimationFrame(async () => {
+    if (!scrollCoordinator.owns(epoch) || !positioningNode.isConnected) return;
+    updateOverlayLayout({ immediate: true });
+    const rect = positioningNode.getBoundingClientRect();
+    const bounds = readingViewportBounds();
+    rootScrollToY(window.scrollY + rect.top - bounds.top, { epoch, source: 'section-jump' });
+    await nextPresentationFrame();
+    if (!scrollCoordinator.owns(epoch) || !positioningNode.isConnected) return;
+    const nextRect = positioningNode.getBoundingClientRect();
     const nextBounds = readingViewportBounds();
     const correction = nextRect.top - nextBounds.top;
-    if (Math.abs(correction) > 1) window.scrollBy({ top: correction, behavior: 'auto' });
+    if (Math.abs(correction) > 1) rootScrollByY(correction, { epoch, source: 'section-jump-correction' });
+    finishRootScrollTransaction(epoch, { persist: true });
   });
   return true;
 }
 
-function positionElementAtReadingAnchor(target) {
+function positionElementAtReadingAnchor(target, { epoch = 0, source = 'entry-jump' } = {}) {
   const rect = target.getBoundingClientRect();
   const bounds = readingViewportBounds();
   if (rect.top >= bounds.top && rect.bottom <= bounds.bottom) return false;
   const anchor = bounds.top + (bounds.bottom - bounds.top) * 0.38;
   const targetY = Math.max(0, window.scrollY + rect.top - anchor + rect.height / 2);
-  window.scrollTo({ top: targetY, behavior: 'auto' });
+  rootScrollToY(targetY, { epoch, source });
   return true;
 }
 
@@ -3830,17 +4290,27 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   pendingJumpReason = 'jump';
   const collection = state.collectionById.get(currentCollectionId);
   if (collection) renderPinBar(collection);
-  const row = ensureEntryRendered(entryId);
+  const row = ensureEntryRendered(entryId, { persist: false });
   if (!row) return false;
-  suppressScrollPersistence(650);
-  requestAnimationFrame(() => {
-    if (token !== navigationRevision || currentCollectionId !== targetCollectionId || !row.isConnected) return;
-    positionElementAtReadingAnchor(row);
-    requestAnimationFrame(() => {
-      if (token === navigationRevision && row.isConnected) {
-        markJumpTarget(row, reason);
-      }
-    });
+  const bounds = readingViewportBounds();
+  const rect = row.getBoundingClientRect();
+  const anchor = bounds.top + (bounds.bottom - bounds.top) * 0.38;
+  const position = {
+    kind: 'entry',
+    entryId,
+    offsetFromContentTop: anchor - rect.height / 2 - bounds.top,
+    scrollYFallback: window.scrollY,
+  };
+  const transaction = beginRootScrollTransaction('entry-jump', position);
+  const epoch = transaction.epoch;
+  requestAnimationFrame(async () => {
+    if (token !== navigationRevision || currentCollectionId !== targetCollectionId || !row.isConnected || !scrollCoordinator.owns(epoch)) return;
+    updateOverlayLayout({ immediate: true });
+    positionElementAtReadingAnchor(row, { epoch, source: `entry-jump-${reason}` });
+    await settleSemanticPosition(epoch, position, { maxFrames: 8, tolerance: 1, source: `entry-jump-${reason}` });
+    if (token !== navigationRevision || !row.isConnected || !scrollCoordinator.owns(epoch)) return;
+    markJumpTarget(row, reason);
+    finishRootScrollTransaction(epoch, { persist: true });
   });
   return true;
 }
@@ -3888,6 +4358,7 @@ function firstVisibleEntryId() {
 
 function persistScrollPosition() {
   if (persistentJumpEntryId && Date.now() >= suppressScrollPersistenceUntil) clearPersistentJump();
+  if (scrollCoordinator.isActive() || navigationTraversalInProgress || rootUserScrollActive) return;
   if (!currentCollectionId || Date.now() < suppressScrollPersistenceUntil) return;
   clearTimeout(scrollPersistenceTimer);
   scrollPersistenceTimer = setTimeout(() => {
@@ -3909,9 +4380,14 @@ function updateBackToTopVisibility() {
 function returnToTop() {
   if (!currentCollectionId) return;
   cancelBrowseAnchorPress({ suppressClick: true });
-  suppressScrollPersistence(900);
   navigationRevision += 1;
-  window.scrollTo({ top: 0, behavior: 'auto' });
+  const transaction = beginRootScrollTransaction('return-top', { kind: 'top', scrollYFallback: 0 });
+  rootScrollToY(0, { epoch: transaction.epoch, source: 'return-top' });
+  requestAnimationFrame(() => {
+    if (!scrollCoordinator.owns(transaction.epoch)) return;
+    syncActiveAlphabetHeading();
+    finishRootScrollTransaction(transaction.epoch, { persist: true });
+  });
 }
 
 function openAddDomainDialog() {
@@ -4555,10 +5031,22 @@ function openSearchDialog() {
     return normalDestinationsForEntries([entry])[0]?.collectionId || projectionCollectionForEntry(entry.id);
   };
   const selectResult = (entry, collectionId) => {
-    closeSearchDialog();
-    // Cross-Collection history creation must stay in this click activation. The
-    // retained modal may finish its visual exit over the newly rendered page.
-    navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
+    const crossCollection = collectionId !== currentCollectionId;
+    if (!crossCollection) {
+      closeSearchDialog();
+      navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
+      return;
+    }
+    // WebKit records the source history snapshot when the new browser-rail slot
+    // is created. For a real page transition the source Search layer must be
+    // absent before that presentation snapshot, otherwise native Back previews
+    // faithfully freeze the stale closing modal. A single presentation fence is
+    // still within WebKit's recent-user-activation window; this is adapter
+    // hygiene, not a VIX navigation semantic dependency.
+    closeSearchDialog({ immediate: true });
+    requestAnimationFrame(() => {
+      navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
+    });
   };
   const showEntries = (entries, label = '') => {
     status.textContent = label || (entries.length ? entries.length.toLocaleString() : '无结果');
@@ -4651,6 +5139,10 @@ export function notifyServiceWorkerUpdate(worker) {
   updateOverlayLayout();
 }
 
+export function serviceWorkerReloadIsArmed() {
+  return serviceWorkerReloadPending;
+}
+
 function applyWaitingServiceWorker() {
   if (!waitingServiceWorker || serviceWorkerReloadPending) return;
   serviceWorkerReloadPending = true;
@@ -4728,7 +5220,35 @@ function handleStoreEvent({ type, detail }) {
   renderApp();
 }
 
+function handleRootUserTouchStart(event) {
+  if (openModalCount) return;
+  if (event.touches?.length !== 1) return;
+  rootUserTouchReleased = false;
+  rootUserTouchMoved = false;
+  cancelRootScrollTransaction('user-touch');
+}
+
+function handleRootUserTouchMove(event) {
+  if (openModalCount) return;
+  if (event.touches?.length !== 1) return;
+  rootUserTouchMoved = true;
+}
+
+function handleRootUserTouchEnd() {
+  rootUserTouchReleased = true;
+  if (!rootUserTouchMoved) rootUserScrollActive = false;
+}
+
+function handleRootScrollEnd() {
+  clearTimeout(rootUserScrollReleaseTimer);
+  rootUserScrollReleaseTimer = 0;
+  if (rootUserTouchReleased) rootUserScrollActive = false;
+  if (queuedVirtualChunks.size && !scrollCoordinator.isActive()) flushQueuedVirtualChunksNow({ reason: 'scrollend-flush' });
+  persistScrollPosition();
+}
+
 function handleWindowScroll() {
+  if (!rootUserTouchReleased && !scrollCoordinator.isActive()) rootUserScrollActive = true;
   if (browseAnchorPress) cancelBrowseAnchorPress({ suppressClick: true });
   if (activeQueryMenu) closeQueryMenu({ immediate: true });
   if (activeRelationTargetMenu) closeRelationTargetMenu({ immediate: true });
@@ -4740,7 +5260,15 @@ function handleWindowScroll() {
       updateBackToTopVisibility();
     });
   }
-  if (!('onscrollend' in window)) persistScrollPosition();
+  if (!('onscrollend' in window)) {
+    clearTimeout(rootUserScrollReleaseTimer);
+    rootUserScrollReleaseTimer = setTimeout(() => {
+      rootUserScrollReleaseTimer = 0;
+      if (rootUserTouchReleased) rootUserScrollActive = false;
+      if (queuedVirtualChunks.size && !scrollCoordinator.isActive()) flushQueuedVirtualChunksNow({ reason: 'scroll-fallback-flush' });
+      persistScrollPosition();
+    }, 140);
+  }
 }
 
 function initializeNavigationModel() {
@@ -4836,9 +5364,13 @@ export async function initializeUI() {
   document.addEventListener('touchmove', handleNavigationEdgeTouchMove, { passive: false, capture: true });
   document.addEventListener('touchend', finishNavigationEdgeGesture, { passive: false, capture: true });
   document.addEventListener('touchcancel', finishNavigationEdgeGesture, { passive: false, capture: true });
+  document.addEventListener('touchstart', handleRootUserTouchStart, { passive: true, capture: true });
+  document.addEventListener('touchmove', handleRootUserTouchMove, { passive: true, capture: true });
+  document.addEventListener('touchend', handleRootUserTouchEnd, { passive: true, capture: true });
+  document.addEventListener('touchcancel', handleRootUserTouchEnd, { passive: true, capture: true });
   document.addEventListener('touchstart', handleModalTouchStart, { passive: true, capture: true });
   document.addEventListener('touchmove', handleModalTouchMove, { passive: false, capture: true });
-  if ('onscrollend' in window) window.addEventListener('scrollend', persistScrollPosition, { passive: true });
+  if ('onscrollend' in window) window.addEventListener('scrollend', handleRootScrollEnd, { passive: true });
   subscribe(handleStoreEvent);
   await initializeStore();
   initializeNavigationModel();

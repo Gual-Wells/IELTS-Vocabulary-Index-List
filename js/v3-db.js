@@ -181,7 +181,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.5.0',
+    appVersion: '4.6.0',
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -196,7 +196,7 @@ async function loadCanonicalSeed() {
 export function mergeBuiltInDomainBackup(_baseBackup, seedBackup) {
   // 4.0.0 is a content-generation break. Built-in seed updates are full
   // replacements and never perform the old add-only merge.
-  return canonicalizeBackup({ ...seedBackup, appVersion: '4.5.0', schemaVersion: SCHEMA_VERSION });
+  return canonicalizeBackup({ ...seedBackup, appVersion: '4.6.0', schemaVersion: SCHEMA_VERSION });
 }
 
 async function ensureBuiltInSeedRevision(db) {
@@ -397,14 +397,14 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.5.0',
+    appVersion: '4.6.0',
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });
 }
 
 export async function replaceWithBackup(input, { migrationNoticePending = false, expectedRevision = null } = {}) {
-  if (Number(input?.schemaVersion) !== SCHEMA_VERSION) throw new Error('完整备份版本不兼容；4.5.0 仅接受 Schema 6 完整备份');
+  if (Number(input?.schemaVersion) !== SCHEMA_VERSION) throw new Error('完整备份版本不兼容；4.6.0 仅接受 Schema 6 完整备份');
   validateBackup(input);
   const backup = canonicalizeBackup(input);
   return enqueueWrite(async () => {

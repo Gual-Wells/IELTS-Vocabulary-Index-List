@@ -1,0 +1,5 @@
+/* Vocabulary Index 4.6.0 scroll / position ownership correction layer.
+   No visual redesign is introduced here. The 4.4 Sticky/Modal paint hierarchy
+   and 4.5 destructive-v3 navigation rail are intentionally preserved.
+   Runtime correctness lives in the ScrollCoordinator / VirtualEntryList code;
+   this stylesheet remains a lifecycle boundary rather than a masking layer. */

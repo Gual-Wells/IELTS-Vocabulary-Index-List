@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.6.0 — 2026-08-10
+
+- 建立 ScrollCoordinator 单一 root-scroll ownership；所有旧异步 scroll writer 通过 epoch 失效，Virtual Chunk 不再自行 `scrollBy()`；
+- LetterNav 改用 4.4 `.section-flow-anchor` natural coordinate，active-letter/Sticky/reading viewport 统一 ContentTop；
+- 42-entry / 960px lazy virtualization 保留，新增 stable chunk key、frame-local measured-height cache 和 batched materialization；
+- frame snapshot 增加 semantic position，`scrollY` 降级 fallback；Navigation API Back 改为 `scroll:manual` + `event.scroll()` first pass + semantic verify/correction；
+- transaction 完成前禁止 authoritative scroll snapshot 持久化；Sticky collapse 接入 coordinator lease，但 4.4 几何/Rendering suppression 算法不改；
+- Search cross-Collection PUSH 前 hard-close transient Search surface 并经过一个 presentation fence，降低 stale native history snapshot；
+- Service Worker 首次 `clients.claim()` 不再触发 reload，只有显式“立即更新”armed controllerchange 才 reload；
+- 4.5 `destructive-v3` Navigation、4.4 Modal/Sticky/whole-app stacking removal、Schema6 / DB5 / Seed4 / VIX2 全部冻结。
+
 ## 4.5.0 — 2026-08-10
 
 - 4.4.0 `destructive-v2` 导航实现整体撤销，重建为 `destructive-v3`：VIX logical stack 与 Safari browser rail 分离；

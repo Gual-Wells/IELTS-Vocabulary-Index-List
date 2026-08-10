@@ -1,10 +1,14 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-> 当前权威版本：Vocabulary Index 4.5.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+## 4.6.0：[当前实现 / 待真机]
+
+4.5.0 真机证明 Navigation Automaton 主体成立，但暴露 root scroll ownership 分裂：Back 重复 traversal 可从 42/123/354/4995/5322 正确位置退化；LetterNav 使用 Sticky visual rect，W→X 可被旧 42-chunk correction 拉回 W141；active LetterNav/Sticky/正文存在明显分帧刷新。4.6 不重做 Navigation/Sticky/Modal，而建立 ScrollCoordinator + SemanticPosition + measured VirtualEntryList：42/960 lazy 性能路径保留，Virtualizer 永久失去 root-scroll 权，Back 使用 UA first-pass 后按 VIX semantic anchor 最终验证；cross-Collection Search 清洁 history snapshot，首次 SW claim 不再双启动。Schema6 / DB5 / Seed4 / VIX2 不变。
+
+> 当前权威版本：Vocabulary Index 4.6.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.5.0 完整源码实际行为。
+- **[当前实现]**：4.6.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -177,7 +181,7 @@ Schema6 / DB5 / Seed4 / VIX2、数据投影、Search/Relation、Provider、Home 
 
 自动化全 PASS 仍不冒充 iPhone system gesture/compositor 验收；最终真机项记录于 `tests/IPHONE_REDUCED_TESTS_4.4.0.md`。
 
-## 4.5.0：[当前实现]
+## 4.5.0：[历史稳定基线]
 
 4.5.0 来自 4.4.0 目标 iPhone standalone 的严重导航失败。真机确认：Back button 无效；左边缘 preview 可显示上一历史视觉面但会 snap-back；多次回撤后 preview 指向更老 entry/纯背景；同 Collection Search 错误制造新 history；Home 虽能稳定显示首页但物理 rail 被新 root PUSH 污染。与此同时，4.4 Sticky 不再闪烁/漂移、Modal 不再破坏 Sticky，且撤掉 whole-app stacking context 后整体绘制质感得到正向反馈，因此三者冻结。
 
@@ -248,19 +252,19 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.5.0 当前待真机事项
+# 八、4.6.0 当前待真机事项
 
-- 最小 Back：Home→A 的左上 Back 与左边缘 swipe 均立即回 Home，不再出现无效按钮或数秒后 snap-back。
-- 三层递归：Home→A→B→C 严格 C→B→A→Home；慢拖/快拖/half-cancel 后 logical stack 与按钮状态一致。
-- Browser key：目标 standalone 中 `history.pushState()` 后 `navigation.currentEntry.key` 与新 slot 同步；App Back/Home 的 `traverseTo(key)` 精确命中 parent/root。
-- Home：C→Home traverse 回原 root，旧 A/B/C 只成为 dead Forward；Home→D fresh PUSH 后旧 branch 被物理截断，Back D→Home。
-- Same-Collection：word/phrase、alphabet/date、Search/Relation/PIN/Annotation 不新增 history slot。
-- Forward/edge：dead page 绝不重新成为 live VIX frame；记录 Safari 是否仍能在不可取消系统手势中短暂 preview dead surface。
-- Scroll：合法 Back 的目标 DOM 单次建立，UA after-transition 还原物理 scroll，不出现 top→旧位置二次跳。
-- Cross-Collection PUSH：Search/Relation 不再等待 140ms Modal exit；页面切换不再存在 70ms stale-frame timer，记录剩余 iOS compositor表现。
-- Sticky/Modal：4.4 正向结果做冻结回归，避免 Navigation 重构带回白闪、累计漂移、Modal 遮挡/破坏 Sticky。
-- PIN/Review、Popover、Collection-level mode、Home/Entry visual、StudyStamp、58px toolbar、longpress、Shortcuts/Collins CORS、Service Worker/离线继续全量回归。
+- Navigation freeze 回归：Home→A→B→C、half-swipe、Home/dead Forward、same/cross Collection 仍符合 4.5 `destructive-v3`。
+- Semantic Back：42 / 123 / 354 / 4995 / 5322 重复 A→B→Back 不再退化；4995 不稳定到 4989，5322 始终保持 bottom。
+- Letter direct/sequential：direct X 与 A→B→…→X 最终同一 semantic target，W141 狂跳不复现。
+- Repeated Letter：collapsed/expanded/deep section 下重复点击同一字母都回 natural flow anchor；只允许 document-bottom clamp。
+- Visual Commit：LetterNav active、Sticky heading、正文和 Back live surface 不再明显分帧刷新/二次 correction。
+- Search history snapshot：cross-Collection Back preview 不再由 VIX 主动冻结 closing Search；live page 不发生 Search 二次消失。
+- Native swipe 平台边界：允许 Safari 更老 history bitmap 淘汰后展示纯背景 preview，但 live VIX 接管后必须立即正确。
+- Sticky/Modal：4.4 正向结果继续冻结，无白闪/累计漂移/背景 Sticky 破坏。
+- Performance：42/960 lazy materialization 保持，5k+ 总表无全量 DOM 回归，快速 A→X/滚动无明显新卡顿。
+- Service Worker：全新安装只 `V→Home` 一次；显式“立即更新”只 reload 一次。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.5.0.md`、`SEMANTIC_IMPACT_MATRIX_4.5.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.5.0.md`、`PRODUCT_MANUAL_4.5.0.md`、`AUDIT_REPORT_4.5.0.md`、`TECHNICAL_RESEARCH_4.5.0.md`、`CHANGE_REPORT_4.5.0.md`、`TEST_REPORT_4.5.0.md`、`MIGRATION_4.5.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.5.0.md` 共同组成当前稳定规格与验证记录。旧版本文档保留为历史事实，不得以其过期实现细节钳制当前优化。
+`REQUIREMENT_BASELINE_4.6.0.md`、`SEMANTIC_IMPACT_MATRIX_4.6.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.6.0.md`、`PRODUCT_MANUAL_4.6.0.md`、`AUDIT_REPORT_4.6.0.md`、`TECHNICAL_RESEARCH_4.6.0.md`、`CHANGE_REPORT_4.6.0.md`、`TEST_REPORT_4.6.0.md`、`MIGRATION_4.6.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.6.0.md` 共同组成当前实现与验证记录。旧版本文档保留为历史事实，不得以过期 workaround 钳制当前优化。

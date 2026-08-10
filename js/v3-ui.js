@@ -17,10 +17,10 @@ import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, syst
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
-import { classifyNavigationKey, parentBrowserKey, planCommittedTraversal } from './v3-navigation-runtime.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
+import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForLocus, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.6.0';
+const APP_VERSION = '4.7.0';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -28,7 +28,7 @@ const elements = Object.fromEntries([
   'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
-  'app-dialog', 'navigation-guard-feedback',
+  'app-dialog',
   'hidden-file-input',
 ].map((id) => [id, document.getElementById(id)]));
 
@@ -67,17 +67,15 @@ let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
-const NAVIGATION_MODEL = 'destructive-v3';
+const NAVIGATION_MODEL = 'single-slot-vix-v1';
 const navigationStack = [];
-const deadBrowserKeys = new Set();
 let navigationRuntimeId = '';
 let navigationRootToken = '';
-let rootBrowserKey = '';
-let navigationEdgeGesture = null;
-let pendingNavigationIntent = null;
 let navigationTraversalInProgress = false;
 let pendingPageSnapshot = null;
-let pendingUaScrollRestore = false;
+let suppressPostRenderSnapshotRestore = false;
+let presentationMutationInProgress = 0;
+let activePageTransition = null;
 let renderRevision = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
@@ -426,7 +424,7 @@ function updateOverlayLayout({ immediate = false } = {}) {
   return null;
 }
 
-const PRESENTATION_EXIT_MS = 140;
+const PRESENTATION_EXIT_MS = 180;
 
 function lockPageForModal() {
   if (openModalCount) return;
@@ -663,6 +661,39 @@ function closeSearchDialog({ immediate = false } = {}) {
   updatePageViewportGeometry({ immediate: true });
 }
 
+function waitForMotionEnd(node, timeoutMs = 260) {
+  if (!node?.isConnected) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      node.removeEventListener('transitionend', onEnd);
+      resolve();
+    };
+    const onEnd = (event) => {
+      if (event.target === node && ['transform', 'opacity'].includes(event.propertyName)) finish();
+    };
+    const timer = window.setTimeout(finish, timeoutMs);
+    node.addEventListener('transitionend', onEnd);
+  });
+}
+
+async function closeSearchDialogForNavigation() {
+  const frame = activeSearchFrame;
+  if (!frame) return;
+  const card = frame.form;
+  const startedAt = performance.now();
+  closeSearchDialog();
+  await waitForMotionEnd(card, PRESENTATION_EXIT_MS + 80);
+  // Page motion starts only after the modal lifecycle has actually finished,
+  // not merely after transform/opacity emitted transitionend. This keeps the
+  // modal layer, app inert state and next page transition in one clean order.
+  const remaining = Math.max(0, PRESENTATION_EXIT_MS + 8 - (performance.now() - startedAt));
+  if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+}
+
 function closeConfirmDialog({ force = false } = {}) {
   const frame = activeConfirmFrame;
   if (!frame) return true;
@@ -681,23 +712,6 @@ function openConfirmDialog({ title, description = '', body = [], submitText = '�
   frame.choiceRequired = Boolean(choiceRequired);
   activeConfirmFrame = frame;
   return frame;
-}
-
-function collectionRoute(collectionId, entryId = '', viewKind = '') {
-  const query = new URLSearchParams();
-  query.set('collection', collectionId);
-  if (viewKind) query.set('view', viewKind);
-  if (entryId) query.set('entry', entryId);
-  return `#${query}`;
-}
-
-function parseRoute() {
-  const query = new URLSearchParams(location.hash.replace(/^#/, ''));
-  return {
-    collectionId: query.get('collection') || '',
-    entryId: query.get('entry') || '',
-    viewKind: ['word', 'phrase', 'content'].includes(query.get('view')) ? query.get('view') : '',
-  };
 }
 
 function viewKindForCollection(collection, entry = null, requested = '') {
@@ -719,15 +733,6 @@ function newNavigationToken(prefix = 'nav') {
   return `${prefix}-${suffix}`;
 }
 
-function navigationApiAvailable() {
-  const api = globalThis.navigation;
-  return Boolean(api?.currentEntry?.key && typeof api.traverseTo === 'function' && typeof api.addEventListener === 'function');
-}
-
-function currentBrowserKey() {
-  try { return String(globalThis.navigation?.currentEntry?.key || ''); } catch { return ''; }
-}
-
 function rootNavigationHistoryState() {
   return {
     vix: true,
@@ -738,37 +743,9 @@ function rootNavigationHistoryState() {
   };
 }
 
-function pageNavigationHistoryState(token) {
-  if (!token) throw new Error('Navigation page identity requires an explicit token');
-  return {
-    vix: true,
-    navModel: NAVIGATION_MODEL,
-    runtimeId: navigationRuntimeId,
-    navToken: token,
-    routeKind: 'page',
-  };
-}
-
 function currentNavigationFrame() {
   if (!appNavigationDepth) return null;
-  if (navigationApiAvailable()) {
-    const key = currentBrowserKey();
-    if (!key) return null;
-    return navigationStack.find((item) => item?.browserKey === key) || null;
-  }
-  const token = String(history.state?.navToken || '');
-  if (!token) return null;
-  return navigationStack.find((item) => item?.token === token) || null;
-}
-
-function navigationFrameByBrowserKey(key) {
-  if (!key || deadBrowserKeys.has(key)) return null;
-  return navigationStack.find((frame) => frame?.browserKey === key) || null;
-}
-
-function navigationFrameByToken(token) {
-  if (!token) return null;
-  return navigationStack.find((frame) => frame?.token === token) || null;
+  return navigationStack[appNavigationDepth - 1] || null;
 }
 
 function discardFrameRuntimeState(frame) {
@@ -781,18 +758,9 @@ function discardFrameRuntimeState(frame) {
 function discardNavigationFramesFrom(depth) {
   const keep = Math.max(0, Number(depth || 0));
   const removed = navigationStack.splice(keep);
-  for (const frame of removed) {
-    if (frame?.browserKey) deadBrowserKeys.add(frame.browserKey);
-    discardFrameRuntimeState(frame);
-  }
+  for (const frame of removed) discardFrameRuntimeState(frame);
   appNavigationDepth = navigationStack.length;
   return removed;
-}
-
-function invalidateDeadForwardBranchForFreshPush() {
-  // A browser PUSH from the current slot physically truncates its forward
-  // branch. All keys previously marked dead were necessarily in that branch.
-  deadBrowserKeys.clear();
 }
 
 function currentSnapshot() {
@@ -821,8 +789,6 @@ function persistCurrentHistorySnapshot() {
     homeScrollY = Math.max(0, Number(snapshot.scrollY || 0));
     return;
   }
-  // Never guess frame identity. If the browser slot cannot be proven to match a
-  // live VIX frame, skip this persistence event instead of corrupting a parent.
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = snapshot;
 }
@@ -844,12 +810,11 @@ function restoreSnapshotAfterRender(snapshot, token = renderRevision) {
   const epoch = transaction.epoch;
   requestAnimationFrame(async () => {
     if (token !== renderRevision || !scrollCoordinator.owns(epoch)) return;
+    prepareSemanticPositionGeometry(position, { reason: 'history-fallback' });
     restoreSemanticPosition(position, epoch, { source: 'history-fallback' });
-    await settleSemanticPosition(epoch, position, { maxFrames: 6, tolerance: 1, source: 'history-fallback' });
+    await settleSemanticPosition(epoch, position, { maxFrames: 4, tolerance: 1, source: 'history-fallback' });
     if (!scrollCoordinator.owns(epoch)) return;
     finishRootScrollTransaction(epoch, { persist: true });
-    syncActiveAlphabetHeading();
-    updateBackToTopVisibility();
   });
 }
 
@@ -877,19 +842,12 @@ function dateExpansionKey(dateKey) {
   return `date:${dateKey || 'unmarked'}`;
 }
 
-function performPageTransition(callback, enabled = true) {
-  // 4.5.0 removes the orphaned 70ms transition timer. The CSS page opacity
-  // transition has been intentionally disabled since 4.0; delaying a complete
-  // Collection rebuild only creates an avoidable stale-frame commit on iOS.
-  callback();
-}
-
 function targetSnapshot(collection, viewKind) {
   const mode = getViewMode(collection.id);
   return {
     type: 'collection', collectionId: collection.id, viewKind,
     mode,
-    calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, viewKind) : '',
+    calendarMonth: mode === 'date' ? initialCalendarMonthForView(collection.id, viewKind) : '',
     scrollY: 0,
     position: { kind: 'top', scrollYFallback: 0 },
     expandedGroups: [...expandedLettersFor(collection.id, viewKind)],
@@ -914,6 +872,159 @@ async function persistHydratedViewState(snapshot) {
   }
 }
 
+function presentationMotionClass(kind) {
+  return `vix-motion-${String(kind || 'none').replace(/[^a-z0-9-]/gi, '-')}`;
+}
+
+async function runPresentationTransition(kind, update) {
+  if (activePageTransition?.finished) {
+    try { await activePageTransition.finished; } catch { /* prior transition may be skipped by a newer one */ }
+  }
+  const root = document.documentElement;
+  const className = presentationMotionClass(kind);
+  root.classList.add('vix-motion-active', className);
+  try {
+    if (typeof document.startViewTransition !== 'function') {
+      await update();
+      return;
+    }
+    const transition = document.startViewTransition(() => Promise.resolve(update()));
+    activePageTransition = transition;
+    await transition.updateCallbackDone;
+    await transition.finished.catch(() => {});
+  } finally {
+    root.classList.remove('vix-motion-active', className);
+    activePageTransition = null;
+  }
+}
+
+function resetRootScrollForPreparedPage(source = 'page-top') {
+  const transaction = beginRootScrollTransaction(source, { kind: 'top', scrollYFallback: 0 });
+  rootScrollToY(0, { epoch: transaction.epoch, source });
+  finishRootScrollTransaction(transaction.epoch, { persist: false });
+}
+
+function clearRecursivePresentationState() {
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'home';
+  pendingPageSnapshot = null;
+  suppressPostRenderSnapshotRestore = false;
+  persistentJumpEntryId = '';
+  expandedRelations.clear();
+  expandedLettersByCollection.clear();
+  currentCollectionId = '';
+  currentViewKind = 'word';
+  activeSection = 'main';
+  appNavigationDepth = 0;
+}
+
+function renderCommittedRoot({ resetScroll = false, restoreScroll = false } = {}) {
+  closeReview();
+  closeQueryMenu({ immediate: true });
+  closeRelationTargetMenu({ immediate: true });
+  clearRecursivePresentationState();
+  if (resetScroll) {
+    homeGlobalMode = 'structured';
+    homeScrollY = 0;
+  }
+  restoreHomeScrollPending = false;
+  renderApp();
+  if (resetScroll) resetRootScrollForPreparedPage('home-reset');
+  else if (restoreScroll) {
+    const transaction = beginRootScrollTransaction('home-back-restore', { kind: 'scroll', scrollYFallback: homeScrollY });
+    rootScrollToY(homeScrollY, { epoch: transaction.epoch, source: 'home-back-restore' });
+    finishRootScrollTransaction(transaction.epoch, { persist: false });
+  }
+}
+
+function hydrateNavigationSnapshot(snapshot) {
+  if (snapshot?.type !== 'collection') return;
+  hydrateRuntimeViewState(snapshot.collectionId, {
+    mode: snapshot.mode,
+    section: snapshot.viewKind,
+    calendarMonth: snapshot.calendarMonth || '',
+  });
+}
+
+function prepareBackFrame(frame) {
+  if (!frame?.snapshot) return null;
+  const snapshot = frame.snapshot;
+  currentCollectionId = frame.collectionId || snapshot.collectionId || '';
+  currentViewKind = frame.viewKind || snapshot.viewKind || 'word';
+  activeSection = currentViewKind;
+  pendingPageSnapshot = snapshot;
+  pendingJumpEntryId = '';
+  pendingJumpReason = 'back';
+  // Suppress the ordinary post-render snapshot restore. Back restoration is
+  // completed inside the View Transition update callback before the new visual
+  // state is captured.
+  suppressPostRenderSnapshotRestore = true;
+  hydrateNavigationSnapshot(snapshot);
+  renderApp();
+  const position = snapshot.position || { kind: 'scroll', scrollYFallback: Math.max(0, Number(snapshot.scrollY || 0)) };
+  const transaction = beginRootScrollTransaction('back-restore', position);
+  prepareSemanticPositionGeometry(position, { reason: 'back-restore-capture' });
+  restoreSemanticPosition(position, transaction.epoch, { tolerance: .5, source: 'back-restore-capture' });
+  prepareSemanticPositionGeometry(position, { reason: 'back-restore-final' });
+  restoreSemanticPosition(position, transaction.epoch, { tolerance: .5, source: 'back-restore-final' });
+  finishRootScrollTransaction(transaction.epoch, { persist: false });
+  pendingPageSnapshot = null;
+  suppressPostRenderSnapshotRestore = false;
+  return snapshot;
+}
+
+async function navigateBack() {
+  if (appNavigationDepth <= 0) return;
+  persistCurrentHistorySnapshot();
+  navigationTraversalInProgress = true;
+  const leaving = navigationStack.pop() || null;
+  appNavigationDepth = navigationStack.length;
+  try {
+    if (!appNavigationDepth) {
+      await runPresentationTransition('pop', () => {
+        discardFrameRuntimeState(leaving);
+        renderCommittedRoot({ restoreScroll: true });
+      });
+      return;
+    }
+    const targetFrame = currentNavigationFrame();
+    let restoredSnapshot = null;
+    await runPresentationTransition('pop', () => {
+      discardFrameRuntimeState(leaving);
+      restoredSnapshot = prepareBackFrame(targetFrame);
+    });
+    if (restoredSnapshot) persistHydratedViewState(restoredSnapshot);
+  } finally {
+    navigationTraversalInProgress = false;
+    persistCurrentHistorySnapshot();
+  }
+}
+
+async function resetNavigationToHome() {
+  if (!currentCollectionId && !appNavigationDepth) {
+    homeGlobalMode = 'structured';
+    homeScrollY = 0;
+    renderApp();
+    return;
+  }
+  persistCurrentHistorySnapshot();
+  navigationTraversalInProgress = true;
+  try {
+    const removed = navigationStack.splice(0, navigationStack.length);
+    appNavigationDepth = 0;
+    await runPresentationTransition('home', () => {
+      for (const frame of removed) discardFrameRuntimeState(frame);
+      renderCommittedRoot({ resetScroll: true });
+    });
+  } finally {
+    navigationTraversalInProgress = false;
+  }
+}
+
+function goHome() {
+  resetNavigationToHome().catch(displayError);
+}
+
 async function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
@@ -922,9 +1033,6 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   const domain = collection.domainId ? state.domainById.get(collection.domainId) : null;
   let nextView = viewKindForCollection(collection, entry, requestedView);
 
-  // Home -> Collection is a presentation reset, but it must not put an IndexedDB
-  // await in front of browser-entry creation. Hydrate memory synchronously; the
-  // persistent settings write is reconciled after the navigation commit/render.
   let needsHomeModePersistence = false;
   if (reason === 'home') {
     if (collection.type === 'normal' && domain?.contentMode !== 'nonStructured') {
@@ -943,361 +1051,89 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   closeRelationTargetMenu();
   prepareTargetExpansion(collection, entry, nextView, reason);
 
-  // Page identity is Collection identity. A word/phrase change or a search /
-  // relation target inside the same Collection is only current-frame
-  // presentation state and must never create a browser history slot.
   if (currentCollectionId === collectionId) {
+    const viewChanged = nextView !== currentViewKind;
+    if (!viewChanged) {
+      if (entryId) await jumpToEntry(entryId, { collectionId, reason });
+      return;
+    }
+    collapseTransactionRevision += 1;
+    const previousView = currentViewKind;
+    expandedLettersFor(collection.id, previousView).clear();
+    clearExpandedRelationsForView(collection.id, previousView);
+    expandedLettersFor(collection.id, nextView).clear();
+    clearExpandedRelationsForView(collection.id, nextView);
+    // Explicit target navigation is still a fresh target presentation, but its
+    // target group must exist before the subsequent semantic scroll begins.
+    prepareTargetExpansion(collection, entry, nextView, reason);
+    const motionKind = currentViewKind === 'word' && nextView === 'phrase' ? 'sibling-forward' : 'sibling-back';
+    const targetMode = getViewMode(collection.id);
+    const freshMonth = targetMode === 'date' ? initialCalendarMonthForView(collection.id, nextView) : '';
+    if (targetMode === 'date') hydrateRuntimeViewState(collection.id, { mode: targetMode, section: nextView, calendarMonth: freshMonth });
     currentViewKind = nextView;
     activeSection = nextView;
-    pendingJumpEntryId = entryId;
-    pendingJumpReason = reason;
     pendingPageSnapshot = null;
+    pendingJumpEntryId = '';
+    pendingJumpReason = 'jump';
     const frame = currentNavigationFrame();
     if (frame) {
       frame.collectionId = collectionId;
       frame.viewKind = nextView;
       frame.snapshot = targetSnapshot(collection, nextView);
     }
-    renderApp();
+    navigationTraversalInProgress = true;
+    try {
+      await runPresentationTransition(motionKind, () => {
+        renderApp();
+        resetRootScrollForPreparedPage('view-target-top');
+      });
+    } finally {
+      navigationTraversalInProgress = false;
+    }
+    if (targetMode === 'date' && freshMonth) {
+      presentationMutationInProgress += 1;
+      try { await setCalendarMonth(collection.id, nextView, freshMonth); }
+      finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
+    }
+    if (entryId) await jumpToEntry(entryId, { collectionId, reason });
     if (needsHomeModePersistence) persistHydratedViewState(targetSnapshot(collection, nextView));
     return;
   }
 
-  // A real recursive PUSH must happen synchronously inside the initiating user
-  // action. Do not await persistence, modal exit, animation timers, or database
-  // work before this call: WebKit may mark delayed JS-created entries skippable.
   const token = newNavigationToken('page');
-  const route = collectionRoute(collectionId);
-  history.pushState(pageNavigationHistoryState(token), '', route);
-  invalidateDeadForwardBranchForFreshPush();
-  const browserKey = currentBrowserKey();
-
-  currentCollectionId = collectionId;
-  currentViewKind = nextView;
-  activeSection = nextView;
-  pendingJumpEntryId = entryId;
-  pendingJumpReason = reason;
-  pendingPageSnapshot = null;
-
   const frame = {
     token,
-    browserKey,
     collectionId,
     viewKind: nextView,
     snapshot: targetSnapshot(collection, nextView),
     virtualLayoutCache: new Map(),
     virtualLayoutWidth: 0,
   };
-  navigationStack.push(frame);
-  appNavigationDepth = navigationStack.length;
-  renderApp();
+  // A fresh recursive target is initialized from its target presentation, never
+  // from a hidden previous view/date snapshot. Only Back hydrates an old frame.
+  hydrateNavigationSnapshot(frame.snapshot);
 
-  if (needsHomeModePersistence) persistHydratedViewState(frame.snapshot);
-}
-
-function requestTraverseToKey(targetKey, intent = 'back') {
-  if (!targetKey) return false;
-  if (navigationApiAvailable()) {
-    pendingNavigationIntent = { type: intent, targetKey };
-    try {
-      const result = globalThis.navigation.traverseTo(targetKey);
-      Promise.resolve(result?.finished).catch((error) => {
-        if (pendingNavigationIntent?.targetKey === targetKey) pendingNavigationIntent = null;
-        displayError(error);
-      });
-      return true;
-    } catch (error) {
-      pendingNavigationIntent = null;
-      displayError(error);
-      return false;
-    }
-  }
-  return false;
-}
-
-function navigateBack() {
-  persistCurrentHistorySnapshot();
-  if (appNavigationDepth <= 0) return;
-  const targetKey = parentBrowserKey({ rootKey: rootBrowserKey, frames: navigationStack, currentDepth: appNavigationDepth });
-  if (requestTraverseToKey(targetKey, 'back')) return;
-  history.back();
-}
-
-function clearRecursivePresentationState() {
-  pendingJumpEntryId = '';
-  pendingJumpReason = 'home';
-  pendingPageSnapshot = null;
-  pendingUaScrollRestore = false;
-  persistentJumpEntryId = '';
-  expandedRelations.clear();
-  expandedLettersByCollection.clear();
-  currentCollectionId = '';
-  currentViewKind = 'word';
-  activeSection = 'main';
-  appNavigationDepth = 0;
-}
-
-function renderCommittedRoot({ resetScroll = false } = {}) {
-  closeReview();
-  closeQueryMenu({ immediate: true });
-  closeRelationTargetMenu({ immediate: true });
-  clearRecursivePresentationState();
-  if (resetScroll) {
-    homeGlobalMode = 'structured';
-    homeScrollY = 0;
-  } else restoreHomeScrollPending = false;
-  renderApp();
-}
-
-function goHome() {
-  if (appNavigationDepth > 0) {
-    resetNavigationToHome();
-    return;
-  }
-  homeGlobalMode = 'structured';
-  homeScrollY = 0;
-  renderApp();
-  const transaction = beginRootScrollTransaction('home-top', { kind: 'top', scrollYFallback: 0 });
-  rootScrollToY(0, { epoch: transaction.epoch, source: 'home-top' });
-  finishRootScrollTransaction(transaction.epoch, { persist: false });
-}
-
-function resetNavigationToHome() {
-  if (appNavigationDepth <= 0) {
-    goHome();
-    return;
-  }
-  persistCurrentHistorySnapshot();
-  if (requestTraverseToKey(rootBrowserKey, 'home')) return;
-  // Fallback browsers do not expose stable entry keys. Their transport remains
-  // depth-based, but this path is not used by the target iOS 26.5+ runtime.
-  pendingNavigationIntent = { type: 'home-fallback', targetKey: '' };
-  history.go(-appNavigationDepth);
-}
-
-function hydrateNavigationSnapshot(snapshot) {
-  if (snapshot?.type !== 'collection') return;
-  hydrateRuntimeViewState(snapshot.collectionId, {
-    mode: snapshot.mode,
-    section: snapshot.viewKind,
-    calendarMonth: snapshot.calendarMonth || '',
-  });
-}
-
-function commitNavigationToBrowserKey(destinationKey, { useUaScroll = true, resetHome = false } = {}) {
-  if (!destinationKey) return false;
-  const plan = planCommittedTraversal({
-    destinationKey,
-    rootKey: rootBrowserKey,
-    frames: navigationStack,
-    deadKeys: deadBrowserKeys,
-    currentDepth: appNavigationDepth,
-  });
-  if (!plan.accepted) return false;
-
-  if (plan.kind === 'root') {
-    discardNavigationFramesFrom(0);
-    renderCommittedRoot({ resetScroll: resetHome });
-    return true;
-  }
-
-  const targetFrame = navigationFrameByBrowserKey(destinationKey);
-  if (!targetFrame) return false;
-  if (plan.keepDepth < appNavigationDepth) discardNavigationFramesFrom(plan.keepDepth);
-  appNavigationDepth = plan.keepDepth;
-  currentCollectionId = targetFrame.collectionId || targetFrame.snapshot?.collectionId || '';
-  currentViewKind = targetFrame.viewKind || targetFrame.snapshot?.viewKind || 'word';
-  activeSection = currentViewKind;
-  pendingPageSnapshot = targetFrame.snapshot || null;
-  pendingJumpEntryId = '';
-  pendingJumpReason = 'back';
-  pendingUaScrollRestore = Boolean(useUaScroll);
-  hydrateNavigationSnapshot(pendingPageSnapshot);
-  renderApp();
-  persistHydratedViewState(pendingPageSnapshot);
-  return true;
-}
-
-function classifyCurrentNavigationKey(destinationKey) {
-  return classifyNavigationKey({
-    destinationKey,
-    rootKey: rootBrowserKey,
-    frames: navigationStack,
-    deadKeys: deadBrowserKeys,
-    currentDepth: appNavigationDepth,
-  });
-}
-
-function activateNavigationGuardFeedback(side) {
-  const node = elements['navigation-guard-feedback'];
-  if (!node) return;
-  node.dataset.side = side;
-  node.classList.remove('guard-settling');
-  node.classList.add('guard-active');
-}
-
-function settleNavigationGuardFeedback() {
-  const node = elements['navigation-guard-feedback'];
-  if (!node) return;
-  node.classList.remove('guard-active');
-  node.classList.add('guard-settling');
-  window.setTimeout(() => node.classList.remove('guard-settling'), 120);
-}
-
-function recoverFromCommittedForbiddenTraversal() {
-  const liveKey = appNavigationDepth > 0
-    ? navigationStack[appNavigationDepth - 1]?.browserKey
-    : rootBrowserKey;
-  if (!liveKey || !navigationApiAvailable()) return;
-  try { globalThis.navigation.traverseTo(liveKey); } catch { /* logical state remains live */ }
-}
-
-function handleNavigationApiNavigate(event) {
-  if (event?.navigationType !== 'traverse' || !event.destination?.sameDocument) return;
-  const destinationKey = String(event.destination.key || '');
-  const api = globalThis.navigation;
-  const currentIndex = Number(api?.currentEntry?.index ?? -1);
-  const destinationIndex = Number(event.destination.index ?? -1);
-  const isForward = currentIndex >= 0 && destinationIndex > currentIndex;
-  const isBackward = currentIndex >= 0 && destinationIndex < currentIndex;
-  const classification = classifyCurrentNavigationKey(destinationKey);
-  const rootLeavingBackward = appNavigationDepth === 0 && isBackward && classification.kind !== 'root';
-  const forbidden = isForward || rootLeavingBackward || ['dead', 'foreign', 'forward'].includes(classification.kind);
-
-  if (forbidden) {
-    if (event.cancelable) {
-      event.preventDefault();
-      pendingNavigationIntent = null;
-    } else if (event.canIntercept !== false && typeof event.intercept === 'function') {
-      event.intercept({
-        scroll: 'manual',
-        focusReset: 'manual',
-        handler: () => recoverFromCommittedForbiddenTraversal(),
-      });
-    }
-    activateNavigationGuardFeedback(rootLeavingBackward ? 'left' : 'right');
-    window.setTimeout(settleNavigationGuardFeedback, 90);
-    return;
-  }
-
-  if (!isBackward || !['root', 'back'].includes(classification.kind)) return;
-  const intent = pendingNavigationIntent?.targetKey === destinationKey ? pendingNavigationIntent.type : 'native-back';
-  const resetHome = classification.kind === 'root' && intent === 'home';
-  const targetFrame = classification.kind === 'back' ? navigationFrameByBrowserKey(destinationKey) : null;
-  const targetSnapshot = targetFrame?.snapshot || null;
-  const targetPosition = resetHome
-    ? { kind: 'top', scrollYFallback: 0 }
-    : classification.kind === 'root'
-      ? { kind: 'scroll', scrollYFallback: homeScrollY }
-      : targetSnapshot?.position || { kind: 'scroll', scrollYFallback: Math.max(0, Number(targetSnapshot?.scrollY || 0)) };
-
-  if (event.canIntercept !== false && typeof event.intercept === 'function') {
-    navigationTraversalInProgress = true;
-    event.intercept({
-      scroll: 'manual',
-      focusReset: 'manual',
-      handler: async () => {
-        const transaction = beginRootScrollTransaction(resetHome ? 'home-clear' : 'back-restore', targetPosition);
-        const epoch = transaction.epoch;
-        let committed = false;
-        try {
-          committed = commitNavigationToBrowserKey(destinationKey, { useUaScroll: !resetHome, resetHome });
-          pendingNavigationIntent = null;
-          if (!committed) {
-            recoverFromCommittedForbiddenTraversal();
-            return;
-          }
-          updateOverlayLayout({ immediate: true });
-          if (targetPosition.kind === 'entry') semanticPositionNode(targetPosition, { ensure: true });
-          flushQueuedVirtualChunksNow({ reason: 'back-restore-pre-ua' });
-          materializeChunksNearViewport({ reason: 'back-restore-pre-ua' });
-          await nextPresentationFrame();
-          if (!scrollCoordinator.owns(epoch)) return;
-          scrollCoordinator.setPhase(epoch, 'ua-scroll');
-          if (!resetHome && typeof event.scroll === 'function') {
-            try { event.scroll(); } catch { /* semantic correction remains authoritative */ }
-          } else restoreSemanticPosition(targetPosition, epoch, { source: resetHome ? 'home-clear' : 'back-restore-no-ua' });
-          scrollCoordinator.setPhase(epoch, 'verify');
-          await settleSemanticPosition(epoch, targetPosition, { maxFrames: 10, tolerance: 1, source: resetHome ? 'home-clear' : 'back-restore' });
-        } finally {
-          if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
-          navigationTraversalInProgress = false;
-          if (committed) persistCurrentHistorySnapshot();
-        }
-      },
-    });
-  }
-}
-
-function handleHistoryNavigationFallback(event) {
-  const state = event.state || {};
-  if (state.vix !== true || state.navModel !== NAVIGATION_MODEL || state.runtimeId !== navigationRuntimeId) return;
-  const token = String(state.navToken || '');
-  if (state.routeKind === 'root' && token === navigationRootToken) {
-    const resetHome = pendingNavigationIntent?.type === 'home-fallback';
-    discardNavigationFramesFrom(0);
-    pendingNavigationIntent = null;
-    renderCommittedRoot({ resetScroll: resetHome });
-    return;
-  }
-  const frame = navigationFrameByToken(token);
-  if (!frame) return;
-  const index = navigationStack.indexOf(frame);
-  if (index < 0) return;
-  if (index + 1 < appNavigationDepth) discardNavigationFramesFrom(index + 1);
-  appNavigationDepth = index + 1;
-  currentCollectionId = frame.collectionId;
-  currentViewKind = frame.viewKind || frame.snapshot?.viewKind || 'word';
-  pendingPageSnapshot = frame.snapshot || null;
-  hydrateNavigationSnapshot(pendingPageSnapshot);
-  renderApp();
-  restoreSnapshotAfterRender(pendingPageSnapshot);
-}
-
-function forbiddenForwardNeighborExists() {
-  if (!navigationApiAvailable()) return deadBrowserKeys.size > 0;
+  navigationTraversalInProgress = true;
   try {
-    const entries = globalThis.navigation.entries();
-    const currentIndex = Number(globalThis.navigation.currentEntry?.index ?? -1);
-    const next = entries.find((entry) => Number(entry.index) === currentIndex + 1);
-    if (!next) return false;
-    const key = String(next.key || '');
-    return deadBrowserKeys.has(key) || classifyCurrentNavigationKey(key).kind === 'forward';
-  } catch {
-    return deadBrowserKeys.size > 0;
+    await runPresentationTransition('push', () => {
+      currentCollectionId = collectionId;
+      currentViewKind = nextView;
+      activeSection = nextView;
+      pendingJumpEntryId = '';
+      pendingJumpReason = 'jump';
+      pendingPageSnapshot = null;
+      navigationStack.push(frame);
+      appNavigationDepth = navigationStack.length;
+      renderApp();
+      resetRootScrollForPreparedPage('page-push-top');
+    });
+  } finally {
+    navigationTraversalInProgress = false;
   }
-}
 
-function navigationEdgeGuardSide(touch) {
-  if (!touch || openModalCount) return '';
-  if (!document.documentElement.classList.contains('standalone-pwa')) return '';
-  const width = window.visualViewport?.width || window.innerWidth;
-  const edge = Math.max(14, Math.min(22, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navigation-guard-size')) || 18));
-  if (appNavigationDepth === 0 && touch.clientX <= edge) return 'left';
-  if (forbiddenForwardNeighborExists() && touch.clientX >= width - edge) return 'right';
-  return '';
-}
-
-function handleNavigationEdgeTouchStart(event) {
-  if (event.touches?.length !== 1) return;
-  const touch = event.touches[0];
-  const side = navigationEdgeGuardSide(touch);
-  if (!side) return;
-  event.preventDefault();
-  navigationEdgeGesture = { side, startX: touch.clientX };
-  activateNavigationGuardFeedback(side);
-}
-
-function handleNavigationEdgeTouchMove(event) {
-  if (!navigationEdgeGesture) return;
-  event.preventDefault();
-}
-
-function finishNavigationEdgeGesture(event) {
-  if (!navigationEdgeGesture) return;
-  event?.preventDefault?.();
-  navigationEdgeGesture = null;
-  settleNavigationGuardFeedback();
+  if (entryId) await jumpToEntry(entryId, { collectionId, reason });
+  if (needsHomeModePersistence) persistHydratedViewState(frame.snapshot);
+  persistCurrentHistorySnapshot();
 }
 
 function projectionCollectionForEntry(entryId) {
@@ -1472,7 +1308,7 @@ function searchResultButton(entry, onSelect, collectionId = projectionCollection
   const contextLabel = conflict
     ? [state.domainById.get(entry.domainId)?.name, collection?.name].filter(Boolean).join(' · ')
     : collection?.name;
-  return el('button', { type: 'button', className: 'search-result', on: { click: () => onSelect(entry, collectionId) } }, [
+  return el('button', { type: 'button', className: 'search-result', on: { click: () => Promise.resolve(onSelect(entry, collectionId)).catch(displayError) } }, [
     el('strong', { text: entry.text }),
     contextLabel ? el('span', { text: contextLabel }) : null,
   ]);
@@ -1994,10 +1830,8 @@ function renderCollection(token = renderRevision) {
   if (!collection) { goHome(); return; }
   const domain = state.domainById.get(collection.domainId);
   const allEntries = getVisibleEntries(collection.id);
-  const route = parseRoute();
-  const routedEntry = route.entryId ? state.entryById.get(route.entryId) : null;
   const snapshotView = pendingPageSnapshot?.collectionId === collection.id ? pendingPageSnapshot.viewKind : '';
-  currentViewKind = viewKindForCollection(collection, routedEntry, route.viewKind || snapshotView || currentViewKind);
+  currentViewKind = viewKindForCollection(collection, null, snapshotView || currentViewKind);
   activeSection = currentViewKind;
   applySnapshotBeforeRender(pendingPageSnapshot, collection, currentViewKind);
   if (pendingJumpEntryId) prepareTargetExpansion(collection, state.entryById.get(pendingJumpEntryId), currentViewKind, pendingJumpReason);
@@ -2046,9 +1880,12 @@ function renderCollection(token = renderRevision) {
   const jumpEntryId = pendingJumpEntryId;
   const jumpReason = pendingJumpReason;
   const restoreSnapshot = pendingPageSnapshot;
-  const useUaScrollRestore = pendingUaScrollRestore;
-  if (jumpEntryId) queueMicrotask(() => { if (token === renderRevision) jumpToEntry(jumpEntryId, { collectionId: collection.id, reason: jumpReason }); });
-  else if (restoreSnapshot && !useUaScrollRestore) restoreSnapshotAfterRender(restoreSnapshot, token);
+  const suppressSnapshotRestore = suppressPostRenderSnapshotRestore;
+  if (jumpEntryId) queueMicrotask(() => {
+    if (token !== renderRevision) return;
+    jumpToEntry(jumpEntryId, { collectionId: collection.id, reason: jumpReason }).catch(displayError);
+  });
+  else if (restoreSnapshot && !suppressSnapshotRestore) restoreSnapshotAfterRender(restoreSnapshot, token);
   else if (!restoreSnapshot && jumpReason === 'home') {
     const transaction = beginRootScrollTransaction('collection-fresh-top', { kind: 'top', scrollYFallback: 0 });
     const epoch = transaction.epoch;
@@ -2059,7 +1896,7 @@ function renderCollection(token = renderRevision) {
     });
   }
   pendingPageSnapshot = null;
-  pendingUaScrollRestore = false;
+  suppressPostRenderSnapshotRestore = false;
   if (!jumpEntryId) pendingJumpReason = 'jump';
 }
 
@@ -2255,33 +2092,54 @@ function renderBottomToolbar(collection, section = currentViewKind) {
   switchButton.disabled = !canSwitch;
   switchButton.title = canSwitch ? `切换到${nextKind === 'phrase' ? '短语' : '词汇'}视图` : (section === 'content' ? '非结构内容不按词汇或短语分页' : '系统总表已按内容类型固定');
   switchButton.setAttribute('aria-label', switchButton.title);
-  switchButton.onclick = canSwitch ? () => switchCollectionView(collection, nextKind) : null;
+  switchButton.onclick = canSwitch ? () => switchCollectionView(collection, nextKind).catch(displayError) : null;
 
   elements['bottom-search'].replaceChildren(svgIcon('search'));
   elements['bottom-search'].onclick = openSearchDialog;
   updateBackToTopVisibility();
 }
 
-function switchCollectionView(collection, nextKind) {
+async function switchCollectionView(collection, nextKind) {
   if (collection.type !== 'normal' || !['word', 'phrase'].includes(nextKind) || nextKind === currentViewKind) return;
   collapseTransactionRevision += 1;
+  const previousKind = currentViewKind;
+  // A normal sibling switch does not keep a hidden state for either projection.
+  // The source frame is being replaced, not parked for later restoration.
+  expandedLettersFor(collection.id, previousKind).clear();
+  clearExpandedRelationsForView(collection.id, previousKind);
   expandedLettersFor(collection.id, nextKind).clear();
   clearExpandedRelationsForView(collection.id, nextKind);
   currentViewKind = nextKind;
   activeSection = nextKind;
   pendingPageSnapshot = null;
   pendingJumpEntryId = '';
-  pendingJumpReason = 'home';
+  pendingJumpReason = 'jump';
   const mode = getViewMode(collection.id);
+  const freshMonth = mode === 'date' ? initialCalendarMonthForView(collection.id, nextKind) : '';
+  if (mode === 'date') hydrateRuntimeViewState(collection.id, { mode, section: nextKind, calendarMonth: freshMonth });
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
-    calendarMonth: mode === 'date' ? getCalendarMonth(collection.id, nextKind) : '',
+    calendarMonth: freshMonth,
     scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
   };
   const frame = currentNavigationFrame();
   if (frame) { frame.viewKind = nextKind; frame.snapshot = freshSnapshot; }
-  // Presentation-only view switch: do not create or rewrite a browser slot.
-  renderApp();
+  const motionKind = previousKind === 'word' && nextKind === 'phrase' ? 'sibling-forward' : 'sibling-back';
+  navigationTraversalInProgress = true;
+  try {
+    await runPresentationTransition(motionKind, () => {
+      renderApp();
+      resetRootScrollForPreparedPage('view-switch-top');
+    });
+  } finally {
+    navigationTraversalInProgress = false;
+  }
+  if (mode === 'date' && freshMonth) {
+    presentationMutationInProgress += 1;
+    try { await setCalendarMonth(collection.id, nextKind, freshMonth); }
+    finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
+  }
+  persistCurrentHistorySnapshot();
 }
 
 function sectionForEntry(entry) {
@@ -2397,6 +2255,14 @@ function currentSectionEntries(section) {
   return collectionRenderContext?.sections?.get(section)?.entries || [];
 }
 
+function initialCalendarMonthForView(collectionId, section) {
+  const months = entriesForCollectionView(collectionId, section)
+    .map((entry) => getStudyStamp(entry, collectionId)?.reviewDateKey?.slice(0, 7) || '')
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a));
+  return months[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+}
+
 function jumpToSection(section) {
   const context = collectionRenderContext;
   if (!context?.sections?.has(section)) return;
@@ -2416,25 +2282,41 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   clearExpandedRelationsForView(collection.id, section);
   pendingPageSnapshot = null;
   pendingJumpEntryId = '';
-  pendingJumpReason = 'home';
+  pendingJumpReason = 'jump';
   suppressScrollPersistence(700);
-  if (nextMode === 'date') {
-    const months = entriesForCollectionView(collection.id, section)
-      .map((entry) => getStudyStamp(entry, collection.id)?.reviewDateKey?.slice(0, 7) || '')
-      .filter(Boolean)
-      .sort((a, b) => b.localeCompare(a));
-    const fallback = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    await setCalendarMonth(collection.id, section, months[0] || fallback);
-  }
-  await setViewMode(collection.id, nextMode);
+
+  const nextMonth = nextMode === 'date' ? initialCalendarMonthForView(collection.id, section) : '';
+
+  // Presentation state changes in memory first. Durable settings persistence is
+  // intentionally outside the visible transition so IndexedDB latency cannot
+  // become part of the motion curve.
+  hydrateRuntimeViewState(collection.id, { mode: nextMode, section, calendarMonth: nextMonth });
   const freshSnapshot = {
     type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
-    calendarMonth: nextMode === 'date' ? getCalendarMonth(collection.id, section) : '',
+    calendarMonth: nextMode === 'date' ? nextMonth : '',
     scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: section,
   };
   const frame = currentNavigationFrame();
   if (frame) frame.snapshot = freshSnapshot;
-  // Mode is current-frame presentation state; browser rail identity is immutable.
+
+  navigationTraversalInProgress = true;
+  try {
+    await runPresentationTransition(nextMode === 'date' ? 'reindex-to-date' : 'reindex-to-alphabet', () => {
+      renderApp();
+      resetRootScrollForPreparedPage('mode-switch-top');
+    });
+  } finally {
+    navigationTraversalInProgress = false;
+  }
+
+  presentationMutationInProgress += 1;
+  try {
+    if (nextMode === 'date' && nextMonth) await setCalendarMonth(collection.id, section, nextMonth);
+    await setViewMode(collection.id, nextMode);
+  } finally {
+    presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
+  }
+  if (frame) frame.snapshot = freshSnapshot;
   persistCurrentHistorySnapshot();
 }
 
@@ -2502,38 +2384,27 @@ function calendarForSection(collection, section, dates) {
 async function jumpToAlphabetLetter(section, letter, sectionContext) {
   const target = sectionContext?.sectionByKey.get(letter);
   if (!target) return false;
+  activeSection = section;
+  releaseLetterTrackManualLock(section, { follow: false });
+  setLetterSectionOpen(section, letter, true, { persist: false });
+  updateOverlayLayout({ immediate: true });
+  refreshAlphabetSectionMetrics();
   const position = {
     kind: 'section',
     sectionId: target.id,
     offsetFromContentTop: 0,
     scrollYFallback: window.scrollY,
   };
-  const transaction = beginRootScrollTransaction('letter-jump', position);
-  const epoch = transaction.epoch;
-  try {
-    activeSection = section;
-    releaseLetterTrackManualLock(section);
-    setLetterSectionOpen(section, letter, true, { persist: false });
-    updateActiveLetter(section, letter, { ensureVisible: true, force: true });
-    updateOverlayLayout({ immediate: true });
-    scrollCoordinator.setPhase(epoch, 'geometry-ready');
-    await nextPresentationFrame();
-    if (!scrollCoordinator.owns(epoch)) return false;
-    flushQueuedVirtualChunksNow({ reason: 'letter-jump-preposition' });
-    semanticPositionNode(position, { ensure: true });
-    scrollCoordinator.setPhase(epoch, 'position');
-    restoreSemanticPosition(position, epoch, { tolerance: .5, source: 'letter-jump' });
-    scrollCoordinator.setPhase(epoch, 'verify');
-    await settleSemanticPosition(epoch, position, { maxFrames: 8, tolerance: 1, source: 'letter-jump' });
-    if (!scrollCoordinator.owns(epoch)) return false;
+  const ok = await animateRootToSemanticPosition(position, {
+    owner: 'letter-jump',
+    source: `letter-jump-${letter}`,
+    targetSemantic: alphabetOrdinal(letter),
+  });
+  if (ok) {
     updateActiveLetter(section, letter, { ensureVisible: true, force: true });
     scheduleAlphabetSectionMetricsRefresh();
-    finishRootScrollTransaction(epoch, { persist: true });
-    return true;
-  } catch (error) {
-    if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
-    throw error;
   }
+  return ok;
 }
 
 function navigationControls(collection, section, sectionContext, mode) {
@@ -2556,16 +2427,26 @@ function navigationControls(collection, section, sectionContext, mode) {
 
 function populateNavigationBar(nav, controls) {
   const track = el('div', { className: 'letter-nav-track' }, controls.track);
+  const locus = el('span', { className: 'letter-nav-locus', 'aria-hidden': 'true' });
+  track.append(locus);
   const trackState = {
-    lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0,
-    pointerActive: false, manualLocked: false, manualLockScrollY: 0, manualLockLetter: '', manualLockStickyEngaged: false,
+    programmaticUntil: 0,
+    pointerActive: false,
+    manualLocked: false,
+    manualLockScrollY: 0,
+    cameraFrame: 0,
+    cameraTarget: 0,
+    cameraLastAt: 0,
+    lastSemantic: Number.NaN,
+    lastSemanticAt: 0,
+    semanticVelocity: 0,
   };
   letterTrackStates.set(track, trackState);
   const lockManualPosition = () => {
+    if (trackState.cameraFrame) cancelAnimationFrame(trackState.cameraFrame);
+    trackState.cameraFrame = 0;
     trackState.manualLocked = true;
     trackState.manualLockScrollY = window.scrollY;
-    trackState.manualLockLetter = track.querySelector('[data-letter].active')?.dataset.letter || '';
-    trackState.manualLockStickyEngaged = alphabetNavAttached();
   };
   track.addEventListener('pointerdown', () => {
     trackState.pointerActive = true;
@@ -3163,7 +3044,6 @@ function setLetterSectionOpen(section, letter, open, { persist = true } = {}) {
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (indicator) indicator.classList.toggle('open', open);
-  updateActiveLetter(section, letter);
   scheduleAlphabetSectionMetricsRefresh();
   if (persist) persistCurrentHistorySnapshot();
   return true;
@@ -3190,76 +3070,165 @@ function letterTrackState(track) {
   let state = letterTrackStates.get(track);
   if (!state) {
     state = {
-      lastIndex: -1, lastDirection: 0, lastMoveAt: 0, programmaticUntil: 0,
-      pointerActive: false, manualLocked: false, manualLockScrollY: 0, manualLockLetter: '', manualLockStickyEngaged: false,
+      programmaticUntil: 0,
+      pointerActive: false,
+      manualLocked: false,
+      manualLockScrollY: 0,
+      cameraFrame: 0,
+      cameraTarget: 0,
+      cameraLastAt: 0,
+      lastSemantic: Number.NaN,
+      lastSemanticAt: 0,
+      semanticVelocity: 0,
     };
     letterTrackStates.set(track, state);
   }
   return state;
 }
 
-function releaseLetterTrackManualLock(section = '') {
+function alphabetAxisForSection(section = currentViewKind) {
+  const metrics = alphabetSectionMetrics.filter((item) => item.section === section && alphabetOrdinal(item.letter) >= 0);
+  const points = metrics.map((item) => ({ semantic: alphabetOrdinal(item.letter), physical: item.top, key: item.letter }));
+  if (points.length) {
+    const last = points.at(-1);
+    const terminalPhysical = rootScrollMetrics().maxScroll + topChromeBottom();
+    if (terminalPhysical > last.physical + 1) {
+      points.push({ semantic: last.semantic + 1, physical: terminalPhysical, key: '__end__' });
+    }
+  }
+  return createSemanticAxis(points);
+}
+
+function semanticLetterPositionForReadingBoundary(section = currentViewKind) {
+  const axis = alphabetAxisForSection(section);
+  const boundary = window.scrollY + topChromeBottom() + 1;
+  return semanticAtPhysical(axis, boundary);
+}
+
+function letterButtonCenterAtSemantic(track, semantic) {
+  const buttons = ALPHABET_KEYS.map((key) => track.querySelector(`[data-letter="${key}"]`)).filter(Boolean);
+  if (!buttons.length || !Number.isFinite(semantic)) return Number.NaN;
+  const clamped = Math.max(0, Math.min(ALPHABET_KEYS.length - 1, semantic));
+  const lowIndex = Math.floor(clamped);
+  const highIndex = Math.ceil(clamped);
+  const low = track.querySelector(`[data-letter="${ALPHABET_KEYS[lowIndex]}"]`);
+  const high = track.querySelector(`[data-letter="${ALPHABET_KEYS[highIndex]}"]`);
+  if (!low || !high) return Number.NaN;
+  const lowCenter = low.offsetLeft + low.offsetWidth / 2;
+  const highCenter = high.offsetLeft + high.offsetWidth / 2;
+  return lowCenter + (highCenter - lowCenter) * (clamped - lowIndex);
+}
+
+function scheduleLetterRailCamera(track, targetLeft) {
+  const state = letterTrackState(track);
+  if (state.manualLocked || state.pointerActive || !track.isConnected) return;
+  const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
+  state.cameraTarget = Math.max(0, Math.min(maxLeft, Number(targetLeft || 0)));
+  if (state.cameraFrame) return;
+  state.cameraLastAt = performance.now();
+  const step = (now) => {
+    state.cameraFrame = 0;
+    if (!track.isConnected || state.manualLocked || state.pointerActive) return;
+    const dt = Math.max(1, now - (state.cameraLastAt || now));
+    state.cameraLastAt = now;
+    const next = exponentialApproach(track.scrollLeft, state.cameraTarget, dt, 62);
+    state.programmaticUntil = Date.now() + 90;
+    track.scrollLeft = Math.abs(next - state.cameraTarget) < .3 ? state.cameraTarget : next;
+    if (Math.abs(track.scrollLeft - state.cameraTarget) > .35) state.cameraFrame = requestAnimationFrame(step);
+  };
+  state.cameraFrame = requestAnimationFrame(step);
+}
+
+function renderLetterRailSemanticPosition(section, semantic, { activeLetter = '', semanticVelocity = Number.NaN, forceCamera = false } = {}) {
+  const track = elements['letter-nav']?.querySelector('.letter-nav-track');
+  if (!track || !Number.isFinite(semantic)) return;
+  const state = letterTrackState(track);
+  const now = performance.now();
+  if (!Number.isFinite(semanticVelocity)) {
+    if (Number.isFinite(state.lastSemantic) && state.lastSemanticAt > 0 && now > state.lastSemanticAt) {
+      semanticVelocity = (semantic - state.lastSemantic) / ((now - state.lastSemanticAt) / 1000);
+    } else semanticVelocity = 0;
+  }
+  state.lastSemantic = semantic;
+  state.lastSemanticAt = now;
+  state.semanticVelocity = Number(semanticVelocity || 0);
+
+  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
+    const active = item.dataset.section === section && Boolean(activeLetter) && item.dataset.letter === activeLetter;
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+
+  const locus = track.querySelector('.letter-nav-locus');
+  const locusCenter = letterButtonCenterAtSemantic(track, semantic);
+  if (locus && Number.isFinite(locusCenter)) {
+    const width = Number(track.querySelector('[data-letter]')?.offsetWidth || 52);
+    locus.style.width = `${width}px`;
+    locus.style.transform = `translate3d(${locusCenter - width / 2}px,0,0)`;
+    locus.classList.add('ready');
+  }
+
+  if (state.manualLocked && !forceCamera) return;
+  if (forceCamera) state.manualLocked = false;
+  const cameraTarget = cameraTargetForLocus({
+    locusCenter,
+    viewportWidth: track.clientWidth,
+    scrollWidth: track.scrollWidth,
+    semanticVelocity: state.semanticVelocity,
+  });
+  scheduleLetterRailCamera(track, cameraTarget);
+}
+
+function releaseLetterTrackManualLock(section = '', { follow = true } = {}) {
   for (const track of elements['collection-view'].querySelectorAll('.letter-nav-track')) {
     if (section && !track.querySelector(`[data-section="${section}"]`)) continue;
     const state = letterTrackState(track);
+    if (!state.manualLocked && !state.pointerActive) continue;
     state.manualLocked = false;
-    state.manualLockLetter = '';
     state.manualLockScrollY = window.scrollY;
-    state.manualLockStickyEngaged = false;
+    if (follow) {
+      const semantic = semanticLetterPositionForReadingBoundary(section || currentViewKind);
+      const activeMetric = activeAlphabetMetricAtReadingBoundary(section || currentViewKind);
+      renderLetterRailSemanticPosition(section || currentViewKind, semantic, {
+        activeLetter: activeMetric?.letter || '',
+        forceCamera: true,
+      });
+    }
   }
 }
 
-function moveLetterTrack(track, nextLeft, direction = 0) {
-  const state = letterTrackState(track);
-  const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
-  const clamped = Math.max(0, Math.min(maxLeft, nextLeft));
-  if (Math.abs(clamped - track.scrollLeft) <= 1) return;
-  state.programmaticUntil = Date.now() + 260;
-  state.lastMoveAt = Date.now();
-  if (direction) state.lastDirection = direction;
-  track.scrollLeft = clamped;
+function releaseLetterTrackManualLockOnPageMotion() {
+  for (const track of elements['collection-view'].querySelectorAll('.letter-nav-track')) {
+    const state = letterTrackState(track);
+    if (!state.manualLocked || state.pointerActive) continue;
+    if (Math.abs(window.scrollY - state.manualLockScrollY) <= .5) continue;
+    state.manualLocked = false;
+    const section = track.querySelector('[data-section]')?.dataset.section || currentViewKind;
+    const semantic = semanticLetterPositionForReadingBoundary(section);
+    const activeMetric = activeAlphabetMetricAtReadingBoundary(section);
+    renderLetterRailSemanticPosition(section, semantic, { activeLetter: activeMetric?.letter || '', forceCamera: true });
+  }
 }
 
-function updateActiveLetter(section, letter = '', { ensureVisible = false, allowManualRelease = false, force = false } = {}) {
-  elements['collection-view'].querySelectorAll('.letter-nav [data-letter]').forEach((item) => {
-    const active = item.dataset.section === section && Boolean(letter) && item.dataset.letter === letter;
-    item.classList.toggle('active', active);
-    if (!active || !ensureVisible) return;
-    const track = item.closest('.letter-nav-track');
-    if (!track) return;
-    const state = letterTrackState(track);
-    if (state.pointerActive) return;
-    if (state.manualLocked && !force) {
-      if (!allowManualRelease) return;
-      state.manualLocked = false;
-      state.manualLockLetter = '';
-      state.manualLockStickyEngaged = false;
-    }
-    const buttons = [...track.querySelectorAll('[data-letter]')];
-    const index = buttons.indexOf(item);
-    const direction = state.lastIndex < 0 ? 0 : Math.sign(index - state.lastIndex);
-    state.lastIndex = index;
-    if (letter === 'A') { moveLetterTrack(track, 0, -1); state.lastDirection = -1; return; }
-    if (letter === '#') { moveLetterTrack(track, track.scrollWidth - track.clientWidth, 1); state.lastDirection = 1; return; }
-    const itemRect = item.getBoundingClientRect();
-    const trackRect = track.getBoundingClientRect();
-    const itemWidth = Math.max(1, itemRect.width || 52);
-    const leftGuard = trackRect.left + itemWidth * 1.15;
-    const rightGuard = trackRect.right - itemWidth * 1.15;
-    const now = Date.now();
-    const reversingQuickly = direction && state.lastDirection && direction !== state.lastDirection && now - state.lastMoveAt < 150;
-    const beyondLeftGuard = itemRect.left <= leftGuard;
-    const beyondRightGuard = itemRect.right >= rightGuard;
-    const actuallyOutsideLeft = itemRect.left < trackRect.left + 1;
-    const actuallyOutsideRight = itemRect.right > trackRect.right - 1;
-    if (beyondLeftGuard && (direction <= 0 || actuallyOutsideLeft)) {
-      if (!reversingQuickly || actuallyOutsideLeft) moveLetterTrack(track, item.offsetLeft - itemWidth, -1);
-      return;
-    }
-    if (beyondRightGuard && (direction >= 0 || actuallyOutsideRight)) {
-      if (!reversingQuickly || actuallyOutsideRight) moveLetterTrack(track, item.offsetLeft - (track.clientWidth - itemWidth * 2), 1);
-    }
-  });
+function updateActiveLetter(section, letter = '', { ensureVisible = false, force = false } = {}) {
+  const semantic = alphabetOrdinal(letter);
+  if (semantic < 0) return;
+  renderLetterRailSemanticPosition(section, semantic, { activeLetter: letter, forceCamera: Boolean(ensureVisible && force) });
+}
+
+function activeAlphabetMetricAtReadingBoundary(section = currentViewKind) {
+  const metrics = alphabetSectionMetrics.filter((item) => item.section === section);
+  if (!metrics.length) return null;
+  const boundary = window.scrollY + topChromeBottom() + 1;
+  let low = 0;
+  let high = metrics.length - 1;
+  let activeIndex = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (metrics[mid].top <= boundary) { activeIndex = mid; low = mid + 1; }
+    else high = mid - 1;
+  }
+  return metrics[Math.max(0, activeIndex)] || metrics[0] || null;
 }
 
 function ensureAlphabetResizeObserver() {
@@ -3294,45 +3263,24 @@ function refreshAlphabetSectionMetrics() {
         top: rect.top + scrollY,
         section: node.dataset.section || currentViewKind,
         letter: node.dataset.letter || '',
+        ordinal: alphabetOrdinal(node.dataset.letter || ''),
       };
     })
+    .filter((item) => item.ordinal >= 0)
     .sort((a, b) => a.top - b.top);
   syncActiveAlphabetHeading();
 }
 
 function syncActiveAlphabetHeading() {
-  // Programmatic scroll transactions already know their semantic target.
-  // Observer/scroll callbacks must not infer an older visible letter midway
-  // through the transaction and paint a one-frame stale active state.
   if (scrollCoordinator.isActive()) return;
   const context = collectionRenderContext;
   if (!currentCollectionId || !context || context.mode !== 'alphabet' || !alphabetSectionMetrics.length) return;
-  // 4.6: one ContentTop governs Sticky, LetterNav tracking and all jumps.
-  // Whether the nav happens to be visually attached this frame is not a second
-  // coordinate system.
-  const liveBoundary = topChromeBottom();
-  const boundary = window.scrollY + liveBoundary + 1;
-  let low = 0;
-  let high = alphabetSectionMetrics.length - 1;
-  let activeIndex = -1;
-  while (low <= high) {
-    const mid = (low + high) >> 1;
-    if (alphabetSectionMetrics[mid].top <= boundary) { activeIndex = mid; low = mid + 1; }
-    else high = mid - 1;
-  }
-  const active = alphabetSectionMetrics[Math.max(0, activeIndex)];
-  if (!active) return;
-  const stickyEngaged = activeIndex >= 0;
+  const section = currentViewKind;
+  const active = activeAlphabetMetricAtReadingBoundary(section);
+  const semantic = semanticLetterPositionForReadingBoundary(section);
+  if (!active || !Number.isFinite(semantic)) return;
   activeSection = active.section;
-  const track = elements['letter-nav'].querySelector('.letter-nav-track');
-  const state = track ? letterTrackState(track) : null;
-  const activeChanged = state ? Boolean(state.manualLockLetter && state.manualLockLetter !== active.letter) : false;
-  const stickyBoundaryNewlyEngaged = state ? Boolean(stickyEngaged && !state.manualLockStickyEngaged) : false;
-  updateActiveLetter(active.section, active.letter, {
-    ensureVisible: true,
-    allowManualRelease: Boolean(activeChanged || stickyBoundaryNewlyEngaged),
-  });
-  if (state && !state.manualLocked) state.manualLockStickyEngaged = stickyEngaged;
+  renderLetterRailSemanticPosition(active.section, semantic, { activeLetter: active.letter });
 }
 
 function updateLargeTitleState() {
@@ -4043,7 +3991,6 @@ function ensureEntryRendered(entryId, { persist = false } = {}) {
   if (context.mode === 'alphabet') {
     const letter = letterForEntry(entry);
     setLetterSectionOpen(section, letter, true, { persist });
-    updateActiveLetter(section, letter, { ensureVisible: false, force: true });
   } else {
     const dateKey = getStudyStamp(entry, context.collection.id)?.reviewDateKey || 'unmarked';
     setDateSectionOpen(section, dateKey, true, { persist });
@@ -4159,6 +4106,157 @@ function semanticPositionSample(position) {
   return node?.isConnected ? node.getBoundingClientRect().top : Number.NaN;
 }
 
+function materializeChunksAroundScrollY(targetY, { reason = 'target-prewarm', margin = 960 } = {}) {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const start = Math.max(0, Number(targetY || 0) - margin);
+  const end = Math.max(start, Number(targetY || 0) + viewportHeight + margin);
+  let changed = false;
+  for (const chunk of elements['entry-list'].querySelectorAll('.entry-chunk[data-rendered="false"]')) {
+    const rect = chunk.getBoundingClientRect();
+    const top = rect.top + window.scrollY;
+    const bottom = rect.bottom + window.scrollY;
+    if (bottom < start || top > end) continue;
+    queuedVirtualChunks.delete(chunk);
+    changed = materializeEntryChunk(chunk, { reason }) || changed;
+    if (chunk.dataset.rendered === 'true') measureEntryChunk(chunk);
+  }
+  return changed;
+}
+
+function prepareSemanticPositionGeometry(position, { reason = 'semantic-prewarm', passes = 3 } = {}) {
+  if (!position) return Number.NaN;
+  updateOverlayLayout({ immediate: true });
+  if (position.kind === 'entry') semanticPositionNode(position, { ensure: true });
+  let targetY = semanticDesiredScrollY(position);
+  for (let pass = 0; pass < passes; pass += 1) {
+    if (!Number.isFinite(targetY)) targetY = Math.max(0, Number(position.scrollYFallback || 0));
+    const changed = materializeChunksAroundScrollY(targetY, { reason: `${reason}-${pass + 1}` });
+    if (collectionRenderContext?.mode === 'alphabet') refreshAlphabetSectionMetrics();
+    if (position.kind === 'entry') semanticPositionNode(position, { ensure: true });
+    const nextY = semanticDesiredScrollY(position);
+    if (Number.isFinite(nextY)) targetY = nextY;
+    if (!changed) break;
+  }
+  return targetY;
+}
+
+function activeAlphabetMetricForSemantic(section, semantic) {
+  const metrics = alphabetSectionMetrics.filter((item) => item.section === section).sort((a, b) => a.ordinal - b.ordinal);
+  if (!metrics.length || !Number.isFinite(semantic)) return null;
+  let active = metrics[0];
+  for (const metric of metrics) {
+    if (metric.ordinal <= semantic + 1e-6) active = metric;
+    else break;
+  }
+  return active;
+}
+
+function semanticScrollYForPosition(section, semantic) {
+  const axis = alphabetAxisForSection(section);
+  const physical = physicalAtSemantic(axis, semantic);
+  if (!Number.isFinite(physical)) return Number.NaN;
+  const metrics = rootScrollMetrics();
+  return clampRootScrollTarget(physical - topChromeBottom(), metrics.scrollHeight, metrics.clientHeight);
+}
+
+async function animateRootToSemanticPosition(position, {
+  owner = 'semantic-scroll', source = 'semantic-scroll', targetSemantic = Number.NaN, semanticAlphabet = true,
+} = {}) {
+  const transaction = beginRootScrollTransaction(owner, position);
+  const epoch = transaction.epoch;
+  releaseLetterTrackManualLock(currentViewKind, { follow: false });
+  try {
+    let targetY = prepareSemanticPositionGeometry(position, { reason: `${source}-prewarm` });
+    if (!Number.isFinite(targetY)) targetY = Math.max(0, Number(position?.scrollYFallback || 0));
+    const startY = window.scrollY;
+    const alphabetMotion = semanticAlphabet && collectionRenderContext?.mode === 'alphabet' && currentCollectionId && alphabetSectionMetrics.length;
+    const startAt = performance.now();
+
+    if (alphabetMotion) {
+      refreshAlphabetSectionMetrics();
+      const section = currentViewKind;
+      let axis = alphabetAxisForSection(section);
+      const startBoundary = startY + topChromeBottom();
+      const startSemantic = semanticAtPhysical(axis, startBoundary);
+      if (!Number.isFinite(targetSemantic)) targetSemantic = semanticAtPhysical(axis, targetY + topChromeBottom());
+      if (!Number.isFinite(startSemantic) || !Number.isFinite(targetSemantic)) {
+        targetSemantic = Number.NaN;
+      } else {
+        const logicalDistance = Math.abs(targetSemantic - startSemantic);
+        const duration = semanticScrollDuration(logicalDistance, targetY - startY);
+        if (duration > 0) {
+          let previousSemantic = startSemantic;
+          let previousAt = startAt;
+          while (true) {
+            await nextPresentationFrame();
+            if (!scrollCoordinator.owns(epoch)) return false;
+            const now = performance.now();
+            const raw = Math.min(1, Math.max(0, (now - startAt) / duration));
+            const eased = MOTION_EASE.scroll(raw);
+            const semantic = startSemantic + (targetSemantic - startSemantic) * eased;
+            materializeChunksNearViewport({ reason: `${source}-corridor` });
+            if (queuedVirtualChunks.size) flushQueuedVirtualChunksNow({ reason: `${source}-corridor-flush` });
+            refreshAlphabetSectionMetrics();
+            axis = alphabetAxisForSection(section);
+            const liveY = semanticScrollYForPosition(section, semantic);
+            if (Number.isFinite(liveY)) rootScrollToY(liveY, { epoch, source });
+            const dt = Math.max(1, now - previousAt) / 1000;
+            const velocity = (semantic - previousSemantic) / dt;
+            const active = activeAlphabetMetricForSemantic(section, semantic);
+            renderLetterRailSemanticPosition(section, semantic, { activeLetter: active?.letter || '', semanticVelocity: velocity, forceCamera: true });
+            previousSemantic = semantic;
+            previousAt = now;
+            if (raw >= 1) break;
+          }
+        }
+      }
+    }
+
+    if (!Number.isFinite(targetSemantic)) {
+      const duration = physicalScrollDuration(targetY - startY);
+      if (duration > 0) {
+        while (true) {
+          await nextPresentationFrame();
+          if (!scrollCoordinator.owns(epoch)) return false;
+          const now = performance.now();
+          const raw = Math.min(1, Math.max(0, (now - startAt) / duration));
+          const eased = MOTION_EASE.scroll(raw);
+          materializeChunksNearViewport({ reason: `${source}-physical-corridor` });
+          if (queuedVirtualChunks.size) flushQueuedVirtualChunksNow({ reason: `${source}-physical-flush` });
+          const liveTarget = semanticDesiredScrollY(position);
+          if (Number.isFinite(liveTarget)) targetY = liveTarget;
+          const nextY = startY + (targetY - startY) * eased;
+          rootScrollToY(nextY, { epoch, source });
+          if (collectionRenderContext?.mode === 'alphabet') {
+            refreshAlphabetSectionMetrics();
+            const semantic = semanticLetterPositionForReadingBoundary(currentViewKind);
+            const active = activeAlphabetMetricAtReadingBoundary(currentViewKind);
+            renderLetterRailSemanticPosition(currentViewKind, semantic, { activeLetter: active?.letter || '', forceCamera: true });
+          }
+          if (raw >= 1) break;
+        }
+      }
+    }
+
+    if (!scrollCoordinator.owns(epoch)) return false;
+    targetY = prepareSemanticPositionGeometry(position, { reason: `${source}-final`, passes: 2 });
+    restoreSemanticPosition(position, epoch, { tolerance: .5, source: `${source}-final` });
+    if (collectionRenderContext?.mode === 'alphabet') {
+      refreshAlphabetSectionMetrics();
+      const semantic = Number.isFinite(targetSemantic) ? targetSemantic : semanticLetterPositionForReadingBoundary(currentViewKind);
+      const active = Number.isFinite(targetSemantic)
+        ? activeAlphabetMetricForSemantic(currentViewKind, targetSemantic)
+        : activeAlphabetMetricAtReadingBoundary(currentViewKind);
+      renderLetterRailSemanticPosition(currentViewKind, semantic, { activeLetter: active?.letter || '', forceCamera: true });
+    }
+    finishRootScrollTransaction(epoch, { persist: true });
+    return true;
+  } catch (error) {
+    if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
+    throw error;
+  }
+}
+
 function restoreSemanticPosition(position, epoch, { tolerance = 1, source = 'semantic-restore' } = {}) {
   if (!position || (epoch && !scrollCoordinator.owns(epoch))) return false;
   if (position.kind === 'entry') semanticPositionNode(position, { ensure: true });
@@ -4222,24 +4320,14 @@ function positionHeadingBelowChrome(target) {
   const sectionNode = target.matches?.('.letter-section, .date-day-section, .date-unmarked-section')
     ? target
     : target.closest?.('.letter-section, .date-day-section, .date-unmarked-section');
-  const flowAnchor = sectionNode?.querySelector(':scope > .section-flow-anchor') || null;
-  const positioningNode = flowAnchor || target;
-  const transaction = beginRootScrollTransaction('section-jump', sectionNode?.id ? { kind: 'section', sectionId: sectionNode.id, offsetFromContentTop: 0, scrollYFallback: window.scrollY } : null);
-  const epoch = transaction.epoch;
-  requestAnimationFrame(async () => {
-    if (!scrollCoordinator.owns(epoch) || !positioningNode.isConnected) return;
-    updateOverlayLayout({ immediate: true });
-    const rect = positioningNode.getBoundingClientRect();
-    const bounds = readingViewportBounds();
-    rootScrollToY(window.scrollY + rect.top - bounds.top, { epoch, source: 'section-jump' });
-    await nextPresentationFrame();
-    if (!scrollCoordinator.owns(epoch) || !positioningNode.isConnected) return;
-    const nextRect = positioningNode.getBoundingClientRect();
-    const nextBounds = readingViewportBounds();
-    const correction = nextRect.top - nextBounds.top;
-    if (Math.abs(correction) > 1) rootScrollByY(correction, { epoch, source: 'section-jump-correction' });
-    finishRootScrollTransaction(epoch, { persist: true });
-  });
+  const position = sectionNode?.id
+    ? { kind: 'section', sectionId: sectionNode.id, offsetFromContentTop: 0, scrollYFallback: window.scrollY }
+    : { kind: 'scroll', scrollYFallback: Math.max(0, window.scrollY + target.getBoundingClientRect().top - readingViewportBounds().top) };
+  animateRootToSemanticPosition(position, {
+    owner: 'section-jump',
+    source: 'section-jump',
+    semanticAlphabet: collectionRenderContext?.mode === 'alphabet',
+  }).catch(displayError);
   return true;
 }
 
@@ -4268,7 +4356,7 @@ function markJumpTarget(row, reason = 'jump') {
 }
 
 /** @param {string} entryId @param {{ behavior?: ScrollBehavior, collectionId?: string, reason?: string }} [options] */
-function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollectionId, reason = 'jump' } = {}) {
+async function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollectionId, reason = 'jump' } = {}) {
   const state = getState();
   const entry = state.entryById.get(entryId);
   if (!entry) { showToast('内容已不存在'); return false; }
@@ -4280,7 +4368,7 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   const targetCollection = state.collectionById.get(targetCollectionId);
   const targetViewKind = viewKindForCollection(targetCollection, entry, entry.kind);
   if (targetCollectionId !== currentCollectionId || (targetCollection?.type === 'normal' && targetViewKind !== currentViewKind)) {
-    navigateCollection(targetCollectionId, entryId, reason, targetViewKind);
+    await navigateCollection(targetCollectionId, entryId, reason, targetViewKind);
     return true;
   }
   const token = ++navigationRevision;
@@ -4292,6 +4380,7 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
   if (collection) renderPinBar(collection);
   const row = ensureEntryRendered(entryId, { persist: false });
   if (!row) return false;
+  updateOverlayLayout({ immediate: true });
   const bounds = readingViewportBounds();
   const rect = row.getBoundingClientRect();
   const anchor = bounds.top + (bounds.bottom - bounds.top) * 0.38;
@@ -4301,18 +4390,20 @@ function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollect
     offsetFromContentTop: anchor - rect.height / 2 - bounds.top,
     scrollYFallback: window.scrollY,
   };
-  const transaction = beginRootScrollTransaction('entry-jump', position);
-  const epoch = transaction.epoch;
-  requestAnimationFrame(async () => {
-    if (token !== navigationRevision || currentCollectionId !== targetCollectionId || !row.isConnected || !scrollCoordinator.owns(epoch)) return;
-    updateOverlayLayout({ immediate: true });
-    positionElementAtReadingAnchor(row, { epoch, source: `entry-jump-${reason}` });
-    await settleSemanticPosition(epoch, position, { maxFrames: 8, tolerance: 1, source: `entry-jump-${reason}` });
-    if (token !== navigationRevision || !row.isConnected || !scrollCoordinator.owns(epoch)) return;
-    markJumpTarget(row, reason);
-    finishRootScrollTransaction(epoch, { persist: true });
-  });
-  return true;
+  try {
+    const ok = await animateRootToSemanticPosition(position, {
+      owner: 'entry-jump',
+      source: `entry-jump-${reason}`,
+      semanticAlphabet: collectionRenderContext?.mode === 'alphabet',
+    });
+    if (!ok || token !== navigationRevision) return false;
+    const liveRow = document.getElementById(`entry-${entryId}`);
+    if (liveRow) markJumpTarget(liveRow, reason);
+    return true;
+  } catch (error) {
+    displayError(error);
+    return false;
+  }
 }
 
 function jumpPinned(collectionId, direction = 1) {
@@ -4381,13 +4472,11 @@ function returnToTop() {
   if (!currentCollectionId) return;
   cancelBrowseAnchorPress({ suppressClick: true });
   navigationRevision += 1;
-  const transaction = beginRootScrollTransaction('return-top', { kind: 'top', scrollYFallback: 0 });
-  rootScrollToY(0, { epoch: transaction.epoch, source: 'return-top' });
-  requestAnimationFrame(() => {
-    if (!scrollCoordinator.owns(transaction.epoch)) return;
-    syncActiveAlphabetHeading();
-    finishRootScrollTransaction(transaction.epoch, { persist: true });
-  });
+  animateRootToSemanticPosition({ kind: 'top', scrollYFallback: 0 }, {
+    owner: 'return-top',
+    source: 'return-top',
+    semanticAlphabet: false,
+  }).catch(displayError);
 }
 
 function openAddDomainDialog() {
@@ -5030,23 +5119,9 @@ function openSearchDialog() {
     }
     return normalDestinationsForEntries([entry])[0]?.collectionId || projectionCollectionForEntry(entry.id);
   };
-  const selectResult = (entry, collectionId) => {
-    const crossCollection = collectionId !== currentCollectionId;
-    if (!crossCollection) {
-      closeSearchDialog();
-      navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
-      return;
-    }
-    // WebKit records the source history snapshot when the new browser-rail slot
-    // is created. For a real page transition the source Search layer must be
-    // absent before that presentation snapshot, otherwise native Back previews
-    // faithfully freeze the stale closing modal. A single presentation fence is
-    // still within WebKit's recent-user-activation window; this is adapter
-    // hygiene, not a VIX navigation semantic dependency.
-    closeSearchDialog({ immediate: true });
-    requestAnimationFrame(() => {
-      navigateCollection(collectionId, entry.id, 'search', entry.kind).catch(displayError);
-    });
+  const selectResult = async (entry, collectionId) => {
+    await closeSearchDialogForNavigation();
+    await navigateCollection(collectionId, entry.id, 'search', entry.kind);
   };
   const showEntries = (entries, label = '') => {
     status.textContent = label || (entries.length ? entries.length.toLocaleString() : '无结果');
@@ -5195,7 +5270,7 @@ function refreshVisibleEntryRows(entryIds = []) {
 }
 
 function handleStoreEvent({ type, detail }) {
-  if (historyRestoreInProgress && ['view-mode', 'calendar-month'].includes(type)) return;
+  if ((historyRestoreInProgress || presentationMutationInProgress) && ['view-mode', 'calendar-month'].includes(type)) return;
   if (type === 'calendar-month') return;
   if (type === 'mutation' && detail?.kind === 'pin') return;
   if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
@@ -5249,6 +5324,7 @@ function handleRootScrollEnd() {
 
 function handleWindowScroll() {
   if (!rootUserTouchReleased && !scrollCoordinator.isActive()) rootUserScrollActive = true;
+  releaseLetterTrackManualLockOnPageMotion();
   if (browseAnchorPress) cancelBrowseAnchorPress({ suppressClick: true });
   if (activeQueryMenu) closeQueryMenu({ immediate: true });
   if (activeRelationTargetMenu) closeRelationTargetMenu({ immediate: true });
@@ -5275,18 +5351,16 @@ function initializeNavigationModel() {
   navigationRuntimeId = newNavigationToken('runtime');
   navigationRootToken = newNavigationToken('root');
   navigationStack.length = 0;
-  deadBrowserKeys.clear();
   appNavigationDepth = 0;
   currentCollectionId = '';
   currentViewKind = 'word';
   pendingPageSnapshot = null;
-  pendingNavigationIntent = null;
+  suppressPostRenderSnapshotRestore = false;
 
-  // A process/runtime restart intentionally starts at Home. This is the only
-  // runtime replaceState(): capture rootBrowserKey after it, then never rewrite
-  // a live browser slot again. That avoids the Safari 26.x traversal-key bug.
+  // 4.7 target runtime is one iPhone standalone PWA context. VIX internal
+  // navigation never creates browser-history entries; Back/Home are pure VIX
+  // operations and process restart intentionally returns to Home.
   history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
-  rootBrowserKey = currentBrowserKey();
 }
 
 export async function initializeUI() {
@@ -5310,10 +5384,6 @@ export async function initializeUI() {
   });
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
-  // Exactly one traversal owner. Navigation API owns same-document traversal
-  // on the target Safari generation; classic popstate is fallback only.
-  if (navigationApiAvailable()) globalThis.navigation.addEventListener('navigate', handleNavigationApiNavigate);
-  else window.addEventListener('popstate', handleHistoryNavigationFallback);
   window.visualViewport?.addEventListener('resize', () => updateVisualViewportVars());
   window.visualViewport?.addEventListener('scroll', () => updateVisualViewportVars(), { passive: true });
   window.addEventListener('resize', () => { updateVisualViewportVars(); scheduleAlphabetSectionMetricsRefresh(); }, { passive: true });
@@ -5357,13 +5427,6 @@ export async function initializeUI() {
   };
   document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
   document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
-  // Edge history guards are registered once, before any gesture begins. Root
-  // listeners must be explicitly non-passive on iOS for preventDefault() to own
-  // the gesture. Modal and navigation guards are orthogonal and share capture.
-  document.addEventListener('touchstart', handleNavigationEdgeTouchStart, { passive: false, capture: true });
-  document.addEventListener('touchmove', handleNavigationEdgeTouchMove, { passive: false, capture: true });
-  document.addEventListener('touchend', finishNavigationEdgeGesture, { passive: false, capture: true });
-  document.addEventListener('touchcancel', finishNavigationEdgeGesture, { passive: false, capture: true });
   document.addEventListener('touchstart', handleRootUserTouchStart, { passive: true, capture: true });
   document.addEventListener('touchmove', handleRootUserTouchMove, { passive: true, capture: true });
   document.addEventListener('touchend', handleRootUserTouchEnd, { passive: true, capture: true });

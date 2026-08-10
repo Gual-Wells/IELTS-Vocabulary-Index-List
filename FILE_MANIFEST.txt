@@ -15,6 +15,7 @@ AUDIT_REPORT_4.3.0.md
 AUDIT_REPORT_4.4.0.md
 AUDIT_REPORT_4.5.0.md
 AUDIT_REPORT_4.6.0.md
+AUDIT_REPORT_4.7.0.md
 CHANGELOG.md
 CHANGE_REPORT_3.0.2.md
 CHANGE_REPORT_3.0.3.md
@@ -39,6 +40,7 @@ CHANGE_REPORT_4.3.0.md
 CHANGE_REPORT_4.4.0.md
 CHANGE_REPORT_4.5.0.md
 CHANGE_REPORT_4.6.0.md
+CHANGE_REPORT_4.7.0.md
 DATA_FORMATS.md
 DATA_REPORT.md
 DEPLOY.md
@@ -62,6 +64,7 @@ MIGRATION_4.3.0.md
 MIGRATION_4.4.0.md
 MIGRATION_4.5.0.md
 MIGRATION_4.6.0.md
+MIGRATION_4.7.0.md
 PREUPDATE_ROADMAP_2026-08-04.md
 PRODUCT_MANUAL_3.0.4.md
 PRODUCT_MANUAL_3.0.5.md
@@ -84,6 +87,7 @@ PRODUCT_MANUAL_4.3.0.md
 PRODUCT_MANUAL_4.4.0.md
 PRODUCT_MANUAL_4.5.0.md
 PRODUCT_MANUAL_4.6.0.md
+PRODUCT_MANUAL_4.7.0.md
 PROJECT_HISTORY.md
 PROJECT_HISTORY_3.5.2_SNAPSHOT.md
 README.md
@@ -96,6 +100,7 @@ REQUIREMENT_BASELINE_4.3.0.md
 REQUIREMENT_BASELINE_4.4.0.md
 REQUIREMENT_BASELINE_4.5.0.md
 REQUIREMENT_BASELINE_4.6.0.md
+REQUIREMENT_BASELINE_4.7.0.md
 SECURITY.md
 SEMANTIC_IMPACT_MATRIX_4.0.0.md
 SEMANTIC_IMPACT_MATRIX_4.0.1.md
@@ -106,10 +111,12 @@ SEMANTIC_IMPACT_MATRIX_4.3.0.md
 SEMANTIC_IMPACT_MATRIX_4.4.0.md
 SEMANTIC_IMPACT_MATRIX_4.5.0.md
 SEMANTIC_IMPACT_MATRIX_4.6.0.md
+SEMANTIC_IMPACT_MATRIX_4.7.0.md
 TECHNICAL_RESEARCH_4.3.0.md
 TECHNICAL_RESEARCH_4.4.0.md
 TECHNICAL_RESEARCH_4.5.0.md
 TECHNICAL_RESEARCH_4.6.0.md
+TECHNICAL_RESEARCH_4.7.0.md
 TEST_REPORT_3.0.4.md
 TEST_REPORT_3.0.5.md
 TEST_REPORT_3.0.7.md
@@ -131,6 +138,7 @@ TEST_REPORT_4.3.0.md
 TEST_REPORT_4.4.0.md
 TEST_REPORT_4.5.0.md
 TEST_REPORT_4.6.0.md
+TEST_REPORT_4.7.0.md
 UX_SPEC_3.0.4.md
 UX_SPEC_3.0.5.md
 UX_SPEC_3.0.7.md
@@ -152,6 +160,7 @@ UX_SPEC_4.3.0.md
 UX_SPEC_4.4.0.md
 UX_SPEC_4.5.0.md
 UX_SPEC_4.6.0.md
+UX_SPEC_4.7.0.md
 assets/icons/vix-icon-180-v4.png
 assets/icons/vix-icon-192-v4.png
 assets/icons/vix-icon-512-v4.png
@@ -169,6 +178,7 @@ css/v4.3.0.css
 css/v4.4.0.css
 css/v4.5.0.css
 css/v4.6.0.css
+css/v4.7.0.css
 data/computer-terms-classification-report.json
 data/computer-terms-source-report.json
 data/computer-terms-source.tsv
@@ -200,6 +210,7 @@ js/v3-exchange.js
 js/v3-import.js
 js/v3-integrations.js
 js/v3-model.js
+js/v3-motion-runtime.js
 js/v3-navigation-runtime.js
 js/v3-runtime-geometry.js
 js/v3-scroll-runtime.js
@@ -213,6 +224,7 @@ tests/IPHONE_REDUCED_TESTS_4.3.0.md
 tests/IPHONE_REDUCED_TESTS_4.4.0.md
 tests/IPHONE_REDUCED_TESTS_4.5.0.md
 tests/IPHONE_REDUCED_TESTS_4.6.0.md
+tests/IPHONE_REDUCED_TESTS_4.7.0.md
 tests/MANUAL_CHECKLIST.md
 tests/integration-tests.mjs
 tests/layout-contract-check.py

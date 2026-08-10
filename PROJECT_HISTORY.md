@@ -1,14 +1,18 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-## 4.6.0：[当前实现 / 待真机]
+## 4.7.0：[当前实现 / 待真机]
+
+4.6.0 真机已证明 ScrollCoordinator / semantic position / flow-anchor / measured virtualization显著收敛最终位置，但硬切presentation仍普遍轻闪；顺序A→…→X仍有轻度目标几何再求解；Safari History Rail继续带来 frozen Search snapshot、snapshot→live handoff与深层50MiB bitmap淘汰后的纯背景。4.7.0据此撤销Browser History transport：standalone runtime只保留一个root browser slot，VIX自己POP/clear recursive stack；同时建立DOM-free Alphabet Semantic Axis与semantic motion、Target Geometry Prewarm、continuous LetterRail camera，并为Page Push/Pop、Home、Word/Phrase sibling、Alphabet/Date reindex、Modal spring定义不同运动语义。普通View/Mode切换TOP+collapsed，不保留四份隐藏状态；Calendar继续query/jump-only。Schema6 / DB5 / Seed4 / VIX2不变。
+
+## 4.6.0：[历史运行时基线]
 
 4.5.0 真机证明 Navigation Automaton 主体成立，但暴露 root scroll ownership 分裂：Back 重复 traversal 可从 42/123/354/4995/5322 正确位置退化；LetterNav 使用 Sticky visual rect，W→X 可被旧 42-chunk correction 拉回 W141；active LetterNav/Sticky/正文存在明显分帧刷新。4.6 不重做 Navigation/Sticky/Modal，而建立 ScrollCoordinator + SemanticPosition + measured VirtualEntryList：42/960 lazy 性能路径保留，Virtualizer 永久失去 root-scroll 权，Back 使用 UA first-pass 后按 VIX semantic anchor 最终验证；cross-Collection Search 清洁 history snapshot，首次 SW claim 不再双启动。Schema6 / DB5 / Seed4 / VIX2 不变。
 
-> 当前权威版本：Vocabulary Index 4.6.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.7.0（2026-08-10）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.6.0 完整源码实际行为。
+- **[当前实现]**：4.7.0 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -252,19 +256,22 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.6.0 当前待真机事项
+# 八、4.7.0 当前待真机事项
 
-- Navigation freeze 回归：Home→A→B→C、half-swipe、Home/dead Forward、same/cross Collection 仍符合 4.5 `destructive-v3`。
-- Semantic Back：42 / 123 / 354 / 4995 / 5322 重复 A→B→Back 不再退化；4995 不稳定到 4989，5322 始终保持 bottom。
-- Letter direct/sequential：direct X 与 A→B→…→X 最终同一 semantic target，W141 狂跳不复现。
-- Repeated Letter：collapsed/expanded/deep section 下重复点击同一字母都回 natural flow anchor；只允许 document-bottom clamp。
-- Visual Commit：LetterNav active、Sticky heading、正文和 Back live surface 不再明显分帧刷新/二次 correction。
-- Search history snapshot：cross-Collection Back preview 不再由 VIX 主动冻结 closing Search；live page 不发生 Search 二次消失。
-- Native swipe 平台边界：允许 Safari 更老 history bitmap 淘汰后展示纯背景 preview，但 live VIX 接管后必须立即正确。
-- Sticky/Modal：4.4 正向结果继续冻结，无白闪/累计漂移/背景 Sticky 破坏。
-- Performance：42/960 lazy materialization 保持，5k+ 总表无全量 DOM 回归，快速 A→X/滚动无明显新卡顿。
+- Single-slot：5+ 层 VIX recursive path 只通过 App Back/Home 返回；内部不再生成 Safari VIX history snapshot 或第 4 层纯色 VIX page。
+- Back restore：42 / 123 / 354 / 4995 / 5322 的 Page Pop 第一次 live target 就在正确 semantic position，无 TOP→target 二跳。
+- Alphabet semantic motion：direct X、A→…→X、W 深展开/关系展开→X 连续收敛；不再可见 W/Y 二次纠正。
+- Equal semantic rate：相邻逻辑字母的进度权重不受真实 section 物理高度影响；整个长跳转只有一次自然加速/减速。
+- Manual LetterNav：横拖不动正文，pointerup 后不复原；仅下一次 page vertical motion 才重新接管。
+- Same-page motion：Letter/Entry/PIN/Date/Return Top 都是真实连续 vertical scroll，Sticky自然 handoff。
+- Cross-page target：先 Page Push 到目标 TOP，再连续 scroll 到目标；不叠播。
+- Word/Phrase：Sibling Swap，目标 TOP+collapsed；切回不恢复隐藏 target view。
+- Alphabet/Date：Reindex Morph，目标 TOP+collapsed；Calendar query-only，不随正文滚动。
+- Page motion：Push/Pop 对称，Home为独立 hierarchy reset；过渡完成后无第二次 correction。
+- Modal：open scale/fade/克制 spring，close 更快；4.4 背景 Sticky/scroll 几何冻结继续成立。
+- Performance：42/960 virtual path 保持，motion/prewarm 不恢复全量 5k+ DOM。
 - Service Worker：全新安装只 `V→Home` 一次；显式“立即更新”只 reload 一次。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.6.0.md`、`SEMANTIC_IMPACT_MATRIX_4.6.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.6.0.md`、`PRODUCT_MANUAL_4.6.0.md`、`AUDIT_REPORT_4.6.0.md`、`TECHNICAL_RESEARCH_4.6.0.md`、`CHANGE_REPORT_4.6.0.md`、`TEST_REPORT_4.6.0.md`、`MIGRATION_4.6.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.6.0.md` 共同组成当前实现与验证记录。旧版本文档保留为历史事实，不得以过期 workaround 钳制当前优化。
+`REQUIREMENT_BASELINE_4.7.0.md`、`SEMANTIC_IMPACT_MATRIX_4.7.0.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.0.md`、`PRODUCT_MANUAL_4.7.0.md`、`AUDIT_REPORT_4.7.0.md`、`TECHNICAL_RESEARCH_4.7.0.md`、`CHANGE_REPORT_4.7.0.md`、`TEST_REPORT_4.7.0.md`、`MIGRATION_4.7.0.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.0.md` 共同组成当前实现与验证记录。4.6.0及更早文档保留为生命周期事实；其中 `destructive-v3` Browser History Rail、instant-nearest LetterNav 等已被4.7当前规范覆盖。

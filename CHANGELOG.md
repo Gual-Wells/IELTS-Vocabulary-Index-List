@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.7.0 — 2026-08-10
+
+- 撤销 Safari History Rail：standalone runtime 只有一个 root browser slot；内部页面不再 `pushState`/`traverseTo`，Back/Home 完全由 VIX recursive stack 执行；
+- 新增 `v3-motion-runtime.js`，建立 Alphabet physical↔semantic axis、non-linear timing、semantic/physical duration 与 continuous LetterRail camera；
+- Letter/Entry/PIN/Date/Return Top 改为真实连续 root scroll，目标 motion 前先 prewarm 目标 viewport Chunk/geometry；
+- 顺序 A→…→X 使用真实 `.section-flow-anchor` 与相邻逻辑字母等权时间坐标，降低尾部 W/X 极端路径 visible reconvergence；
+- LetterNav 从 3.5.x instant-nearest/edge-guard 硬跟随升级为 continuous locus/camera；手动横拖不动正文且保持到下一次页面纵向 motion；
+- Page Push/Pop、Home Hierarchy Reset、Word/Phrase Sibling Swap、Alphabet/Date Reindex Morph、Modal spring-like open/fast close 建立独立 motion semantics；
+- Word/Phrase 与 Alphabet/Date 普通切换继续 TOP+collapsed，并明确不保留四份隐藏页面状态；Date target calendar month重新初始化；
+- Date Calendar 明确 query/jump-only，不加入 LetterNav 式实时动态跟随；
+- 42 Entry / 960px virtualization、4.4 native Sticky、retained Modal geometry、Schema6 / DB5 / Seed4 / VIX2保持；
+- Service Worker cache升级到 `v4.7.0-single-slot-motion-20260810-1`，新增4.7 CSS/motion runtime precache；
+- 同步新增4.7 Requirement/Impact/Audit/Research/Change/Migration/UX/Manual/Test/iPhone Reduced生命周期文档。
+
 ## 4.6.0 — 2026-08-10
 
 - 建立 ScrollCoordinator 单一 root-scroll ownership；所有旧异步 scroll writer 通过 epoch 失效，Virtual Chunk 不再自行 `scrollBy()`；

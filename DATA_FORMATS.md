@@ -1,6 +1,6 @@
-# Vocabulary Index 4.6.0 数据格式
+# Vocabulary Index 4.7.0 数据格式
 
-> 4.6.0 runtime note：Backup Schema 6 / IndexedDB 5 / Seed revision 4 / VIX 2 与 4.5.0 完全相同。本版重构 Scroll/Position/Virtual Layout ownership；Seed、完整备份和 VIX 内容交换格式无迁移。
+> 4.7.0 runtime note：Backup Schema 6 / IndexedDB 5 / Seed revision 4 / VIX 2 与 4.6.0 完全相同。Single-Slot Navigation、Semantic Motion、LetterRail 与 target-prewarm 都是 runtime presentation 更新，无数据 migration。
 
 ## 版本
 
@@ -9,17 +9,19 @@
 - Built-in Seed revision：4
 - VIX JSON：2
 
-`schemaVersion` 必须为 6。4.6.0 可读取同一 Schema6 世代完整备份；不同 schema 世代继续拒绝隐式导入。
+`schemaVersion` 必须为 6。同 Schema6 Full Backup 继续直接读取；不同数据世代不做隐式迁移。
 
 ## Runtime state 不进入数据格式
 
 以下均不属于 Seed / Full Backup / VIX：
 
-- `destructive-v3` navigation token / browserKey / deadBrowserKeys；
-- ScrollCoordinator epoch / owner / phase；
-- frame `position` semantic reading snapshot；
-- frame-local measured `virtualLayoutCache`；
-- Sticky compositor transaction；
+- VIX recursive navigation token/frame；
+- ScrollCoordinator epoch/owner/phase；
+- semantic position；
+- measured `virtualLayoutCache`；
+- motion progress/easing/geometry snapshot；
+- Alphabet semantic axis / LetterRail locus/manual lock；
+- View Transition presentation state；
 - Modal presentation stack。
 
-4.6 不跨进程恢复 recursive navigation 或 measured virtual geometry；PWA runtime restart 从 Home 建新 root，不影响业务数据库。
+4.5/4.6 的 browserKey/deadBrowserKeys 已不再是 active runtime state。PWA runtime restart仍从 Home开始，不恢复 recursive navigation 或 motion state。

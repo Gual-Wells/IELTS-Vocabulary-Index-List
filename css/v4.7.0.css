@@ -1,0 +1,224 @@
+/* Vocabulary Index 4.7.0 semantic motion / single-slot presentation layer.
+   Target: iPhone 17 Home Screen standalone PWA on iOS 26.5.x.
+   Motion expresses product semantics; it must never substitute for unresolved
+   navigation/geometry correctness. */
+
+:root {
+  --vix-motion-page: 252ms;
+  --vix-motion-sibling: 184ms;
+  --vix-motion-reindex: 206ms;
+  --vix-motion-home: 236ms;
+  --vix-ease-page: cubic-bezier(.22,.74,.20,1);
+  --vix-ease-sibling: cubic-bezier(.22,.68,.24,1);
+  --vix-ease-reindex: cubic-bezier(.20,.70,.18,1);
+  --vix-ease-home: cubic-bezier(.24,.74,.22,1);
+  --presentation-motion-ms: 240ms;
+  --presentation-exit-ms: 170ms;
+}
+
+/* The old discrete active cell remains the semantic/ARIA identity. A separate
+   locus moves continuously between logical A–Z/# cells while page motion is in
+   progress, so expanded section height affects physical speed but not logical
+   alphabet progress. */
+.letter-nav-track {
+  position: relative !important;
+  scroll-behavior: auto !important;
+}
+.letter-nav-track button {
+  position: relative;
+  z-index: 2;
+  background: transparent !important;
+}
+.letter-nav-track button.active {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--accent-ink) !important;
+}
+.letter-nav-locus {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  height: 52px;
+  width: 52px;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--accent-soft);
+  box-shadow: inset 0 -3px 0 var(--accent);
+  transform: translate3d(0,0,0);
+  will-change: transform;
+}
+.letter-nav-locus.ready { opacity: 1; }
+
+/* Same-document View Transitions are the presentation boundary for page-level
+   state changes. Root scroll/Sticky state is fully prepared inside the update
+   callback before the new capture is exposed. */
+html.vix-motion-active::view-transition-group(root),
+html.vix-motion-active::view-transition-old(root),
+html.vix-motion-active::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-fill-mode: both;
+}
+
+@keyframes vix-push-old {
+  from { transform: translateX(0) scale(1); opacity: 1; }
+  to   { transform: translateX(-12%) scale(.988); opacity: .94; }
+}
+@keyframes vix-push-new {
+  from { transform: translateX(100%) scale(1); opacity: 1; }
+  to   { transform: translateX(0) scale(1); opacity: 1; }
+}
+html.vix-motion-push::view-transition-old(root) {
+  animation: vix-push-old var(--vix-motion-page) var(--vix-ease-page) both;
+}
+html.vix-motion-push::view-transition-new(root) {
+  animation: vix-push-new var(--vix-motion-page) var(--vix-ease-page) both;
+}
+
+@keyframes vix-pop-old {
+  from { transform: translateX(0) scale(1); opacity: 1; }
+  to   { transform: translateX(100%) scale(1); opacity: 1; }
+}
+@keyframes vix-pop-new {
+  from { transform: translateX(-12%) scale(.988); opacity: .94; }
+  to   { transform: translateX(0) scale(1); opacity: 1; }
+}
+html.vix-motion-pop::view-transition-old(root) {
+  animation: vix-pop-old var(--vix-motion-page) var(--vix-ease-page) both;
+}
+html.vix-motion-pop::view-transition-new(root) {
+  animation: vix-pop-new var(--vix-motion-page) var(--vix-ease-page) both;
+}
+
+/* Sibling and reindex motions operate on the Collection content plane. Product
+   chrome stays visually stable; the root capture itself is not animated. */
+html.vix-motion-sibling-forward #collection-view,
+html.vix-motion-sibling-back #collection-view,
+html.vix-motion-reindex-to-date #collection-view,
+html.vix-motion-reindex-to-alphabet #collection-view {
+  view-transition-name: vix-content-plane;
+}
+html.vix-motion-sibling-forward::view-transition-old(root),
+html.vix-motion-sibling-forward::view-transition-new(root),
+html.vix-motion-sibling-back::view-transition-old(root),
+html.vix-motion-sibling-back::view-transition-new(root),
+html.vix-motion-reindex-to-date::view-transition-old(root),
+html.vix-motion-reindex-to-date::view-transition-new(root),
+html.vix-motion-reindex-to-alphabet::view-transition-old(root),
+html.vix-motion-reindex-to-alphabet::view-transition-new(root) {
+  animation: none !important;
+}
+
+/* Word/Phrase are sibling projections of one Collection, not hierarchy. The
+   content plane swaps with shallow lateral travel rather than a full push. */
+@keyframes vix-sibling-forward-old {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(-15%); opacity: .72; }
+}
+@keyframes vix-sibling-forward-new {
+  from { transform: translateX(15%); opacity: .72; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes vix-sibling-back-old {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(15%); opacity: .72; }
+}
+@keyframes vix-sibling-back-new {
+  from { transform: translateX(-15%); opacity: .72; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+html.vix-motion-sibling-forward::view-transition-old(vix-content-plane) {
+  animation: vix-sibling-forward-old var(--vix-motion-sibling) var(--vix-ease-sibling) both;
+}
+html.vix-motion-sibling-forward::view-transition-new(vix-content-plane) {
+  animation: vix-sibling-forward-new var(--vix-motion-sibling) var(--vix-ease-sibling) both;
+}
+html.vix-motion-sibling-back::view-transition-old(vix-content-plane) {
+  animation: vix-sibling-back-old var(--vix-motion-sibling) var(--vix-ease-sibling) both;
+}
+html.vix-motion-sibling-back::view-transition-new(vix-content-plane) {
+  animation: vix-sibling-back-new var(--vix-motion-sibling) var(--vix-ease-sibling) both;
+}
+
+/* Alphabet/Date is a coordinate-system reindex, not a sibling page. The old
+   organization compacts around the top reading origin and the new one unfolds
+   from that same origin. Real Sticky geometry changes only once while rendering
+   is suppressed; the pseudo-surface carries the visible movement. */
+@keyframes vix-reindex-date-old {
+  from { transform: translateY(0) scaleY(1); opacity: 1; }
+  to   { transform: translateY(-10px) scaleY(.985); opacity: .50; }
+}
+@keyframes vix-reindex-date-new {
+  from { transform: translateY(12px) scaleY(1.012); opacity: .46; }
+  to   { transform: translateY(0) scaleY(1); opacity: 1; }
+}
+@keyframes vix-reindex-alphabet-old {
+  from { transform: translateY(0) scaleY(1); opacity: 1; }
+  to   { transform: translateY(10px) scaleY(.985); opacity: .50; }
+}
+@keyframes vix-reindex-alphabet-new {
+  from { transform: translateY(-12px) scaleY(1.012); opacity: .46; }
+  to   { transform: translateY(0) scaleY(1); opacity: 1; }
+}
+html.vix-motion-reindex-to-date::view-transition-old(vix-content-plane) {
+  animation: vix-reindex-date-old var(--vix-motion-reindex) var(--vix-ease-reindex) both;
+}
+html.vix-motion-reindex-to-date::view-transition-new(vix-content-plane) {
+  animation: vix-reindex-date-new var(--vix-motion-reindex) var(--vix-ease-reindex) both;
+}
+html.vix-motion-reindex-to-alphabet::view-transition-old(vix-content-plane) {
+  animation: vix-reindex-alphabet-old var(--vix-motion-reindex) var(--vix-ease-reindex) both;
+}
+html.vix-motion-reindex-to-alphabet::view-transition-new(vix-content-plane) {
+  animation: vix-reindex-alphabet-new var(--vix-motion-reindex) var(--vix-ease-reindex) both;
+}
+
+/* Home clears the whole recursive branch; it therefore reads as hierarchy reset
+   rather than repeated Back or another sibling swap. */
+@keyframes vix-home-old {
+  from { transform: scale(1); opacity: 1; }
+  to   { transform: scale(.93); opacity: 0; }
+}
+@keyframes vix-home-new {
+  from { transform: scale(1.025); opacity: .55; }
+  to   { transform: scale(1); opacity: 1; }
+}
+html.vix-motion-home::view-transition-old(root) {
+  animation: vix-home-old var(--vix-motion-home) var(--vix-ease-home) both;
+}
+html.vix-motion-home::view-transition-new(root) {
+  animation: vix-home-new var(--vix-motion-home) var(--vix-ease-home) both;
+}
+
+/* Retained modals are context surfaces. Opening uses a restrained elastic
+   overshoot; closing is shorter and deliberately does not bounce. */
+.modal-layer-backdrop {
+  transition: opacity 180ms cubic-bezier(.20,.72,.20,1) !important;
+}
+.modal-card {
+  transform-origin: 50% 46%;
+  transition:
+    opacity 160ms cubic-bezier(.20,.72,.20,1),
+    transform 250ms cubic-bezier(.18,1.12,.30,1) !important;
+}
+.modal-layer-entering .modal-card {
+  opacity: 0 !important;
+  transform: translateY(9px) scale(.95) !important;
+}
+.modal-layer-closing .modal-layer-backdrop {
+  transition-duration: 160ms !important;
+}
+.modal-layer-closing .modal-card {
+  opacity: 0 !important;
+  transform: translateY(4px) scale(.975) !important;
+  transition:
+    opacity 145ms cubic-bezier(.40,0,1,1),
+    transform 165ms cubic-bezier(.40,0,1,1) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.vix-motion-active::view-transition-old(root),
+  html.vix-motion-active::view-transition-new(root) { animation-duration: 1ms !important; }
+  .modal-card,
+  .modal-layer-backdrop { transition-duration: 1ms !important; }
+}

@@ -1,4 +1,4 @@
-# Vocabulary Index 4.7.2 本地架构
+# Vocabulary Index 4.7.3 本地架构
 
 ## Data
 
@@ -8,65 +8,58 @@ Schema6 / IndexedDB5 / Seed4 / VIX2。业务数据与runtime navigation/presenta
 
 当前继续使用4.7 `single-slot-vix-v1`：Browser session history只保留一个VIX root slot；内部页面由`navigationStack`保存live recursive Collection frames；Back直接POP，Home直接clear；kill/reopen从Home开始。
 
-**生命周期限定**：4.6.0曾冻结`destructive-v3` Browser History Rail。4.7.2不宣称Single Slot与之等价，也不在本次switch repair中回滚；该差异单列待决。
+**生命周期更正**：4.6的`destructive-v3`冻结属于当时版本作用域；4.7在此前Safari visual/history rail问题链上继续解耦并建立Single Slot。4.7.3将Single Slot视为已继承现行架构，而不是待用户裁决事项。
 
 ## Presentation Intent Queue
 
-`enqueuePresentationIntent()`串行化 Collection navigation、Back、Home、Word/Phrase与Alphabet/Date toggle。Promise tail在前一任务reject后仍可继续。View/Mode toggle的目标在实际执行时读取current state，避免buffer中的重复点击使用陈旧闭包target。
+`enqueuePresentationIntent()`串行化Collection navigation、Back、Home、Word/Phrase与Alphabet/Date toggle。Promise tail在前一任务reject后仍可继续；View/Mode目标在实际执行时读取current state。
+
+## Atomic Visual Commit
+
+`runAtomicCollectionCommit()`替代4.7.1/4.7.2的opacity buffer：
+
+- stable Collection surface不fade-to-zero；
+- update与首个authoritative position write尽量位于同一rendering opportunity；
+- manual View/Mode仍服从TOP+collapsed；
+- precise Entry target在render后先同步prewarm/restore，再只做必要settle；
+- Mode durable persistence在target可见commit之后执行，不能成为视觉空窗。
+
+Home使用`runRootCommit()`：root state先提交，再仅对Home/large-title执行非常弱的非零settle。
+
+Home Global直接原子替换`.global-grid`，只允许0.97→1的轻settle。
 
 ## ScrollCoordinator
 
 `js/v3-scroll-runtime.js`继续是唯一root-scroll ownership。Programmatic semantic target、Back restore、Sticky collapse、virtual materialize等都经coordinator/adapter提交；stale epoch write被拒绝。
 
-## Semantic Motion Gate
-
-- Spatial Motion：新Collection Push、Back Pop；
-- Semantic Scroll：同页Letter/Entry/PIN/Date/Return Top；
-- Local Reveal：Modal/Relation；
-- Buffered State Commit：Word/Phrase、Alphabet/Date、Home global mode；
-- Root Buffer：Home；
-- Discrete Follower：LetterRail。
-
 ## Semantic Transition Contract
-
-4.7.2把“结果”和“呈现”重新分层：
 
 - 手动Word/Phrase：目标view `TOP + collapsed`；Date下使用目标view自身calendar month；
 - 手动Alphabet/Date：目标mode `TOP + collapsed`；Alphabet→Date使用目标section latest-valid-month；
-- Same-Collection明确Entry target：允许hidden view change/target expansion，但只执行一次标准Entry semantic landing。
+- Same-Collection明确Entry target：跨view后只执行一次标准Entry semantic landing。
 
-4.7.1 transient letter/date neighborhood mapping已从active manual switch删除。
+## Stable Relation Row
 
-## Buffered State Commit
+`renderEntryRow()`永久创建`.entry-relation-slot`。展开时只插入`.entry-relation-reveal > .relation-panel`并切换`relations-open`；收起先关闭slot再清child。Entry primary shell、文本viewport和操作按钮不重建。Relation toggle不启动root ScrollCoordinator correction。
 
-`runBufferedCollectionCommit()`隐藏Collection content plane，完成semantic state/render/geometry/position commit后reveal。old/new内容不同时可见，也不调用document View Transition。
+## Bidirectional VirtualEntryList
 
-Buffer期间Collection content inert；底栏浏览锚点/回顶/搜索暂时inert；两个View/Mode toggle保持可接受后续queued intent。Topbar Back/Home通过同一queue串行。
+42 Entry / 960px prefetch保留。Chunk生命周期：
 
-## One Semantic Entry Target
+`placeholder → materialized → parked → materialized`
 
-`entryJumpSemanticPosition()`统一普通`jumpToEntry()`与hidden same-Collection target的38% reading-anchor几何。4.7.1“hidden restore后再jump一次”的双viewport求解已移除。
+`parkEntryChunk()`在退休前measure并写frame-local`virtualLayoutCache`；清空row DOM、保留Entry→chunk映射和等高min-height，再交回IntersectionObserver。`parkEntryChunksOutsideResidentWindow()`使用`max(1500px, 2.4×viewportHeight)`resident margin。
 
-## Root Home Buffer
+Programmatic semantic scroll约每72ms允许一次rolling sweep；transaction finish与user scrollend再次sweep。expandedLetters/expandedRelations不受DOM park影响。
 
-`runRootBufferedCommit()`用于Home：旧root context释放，更新Home，topbar/wordmark与main内容在稳定DOM上恢复，无scale/translate。
+## LetterRail
 
-## Alphabet Semantic Axis / LetterRail
+Alphabet semantic axis仍是真实flow-anchor的内部定位数学模型。LetterRail UI只有离散active cell；`cameraTargetForActiveCell()`使用38%–62%safe zone与hysteresis；manual drag lock规则保留。
 
-`js/v3-motion-runtime.js`继续提供A–Z/# ordinal、piecewise physical↔semantic映射与duration/easing。LetterRail UI只有离散active cell；`cameraTargetForActiveCell()`使用38%–62%safe zone与hysteresis；manual drag lock规则保留。
+## Modal / Sticky
 
-## Modal / Relation
-
-4.7.1 retained Modal/inert/geometry/focus restoration、transparent interaction backdrop、`@starting-style`与快速exit全部保留。Relation layout直接提交最终高度，只动画panel本身。
-
-## VirtualEntryList / Target Prewarm
-
-42 Entry / 960px prefetch冻结。Chunk descriptor与frame-local measured cache保留。Virtualizer不得直接拥有root scroll。
-
-## Failure Containment
-
-Manual View switch失败恢复previous view/frame snapshot；Mode switch若持久层写入失败则best-effort恢复previous mode/calendar与frame。回滚异常不覆盖原始异常。
+4.7.1 retained Modal/inert/geometry/focus restoration、transparent interaction backdrop、`@starting-style`与快速exit保持。4.4 native Sticky collapse保持。
 
 ## Presentation CSS
 
-`css/v4.7.0.css`保留历史motion基础；`css/v4.7.1.css`继续承载Pop/LetterRail/Modal视觉修订；`css/v4.7.2.css`为runtime-only marker，无新增视觉参数。
+`css/v4.7.0.css`保留历史motion基础；`css/v4.7.1.css`承载Pop/LetterRail/Modal修订；`css/v4.7.2.css`保留历史marker；`css/v4.7.3.css`只新增Relation slot与parked chunk生命周期规则。

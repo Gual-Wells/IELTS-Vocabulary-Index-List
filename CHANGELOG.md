@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.7.3 — 2026-08-11
+
+- 退役4.7.1/4.7.2 opacity-blink Buffered State Commit；Manual Word/Phrase、Alphabet/Date继续4.7.2 TOP+collapsed合同，但改为Atomic Visual Commit；
+- Mode切换先同步hydrate runtime state/render/TOP，再执行durable IndexedDB persistence，持久层I/O不再位于全透明视觉窗口；
+- Home Global取消34ms fade-out + 52ms fade-in，改atomic card replace + 0.97→1轻settle；Root Home取消整App fade-to-zero；
+- Relation改为Stable Row Shell + `.entry-relation-slot`局部accordion；toggle不再`replaceWith()`整个Entry row，也不启动root semantic correction；
+- VirtualEntryList从单向materialization升级为placeholder↔materialized/parked双向生命周期；park前保存measured height与layout cache，清空远端row DOM、保留Entry映射并重新observe；
+- programmatic semantic scroll增加72ms rolling resident sweep，transaction finish与user scrollend再次退休远端chunk，解决全局总表A→Z后live DOM单调累积；
+- 新增`css/v4.7.3.css`、完整4.7.3 Requirement/Impact/Audit/Research/Change/Migration/UX/Manual/Test/iPhone Reduced文档；
+- 生命周期表述更正：`single-slot-vix-v1`是4.7.x已继承现行导航架构，不是4.7.3待决事项；
+- Schema6 / DB5 / Seed4 / VIX2、Push/Pop/LetterRail/Modal/Sticky与4.7.2 switch semantic contract不变。
+
 ## 4.7.2 — 2026-08-11
 
 - 修复4.7.1 Buffered State Commit越权改写既有切换完成态：手动Word/Phrase与Alphabet/Date恢复4.6的TOP + collapsed合同；

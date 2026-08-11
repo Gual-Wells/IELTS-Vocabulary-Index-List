@@ -1,6 +1,10 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-## 4.7.2：[当前实现 / 待真机]
+## 4.7.3：[当前实现 / 待真机]
+
+4.7.2恢复了4.6手动View/Mode完成态，但真机继续暴露Presentation对象生命周期错误：Word/Phrase、Alphabet/Date、Home Global与Root Home通过极短opacity 1→0→1制造所谓Buffer，实际只被感知为闪屏；Relation虽然另有Local Reveal，却仍`replaceWith()`整个Entry row，主行重建/布局变化压过child动画；全局词汇总表A→Z则证明4.6 VirtualEntryList只有lazy materialize、没有远端DOM retirement，live row/chunk随已访问字母单调累积。4.7.3退役opacity-blink Buffer，建立Atomic Visual Commit与非零Root/Home settle；Relation改Stable Row Shell + child slot；Virtual Chunk补上measured-height park/rematerialize resident-set lifecycle，并在programmatic scroll/finish/scrollend执行动态sweep。4.7.2的TOP+collapsed、single semantic target与intent queue继续保持；`single-slot-vix-v1`明确作为4.7.x已继承现行架构，不再描述为待决。Schema6 / DB5 / Seed4 / VIX2不变。
+
+## 4.7.2：[历史修正版 / 语义成果由4.7.3继承]
 
 4.7.1成功收敛了snapshot overlap、LetterRail、Modal与Relation presentation，但在修复无空间语义切换时越过了presentation边界：把4.6已经存在的手动Word/Phrase、Alphabet/Date `TOP + collapsed`完成态误认成4.7.0动画副作用，改成transient letter/date neighborhood；same-Collection精确target又形成hidden landing + 第二次`jumpToEntry()`，busy flag还会静默吞掉transition中的后续输入。4.7.2以4.6 commit `4e6714062520e199806dae1893b2395312814c7b`为switch oracle：保留4.7.1 non-overlapping buffer，但恢复手动View/Mode `TOP + collapsed`、Date latest-valid-month与目标view自身calendar state；精确Entry target只落位一次；Collection/Back/Home/View/Mode进入serial intent queue并增加失败回滚。4.7.1 Pop/Root Buffer/Discrete LetterRail/Modal/Relation保持。`single-slot-vix-v1`继续运行，但正式记录为相对4.6 `destructive-v3`的独立待决架构差异。Schema6 / DB5 / Seed4 / VIX2不变。
 
@@ -8,7 +12,7 @@
 
 4.7.0真机进一步证明“给每种状态变化分配一种运动”过度扩张了Motion Semantics：新Collection Push通过，但Back感知偏快；Home双scale语义不符；Word/Phrase与Alphabet/Date在深位置因snapshot overlap + TOP reset出现旧页重叠、toolbar覆盖与高风险重启反馈；LetterRail continuous locus与categorical index冲突且velocity camera放大噪声；Modal close拖尾、可见backdrop抢注意力；Relation反而缺少局部展开反馈。4.7.1建立Semantic Motion Gate、Buffered State Commit、Root Buffer、Discrete LetterRail、透明Modal backdrop与Relation Local Reveal；其中“手动View/Mode用transient semantic anchor保持阅读邻域”的规则后经4.6源码回溯确认属于语义回归，已由4.7.2撤销。
 
-## 4.7.0：[当前实现 / 待真机]
+## 4.7.0：[历史架构版 / 后续修订]
 
 4.6.0 真机已证明 ScrollCoordinator / semantic position / flow-anchor / measured virtualization显著收敛最终位置，但硬切presentation仍普遍轻闪；顺序A→…→X仍有轻度目标几何再求解；Safari History Rail继续带来 frozen Search snapshot、snapshot→live handoff与深层50MiB bitmap淘汰后的纯背景。4.7.0据此撤销Browser History transport：standalone runtime只保留一个root browser slot，VIX自己POP/clear recursive stack；同时建立DOM-free Alphabet Semantic Axis与semantic motion、Target Geometry Prewarm、continuous LetterRail camera，并为Page Push/Pop、Home、Word/Phrase sibling、Alphabet/Date reindex、Modal spring定义不同运动语义。普通View/Mode切换TOP+collapsed，不保留四份隐藏状态；Calendar继续query/jump-only。Schema6 / DB5 / Seed4 / VIX2不变。
 
@@ -16,11 +20,11 @@
 
 4.5.0 真机证明 Navigation Automaton 主体成立，但暴露 root scroll ownership 分裂：Back 重复 traversal 可从 42/123/354/4995/5322 正确位置退化；LetterNav 使用 Sticky visual rect，W→X 可被旧 42-chunk correction 拉回 W141；active LetterNav/Sticky/正文存在明显分帧刷新。4.6 不重做 Navigation/Sticky/Modal，而建立 ScrollCoordinator + SemanticPosition + measured VirtualEntryList：42/960 lazy 性能路径保留，Virtualizer 永久失去 root-scroll 权，Back 使用 UA first-pass 后按 VIX semantic anchor 最终验证；cross-Collection Search 清洁 history snapshot，首次 SW claim 不再双启动。Schema6 / DB5 / Seed4 / VIX2 不变。
 
-> 当前权威版本：Vocabulary Index 4.7.2（2026-08-11）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.7.3（2026-08-11）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.7.2 完整源码实际行为。
+- **[当前实现]**：4.7.3 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -264,24 +268,17 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.7.2 当前待真机事项
+# 八、4.7.3 当前待真机事项
 
-- Manual Word/Phrase：TOP/500/1500/3000px及深展开位置切换后，第一次可见必须为目标view TOP + collapsed；不得保持同/近letter/date。
-- Date下Word/Phrase：目标calendar使用目标view自身状态，不从来源view映射date/month。
-- Manual Alphabet/Date：第一次可见TOP + collapsed；Alphabet→Date使用目标section latest-valid-month。
-- Same-Collection precise target：Search/Relation跨Word/Phrase时，hidden buffer内一次落到标准Entry reading anchor，reveal后不得二次滚动。
-- Intent Queue：快速View/Mode连点10–20次不得静默丢失或并发；Back/Home在当前commit后按序执行。
-- Buffer Shell：Bottom Toolbar保持视觉稳定；浏览锚点/回顶/搜索在短buffer窗口暂时锁定，View/Mode toggle可继续排队。
-- Push：4.7.0新Collection Push保持原手感，无回归。
-- Pop：4.7.1约282ms时序保持，第一次live target即正确。
-- Root Home：无scale/translate；context release→root-neutral→Home恢复，不被感知为loading。
-- LetterRail：无continuous locus；同一letter section内camera不持续微抖，active越出safe zone才有限重定位。
-- Modal / Relation：4.7.1透明interaction backdrop、快速exit、Local Reveal无回归。
-- Same-page Semantic Scroll：正常模式继续连续；Reduce Motion直接提交最终位置。
-- Performance：42/960 virtual path保持，Buffer隐藏期不得恢复全量5k+ DOM。
+- Manual Word/Phrase、Alphabet/Date：TOP+collapsed语义保持，但不再出现整面opacity blink/白帧。
+- Home Global：原子卡片切换；Collection→Home不整App熄灭。
+- Relation：Entry主行身份稳定，child slot连续开合20次不闪、不触发root viewport二次补偿。
+- A→Z：全局词汇总表连续字母跳转逻辑保持正确，live Entry-row/chunk resident set不随历史访问单调逼近全量；远端chunk动态park。
+- Park回访：返回旧字母/精确Search/Relation target时，cached-height placeholder能稳定rematerialize且无明显位置漂移。
+- Intent Queue：快速View/Mode连点仍按执行时current state串行生效。
+- Push/Pop/LetterRail/Modal/Sticky保持既有手感与约束。
 - Service Worker：全新安装只`V→Home`一次；显式“立即更新”只reload一次。
-- Navigation Architecture：Single Slot与4.6 destructive-v3的长期取舍仍需单独产品/真机审计，本版不混入switch修复。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.7.2.md`、`SEMANTIC_IMPACT_MATRIX_4.7.2.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.2.md`、`PRODUCT_MANUAL_4.7.2.md`、`AUDIT_REPORT_4.7.2.md`、`TECHNICAL_RESEARCH_4.7.2.md`、`CHANGE_REPORT_4.7.2.md`、`TEST_REPORT_4.7.2.md`、`MIGRATION_4.7.2.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.2.md` 共同组成当前实现与验证记录。4.7.1及更早文档保留为生命周期事实；其中4.7.1 transient-neighborhood manual switch合同已被4.7.2撤销，4.7.1 Pop/Root Buffer/LetterRail/Modal/Relation成果继续有效。
+`REQUIREMENT_BASELINE_4.7.3.md`、`SEMANTIC_IMPACT_MATRIX_4.7.3.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.3.md`、`PRODUCT_MANUAL_4.7.3.md`、`AUDIT_REPORT_4.7.3.md`、`TECHNICAL_RESEARCH_4.7.3.md`、`CHANGE_REPORT_4.7.3.md`、`TEST_REPORT_4.7.3.md`、`MIGRATION_4.7.3.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.3.md` 共同组成当前实现与验证记录。4.7.2及更早文档保留为生命周期事实；4.7.2的switch semantic repair继续有效，但其opacity Buffer与“Single Slot待决”当前表述已由4.7.3覆盖。

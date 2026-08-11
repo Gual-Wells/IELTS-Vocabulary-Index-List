@@ -1,0 +1,51 @@
+/* Vocabulary Index 4.7.3 presentation-lifecycle corrective layer.
+   Stable objects remain stable: representation switches commit atomically,
+   Relation expands a child slot instead of replacing the Entry row. */
+
+/* Relation disclosure is a real local structural transition. The primary row
+   never disappears; only the retained child slot opens/closes. */
+.entry-relation-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  opacity: .86;
+  transition:
+    grid-template-rows 104ms cubic-bezier(.4,0,.4,1),
+    opacity 82ms cubic-bezier(.4,0,.4,1);
+}
+
+.entry-relation-reveal {
+  min-height: 0;
+  overflow: clip;
+}
+
+.entry-row.relations-open .entry-relation-slot {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition-duration: 138ms, 104ms;
+  transition-timing-function: cubic-bezier(.2,.72,.2,1), cubic-bezier(.2,.72,.2,1);
+}
+
+.entry-relations .ui-icon {
+  transition: transform 94ms cubic-bezier(.4,0,.4,1) !important;
+}
+
+.entry-relations.active .ui-icon {
+  transform: rotate(90deg);
+  transition-duration: 122ms !important;
+  transition-timing-function: cubic-bezier(.2,.72,.2,1) !important;
+}
+
+/* Parked virtual chunks retain measured geometry but contain no Entry-row DOM.
+   The min-height is written by JS from the authoritative layout cache. */
+.entry-chunk[data-parked="true"] {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-relation-slot,
+  .entry-relations .ui-icon,
+  .entry-relations.active .ui-icon {
+    transition-duration: 1ms !important;
+  }
+}

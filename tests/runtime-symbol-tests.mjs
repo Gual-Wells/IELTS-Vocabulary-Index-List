@@ -18,30 +18,34 @@ const criticalFunctions = [
   'resetNavigationToHome', 'initializeNavigationModel', 'jumpToAlphabetLetter', 'captureSemanticPosition',
   'collapseNativeStickySection', 'stickyCollapseGeometry', 'animateRootToSemanticPosition',
   'prepareSemanticPositionGeometry', 'alphabetAxisForSection', 'renderLetterRailSemanticPosition',
-  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition', 'runBufferedCollectionCommit', 'runRootBufferedCommit', 'enqueuePresentationIntent', 'readingChromeBottom', 'toggleEntryRelations',
+  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition', 'runAtomicCollectionCommit', 'runRootCommit', 'enqueuePresentationIntent', 'readingChromeBottom', 'toggleEntryRelations', 'parkEntryChunk', 'parkEntryChunksOutsideResidentWindow',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\b(?:async\\s+)?function\\s+${name}\\s*\\(`, 'g'))];
   assert.equal(declarations.length, 1, `${name} 必须且只能定义一次`);
 }
 
-// 4.7.2 restores the 4.6 switch-action contract while retaining 4.7.1 buffered presentation.
-// Manual Word/Phrase and Alphabet/Date switches are fresh TOP + collapsed commits;
-// transient neighborhood mapping is forbidden on those manual switch paths.
+// 4.7.3 keeps the 4.6 switch-action contract while retiring the opacity-blink buffer.
+// Manual Word/Phrase and Alphabet/Date switches are atomic TOP + collapsed commits;
+// transient neighborhood mapping and whole-surface fade-out are forbidden.
 assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
 assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('hydrateNavigationSnapshot'));
 assert.ok(ui.includes('persistHydratedViewState'));
 assert.ok(ui.includes('prepareBackFrame'));
 assert.ok(ui.includes('restoreTransientSemanticPosition'));
-assert.ok(ui.includes('runBufferedCollectionCommit'));
+assert.ok(ui.includes('runAtomicCollectionCommit'));
+assert.ok(!ui.includes('runBufferedCollectionCommit'));
+assert.ok(ui.includes('runRootCommit'));
+assert.ok(!ui.includes('runRootBufferedCommit'));
 assert.ok(ui.includes('enqueuePresentationIntent'));
 assert.ok(!ui.includes('transientModeSwitchAnchor'));
 assert.ok(!ui.includes('transientViewSwitchTarget'));
 assert.ok(!ui.includes('switchAnchorOffset'));
 assert.ok(!ui.includes('nearestAlphabetGroup'));
 assert.ok(!ui.includes('nearestDateGroup'));
-assert.ok(!ui.includes('if (bufferedStateCommitInProgress) return;'));
+assert.ok(!ui.includes('if (visualStateCommitInProgress) return;'));
+assert.ok(!ui.includes('bufferedStateCommitInProgress'));
 assert.ok(!ui.includes('viewStateSnapshots'));
 assert.ok(!ui.includes('savedAlphabetState'));
 assert.ok(!ui.includes('savedDateState'));
@@ -61,21 +65,37 @@ assert.ok(modeSwitchSource.includes("const nextMonth = nextMode === 'date' ? ini
 assert.ok(modeSwitchSource.includes("position: { kind: 'top', scrollYFallback: 0 }"));
 assert.ok(modeSwitchSource.includes('expandedGroups: []'));
 assert.ok(!modeSwitchSource.includes('captureSemanticPosition'));
+assert.ok(modeSwitchSource.indexOf('await runAtomicCollectionCommit') < modeSwitchSource.indexOf('await setViewMode'), 'durable mode persistence must happen after visible atomic commit');
+
 
 const sameCollectionStart = ui.indexOf('if (currentCollectionId === collectionId)', ui.indexOf('async function navigateCollectionNow'));
 const sameCollectionEnd = ui.indexOf('\n  const token = newNavigationToken', sameCollectionStart);
 const sameCollectionSource = ui.slice(sameCollectionStart, sameCollectionEnd);
-const afterBufferedTarget = sameCollectionSource.slice(sameCollectionSource.indexOf('await runBufferedCollectionCommit'));
+const afterBufferedTarget = sameCollectionSource.slice(sameCollectionSource.indexOf('await runAtomicCollectionCommit'));
 assert.ok(afterBufferedTarget.includes('position: targetPosition'));
 assert.ok(!afterBufferedTarget.includes('await jumpToEntry(entryId'), 'same-Collection view target must not perform a second semantic position transaction');
 
-const bufferStart = ui.indexOf('async function runBufferedCollectionCommit');
-const bufferEnd = ui.indexOf('\nasync function runRootBufferedCommit', bufferStart);
-const bufferSource = ui.slice(bufferStart, bufferEnd);
-assert.ok(!bufferSource.includes('toolbar.inert = true'));
-assert.ok(bufferSource.includes("elements['bottom-last-position']"));
-assert.ok(bufferSource.includes("elements['back-to-top']"));
-assert.ok(bufferSource.includes("elements['bottom-search']"));
+const atomicStart = ui.indexOf('async function runAtomicCollectionCommit');
+const atomicEnd = ui.indexOf('\nasync function runRootCommit', atomicStart);
+const atomicSource = ui.slice(atomicStart, atomicEnd);
+assert.ok(!atomicSource.includes('toolbar.inert = true'));
+assert.ok(atomicSource.includes("elements['bottom-last-position']"));
+assert.ok(atomicSource.includes("elements['back-to-top']"));
+assert.ok(atomicSource.includes("elements['bottom-search']"));
+assert.ok(!atomicSource.includes('animateSurfaceOpacity(surface, 1, 0'));
+assert.ok(!atomicSource.includes("surface.style.opacity = '0'"));
+const rootCommitStart = ui.indexOf('async function runRootCommit');
+const rootCommitEnd = ui.indexOf('\nfunction resetRootScrollForPreparedPage', rootCommitStart);
+const rootCommitSource = ui.slice(rootCommitStart, rootCommitEnd);
+assert.ok(!rootCommitSource.includes('animateSurfaceOpacity(app, 1, 0'));
+assert.ok(rootCommitSource.includes('animateSurfaceOpacity(home, .965, 1'));
+const homeGlobalStart = ui.indexOf('async function switchHomeGlobalMode');
+const homeGlobalEnd = ui.indexOf('\nfunction renderHome', homeGlobalStart);
+const homeGlobalSource = ui.slice(homeGlobalStart, homeGlobalEnd);
+assert.ok(!homeGlobalSource.includes('animateSurfaceOpacity(grid, 1, 0'));
+assert.ok(homeGlobalSource.includes('grid.replaceChildren'));
+assert.ok(homeGlobalSource.includes('animateSurfaceOpacity(grid, .97, 1'));
+
 
 // 4.7 single-slot PWA navigation: Safari history is not the VIX transport rail.
 assert.ok(ui.includes("const NAVIGATION_MODEL = 'single-slot-vix-v1'"));
@@ -139,23 +159,39 @@ assert.ok(ui.includes("owner: 'letter-jump'"));
 assert.ok(ui.includes("rootMargin: '960px 0px 960px'"));
 assert.ok(ui.includes('const ENTRY_CHUNK_SIZE = 42'));
 assert.ok(ui.includes('virtualLayoutCache: new Map()'));
+assert.ok(ui.includes('function parkEntryChunk'));
+assert.ok(ui.includes('function parkEntryChunksOutsideResidentWindow'));
+assert.ok(ui.includes("chunk.dataset.rendered = 'false'"));
+assert.ok(ui.includes("chunk.dataset.parked = 'true'"));
+assert.ok(ui.includes('entryChunkResizeObserver?.unobserve(chunk)'));
+assert.ok(ui.includes('maybeParkEntryChunksDuringProgrammaticScroll'));
 assert.ok(!ui.includes('function restoreScrollAnchor('));
 assert.equal((ui.match(/window\.scrollTo\s*\(/g) || []).length, 2);
 assert.equal((ui.match(/window\.scrollBy\s*\(/g) || []).length, 0);
 
 // Page-level motion is gated by semantics: Push/Pop use View Transition;
-// Home and representation/category switches use non-overlapping buffered commits.
+// Home and representation/category switches never blank the stable surface.
 assert.ok(ui.includes("runPresentationTransition('push'"));
 assert.ok(ui.includes("runPresentationTransition('pop'"));
-assert.ok(ui.includes('runRootBufferedCommit'));
-assert.ok(ui.includes('runBufferedCollectionCommit'));
+assert.ok(ui.includes('runRootCommit'));
+assert.ok(ui.includes('runAtomicCollectionCommit'));
+assert.ok(!ui.includes('runBufferedCollectionCommit'));
+assert.ok(ui.includes('runRootCommit'));
+assert.ok(!ui.includes('runRootBufferedCommit'));
 assert.ok(!ui.includes("runPresentationTransition('home'"));
 assert.ok(!ui.includes("runPresentationTransition('sibling-forward'"));
 assert.ok(!ui.includes("runPresentationTransition('reindex-to-date'"));
 assert.ok(ui.includes('document.startViewTransition'));
 assert.ok(ui.includes('closeSearchDialogForNavigation'));
 assert.ok(ui.includes('closeRelationTargetMenu({ immediate: true })'));
-assert.ok(ui.includes("panel?.animate?.(["));
+const relationToggleStart = ui.indexOf('async function toggleEntryRelations');
+const relationToggleEnd = ui.indexOf('\nasync function toggleEntryPin', relationToggleStart);
+const relationToggleSource = ui.slice(relationToggleStart, relationToggleEnd);
+assert.ok(relationToggleSource.includes('.entry-relation-slot'));
+assert.ok(relationToggleSource.includes("row.classList.add('relations-open')"));
+assert.ok(relationToggleSource.includes("row.classList.remove('relations-open')"));
+assert.ok(!relationToggleSource.includes('replaceWith('), 'Relation toggle must preserve Entry-row DOM identity');
+assert.ok(!relationToggleSource.includes('beginRootScrollTransaction'), 'Relation local reveal must not run a competing root scroll correction');
 
 // Modal geometry lock remains retained; no root overflow/position mutation is reintroduced.
 assert.ok(ui.includes('updateModalViewportGeometry({ immediate: true })'));

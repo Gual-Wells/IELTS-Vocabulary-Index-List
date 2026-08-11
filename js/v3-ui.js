@@ -20,7 +20,7 @@ import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.2';
+const APP_VERSION = '4.7.3';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -76,7 +76,7 @@ let pendingPageSnapshot = null;
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
-let bufferedStateCommitInProgress = false;
+let visualStateCommitInProgress = false;
 let presentationIntentTail = Promise.resolve();
 let renderRevision = 0;
 let homeScrollY = 0;
@@ -107,6 +107,7 @@ let rootUserScrollReleaseTimer = 0;
 let pendingVirtualAnchor = null;
 let virtualMaterializeFrame = 0;
 const queuedVirtualChunks = new Set();
+let lastVirtualResidentSweepAt = 0;
 
 function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
@@ -195,6 +196,10 @@ function finishRootScrollTransaction(epoch, { persist = true } = {}) {
   // inference is suppressed. Commit the final Chrome/Sticky/Letter state once
   // the semantic position is stable, before persisting that state.
   finalizeRootScrollPresentation();
+  // Measured chunk heights preserve document geometry while far-away row DOM
+  // is retired. This keeps the live resident set bounded across repeated A→Z
+  // semantic jumps without changing expanded-letter product state.
+  parkEntryChunksOutsideResidentWindow({ reason: `transaction-finish:${state?.owner || 'scroll'}` });
   if (persist) persistCurrentHistorySnapshot();
   return true;
 }
@@ -429,10 +434,10 @@ function updateOverlayLayout({ immediate = false } = {}) {
 const MODAL_EXIT_MS = 108;
 const POPOVER_EXIT_MS = 140;
 const DOCK_EXIT_MS = 140;
-const BUFFER_OUT_MS = 42;
-const BUFFER_IN_MS = 58;
-const ROOT_BUFFER_OUT_MS = 60;
-const ROOT_BUFFER_IN_MS = 88;
+const ROOT_COMMIT_SETTLE_MS = 96;
+const HOME_GLOBAL_SETTLE_MS = 76;
+const VIRTUAL_PARK_MIN_MARGIN = 1500;
+const VIRTUAL_PARK_VIEWPORTS = 2.4;
 
 function lockPageForModal() {
   if (openModalCount) return;
@@ -947,52 +952,42 @@ async function commitBufferedSemanticPosition(position, source) {
   return resolved || null;
 }
 
-async function runBufferedCollectionCommit(update, { position = null, source = 'buffered-switch', outMs = BUFFER_OUT_MS, inMs = BUFFER_IN_MS } = {}) {
+async function runAtomicCollectionCommit(update, { position = null, source = 'atomic-switch' } = {}) {
   const surface = elements['collection-view'];
   const blockedToolbarControls = [elements['bottom-last-position'], elements['back-to-top'], elements['bottom-search']].filter(Boolean);
-  bufferedStateCommitInProgress = true;
+  visualStateCommitInProgress = true;
   if (surface) surface.inert = true;
   for (const control of blockedToolbarControls) control.inert = true;
   try {
-    if (!surface?.isConnected || prefersReducedMotion()) {
-      await update();
-      if (position) await commitBufferedSemanticPosition(position, source);
-      surface?.style.removeProperty('opacity');
-      return;
-    }
-    await animateSurfaceOpacity(surface, 1, 0, outMs, 'cubic-bezier(.4,0,1,1)');
-    surface.style.opacity = '0';
+    // 4.7.3: state commits no longer create an opacity blink. The DOM/state
+    // mutation and the first authoritative position write occur in the same
+    // task whenever possible, so the next paint exposes only the stable target.
     await update();
-    if (position) await commitBufferedSemanticPosition(position, source);
-    await nextPresentationFrame();
-    await animateSurfaceOpacity(surface, 0, 1, inMs, 'cubic-bezier(.2,.72,.2,1)');
-    surface.style.removeProperty('opacity');
+    const resolved = typeof position === 'function' ? position() : position;
+    if (resolved?.kind === 'top') resetRootScrollForPreparedPage(source);
+    else if (resolved) await restoreTransientSemanticPosition(resolved, source);
+    return resolved || null;
   } finally {
     if (surface) surface.inert = false;
     for (const control of blockedToolbarControls) control.inert = false;
-    bufferedStateCommitInProgress = false;
+    visualStateCommitInProgress = false;
   }
 }
 
-async function runRootBufferedCommit(update) {
-  const app = elements.app;
-  if (!app?.isConnected || prefersReducedMotion()) { await update(); return; }
-  await animateSurfaceOpacity(app, 1, 0, ROOT_BUFFER_OUT_MS, 'cubic-bezier(.4,0,1,1)');
-  app.style.opacity = '0';
+async function runRootCommit(update) {
   await update();
-  const topbar = app.querySelector('.topbar');
-  const main = elements['main-content'];
-  app.style.opacity = '1';
-  if (topbar) topbar.style.opacity = '0';
-  if (main) main.style.opacity = '0';
-  await nextPresentationFrame();
+  if (prefersReducedMotion()) return;
+  // Home has root-level meaning, but it must never be expressed by blanking the
+  // whole application. A very small post-commit settle is enough to distinguish
+  // the root reveal without creating a luminance discontinuity.
+  const home = elements['home-view'];
+  const largeTitle = elements['large-title'];
   const tasks = [];
-  if (topbar) tasks.push(animateSurfaceOpacity(topbar, 0, 1, 72, 'cubic-bezier(.2,.72,.2,1)'));
-  if (main) tasks.push(animateSurfaceOpacity(main, 0, 1, ROOT_BUFFER_IN_MS, 'cubic-bezier(.2,.72,.2,1)', { delay: 12 }));
+  if (home?.isConnected) tasks.push(animateSurfaceOpacity(home, .965, 1, ROOT_COMMIT_SETTLE_MS, 'cubic-bezier(.2,.72,.2,1)'));
+  if (largeTitle?.isConnected && !largeTitle.classList.contains('hidden')) tasks.push(animateSurfaceOpacity(largeTitle, .98, 1, 72, 'cubic-bezier(.2,.72,.2,1)'));
   await Promise.all(tasks);
-  topbar?.style.removeProperty('opacity');
-  main?.style.removeProperty('opacity');
-  app.style.removeProperty('opacity');
+  home?.style.removeProperty('opacity');
+  largeTitle?.style.removeProperty('opacity');
 }
 
 function resetRootScrollForPreparedPage(source = 'page-top') {
@@ -1117,7 +1112,7 @@ async function resetNavigationToHomeNow() {
   try {
     const removed = navigationStack.splice(0, navigationStack.length);
     appNavigationDepth = 0;
-    await runRootBufferedCommit(() => {
+    await runRootCommit(() => {
       for (const frame of removed) discardFrameRuntimeState(frame);
       renderCommittedRoot({ resetScroll: true });
     });
@@ -1177,7 +1172,7 @@ async function navigateCollectionNow(collectionId, entryId = '', reason = 'jump'
     const previousFrameSnapshot = previousFrame?.snapshot || null;
     navigationTraversalInProgress = true;
     try {
-      await runBufferedCollectionCommit(() => {
+      await runAtomicCollectionCommit(() => {
         currentViewKind = nextView;
         activeSection = nextView;
         pendingPageSnapshot = null;
@@ -1198,8 +1193,6 @@ async function navigateCollectionNow(collectionId, entryId = '', reason = 'jump'
       }, {
         position: targetPosition,
         source: entryId ? `view-target-${previousView}-to-${nextView}` : `view-switch-${previousView}-to-${nextView}`,
-        outMs: 38,
-        inMs: 54,
       });
     } catch (error) {
       currentViewKind = previousView;
@@ -1883,10 +1876,11 @@ function renderHomeAnnotationBanner() {
 async function switchHomeGlobalMode(sourceButton = null) {
   const scope = elements['home-view']?.querySelector('.global-scope');
   const grid = scope?.querySelector('.global-grid');
-  if (!scope || !grid || sourceButton?.dataset.buffering === 'true') return;
-  if (sourceButton) { sourceButton.dataset.buffering = 'true'; sourceButton.disabled = true; }
+  if (!scope || !grid || sourceButton?.dataset.committing === 'true') return;
+  if (sourceButton) { sourceButton.dataset.committing = 'true'; sourceButton.disabled = true; }
   try {
-    await animateSurfaceOpacity(grid, 1, 0, prefersReducedMotion() ? 0 : 34, 'cubic-bezier(.4,0,1,1)');
+    // This is a local projection change, not navigation. Commit the new card
+    // structure atomically; do not blank the grid as a fake buffer.
     homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
     const state = getState();
     const cards = homeGlobalMode === 'structured'
@@ -1900,11 +1894,12 @@ async function switchHomeGlobalMode(sourceButton = null) {
       buttonNode.title = label;
       buttonNode.setAttribute('aria-label', label);
     }
-    await nextPresentationFrame();
-    await animateSurfaceOpacity(grid, 0, 1, prefersReducedMotion() ? 0 : 52, 'cubic-bezier(.2,.72,.2,1)');
-    grid.style.removeProperty('opacity');
+    if (!prefersReducedMotion()) {
+      await animateSurfaceOpacity(grid, .97, 1, HOME_GLOBAL_SETTLE_MS, 'cubic-bezier(.2,.72,.2,1)');
+      grid.style.removeProperty('opacity');
+    }
   } finally {
-    if (sourceButton?.isConnected) { sourceButton.disabled = false; delete sourceButton.dataset.buffering; }
+    if (sourceButton?.isConnected) { sourceButton.disabled = false; delete sourceButton.dataset.committing; }
   }
 }
 
@@ -2272,7 +2267,7 @@ async function switchCollectionViewNow(collection, requestedKind = '') {
   suppressScrollPersistence(700);
   navigationTraversalInProgress = true;
   try {
-    await runBufferedCollectionCommit(() => {
+    await runAtomicCollectionCommit(() => {
       currentViewKind = nextKind;
       activeSection = nextKind;
       pendingPageSnapshot = null;
@@ -2283,8 +2278,6 @@ async function switchCollectionViewNow(collection, requestedKind = '') {
     }, {
       position: freshSnapshot.position,
       source: `view-switch-${previousKind}-to-${nextKind}`,
-      outMs: 38,
-      inMs: 54,
     });
   } catch (error) {
     currentViewKind = previousKind;
@@ -2460,23 +2453,26 @@ async function switchCollectionModeNow(collection, section = currentViewKind) {
 
   navigationTraversalInProgress = true;
   try {
-    await runBufferedCollectionCommit(async () => {
-      presentationMutationInProgress += 1;
-      try {
-        if (nextMode === 'date' && nextMonth) await setCalendarMonth(collection.id, section, nextMonth);
-        await setViewMode(collection.id, nextMode);
-      } finally {
-        presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
-      }
+    await runAtomicCollectionCommit(() => {
+      // Runtime state is committed synchronously so no IndexedDB latency is
+      // exposed as a blank/transparent presentation window.
       hydrateRuntimeViewState(collection.id, { mode: nextMode, section, calendarMonth: nextMonth });
       if (frame) frame.snapshot = freshSnapshot;
       renderApp();
     }, {
       position: freshSnapshot.position,
       source: `mode-switch-${currentModeValue}-to-${nextMode}`,
-      outMs: 44,
-      inMs: 62,
     });
+
+    // Durable persistence happens after the target is already visible. Store
+    // events are suppressed from causing a redundant render.
+    presentationMutationInProgress += 1;
+    try {
+      if (nextMode === 'date' && nextMonth) await setCalendarMonth(collection.id, section, nextMonth);
+      await setViewMode(collection.id, nextMode);
+    } finally {
+      presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
+    }
   } catch (error) {
     presentationMutationInProgress += 1;
     try {
@@ -2709,6 +2705,7 @@ function materializeEntryChunk(chunk, { reason = 'materialize' } = {}) {
   const data = entryChunkData.get(chunk);
   if (!data || data.renderToken !== renderRevision || chunk.dataset.rendered === 'true') return false;
   chunk.dataset.rendered = 'true';
+  delete chunk.dataset.parked;
   const rows = data.items.map(({ entry, groupIndex }) => renderEntryRow(entry, data.collection, data.domain, {
     groupIndex,
     globalIndex: data.globalIndexById.get(entry.id) || groupIndex,
@@ -2729,6 +2726,58 @@ function materializeEntryChunk(chunk, { reason = 'materialize' } = {}) {
     measureEntryChunk(chunk);
   });
   return true;
+}
+
+function parkEntryChunk(chunk, { reason = 'resident-window' } = {}) {
+  const data = entryChunkData.get(chunk);
+  if (!data || data.renderToken !== renderRevision || chunk.dataset.rendered !== 'true' || !chunk.isConnected) return false;
+  if (chunk.contains(document.activeElement)) return false;
+  if (chunk.querySelector('[data-relation-transitioning="true"], .jump-selected')) return false;
+  const observer = ensureEntryChunkObserver();
+  if (!observer) return false;
+  const height = measureEntryChunk(chunk) || Number(data.measuredBlockSize || 0);
+  if (!Number.isFinite(height) || height <= 0) return false;
+  data.measuredBlockSize = height;
+  data.layoutCache?.set(data.chunkKey, height);
+  entryChunkResizeObserver?.unobserve(chunk);
+  queuedVirtualChunks.delete(chunk);
+  chunk.style.minHeight = `${height}px`;
+  chunk.replaceChildren();
+  chunk.dataset.rendered = 'false';
+  chunk.dataset.parked = 'true';
+  observer.observe(chunk);
+  appendScrollTrace('park', {
+    epoch: scrollCoordinator.current()?.epoch || 0,
+    owner: scrollCoordinator.current()?.owner || '',
+    reason,
+    chunkKey: data.chunkKey,
+    height,
+    scrollY: window.scrollY,
+  });
+  return true;
+}
+
+function parkEntryChunksOutsideResidentWindow({ reason = 'resident-window' } = {}) {
+  if (!currentCollectionId || !elements['entry-list']?.isConnected) return 0;
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop || 0;
+  const viewportHeight = viewport?.height || window.innerHeight;
+  const viewportBottom = viewportTop + viewportHeight;
+  const margin = Math.max(VIRTUAL_PARK_MIN_MARGIN, viewportHeight * VIRTUAL_PARK_VIEWPORTS);
+  let parked = 0;
+  for (const chunk of elements['entry-list'].querySelectorAll('.entry-chunk[data-rendered="true"]')) {
+    const rect = chunk.getBoundingClientRect();
+    if (rect.bottom >= viewportTop - margin && rect.top <= viewportBottom + margin) continue;
+    if (parkEntryChunk(chunk, { reason })) parked += 1;
+  }
+  return parked;
+}
+
+function maybeParkEntryChunksDuringProgrammaticScroll(reason = 'programmatic-scroll') {
+  const now = performance.now();
+  if (now - lastVirtualResidentSweepAt < 72) return 0;
+  lastVirtualResidentSweepAt = now;
+  return parkEntryChunksOutsideResidentWindow({ reason });
 }
 
 function flushQueuedVirtualChunksNow({ reason = 'observer-flush' } = {}) {
@@ -3697,55 +3746,52 @@ async function toggleEntryRelations(entryId) {
   closeQueryMenu();
   const context = collectionRenderContext;
   const entry = getState().entryById.get(entryId);
-  let current = document.getElementById(`entry-${entryId}`);
-  if (!context || !entry || !current || current.dataset.relationTransitioning === 'true') return;
+  const row = document.getElementById(`entry-${entryId}`);
+  if (!context || !entry || !row || row.dataset.relationTransitioning === 'true') return;
   const key = relationExpansionKey(currentCollectionId, entryId);
   const opening = !expandedRelations.has(key);
-  current.dataset.relationTransitioning = 'true';
+  const slot = row.querySelector('.entry-relation-slot');
+  const buttonNode = row.querySelector('.entry-relations');
+  const chunk = row.closest('.entry-chunk');
+  if (!slot || !buttonNode) return;
 
-  if (!opening && !prefersReducedMotion()) {
-    const panel = current.querySelector('.relation-panel');
-    const icon = current.querySelector('.entry-relations .ui-icon');
-    const animations = [];
-    if (panel?.animate) animations.push(panel.animate([{ opacity: 1 }, { opacity: 0 }], {
-      duration: 72, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards',
-    }).finished.catch(() => {}));
-    if (icon?.animate) animations.push(icon.animate([
-      { transform: 'rotate(90deg)' }, { transform: 'rotate(0deg)' },
-    ], { duration: 82, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished.catch(() => {}));
-    if (animations.length) await Promise.all(animations);
-  }
-
-  current = document.getElementById(`entry-${entryId}`);
-  if (!current) return;
-  const position = captureSemanticPosition();
-  const transaction = beginRootScrollTransaction('row-mutation', position);
-  const epoch = transaction.epoch;
-  if (opening) expandedRelations.add(key);
-  else expandedRelations.delete(key);
-  const next = renderEntryRow(entry, context.collection, context.domain, indexesForRenderedEntry(context, entry));
-  current.replaceWith(next);
-
-  if (opening && !prefersReducedMotion()) {
-    const panel = next.querySelector('.relation-panel');
-    const icon = next.querySelector('.entry-relations .ui-icon');
-    panel?.animate?.([
-      { opacity: 0, transform: 'translateY(-3px)' },
-      { opacity: 1, transform: 'translateY(0)' },
-    ], { duration: 118, easing: 'cubic-bezier(.2,.72,.2,1)' });
-    icon?.animate?.([
-      { transform: 'rotate(0deg)' }, { transform: 'rotate(90deg)' },
-    ], { duration: 108, easing: 'cubic-bezier(.2,.72,.2,1)' });
-  }
-
-  requestAnimationFrame(async () => {
-    if (!scrollCoordinator.owns(epoch)) return;
-    const chunk = next.closest('.entry-chunk');
+  row.dataset.relationTransitioning = 'true';
+  try {
+    if (opening) {
+      expandedRelations.add(key);
+      const panel = renderRelationPanel(entry, relationItemsForEntry(entry));
+      if (!panel) {
+        expandedRelations.delete(key);
+        return;
+      }
+      const reveal = el('div', { className: 'entry-relation-reveal' }, [panel]);
+      slot.replaceChildren(reveal);
+      slot.setAttribute('aria-hidden', 'false');
+      // Commit the closed geometry for one frame first. The primary row shell
+      // remains the same DOM object; only the child slot participates in motion.
+      if (!prefersReducedMotion()) await nextPresentationFrame();
+      row.classList.add('relations-open');
+      buttonNode.classList.add('active');
+      buttonNode.setAttribute('aria-expanded', 'true');
+      buttonNode.setAttribute('aria-label', '收起关联');
+      buttonNode.setAttribute('title', '收起关联');
+      if (!prefersReducedMotion()) await new Promise((resolve) => window.setTimeout(resolve, 150));
+    } else {
+      expandedRelations.delete(key);
+      row.classList.remove('relations-open');
+      buttonNode.classList.remove('active');
+      buttonNode.setAttribute('aria-expanded', 'false');
+      buttonNode.setAttribute('aria-label', '展开关联');
+      buttonNode.setAttribute('title', '展开关联');
+      if (!prefersReducedMotion()) await new Promise((resolve) => window.setTimeout(resolve, 112));
+      slot.replaceChildren();
+      slot.setAttribute('aria-hidden', 'true');
+    }
     if (chunk) measureEntryChunk(chunk);
-    restoreSemanticPosition(position, epoch, { source: 'row-mutation' });
-    await settleSemanticPosition(epoch, position, { maxFrames: 4, tolerance: 1, source: 'row-mutation' });
-    if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: true });
-  });
+    persistCurrentHistorySnapshot();
+  } finally {
+    delete row.dataset.relationTransitioning;
+  }
 }
 
 async function toggleEntryPin(entry, collection, sourceButton = null) {
@@ -4130,9 +4176,13 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
   }
   const shell = el('div', { className: 'entry-primary-shell' }, [primary]);
-  row.append(shell);
+  const relationSlot = el('div', {
+    className: 'entry-relation-slot',
+    'aria-hidden': expanded ? 'false' : 'true',
+  });
   const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
-  if (relationPanel) row.append(relationPanel);
+  if (relationPanel) relationSlot.append(el('div', { className: 'entry-relation-reveal' }, [relationPanel]));
+  row.append(shell, relationSlot);
   return row;
 }
 
@@ -4412,6 +4462,7 @@ async function animateRootToSemanticPosition(position, {
             axis = alphabetAxisForSection(section);
             const liveY = semanticScrollYForPosition(section, semantic);
             if (Number.isFinite(liveY)) rootScrollToY(liveY, { epoch, source });
+            maybeParkEntryChunksDuringProgrammaticScroll(`${source}-rolling-window`);
             const active = activeAlphabetMetricForSemantic(section, semantic);
             renderLetterRailSemanticPosition(section, semantic, { activeLetter: active?.letter || '', forceCamera: true });
             if (raw >= 1) break;
@@ -4435,6 +4486,7 @@ async function animateRootToSemanticPosition(position, {
           if (Number.isFinite(liveTarget)) targetY = liveTarget;
           const nextY = startY + (targetY - startY) * eased;
           rootScrollToY(nextY, { epoch, source });
+          maybeParkEntryChunksDuringProgrammaticScroll(`${source}-physical-window`);
           if (collectionRenderContext?.mode === 'alphabet') {
             refreshAlphabetSectionMetrics();
             const semantic = semanticLetterPositionForReadingBoundary(currentViewKind);
@@ -5534,6 +5586,7 @@ function handleRootScrollEnd() {
   rootUserScrollReleaseTimer = 0;
   if (rootUserTouchReleased) rootUserScrollActive = false;
   if (queuedVirtualChunks.size && !scrollCoordinator.isActive()) flushQueuedVirtualChunksNow({ reason: 'scrollend-flush' });
+  parkEntryChunksOutsideResidentWindow({ reason: 'scrollend' });
   persistScrollPosition();
 }
 
@@ -5557,6 +5610,7 @@ function handleWindowScroll() {
       rootUserScrollReleaseTimer = 0;
       if (rootUserTouchReleased) rootUserScrollActive = false;
       if (queuedVirtualChunks.size && !scrollCoordinator.isActive()) flushQueuedVirtualChunksNow({ reason: 'scroll-fallback-flush' });
+      parkEntryChunksOutsideResidentWindow({ reason: 'scroll-fallback' });
       persistScrollPosition();
     }, 140);
   }

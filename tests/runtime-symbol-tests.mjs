@@ -18,29 +18,64 @@ const criticalFunctions = [
   'resetNavigationToHome', 'initializeNavigationModel', 'jumpToAlphabetLetter', 'captureSemanticPosition',
   'collapseNativeStickySection', 'stickyCollapseGeometry', 'animateRootToSemanticPosition',
   'prepareSemanticPositionGeometry', 'alphabetAxisForSection', 'renderLetterRailSemanticPosition',
-  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition', 'runBufferedCollectionCommit', 'runRootBufferedCommit', 'readingChromeBottom', 'toggleEntryRelations',
+  'releaseLetterTrackManualLockOnPageMotion', 'runPresentationTransition', 'runBufferedCollectionCommit', 'runRootBufferedCommit', 'enqueuePresentationIntent', 'readingChromeBottom', 'toggleEntryRelations',
 ];
 for (const name of criticalFunctions) {
   const declarations = [...ui.matchAll(new RegExp(`\\b(?:async\\s+)?function\\s+${name}\\s*\\(`, 'g'))];
   assert.equal(declarations.length, 1, `${name} 必须且只能定义一次`);
 }
 
-// 4.7.1 current-page switches use one-shot semantic anchors and buffered commits;
-// no hidden four-state snapshots and no forced TOP reset.
+// 4.7.2 restores the 4.6 switch-action contract while retaining 4.7.1 buffered presentation.
+// Manual Word/Phrase and Alphabet/Date switches are fresh TOP + collapsed commits;
+// transient neighborhood mapping is forbidden on those manual switch paths.
 assert.ok(ui.includes('expandedGroups: [...expandedLettersFor'));
 assert.ok(ui.includes("calendarMonth: mode === 'date'"));
 assert.ok(ui.includes('hydrateNavigationSnapshot'));
 assert.ok(ui.includes('persistHydratedViewState'));
 assert.ok(ui.includes('prepareBackFrame'));
-assert.ok(ui.includes('transientModeSwitchAnchor'));
-assert.ok(ui.includes('transientViewSwitchTarget'));
 assert.ok(ui.includes('restoreTransientSemanticPosition'));
 assert.ok(ui.includes('runBufferedCollectionCommit'));
-assert.ok(!ui.includes('view-switch-top'));
-assert.ok(!ui.includes('mode-switch-top'));
+assert.ok(ui.includes('enqueuePresentationIntent'));
+assert.ok(!ui.includes('transientModeSwitchAnchor'));
+assert.ok(!ui.includes('transientViewSwitchTarget'));
+assert.ok(!ui.includes('switchAnchorOffset'));
+assert.ok(!ui.includes('nearestAlphabetGroup'));
+assert.ok(!ui.includes('nearestDateGroup'));
+assert.ok(!ui.includes('if (bufferedStateCommitInProgress) return;'));
 assert.ok(!ui.includes('viewStateSnapshots'));
 assert.ok(!ui.includes('savedAlphabetState'));
 assert.ok(!ui.includes('savedDateState'));
+
+const viewSwitchStart = ui.indexOf('async function switchCollectionViewNow');
+const viewSwitchEnd = ui.indexOf('\nfunction sectionForEntry', viewSwitchStart);
+const viewSwitchSource = ui.slice(viewSwitchStart, viewSwitchEnd);
+assert.ok(viewSwitchSource.includes("position: { kind: 'top', scrollYFallback: 0 }"));
+assert.ok(viewSwitchSource.includes('expandedGroups: []'));
+assert.ok(viewSwitchSource.includes("const targetMonth = mode === 'date' ? getCalendarMonth(collection.id, nextKind) : ''"));
+assert.ok(!viewSwitchSource.includes('captureSemanticPosition'));
+
+const modeSwitchStart = ui.indexOf('async function switchCollectionModeNow');
+const modeSwitchEnd = ui.indexOf('\nfunction monthShift', modeSwitchStart);
+const modeSwitchSource = ui.slice(modeSwitchStart, modeSwitchEnd);
+assert.ok(modeSwitchSource.includes("const nextMonth = nextMode === 'date' ? initialCalendarMonthForView(collection.id, section) : ''"));
+assert.ok(modeSwitchSource.includes("position: { kind: 'top', scrollYFallback: 0 }"));
+assert.ok(modeSwitchSource.includes('expandedGroups: []'));
+assert.ok(!modeSwitchSource.includes('captureSemanticPosition'));
+
+const sameCollectionStart = ui.indexOf('if (currentCollectionId === collectionId)', ui.indexOf('async function navigateCollectionNow'));
+const sameCollectionEnd = ui.indexOf('\n  const token = newNavigationToken', sameCollectionStart);
+const sameCollectionSource = ui.slice(sameCollectionStart, sameCollectionEnd);
+const afterBufferedTarget = sameCollectionSource.slice(sameCollectionSource.indexOf('await runBufferedCollectionCommit'));
+assert.ok(afterBufferedTarget.includes('position: targetPosition'));
+assert.ok(!afterBufferedTarget.includes('await jumpToEntry(entryId'), 'same-Collection view target must not perform a second semantic position transaction');
+
+const bufferStart = ui.indexOf('async function runBufferedCollectionCommit');
+const bufferEnd = ui.indexOf('\nasync function runRootBufferedCommit', bufferStart);
+const bufferSource = ui.slice(bufferStart, bufferEnd);
+assert.ok(!bufferSource.includes('toolbar.inert = true'));
+assert.ok(bufferSource.includes("elements['bottom-last-position']"));
+assert.ok(bufferSource.includes("elements['back-to-top']"));
+assert.ok(bufferSource.includes("elements['bottom-search']"));
 
 // 4.7 single-slot PWA navigation: Safari history is not the VIX transport rail.
 assert.ok(ui.includes("const NAVIGATION_MODEL = 'single-slot-vix-v1'"));

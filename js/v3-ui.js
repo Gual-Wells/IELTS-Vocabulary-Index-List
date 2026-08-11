@@ -20,7 +20,7 @@ import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.1';
+const APP_VERSION = '4.7.2';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -77,6 +77,7 @@ let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
 let bufferedStateCommitInProgress = false;
+let presentationIntentTail = Promise.resolve();
 let renderRevision = 0;
 let homeScrollY = 0;
 let restoreHomeScrollPending = false;
@@ -878,6 +879,13 @@ async function persistHydratedViewState(snapshot) {
   }
 }
 
+
+function enqueuePresentationIntent(task) {
+  const run = presentationIntentTail.catch(() => {}).then(() => task());
+  presentationIntentTail = run.catch(() => {});
+  return run;
+}
+
 function presentationMotionClass(kind) {
   return `vix-motion-${String(kind || 'none').replace(/[^a-z0-9-]/gi, '-')}`;
 }
@@ -933,29 +941,35 @@ async function restoreTransientSemanticPosition(position, source = 'buffered-swi
   if (scrollCoordinator.owns(epoch)) finishRootScrollTransaction(epoch, { persist: false });
 }
 
+async function commitBufferedSemanticPosition(position, source) {
+  const resolved = typeof position === 'function' ? position() : position;
+  if (resolved) await restoreTransientSemanticPosition(resolved, source);
+  return resolved || null;
+}
+
 async function runBufferedCollectionCommit(update, { position = null, source = 'buffered-switch', outMs = BUFFER_OUT_MS, inMs = BUFFER_IN_MS } = {}) {
   const surface = elements['collection-view'];
-  const toolbar = elements['bottom-toolbar'];
+  const blockedToolbarControls = [elements['bottom-last-position'], elements['back-to-top'], elements['bottom-search']].filter(Boolean);
   bufferedStateCommitInProgress = true;
   if (surface) surface.inert = true;
-  if (toolbar) toolbar.inert = true;
+  for (const control of blockedToolbarControls) control.inert = true;
   try {
     if (!surface?.isConnected || prefersReducedMotion()) {
       await update();
-      if (position) await restoreTransientSemanticPosition(position, source);
+      if (position) await commitBufferedSemanticPosition(position, source);
       surface?.style.removeProperty('opacity');
       return;
     }
     await animateSurfaceOpacity(surface, 1, 0, outMs, 'cubic-bezier(.4,0,1,1)');
     surface.style.opacity = '0';
     await update();
-    if (position) await restoreTransientSemanticPosition(position, source);
+    if (position) await commitBufferedSemanticPosition(position, source);
     await nextPresentationFrame();
     await animateSurfaceOpacity(surface, 0, 1, inMs, 'cubic-bezier(.2,.72,.2,1)');
     surface.style.removeProperty('opacity');
   } finally {
     if (surface) surface.inert = false;
-    if (toolbar) toolbar.inert = false;
+    for (const control of blockedToolbarControls) control.inert = false;
     bufferedStateCommitInProgress = false;
   }
 }
@@ -1056,8 +1070,12 @@ function prepareBackFrame(frame) {
   return snapshot;
 }
 
-async function navigateBack() {
-  if (bufferedStateCommitInProgress || appNavigationDepth <= 0) return;
+function navigateBack() {
+  return enqueuePresentationIntent(navigateBackNow);
+}
+
+async function navigateBackNow() {
+  if (appNavigationDepth <= 0) return;
   persistCurrentHistorySnapshot();
   navigationTraversalInProgress = true;
   const leaving = navigationStack.pop() || null;
@@ -1083,8 +1101,11 @@ async function navigateBack() {
   }
 }
 
-async function resetNavigationToHome() {
-  while (bufferedStateCommitInProgress) await nextPresentationFrame();
+function resetNavigationToHome() {
+  return enqueuePresentationIntent(resetNavigationToHomeNow);
+}
+
+async function resetNavigationToHomeNow() {
   if (!currentCollectionId && !appNavigationDepth) {
     homeGlobalMode = 'structured';
     homeScrollY = 0;
@@ -1109,8 +1130,11 @@ function goHome() {
   resetNavigationToHome().catch(displayError);
 }
 
-async function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
-  if (bufferedStateCommitInProgress) return;
+function navigateCollection(collectionId, entryId = '', reason = 'jump', requestedView = '') {
+  return enqueuePresentationIntent(() => navigateCollectionNow(collectionId, entryId, reason, requestedView));
+}
+
+async function navigateCollectionNow(collectionId, entryId = '', reason = 'jump', requestedView = '') {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
   const entry = entryId ? state.entryById.get(entryId) : null;
@@ -1137,55 +1161,65 @@ async function navigateCollection(collectionId, entryId = '', reason = 'jump', r
   prepareTargetExpansion(collection, entry, nextView, reason);
 
   if (currentCollectionId === collectionId) {
-    const viewChanged = nextView !== currentViewKind;
+    const previousView = currentViewKind;
+    const viewChanged = nextView !== previousView;
     if (!viewChanged) {
       if (entryId) await jumpToEntry(entryId, { collectionId, reason });
       return;
     }
+
     collapseTransactionRevision += 1;
-    const previousView = currentViewKind;
-    expandedLettersFor(collection.id, previousView).clear();
-    clearExpandedRelationsForView(collection.id, previousView);
     expandedLettersFor(collection.id, nextView).clear();
     clearExpandedRelationsForView(collection.id, nextView);
-    prepareTargetExpansion(collection, entry, nextView, reason);
-    const targetMode = getViewMode(collection.id);
-    const fallbackTarget = transientViewSwitchTarget(nextView);
-    const targetPosition = entryId
-      ? { kind: 'entry', entryId, offsetFromContentTop: 0, scrollYFallback: window.scrollY }
-      : fallbackTarget.position;
-    const targetStampMonth = entry ? getStudyStamp(entry, collection.id)?.reviewDateKey?.slice(0, 7) || '' : '';
-    const freshMonth = targetMode === 'date'
-      ? (targetStampMonth || fallbackTarget.calendarMonth || initialCalendarMonthForView(collection.id, nextView))
-      : '';
-    if (targetMode === 'date') hydrateRuntimeViewState(collection.id, { mode: targetMode, section: nextView, calendarMonth: freshMonth });
-    currentViewKind = nextView;
-    activeSection = nextView;
-    pendingPageSnapshot = null;
-    pendingJumpEntryId = '';
-    pendingJumpReason = 'jump';
-    const frame = currentNavigationFrame();
-    if (frame) {
-      frame.collectionId = collectionId;
-      frame.viewKind = nextView;
-    }
+    const topPosition = { kind: 'top', scrollYFallback: 0 };
+    const targetPosition = entryId ? () => entryJumpSemanticPosition(entryId) : topPosition;
+    const previousFrame = currentNavigationFrame();
+    const previousFrameSnapshot = previousFrame?.snapshot || null;
     navigationTraversalInProgress = true;
     try {
-      await runBufferedCollectionCommit(() => renderApp(), {
+      await runBufferedCollectionCommit(() => {
+        currentViewKind = nextView;
+        activeSection = nextView;
+        pendingPageSnapshot = null;
+        pendingJumpEntryId = '';
+        pendingJumpReason = 'jump';
+        prepareTargetExpansion(collection, entry, nextView, reason);
+        if (entryId) syncPinIndexForEntry(collectionId, entryId);
+        const frame = currentNavigationFrame();
+        if (frame) {
+          frame.collectionId = collectionId;
+          frame.viewKind = nextView;
+          frame.snapshot = targetSnapshot(collection, nextView);
+          frame.snapshot.position = entryId ? topPosition : targetPosition;
+          frame.snapshot.scrollY = 0;
+          frame.snapshot.expandedGroups = [...expandedLettersFor(collection.id, nextView)];
+        }
+        renderApp();
+      }, {
         position: targetPosition,
-        source: `view-target-${previousView}-to-${nextView}`,
+        source: entryId ? `view-target-${previousView}-to-${nextView}` : `view-switch-${previousView}-to-${nextView}`,
         outMs: 38,
         inMs: 54,
       });
+    } catch (error) {
+      currentViewKind = previousView;
+      activeSection = previousView;
+      pendingPageSnapshot = null;
+      pendingJumpEntryId = '';
+      pendingJumpReason = 'jump';
+      if (previousFrame) {
+        previousFrame.viewKind = previousView;
+        previousFrame.snapshot = previousFrameSnapshot;
+      }
+      renderApp();
+      throw error;
     } finally {
       navigationTraversalInProgress = false;
     }
-    if (targetMode === 'date' && freshMonth) {
-      presentationMutationInProgress += 1;
-      try { await setCalendarMonth(collection.id, nextView, freshMonth); }
-      finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
+    if (entryId) {
+      const liveRow = document.getElementById(`entry-${entryId}`);
+      if (liveRow) markJumpTarget(liveRow, reason);
     }
-    if (entryId) await jumpToEntry(entryId, { collectionId, reason });
     persistCurrentHistorySnapshot();
     if (needsHomeModePersistence) persistHydratedViewState(currentSnapshot());
     return;
@@ -2198,7 +2232,7 @@ function renderBottomToolbar(collection, section = currentViewKind) {
   modeButton.replaceChildren(svgIcon(mode === 'date' ? 'alphabet' : 'calendar'));
   modeButton.title = mode === 'date' ? '切换到字母排序' : '切换到日期排序';
   modeButton.setAttribute('aria-label', modeButton.title);
-  modeButton.onclick = () => switchCollectionMode(collection, section).catch(displayError);
+  modeButton.onclick = () => switchCollectionMode(collection).catch(displayError);
 
   const switchButton = elements['bottom-view-switch'];
   const domain = collection.domainId ? getState().domainById.get(collection.domainId) : null;
@@ -2208,52 +2242,61 @@ function renderBottomToolbar(collection, section = currentViewKind) {
   switchButton.disabled = !canSwitch;
   switchButton.title = canSwitch ? `切换到${nextKind === 'phrase' ? '短语' : '词汇'}视图` : (section === 'content' ? '非结构内容不按词汇或短语分页' : '系统总表已按内容类型固定');
   switchButton.setAttribute('aria-label', switchButton.title);
-  switchButton.onclick = canSwitch ? () => switchCollectionView(collection, nextKind).catch(displayError) : null;
+  switchButton.onclick = canSwitch ? () => switchCollectionView(collection).catch(displayError) : null;
 
   elements['bottom-search'].replaceChildren(svgIcon('search'));
   elements['bottom-search'].onclick = openSearchDialog;
   updateBackToTopVisibility();
 }
 
-async function switchCollectionView(collection, nextKind) {
-  if (bufferedStateCommitInProgress) return;
+function switchCollectionView(collection, nextKind = '') {
+  return enqueuePresentationIntent(() => switchCollectionViewNow(collection, nextKind));
+}
+
+async function switchCollectionViewNow(collection, requestedKind = '') {
+  const nextKind = requestedKind || (currentViewKind === 'word' ? 'phrase' : 'word');
   if (collection.type !== 'normal' || !['word', 'phrase'].includes(nextKind) || nextKind === currentViewKind) return;
-  const target = transientViewSwitchTarget(nextKind);
   collapseTransactionRevision += 1;
   const previousKind = currentViewKind;
-  expandedLettersFor(collection.id, previousKind).clear();
-  clearExpandedRelationsForView(collection.id, previousKind);
+  const frame = currentNavigationFrame();
+  const previousFrameSnapshot = frame?.snapshot || null;
   expandedLettersFor(collection.id, nextKind).clear();
   clearExpandedRelationsForView(collection.id, nextKind);
-  currentViewKind = nextKind;
-  activeSection = nextKind;
-  pendingPageSnapshot = null;
-  pendingJumpEntryId = '';
-  pendingJumpReason = 'jump';
-  suppressScrollPersistence(700);
   const mode = getViewMode(collection.id);
-  const freshMonth = mode === 'date'
-    ? (target.calendarMonth || initialCalendarMonthForView(collection.id, nextKind))
-    : '';
-  if (mode === 'date') hydrateRuntimeViewState(collection.id, { mode, section: nextKind, calendarMonth: freshMonth });
-  const frame = currentNavigationFrame();
-  if (frame) frame.viewKind = nextKind;
-
+  const targetMonth = mode === 'date' ? getCalendarMonth(collection.id, nextKind) : '';
+  const freshSnapshot = {
+    type: 'collection', collectionId: collection.id, viewKind: nextKind, mode,
+    calendarMonth: targetMonth,
+    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: nextKind,
+  };
+  suppressScrollPersistence(700);
   navigationTraversalInProgress = true;
   try {
-    await runBufferedCollectionCommit(() => renderApp(), {
-      position: target.position,
+    await runBufferedCollectionCommit(() => {
+      currentViewKind = nextKind;
+      activeSection = nextKind;
+      pendingPageSnapshot = null;
+      pendingJumpEntryId = '';
+      pendingJumpReason = 'jump';
+      if (frame) { frame.viewKind = nextKind; frame.snapshot = freshSnapshot; }
+      renderApp();
+    }, {
+      position: freshSnapshot.position,
       source: `view-switch-${previousKind}-to-${nextKind}`,
       outMs: 38,
       inMs: 54,
     });
+  } catch (error) {
+    currentViewKind = previousKind;
+    activeSection = previousKind;
+    pendingPageSnapshot = null;
+    pendingJumpEntryId = '';
+    pendingJumpReason = 'jump';
+    if (frame) { frame.viewKind = previousKind; frame.snapshot = previousFrameSnapshot; }
+    renderApp();
+    throw error;
   } finally {
     navigationTraversalInProgress = false;
-  }
-  if (mode === 'date' && freshMonth) {
-    presentationMutationInProgress += 1;
-    try { await setCalendarMonth(collection.id, nextKind, freshMonth); }
-    finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
   }
   persistCurrentHistorySnapshot();
 }
@@ -2379,106 +2422,6 @@ function initialCalendarMonthForView(collectionId, section) {
   return months[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 }
 
-function switchAnchorOffset(position) {
-  return Number.isFinite(Number(position?.offsetFromContentTop)) ? Number(position.offsetFromContentTop) : 0;
-}
-
-function readingDateKeyForPosition(position, section = currentViewKind) {
-  if (position?.kind === 'entry' && position.entryId) {
-    const entry = getState().entryById.get(position.entryId);
-    if (entry) return getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked';
-  }
-  if (position?.kind === 'section' && position.sectionId) {
-    const node = document.getElementById(position.sectionId);
-    if (node?.dataset?.date) return node.dataset.date;
-    if (node?.classList?.contains('date-unmarked-section')) return 'unmarked';
-  }
-  const bounds = readingViewportBounds();
-  const probe = document.elementFromPoint(Math.max(24, window.innerWidth * .22), Math.min(bounds.bottom - 2, bounds.top + 8));
-  const sectionNode = probe?.closest?.(`.date-day-section[data-section="${section}"], .date-unmarked-section[data-section="${section}"]`);
-  if (sectionNode instanceof HTMLElement && sectionNode.dataset.date) return sectionNode.dataset.date;
-  if (sectionNode?.classList?.contains('date-unmarked-section')) return 'unmarked';
-  return '';
-}
-
-function nearestAlphabetGroup(entries, preferredLetter = '') {
-  if (!entries.length) return '';
-  const available = [...new Set(entries.map(letterForEntry))];
-  if (available.includes(preferredLetter)) return preferredLetter;
-  const preferredOrdinal = alphabetOrdinal(preferredLetter);
-  if (preferredOrdinal < 0) return available[0] || '';
-  return available.sort((a, b) => {
-    const da = Math.abs(alphabetOrdinal(a) - preferredOrdinal);
-    const db = Math.abs(alphabetOrdinal(b) - preferredOrdinal);
-    return da - db || alphabetOrdinal(a) - alphabetOrdinal(b);
-  })[0] || '';
-}
-
-function nearestDateGroup(entries, preferredDate = '') {
-  if (!entries.length) return '';
-  const keys = [...new Set(entries.map((entry) => getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked'))];
-  if (keys.includes(preferredDate)) return preferredDate;
-  if (preferredDate === 'unmarked' && keys.includes('unmarked')) return 'unmarked';
-  const preferredTime = /^\d{4}-\d{2}-\d{2}$/.test(preferredDate) ? Date.parse(`${preferredDate}T00:00:00`) : Number.NaN;
-  const dated = keys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key));
-  if (Number.isFinite(preferredTime) && dated.length) {
-    return dated.sort((a, b) => Math.abs(Date.parse(`${a}T00:00:00`) - preferredTime) - Math.abs(Date.parse(`${b}T00:00:00`) - preferredTime) || b.localeCompare(a))[0];
-  }
-  return dated.sort((a, b) => b.localeCompare(a))[0] || (keys.includes('unmarked') ? 'unmarked' : keys[0] || '');
-}
-
-function entryAnchorForGroup(entries, key, mode, position) {
-  const candidates = entries.filter((entry) => mode === 'alphabet'
-    ? letterForEntry(entry) === key
-    : (getStudyStamp(entry, currentCollectionId)?.reviewDateKey || 'unmarked') === key)
-    .sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en'));
-  const entry = candidates[0] || entries[0] || null;
-  if (!entry) return { kind: 'top', scrollYFallback: 0 };
-  return {
-    kind: 'entry', entryId: entry.id,
-    offsetFromContentTop: switchAnchorOffset(position),
-    scrollYFallback: Math.max(0, Number(position?.scrollYFallback || window.scrollY || 0)),
-  };
-}
-
-function transientModeSwitchAnchor(section = currentViewKind) {
-  const position = captureSemanticPosition();
-  if (['top', 'bottom'].includes(position?.kind)) return position;
-  if (position?.kind === 'entry' && position.entryId) return position;
-  const entries = entriesForCollectionView(currentCollectionId, section);
-  const mode = getViewMode(currentCollectionId);
-  if (mode === 'alphabet') {
-    const letter = activeAlphabetMetricAtReadingBoundary(section)?.letter || nearestAlphabetGroup(entries, 'A');
-    return entryAnchorForGroup(entries, letter, 'alphabet', position);
-  }
-  const dateKey = readingDateKeyForPosition(position, section) || nearestDateGroup(entries, '');
-  return entryAnchorForGroup(entries, dateKey, 'date', position);
-}
-
-function transientViewSwitchTarget(nextKind) {
-  const position = captureSemanticPosition();
-  if (['top', 'bottom'].includes(position?.kind)) return { position, calendarMonth: '' };
-  const entries = entriesForCollectionView(currentCollectionId, nextKind);
-  if (!entries.length) return { position: { kind: 'top', scrollYFallback: 0 }, calendarMonth: '' };
-  const mode = getViewMode(currentCollectionId);
-  if (mode === 'alphabet') {
-    let preferredLetter = '';
-    if (position?.kind === 'entry' && position.entryId) {
-      const source = getState().entryById.get(position.entryId);
-      if (source) preferredLetter = letterForEntry(source);
-    }
-    preferredLetter ||= activeAlphabetMetricAtReadingBoundary(currentViewKind)?.letter || '';
-    const key = nearestAlphabetGroup(entries, preferredLetter);
-    return { position: entryAnchorForGroup(entries, key, 'alphabet', position), calendarMonth: '' };
-  }
-  const preferredDate = readingDateKeyForPosition(position, currentViewKind);
-  const key = nearestDateGroup(entries, preferredDate);
-  return {
-    position: entryAnchorForGroup(entries, key, 'date', position),
-    calendarMonth: /^\d{4}-\d{2}-\d{2}$/.test(key) ? key.slice(0, 7) : '',
-  };
-}
-
 function jumpToSection(section) {
   const context = collectionRenderContext;
   if (!context?.sections?.has(section)) return;
@@ -2490,12 +2433,17 @@ function jumpToSection(section) {
   positionHeadingBelowChrome(target.querySelector('.content-section-title, .letter-heading, .date-year-title, .date-unmarked-heading') || target);
 }
 
-async function switchCollectionMode(collection, section = currentViewKind) {
-  if (bufferedStateCommitInProgress) return;
+function switchCollectionMode(collection, section = '') {
+  return enqueuePresentationIntent(() => switchCollectionModeNow(collection, section || currentViewKind));
+}
+
+async function switchCollectionModeNow(collection, section = currentViewKind) {
   const currentModeValue = getViewMode(collection.id);
   const nextMode = currentModeValue === 'date' ? 'alphabet' : 'date';
-  const anchor = transientModeSwitchAnchor(section);
   collapseTransactionRevision += 1;
+  const frame = currentNavigationFrame();
+  const previousFrameSnapshot = frame?.snapshot || null;
+  const previousMonth = getCalendarMonth(collection.id, section);
   expandedLettersFor(collection.id, section).clear();
   clearExpandedRelationsForView(collection.id, section);
   pendingPageSnapshot = null;
@@ -2503,32 +2451,45 @@ async function switchCollectionMode(collection, section = currentViewKind) {
   pendingJumpReason = 'jump';
   suppressScrollPersistence(800);
 
-  let nextMonth = '';
-  if (nextMode === 'date') {
-    const anchorEntry = anchor?.kind === 'entry' ? getState().entryById.get(anchor.entryId) : null;
-    nextMonth = getStudyStamp(anchorEntry, collection.id)?.reviewDateKey?.slice(0, 7)
-      || initialCalendarMonthForView(collection.id, section);
-  }
+  const nextMonth = nextMode === 'date' ? initialCalendarMonthForView(collection.id, section) : '';
+  const freshSnapshot = {
+    type: 'collection', collectionId: collection.id, viewKind: section, mode: nextMode,
+    calendarMonth: nextMonth,
+    scrollY: 0, position: { kind: 'top', scrollYFallback: 0 }, expandedGroups: [], expandedRelations: [], activeSection: section,
+  };
 
-  hydrateRuntimeViewState(collection.id, { mode: nextMode, section, calendarMonth: nextMonth });
   navigationTraversalInProgress = true;
   try {
-    await runBufferedCollectionCommit(() => renderApp(), {
-      position: anchor,
+    await runBufferedCollectionCommit(async () => {
+      presentationMutationInProgress += 1;
+      try {
+        if (nextMode === 'date' && nextMonth) await setCalendarMonth(collection.id, section, nextMonth);
+        await setViewMode(collection.id, nextMode);
+      } finally {
+        presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
+      }
+      hydrateRuntimeViewState(collection.id, { mode: nextMode, section, calendarMonth: nextMonth });
+      if (frame) frame.snapshot = freshSnapshot;
+      renderApp();
+    }, {
+      position: freshSnapshot.position,
       source: `mode-switch-${currentModeValue}-to-${nextMode}`,
       outMs: 44,
       inMs: 62,
     });
+  } catch (error) {
+    presentationMutationInProgress += 1;
+    try {
+      await setViewMode(collection.id, currentModeValue);
+      if (previousMonth) await setCalendarMonth(collection.id, section, previousMonth);
+    } catch { /* best-effort rollback; original error remains authoritative */ }
+    finally { presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1); }
+    hydrateRuntimeViewState(collection.id, { mode: currentModeValue, section, calendarMonth: previousMonth || '' });
+    if (frame) frame.snapshot = previousFrameSnapshot;
+    renderApp();
+    throw error;
   } finally {
     navigationTraversalInProgress = false;
-  }
-
-  presentationMutationInProgress += 1;
-  try {
-    if (nextMode === 'date' && nextMonth) await setCalendarMonth(collection.id, section, nextMonth);
-    await setViewMode(collection.id, nextMode);
-  } finally {
-    presentationMutationInProgress = Math.max(0, presentationMutationInProgress - 1);
   }
   persistCurrentHistorySnapshot();
 }
@@ -4602,6 +4563,21 @@ function markJumpTarget(row, reason = 'jump') {
   setTimeout(() => row.classList.remove('jump-highlight'), 1500);
 }
 
+function entryJumpSemanticPosition(entryId) {
+  const row = ensureEntryRendered(entryId, { persist: false });
+  if (!row) return null;
+  updateOverlayLayout({ immediate: true });
+  const bounds = readingViewportBounds();
+  const rect = row.getBoundingClientRect();
+  const anchor = bounds.top + (bounds.bottom - bounds.top) * 0.38;
+  return {
+    kind: 'entry',
+    entryId,
+    offsetFromContentTop: anchor - rect.height / 2 - bounds.top,
+    scrollYFallback: window.scrollY,
+  };
+}
+
 /** @param {string} entryId @param {{ behavior?: ScrollBehavior, collectionId?: string, reason?: string }} [options] */
 async function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentCollectionId, reason = 'jump' } = {}) {
   const state = getState();
@@ -4625,18 +4601,10 @@ async function jumpToEntry(entryId, { behavior = 'auto', collectionId = currentC
   pendingJumpReason = 'jump';
   const collection = state.collectionById.get(currentCollectionId);
   if (collection) renderPinBar(collection);
-  const row = ensureEntryRendered(entryId, { persist: false });
+  const position = entryJumpSemanticPosition(entryId);
+  if (!position) return false;
+  const row = document.getElementById(`entry-${entryId}`);
   if (!row) return false;
-  updateOverlayLayout({ immediate: true });
-  const bounds = readingViewportBounds();
-  const rect = row.getBoundingClientRect();
-  const anchor = bounds.top + (bounds.bottom - bounds.top) * 0.38;
-  const position = {
-    kind: 'entry',
-    entryId,
-    offsetFromContentTop: anchor - rect.height / 2 - bounds.top,
-    scrollYFallback: window.scrollY,
-  };
   try {
     const ok = await animateRootToSemanticPosition(position, {
       owner: 'entry-jump',

@@ -1,8 +1,12 @@
 # Vocabulary Index 项目全生命周期历史与交接文档
 
-## 4.7.1：[当前实现 / 待真机]
+## 4.7.2：[当前实现 / 待真机]
 
-4.7.0真机进一步证明“给每种状态变化分配一种运动”过度扩张了Motion Semantics：新Collection Push通过，但Back感知偏快；Home双scale语义不符；Word/Phrase与Alphabet/Date在深位置因snapshot overlap + TOP reset出现旧页重叠、toolbar覆盖与高风险重启反馈；LetterRail continuous locus与categorical index冲突且velocity camera放大噪声；Modal close拖尾、可见backdrop抢注意力；Relation反而缺少局部展开反馈。4.7.1因此建立Semantic Motion Gate：Push冻结、Pop独立retime；无空间语义的view/mode/global switch改非重叠Buffered State Commit并用一次性semantic anchor保持阅读邻域；Home改Root Buffer；LetterRail删除locus、改离散active+safe-zone camera；普通Modal backdrop透明并快速退出；Relation补Local Reveal；Reduce Motion与token/lifecycle统一修正。Schema6 / DB5 / Seed4 / VIX2不变。
+4.7.1成功收敛了snapshot overlap、LetterRail、Modal与Relation presentation，但在修复无空间语义切换时越过了presentation边界：把4.6已经存在的手动Word/Phrase、Alphabet/Date `TOP + collapsed`完成态误认成4.7.0动画副作用，改成transient letter/date neighborhood；same-Collection精确target又形成hidden landing + 第二次`jumpToEntry()`，busy flag还会静默吞掉transition中的后续输入。4.7.2以4.6 commit `4e6714062520e199806dae1893b2395312814c7b`为switch oracle：保留4.7.1 non-overlapping buffer，但恢复手动View/Mode `TOP + collapsed`、Date latest-valid-month与目标view自身calendar state；精确Entry target只落位一次；Collection/Back/Home/View/Mode进入serial intent queue并增加失败回滚。4.7.1 Pop/Root Buffer/Discrete LetterRail/Modal/Relation保持。`single-slot-vix-v1`继续运行，但正式记录为相对4.6 `destructive-v3`的独立待决架构差异。Schema6 / DB5 / Seed4 / VIX2不变。
+
+## 4.7.1：[历史回归 / presentation成果由4.7.2继承]
+
+4.7.0真机进一步证明“给每种状态变化分配一种运动”过度扩张了Motion Semantics：新Collection Push通过，但Back感知偏快；Home双scale语义不符；Word/Phrase与Alphabet/Date在深位置因snapshot overlap + TOP reset出现旧页重叠、toolbar覆盖与高风险重启反馈；LetterRail continuous locus与categorical index冲突且velocity camera放大噪声；Modal close拖尾、可见backdrop抢注意力；Relation反而缺少局部展开反馈。4.7.1建立Semantic Motion Gate、Buffered State Commit、Root Buffer、Discrete LetterRail、透明Modal backdrop与Relation Local Reveal；其中“手动View/Mode用transient semantic anchor保持阅读邻域”的规则后经4.6源码回溯确认属于语义回归，已由4.7.2撤销。
 
 ## 4.7.0：[当前实现 / 待真机]
 
@@ -12,11 +16,11 @@
 
 4.5.0 真机证明 Navigation Automaton 主体成立，但暴露 root scroll ownership 分裂：Back 重复 traversal 可从 42/123/354/4995/5322 正确位置退化；LetterNav 使用 Sticky visual rect，W→X 可被旧 42-chunk correction 拉回 W141；active LetterNav/Sticky/正文存在明显分帧刷新。4.6 不重做 Navigation/Sticky/Modal，而建立 ScrollCoordinator + SemanticPosition + measured VirtualEntryList：42/960 lazy 性能路径保留，Virtualizer 永久失去 root-scroll 权，Back 使用 UA first-pass 后按 VIX semantic anchor 最终验证；cross-Collection Search 清洁 history snapshot，首次 SW claim 不再双启动。Schema6 / DB5 / Seed4 / VIX2 不变。
 
-> 当前权威版本：Vocabulary Index 4.7.1（2026-08-11）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
+> 当前权威版本：Vocabulary Index 4.7.2（2026-08-11）。本文件记录产品使命、主要历史阶段、失败教训、现行规则、数据世代与交接边界。3.5.2 时点的旧全文快照保存在 `PROJECT_HISTORY_3.5.2_SNAPSHOT.md`；所有逐版本报告仍保留在源码包中。
 
 ## 状态标签
 
-- **[当前实现]**：4.7.1 完整源码实际行为。
+- **[当前实现]**：4.7.2 完整源码实际行为。
 - **[历史稳定版]**：过去曾作为稳定交付基线。
 - **[历史问题]**：导致故障/返工的经验。
 - **[待真机]**：源码已实现但仍需 iPhone standalone 证明。
@@ -260,22 +264,24 @@ Oxford → Collins → Groq → ChatGPT。Collins/Groq 共享单一可取消 ses
 - 自动测试不得表述为真实 iPhone 验收。
 - 任何功能更新必须复核 Data identity → Projection → Search → Relation → Query → State → Navigation → Import/Export → Seed → UI/PWA → Tests 的全相联影响。
 
-# 八、4.7.1 当前待真机事项
+# 八、4.7.2 当前待真机事项
 
+- Manual Word/Phrase：TOP/500/1500/3000px及深展开位置切换后，第一次可见必须为目标view TOP + collapsed；不得保持同/近letter/date。
+- Date下Word/Phrase：目标calendar使用目标view自身状态，不从来源view映射date/month。
+- Manual Alphabet/Date：第一次可见TOP + collapsed；Alphabet→Date使用目标section latest-valid-month。
+- Same-Collection precise target：Search/Relation跨Word/Phrase时，hidden buffer内一次落到标准Entry reading anchor，reveal后不得二次滚动。
+- Intent Queue：快速View/Mode连点10–20次不得静默丢失或并发；Back/Home在当前commit后按序执行。
+- Buffer Shell：Bottom Toolbar保持视觉稳定；浏览锚点/回顶/搜索在短buffer窗口暂时锁定，View/Mode toggle可继续排队。
 - Push：4.7.0新Collection Push保持原手感，无回归。
-- Pop：Back约282ms新时序比4.7.0更从容；第一次live target即正确，无TOP→target二跳。
+- Pop：4.7.1约282ms时序保持，第一次live target即正确。
 - Root Home：无scale/translate；context release→root-neutral→Home恢复，不被感知为loading。
-- Buffered View/Mode：TOP/500/1500/3000px及深展开位置切换均不得old/new文字同帧重叠、不得先回TOP、Bottom Toolbar全程live。
-- Transient anchor：Alphabet/Date首次可见保持同Entry/邻域；Word/Phrase保持同/近letter或date，不形成四份hidden state。
-- Restart P1：深位置快速连续View/Mode切换20次不得出现boot screen、Home重置、白屏或工具栏覆盖。
-- LetterRail：无continuous 52px locus；同一letter section内camera不持续微抖，active越出safe zone才发生有限重定位。
-- Manual LetterNav：横拖不动正文，pointerup后不复原；仅下一次page vertical motion才重新接管。
-- Modal：普通backdrop不明显变暗；连续开关20–30次close无残影式注意力拖尾，视觉消失后背景立即恢复可操作。
-- Relation：Panel/chevron有轻量local reveal，row无慢height animation；multi-target导航时旧Popover不跟随Push。
+- LetterRail：无continuous locus；同一letter section内camera不持续微抖，active越出safe zone才有限重定位。
+- Modal / Relation：4.7.1透明interaction backdrop、快速exit、Local Reveal无回归。
 - Same-page Semantic Scroll：正常模式继续连续；Reduce Motion直接提交最终位置。
-- Performance：42/960 virtual path保持，Buffered Commit隐藏期prewarm不恢复全量5k+ DOM。
+- Performance：42/960 virtual path保持，Buffer隐藏期不得恢复全量5k+ DOM。
 - Service Worker：全新安装只`V→Home`一次；显式“立即更新”只reload一次。
+- Navigation Architecture：Single Slot与4.6 destructive-v3的长期取舍仍需单独产品/真机审计，本版不混入switch修复。
 
 # 九、现行规范文件
 
-`REQUIREMENT_BASELINE_4.7.1.md`、`SEMANTIC_IMPACT_MATRIX_4.7.1.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.1.md`、`PRODUCT_MANUAL_4.7.1.md`、`AUDIT_REPORT_4.7.1.md`、`TECHNICAL_RESEARCH_4.7.1.md`、`CHANGE_REPORT_4.7.1.md`、`TEST_REPORT_4.7.1.md`、`MIGRATION_4.7.1.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.1.md` 共同组成当前实现与验证记录。4.7.0及更早文档保留为生命周期事实；其中4.7.0 Sibling/Reindex TOP-reset、continuous Letter locus 与旧Modal presentation已被4.7.1当前规范覆盖。
+`REQUIREMENT_BASELINE_4.7.2.md`、`SEMANTIC_IMPACT_MATRIX_4.7.2.md`、`LOCAL_ARCHITECTURE.md`、`DATA_FORMATS.md`、`UX_SPEC_4.7.2.md`、`PRODUCT_MANUAL_4.7.2.md`、`AUDIT_REPORT_4.7.2.md`、`TECHNICAL_RESEARCH_4.7.2.md`、`CHANGE_REPORT_4.7.2.md`、`TEST_REPORT_4.7.2.md`、`MIGRATION_4.7.2.md` 与 `tests/IPHONE_REDUCED_TESTS_4.7.2.md` 共同组成当前实现与验证记录。4.7.1及更早文档保留为生命周期事实；其中4.7.1 transient-neighborhood manual switch合同已被4.7.2撤销，4.7.1 Pop/Root Buffer/LetterRail/Modal/Relation成果继续有效。

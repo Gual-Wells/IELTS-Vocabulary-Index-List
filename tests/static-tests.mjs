@@ -7,8 +7,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css') + '\n' + read('css/v4.7.0.css') + '\n' + read('css/v4.7.1.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css') + '\n' + read('css/v4.7.0.css') + '\n' + read('css/v4.7.1.css') + '\n' + read('css/v4.7.2.css');
 const css471 = read('css/v4.7.1.css');
+const css472 = read('css/v4.7.2.css');
 const ui = read('js/v3-ui.js');
 const model = read('js/v3-model.js');
 const db = read('js/v3-db.js');
@@ -22,8 +23,8 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.7.1');
-assert.ok(index.includes('Vocabulary Index 4.7.1'));
+assert.equal(pkg.version, '4.7.2');
+assert.ok(index.includes('Vocabulary Index 4.7.2'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
@@ -34,29 +35,31 @@ assert.ok(index.includes('css/v4.5.0.css'));
 assert.ok(index.includes('css/v4.6.0.css'));
 assert.ok(index.includes('css/v4.7.0.css'));
 assert.ok(index.includes('css/v4.7.1.css'));
+assert.ok(index.includes('css/v4.7.2.css'));
 assert.ok(index.includes('apple-mobile-web-app-status-bar-style" content="default'));
 assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.7.1-semantic-motion-gate'));
+assert.ok(sw.includes('v4.7.2-switch-contract-repair'));
 assert.ok(sw.includes('./js/v3-motion-runtime.js'));
+assert.ok(css472.includes('Runtime-only release'));
 assert.ok(sw.includes('./js/v3-scroll-runtime.js'));
 assert.equal(manifest.name, 'Vocabulary Index');
 assert.equal(manifest.short_name, 'Vocabulary Index');
 assert.ok(index.includes('apple-mobile-web-app-title" content="Vocabulary Index'));
 for (const lifecycleDoc of [
-  'REQUIREMENT_BASELINE_4.7.1.md',
-  'SEMANTIC_IMPACT_MATRIX_4.7.1.md',
-  'AUDIT_REPORT_4.7.1.md',
-  'TECHNICAL_RESEARCH_4.7.1.md',
-  'CHANGE_REPORT_4.7.1.md',
-  'MIGRATION_4.7.1.md',
-  'UX_SPEC_4.7.1.md',
-  'PRODUCT_MANUAL_4.7.1.md',
-  'TEST_REPORT_4.7.1.md',
-  'tests/IPHONE_REDUCED_TESTS_4.7.1.md',
-]) assert.ok(exists(lifecycleDoc), `4.7 lifecycle document missing: ${lifecycleDoc}`);
+  'REQUIREMENT_BASELINE_4.7.2.md',
+  'SEMANTIC_IMPACT_MATRIX_4.7.2.md',
+  'AUDIT_REPORT_4.7.2.md',
+  'TECHNICAL_RESEARCH_4.7.2.md',
+  'CHANGE_REPORT_4.7.2.md',
+  'MIGRATION_4.7.2.md',
+  'UX_SPEC_4.7.2.md',
+  'PRODUCT_MANUAL_4.7.2.md',
+  'TEST_REPORT_4.7.2.md',
+  'tests/IPHONE_REDUCED_TESTS_4.7.2.md',
+]) assert.ok(exists(lifecycleDoc), `4.7.2 lifecycle document missing: ${lifecycleDoc}`);
 
 // PWA identity is Vocabulary Index's V mark, not the former Oxford home-screen icon.
 const iconSrcs = manifest.icons.map((item) => item.src);
@@ -82,7 +85,7 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));

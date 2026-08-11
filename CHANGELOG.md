@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.7.2 — 2026-08-11
+
+- 修复4.7.1 Buffered State Commit越权改写既有切换完成态：手动Word/Phrase与Alphabet/Date恢复4.6的TOP + collapsed合同；
+- Date下Word/Phrase不再把来源日期映射到目标view；Alphabet→Date重新按目标数据latest-valid-month初始化；
+- 删除active manual switch的`transientModeSwitchAnchor` / `transientViewSwitchTarget`及nearest-group映射；
+- Same-Collection Search/Relation跨view只在hidden buffer执行一次Entry semantic landing，删除buffer后第二次`jumpToEntry()`；
+- 抽取`entryJumpSemanticPosition()`统一标准38% reading-anchor；
+- 新增`enqueuePresentationIntent()`，Collection/Back/Home/View/Mode串行，删除busy-time silent return；View/Mode toggle执行时计算实时目标；
+- Buffer期间只暂时阻断Collection content与非切换底栏工具，View/Mode按钮可继续排队；
+- Manual View/Mode增加失败回滚；runtime tests改为强制4.6 switch oracle并禁止4.7.1 transient contract；
+- Service Worker升级到`v4.7.2-switch-contract-repair-20260811-1`，新增runtime-only`css/v4.7.2.css`与完整4.7.2生命周期文档；
+- `single-slot-vix-v1`本版保持，但正式记录为相对4.6 `destructive-v3`的独立待决架构差异；
+- Schema6 / DB5 / Seed4 / VIX2、42/960 virtualization、4.7.0 Push及4.7.1 Pop/Root Buffer/LetterRail/Modal/Relation不变。
+
 ## 4.7.1 — 2026-08-11
 
 - 建立 Semantic Motion Gate：运动只用于真实空间/层级/局部来源关系；representation/category switch退出人为方向动画；

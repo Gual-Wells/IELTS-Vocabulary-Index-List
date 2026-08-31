@@ -1,4 +1,4 @@
-# Vocabulary Index 4.7.3+D.1
+# Vocabulary Index 4.7.3+D.2
 
 当前工作快照在 4.7.3 基线上实现 **D：Provider Runtime 与 UI**，不是 5.0 / alpha1 合并或稳定发布。后续按 D → A → C → B → E 推进，本次未实施 A/C/B/E。
 
@@ -6,7 +6,8 @@
 - Collins：明确选择词典、单请求查词、保留结构的安全呈现、不缓存结果。
 - UI：沿用现有主题、表单与 retained modal，补充状态、取消、重试、用途切换与设置。
 - Schema 6 / IndexedDB 5 / Seed 4 / VIX JSON 2 不变，旧密钥与模型选择兼容。Collins 老用户需明确选择词典。
-- 实施范围、测试证据与未验收项目见 [PROVIDER_RUNTIME_D1.md](PROVIDER_RUNTIME_D1.md)。以下 4.7.3 文档继续说明原有架构；Provider 差异以 D1 文档为准。
+- D2 真实联调：修正 Groq 将空词性误判为错误的问题；两家服务的设置状态及请求生命周期分离。Groq 已通过有限真实样例，Collins 仍被访问验证/CORS 阻断，不能标记为可用。
+- 当前增量、证据与阻塞项见 [PROVIDER_RUNTIME_D2.md](PROVIDER_RUNTIME_D2.md)；[D1 报告](PROVIDER_RUNTIME_D1.md)保留为上一轮记录。以下 4.7.3 文档继续说明原有架构。
 
 ## 原始 4.7.3 基线说明
 
@@ -14,7 +15,7 @@ Vocabulary Index 是仅面向 **iPhone 17 / iOS 26.5.x Home Screen standalone PW
 
 ## 当前世代
 
-- App：`4.7.3+D.1`（D 线工作快照）
+- App：`4.7.3+D.2`（D 线工作快照，Collins 接入未完成）
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`4`

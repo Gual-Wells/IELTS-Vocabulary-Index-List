@@ -2,6 +2,8 @@
    Nothing here changes root scrolling, navigation, row geometry or modal ownership. */
 .provider-result-card { gap: 10px; padding: 12px 14px 16px; }
 .provider-result-card [hidden], .settings-section [hidden] { display: none !important; }
+.provider-settings-status:empty { display: none; }
+.provider-settings-status { overflow-wrap: anywhere; }
 .provider-result-word { overflow-wrap: anywhere; }
 .provider-result-content { white-space: normal; font-size: 14px; line-height: 1.65; }
 .provider-mode-controls { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); }

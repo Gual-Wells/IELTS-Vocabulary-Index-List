@@ -1,4 +1,14 @@
-# Vocabulary Index 4.7.3+D.1 · iPhone 17 主屏幕 PWA 人工验收清单
+# Vocabulary Index 4.7.3+D.2 · iPhone 17 主屏幕 PWA 人工验收清单
+
+## D2 增量（真机验收仍待执行）
+
+本轮桌面内嵌浏览器真实 Groq 请求及 402×874 辅助 UI 检查已执行，详见 `PROVIDER_RUNTIME_D2.md`，不等同于以下 iPhone standalone 验收。
+
+- [ ] 空词性/空释义不被当成必须补齐的错误；真实拼写错误仍能提示，结果不自动改词库。
+- [ ] Groq 模型刷新与 Collins 目录获取各自显示状态，不互相覆盖。
+- [ ] 请求中把密钥从 A 改为 B 再改回 A，迟到响应或失败不覆盖新请求；关闭重开设置也不受旧请求影响。
+- [ ] Collins 网络不可读提示不宣称密钥无效；验证页不能显示为词典结果。当前真实接入仍 BLOCKED，官方接入条件确认后须重新验收。
+- [ ] iPhone 17 标准版的实际软键盘、安全区域、standalone、深浅主题、滚动和更新流程逐项复测。
 
 ## D1 Provider 补充项（以下真机项目尚未执行）
 
@@ -19,7 +29,7 @@
 
 > 唯一目标：iPhone 17 标准版 / iOS 26.5.x / Home Screen standalone。详细P1 cases见`IPHONE_REDUCED_TESTS_4.7.3.md`。
 
-- [ ] 页面显示4.7.3+D.1；Home Screen名称仍为`Vocabulary Index`。
+- [ ] 页面显示4.7.3+D.2；Home Screen名称仍为`Vocabulary Index`。
 - [ ] 新Collection Push与4.7.0一致；Back Pop保持4.7.1节奏。
 - [ ] 手动Alphabet↔Date任意深位置直接得到TOP+collapsed，无整面flash/白帧/old-new overlap。
 - [ ] Alphabet→Date calendar month为目标section最新有效月份。

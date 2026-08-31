@@ -53,10 +53,16 @@ function wait(ms, signal) {
 
 function httpError(provider, response) {
   const status = response.status;
-  const code = status === 401 || status === 403 ? 'authorization' : status === 404 ? 'not-found'
+  const html = /\btext\/html\b/i.test(response.headers.get('Content-Type') || '');
+  const challenge = response.headers.get('cf-mitigated') === 'challenge';
+  const code = challenge ? 'access-challenge' : status === 403 && html ? 'access-blocked'
+    : status === 401 || status === 403 ? 'authorization' : status === 404 ? 'not-found'
     : status === 429 ? 'rate-limit' : status >= 500 ? 'unavailable' : 'request';
   const descriptions = {
-    authorization: '密钥无效或没有访问权限，请检查设置与账号授权',
+    authorization: status === 403 ? '访问被拒绝，请核对账号授权与服务访问策略；不能仅据此判断密钥无效'
+      : '密钥无效或未获授权，请检查设置与账号授权',
+    'access-challenge': '接口返回了服务验证页，尚未进入 API；请向服务商确认 API 访问条件',
+    'access-blocked': '访问被拒绝并返回网页，尚未取得 API JSON；请核对服务访问条件',
     'not-found': '未找到匹配词条或所选资源已不可用',
     'rate-limit': '请求额度或速率受限，请稍后再试',
     unavailable: '服务暂时不可用，请稍后再试',
@@ -101,6 +107,10 @@ export async function fetchProviderJson(url, options = {}, {
           try { await response.body?.cancel(); } catch { /* Preserve the typed HTTP failure. */ }
           throw error;
         }
+        if (/\btext\/html\b/i.test(response.headers.get('Content-Type') || '')) {
+          try { await response.body?.cancel(); } catch { /* Do not expose the returned page. */ }
+          throw new ProviderError('invalid-response', `${provider}：接口返回了网页而非 JSON，请核对接入地址与服务验证要求`);
+        }
         try { return await response.json(); }
         catch (error) {
           if (controller.signal.aborted) throw error;
@@ -113,7 +123,9 @@ export async function fetchProviderJson(url, options = {}, {
       failure = signal?.aborted ? cancelledError() : timedOut
         ? new ProviderError('timeout', `${provider}：请求超时，请重试`)
         : error instanceof ProviderError ? error
-          : new ProviderError('network', `${provider}：网络连接失败或浏览器跨域访问受限`);
+          : new ProviderError('network', provider === 'Collins'
+            ? 'Collins：浏览器无法读取接口，可能是网络、CORS 跨域策略或服务验证拦截；尚不能判断密钥或词典权限'
+            : `${provider}：网络连接失败或浏览器跨域访问受限`);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);

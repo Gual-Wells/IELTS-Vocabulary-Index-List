@@ -24,7 +24,7 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.7.3+D.1');
+assert.equal(pkg.version, '4.7.3+D.2');
 assert.ok(index.includes('css/provider-runtime.css'));
 assert.ok(index.includes('Vocabulary Index 4.7.3'));
 assert.ok(index.includes('css/v4.0.1.css'));

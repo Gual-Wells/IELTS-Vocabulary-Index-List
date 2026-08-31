@@ -42,6 +42,29 @@ test('verification has an independent prompt/schema and no mutation', async () =
   assert.ok(calls[0].options.body.includes('SECRET-EXISTING-GLOSS'));
   assert.deepEqual([...storage], before);
 });
+test('verification omits blank optional metadata instead of asking the model to fill it', async () => {
+  mock(completion(verification));
+  await verifyVocabularyEntry({ subject: { text: 'abandon', kind: 'word', glossHant: '  ', partsOfSpeech: ['', '  '] } });
+  const body = JSON.parse(calls[0].options.body);
+  const input = JSON.parse(body.messages.at(-1).content);
+  assert.equal(input.text, 'abandon');
+  assert.equal(Object.hasOwn(input, 'gloss'), false);
+  assert.equal(Object.hasOwn(input, 'partsOfSpeech'), false);
+  assert.match(body.messages[0].content, /NEVER errors/);
+  assert.match(body.messages[0].content, /review the text alone/i);
+});
+
+test('verification retains supplied POS and gloss without changing the entry', async () => {
+  mock(completion(verification));
+  const subject = { text: 'abandon', kind: 'word', glossHant: 'leave', partsOfSpeech: ['verb', '', '  '] };
+  const before = structuredClone(subject);
+  await verifyVocabularyEntry({ subject });
+  const input = JSON.parse(JSON.parse(calls[0].options.body).messages.at(-1).content);
+  assert.equal(input.gloss, 'leave');
+  assert.deepEqual(input.partsOfSpeech, ['verb']);
+  assert.deepEqual(subject, before);
+});
+
 test('all ready fields reject null, objects, blank required text and oversized content', () => {
   for (const value of [null, {}, [], 42, false, '']) assert.throws(() => decodeLookup({ ...lookup, meaning: value }), ProviderError);
   assert.throws(() => decodeLookup({ ...lookup, usageNote: null }));
@@ -126,6 +149,39 @@ test('Collins 401/404/429/500/network and malformed payload never retry or fall 
   }
   assert.equal(calls.length, 7);
 });
+test('access pages are distinct from JSON authorization errors and never retried or exposed', async () => {
+  for (const [status, type, challenge, code] of [
+    [403, 'text/html', true, 'access-challenge'],
+    [403, 'text/html; charset=utf-8', false, 'access-blocked'],
+    [403, 'application/json', false, 'authorization'],
+    [200, 'text/html', false, 'invalid-response'],
+  ]) {
+    let count = 0;
+    globalThis.fetch = async () => {
+      count++;
+      return new Response('PRIVATE-RESPONSE-DO-NOT-EXPOSE', { status,
+        headers: { 'Content-Type': type, ...(challenge ? { 'cf-mitigated': 'challenge' } : {}) } });
+    };
+    await assert.rejects(fetchProviderJson('https://fixture.test', {}, { provider: 'Collins', retries: 2 }), error => {
+      assert.equal(error.code, code);
+      assert.ok(!error.message.includes('PRIVATE-RESPONSE'));
+      return true;
+    });
+    assert.equal(count, 1);
+  }
+});
+
+test('Collins unreadable network errors remain unknown, not an authorization verdict', async () => {
+  let count = 0;
+  globalThis.fetch = async () => { count++; throw new TypeError('secret-url-and-key'); };
+  await assert.rejects(refreshCollinsDictionaries({ apiKey: 'fixture' }), error => {
+    assert.equal(error.code, 'network');
+    assert.ok(!error.message.includes('secret-url-and-key'));
+    return true;
+  });
+  assert.equal(count, 1);
+});
+
 test('transport retries only transient failures and respects bounded Retry-After', async () => {
   let n = 0;
   globalThis.fetch = async () => ++n < 3 ? respond({}, 503) : respond({ ok: true });
@@ -137,12 +193,12 @@ test('transport retries only transient failures and respects bounded Retry-After
   assert.equal(parseRetryAfter('2'), 2000);
 });
 test('timeout includes response body; late JSON cannot reach ready', async () => {
-  globalThis.fetch = async () => ({ ok: true, json: () => new Promise(() => {}) });
+  globalThis.fetch = async () => ({ ok: true, headers: new Headers(), json: () => new Promise(() => {}) });
   await assert.rejects(fetchProviderJson('https://fixture.test', {}, { timeoutMs: 8 }), { code: 'timeout' });
 });
 test('cancel during body read and retry delay rejects promptly without another request', async () => {
   let n = 0; const controller = new AbortController();
-  globalThis.fetch = async () => { n++; return { ok: true, json: () => new Promise(() => {}) }; };
+  globalThis.fetch = async () => { n++; return { ok: true, headers: new Headers(), json: () => new Promise(() => {}) }; };
   const request = fetchProviderJson('https://fixture.test', {}, { signal: controller.signal });
   setTimeout(() => controller.abort(), 3);
   await assert.rejects(request, { code: 'cancelled' }); assert.equal(n, 1);

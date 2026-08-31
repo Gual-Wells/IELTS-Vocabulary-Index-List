@@ -23,7 +23,7 @@ import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.3+D.1';
+const APP_VERSION = '4.7.3+D.2';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -5473,7 +5473,10 @@ function openSettingsDialog() {
   const dictionaryChoiceField = field('账号返回的词典', dictionaryChoices);
   dictionaryChoiceField.hidden = true;
   dictionaryChoices.addEventListener('change', () => { if (dictionaryChoices.value) dictionaryCode.value = dictionaryChoices.value; });
-  const providerSettingsStatus = el('p', { className: 'help-text', role: 'status', 'aria-live': 'polite' });
+  const groqSettingsStatus = el('p', { className: 'help-text provider-settings-status', role: 'status', 'aria-label': 'Groq 连接状态', 'aria-live': 'polite' });
+  const collinsSettingsStatus = el('p', { className: 'help-text provider-settings-status', role: 'status', 'aria-label': 'Collins 连接状态', 'aria-live': 'polite' });
+  let modelRequest = null;
+  let dictionaryRequest = null;
   const model = el('select');
   let draftModel = getSelectedModel();
   let refreshedIds = null;
@@ -5492,6 +5495,9 @@ function openSettingsDialog() {
   };
   model.addEventListener('change', () => { draftModel = model.value; });
   key.addEventListener('input', () => {
+    modelRequest?.abort(); modelRequest = null;
+    refresh.disabled = false;
+    groqSettingsStatus.textContent = '';
     refreshedIds = null;
     renderModels(key.value.trim() === getApiKey() ? getModelCatalog() : getModelCatalog([]).map((item) => ({
       ...item, available: item.compatible, label: item.compatible ? '账号可用性待刷新' : item.label,
@@ -5500,44 +5506,55 @@ function openSettingsDialog() {
   renderModels();
   const refresh = button('刷新模型目录', 'secondary-button', async () => {
     const requestedKey = key.value.trim();
+    modelRequest?.abort();
+    const request = modelRequest = new AbortController();
     try {
       refresh.disabled = true;
-      providerSettingsStatus.textContent = '正在获取 Groq 模型目录…';
-      const result = await refreshModels({ apiKey: requestedKey, signal: settingsController.signal, persist: false });
-      if (settingsController.signal.aborted || requestedKey !== key.value.trim()) return;
+      groqSettingsStatus.textContent = '正在获取 Groq 模型目录…';
+      const result = await refreshModels({ apiKey: requestedKey, signal: request.signal, persist: false });
+      if (settingsController.signal.aborted || request.signal.aborted || modelRequest !== request || requestedKey !== key.value.trim()) return;
       refreshedIds = result.filter((item) => item.active).map((item) => item.id);
       refreshedKey = requestedKey;
       renderModels(result);
-      providerSettingsStatus.textContent = '模型目录已更新；密钥与选择将在保存后生效。';
+      groqSettingsStatus.textContent = '模型目录已更新；密钥与选择将在保存后生效。';
     } catch (error) {
-      if (!settingsController.signal.aborted) providerSettingsStatus.textContent = error.message;
-    } finally { refresh.disabled = false; }
+      if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) groqSettingsStatus.textContent = error.message;
+    } finally { if (modelRequest === request) { refresh.disabled = false; modelRequest = null; } }
   });
   const refreshDictionaries = button('获取账号词典', 'secondary-button', async () => {
     const requestedKey = collinsKey.value.trim();
+    dictionaryRequest?.abort();
+    const request = dictionaryRequest = new AbortController();
+    dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true;
     try {
       refreshDictionaries.disabled = true;
-      providerSettingsStatus.textContent = '正在获取 Collins 词典（1 次请求）…';
-      const dictionaries = await refreshCollinsDictionaries({ apiKey: requestedKey, signal: settingsController.signal });
-      if (settingsController.signal.aborted || requestedKey !== collinsKey.value.trim()) return;
+      collinsSettingsStatus.textContent = '正在获取 Collins 词典（1 次请求）…';
+      const dictionaries = await refreshCollinsDictionaries({ apiKey: requestedKey, signal: request.signal });
+      if (settingsController.signal.aborted || request.signal.aborted || dictionaryRequest !== request || requestedKey !== collinsKey.value.trim()) return;
       dictionaryChoices.replaceChildren(el('option', { value: '', text: '请选择词典' }),
         ...dictionaries.map((d) => el('option', { value: d.code, text: d.name + ' · ' + d.code })));
       dictionaryChoiceField.hidden = false;
-      providerSettingsStatus.textContent = dictionaries.length ? '请明确选择一本词典；不会自动尝试其他词典。' : '账号未返回可用词典，请核对授权。';
+      collinsSettingsStatus.textContent = dictionaries.length ? '请明确选择一本词典；不会自动尝试其他词典。' : '账号未返回可用词典，请核对授权。';
     } catch (error) {
-      if (!settingsController.signal.aborted) providerSettingsStatus.textContent = error.message;
-    } finally { refreshDictionaries.disabled = false; }
+      if (!settingsController.signal.aborted && !request.signal.aborted && dictionaryRequest === request) collinsSettingsStatus.textContent = error.message;
+    } finally { if (dictionaryRequest === request) { refreshDictionaries.disabled = false; dictionaryRequest = null; } }
   });
-  collinsKey.addEventListener('input', () => { dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true; });
+  collinsKey.addEventListener('input', () => {
+    dictionaryRequest?.abort(); dictionaryRequest = null;
+    refreshDictionaries.disabled = false;
+    collinsSettingsStatus.textContent = '';
+    dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true;
+  });
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
       el('p', { className: 'help-text', text: '查词释义与内容核查独立运行。语音、守卫和未知能力模型不可选。' }),
-      field('Groq API Key', key), field('查询与核查模型', model), refresh]),
+      field('Groq API Key', key), field('查询与核查模型', model), refresh, groqSettingsStatus]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
       el('p', { className: 'help-text', text: '每次查词只请求所选词典一次；结果仅在弹窗中展示，不缓存。' }),
-      field('Collins API Key', collinsKey), field('词典代码', dictionaryCode), refreshDictionaries, dictionaryChoiceField]),
-    el('p', { className: 'provider-footnote', text: '密钥仅保存在此设备、此站点。Collins 使用现有 HTTPS 接入方式；账号授权和跨域可用性需实际验证。' }),
-    providerSettingsStatus,
+      field('Collins API Key', collinsKey), field('词典代码', dictionaryCode), refreshDictionaries, dictionaryChoiceField,
+      collinsSettingsStatus,
+      el('p', { className: 'provider-footnote', text: '此静态站点直连 Collins，需要对方允许浏览器跨域访问。若返回验证页或 CORS 错误，需确认官方接入条件；更换词典代码不能解决访问拦截。' })]),
+    el('p', { className: 'provider-footnote', text: '密钥保存在此设备、此站点，并仅发送给对应 Provider。不要将密钥或包含 accesskey 的完整地址写入仓库或错误报告。' }),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
@@ -5553,7 +5570,10 @@ function openSettingsDialog() {
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
     showToast('已保存');
   } });
-  frame.onDispose = () => { settingsController.abort(); dictionaryChoices.replaceChildren(); };
+  frame.onDispose = () => {
+    settingsController.abort(); modelRequest?.abort(); dictionaryRequest?.abort();
+    dictionaryChoices.replaceChildren();
+  };
 }
 
 function showMigrationNotice() {

@@ -1,10 +1,20 @@
-# Vocabulary Index 4.7.3
+# Vocabulary Index 4.7.3+D.1
+
+当前工作快照在 4.7.3 基线上实现 **D：Provider Runtime 与 UI**，不是 5.0 / alpha1 合并或稳定发布。后续按 D → A → C → B → E 推进，本次未实施 A/C/B/E。
+
+- Groq：独立查词与核查、显式模型能力目录、严格结果校验、可取消的有限重试。
+- Collins：明确选择词典、单请求查词、保留结构的安全呈现、不缓存结果。
+- UI：沿用现有主题、表单与 retained modal，补充状态、取消、重试、用途切换与设置。
+- Schema 6 / IndexedDB 5 / Seed 4 / VIX JSON 2 不变，旧密钥与模型选择兼容。Collins 老用户需明确选择词典。
+- 实施范围、测试证据与未验收项目见 [PROVIDER_RUNTIME_D1.md](PROVIDER_RUNTIME_D1.md)。以下 4.7.3 文档继续说明原有架构；Provider 差异以 D1 文档为准。
+
+## 原始 4.7.3 基线说明
 
 Vocabulary Index 是仅面向 **iPhone 17 / iOS 26.5.x Home Screen standalone PWA** 的本地英语学习索引。4.7.3 不改变 4.0 内容世代；本版修正 4.7.2 真机暴露的 **opacity-blink Presentation、Relation Row 重建闪烁与 VirtualEntryList 单向 materialization resident-set 回归**。
 
 ## 当前世代
 
-- App：`4.7.3`
+- App：`4.7.3+D.1`（D 线工作快照）
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`4`

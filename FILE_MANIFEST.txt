@@ -50,6 +50,7 @@ CHANGE_REPORT_4.7.3.md
 DATA_FORMATS.md
 DATA_REPORT.md
 DEPLOY.md
+DEPLOY_D1.md
 LOCAL_ARCHITECTURE.md
 MIGRATION_3.0.0.md
 MIGRATION_3.1.0.md
@@ -102,6 +103,7 @@ PRODUCT_MANUAL_4.7.2.md
 PRODUCT_MANUAL_4.7.3.md
 PROJECT_HISTORY.md
 PROJECT_HISTORY_3.5.2_SNAPSHOT.md
+PROVIDER_RUNTIME_D1.md
 README.md
 REQUIREMENT_BASELINE_4.0.0.md
 REQUIREMENT_BASELINE_4.0.1.md
@@ -191,6 +193,7 @@ UX_SPEC_4.7.3.md
 assets/icons/vix-icon-180-v4.png
 assets/icons/vix-icon-192-v4.png
 assets/icons/vix-icon-512-v4.png
+css/provider-runtime.css
 css/v3.3.1.css
 css/v3.4.0.css
 css/v3.5.1.css
@@ -234,14 +237,18 @@ data/vix-json.schema.json
 index.html
 js/v3-ai.js
 js/v3-app.js
+js/v3-collins.js
 js/v3-data-worker.js
 js/v3-db.js
 js/v3-exchange.js
+js/v3-groq-contracts.js
 js/v3-import.js
 js/v3-integrations.js
 js/v3-model.js
 js/v3-motion-runtime.js
 js/v3-navigation-runtime.js
+js/v3-provider-runtime.js
+js/v3-provider-views.js
 js/v3-runtime-geometry.js
 js/v3-scroll-runtime.js
 js/v3-store.js
@@ -262,6 +269,7 @@ tests/MANUAL_CHECKLIST.md
 tests/integration-tests.mjs
 tests/layout-contract-check.py
 tests/performance-tests.mjs
+tests/provider-tests.mjs
 tests/run-tests.mjs
 tests/runtime-behavior-tests.mjs
 tests/runtime-symbol-tests.mjs

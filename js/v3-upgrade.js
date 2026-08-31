@@ -4,12 +4,12 @@
 // event.scroll() only after target geometry is prepared.
 if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
 
-// Cache-generation bridge. It exists only to prevent an old service-worker
-// shell from being mixed with the 4.6.0 runtime after the runtime-generation change.
+// Cache-generation bridge. Keep this identifier aligned with sw.js so the
+// current Provider runtime is not mistaken for an obsolete app shell.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.6.0-scroll-ownership-20260810-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.6.0';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v4.7.3-presentation-lifecycle-provider-D1-20260831-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:4.7.3+D.1';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

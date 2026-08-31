@@ -1,8 +1,25 @@
-# Vocabulary Index 4.7.3 · iPhone 17 主屏幕 PWA 人工验收清单
+# Vocabulary Index 4.7.3+D.1 · iPhone 17 主屏幕 PWA 人工验收清单
+
+## D1 Provider 补充项（以下真机项目尚未执行）
+
+- [ ] 从 4.7.3 更新后，词库、PIN、学习日期、关系与旧 Provider 密钥不丢失。
+- [ ] Groq 刷新后仅兼容且账号可用的模型可选；旧不兼容模型有提示；取消设置不保存草稿。
+- [ ] 默认查词显示独立释义、发音/词性、例句、用法；核查显示结论/建议，不自动改词条或标注。
+- [ ] 查询中取消、关闭、快速换用途，迟到结果不覆盖新查询；重新查询可恢复。
+- [ ] Groq 真账号验证严格 Schema 与 JSON Object 两类模型；401、429、超时、截断/拒绝不显示假成功。
+- [ ] Collins 老用户首次查询要求选择词典；目录获取不发生在普通查词链中。
+- [ ] 依据官方账号说明确认 Collins 鉴权、CORS、词典授权与返回结构；未确认前不标记生产可用。
+- [ ] Collins 每次查词仅一个 search/first 请求；404/401/403/429/5xx 不自动重试或换词典。
+- [ ] Collins 多义项、例句、版权文字可读，长内容在弹窗内滚动；关闭后不留下结果 DOM 或持久化内容。
+- [ ] iOS 键盘、动态视口、横竖屏及大字体下，设置/查询操作可达，输入不会异常缩放。
+- [ ] 查询打开设置再返回，层级、关闭、滚动锁与焦点恢复符合原产品；Reduced Motion 不回归。
+- [ ] 更新需用户确认，离线重开无混合版本；缓存桥接器不误删当前版本缓存。
+
+## 原有 4.7.3 回归项
 
 > 唯一目标：iPhone 17 标准版 / iOS 26.5.x / Home Screen standalone。详细P1 cases见`IPHONE_REDUCED_TESTS_4.7.3.md`。
 
-- [ ] 页面显示4.7.3；Home Screen名称仍为`Vocabulary Index`。
+- [ ] 页面显示4.7.3+D.1；Home Screen名称仍为`Vocabulary Index`。
 - [ ] 新Collection Push与4.7.0一致；Back Pop保持4.7.1节奏。
 - [ ] 手动Alphabet↔Date任意深位置直接得到TOP+collapsed，无整面flash/白帧/old-new overlap。
 - [ ] Alphabet→Date calendar month为目标section最新有效月份。

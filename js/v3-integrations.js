@@ -5,18 +5,10 @@ export const OXFORD_LOOKUP_SCHEME = 'hk-com-oupc-oecd-lookup://x-callback-url/s'
 export const CHATGPT_SHORTCUT_NAME = 'AI查询';
 export const ENTRY_CONTEXT_FORMAT = 'vix-entry-context';
 export const ENTRY_CONTEXT_VERSION = 2;
-const COLLINS_KEY_STORAGE = 'gualVocabulary.collinsApiKey';
-const COLLINS_BASE_URL = 'https://api.collinsdictionary.com/api/v1';
+export { getCollinsApiKey, setCollinsApiKey, queryCollins } from './v3-collins.js';
 const MAX_CONTEXT_RELATIONS = 16;
 
 function clean(value) { return String(value ?? '').trim(); }
-
-export function getCollinsApiKey() { return localStorage.getItem(COLLINS_KEY_STORAGE) || ''; }
-export function setCollinsApiKey(value) {
-  const key = clean(value);
-  if (key) localStorage.setItem(COLLINS_KEY_STORAGE, key);
-  else localStorage.removeItem(COLLINS_KEY_STORAGE);
-}
 
 function isGlobalCollection(collectionId) {
   return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);
@@ -103,67 +95,4 @@ export function buildCollinsExternalUrl(text) {
   const query = clean(text).toLocaleLowerCase('en').replace(/\s+/g, '-');
   if (!query) throw new Error('没有可查询的英文');
   return `https://www.collinsdictionary.com/dictionary/english/${encodeURIComponent(query)}`;
-}
-
-async function collinsFetch(path, key, signal) {
-  const joiner = path.includes('?') ? '&' : '?';
-  const response = await fetch(`${COLLINS_BASE_URL}${path}${joiner}accesskey=${encodeURIComponent(key)}`, {
-    method: 'GET', signal, headers: { Accept: 'application/json' }, cache: 'no-store',
-  });
-  if (!response.ok) throw new Error(`Collins 请求失败（HTTP ${response.status}）`);
-  return response.json();
-}
-
-function dictionaryScore(dictionary) {
-  const text = `${dictionary?.dictionaryName || ''} ${dictionary?.name || ''} ${dictionary?.dictionaryCode || ''}`.toLocaleLowerCase('en');
-  if (/traditional.*chinese|chinese.*traditional|english.*chinese/.test(text)) return 30;
-  if (/cobuild/.test(text)) return 25;
-  if (/advanced.*learner|learner/.test(text)) return 20;
-  if (/english/.test(text)) return 10;
-  return 0;
-}
-
-function htmlToText(html) {
-  const value = clean(html);
-  if (!value) return '';
-  if (typeof DOMParser === 'function') {
-    const doc = new DOMParser().parseFromString(value, 'text/html');
-    return clean(doc.body?.textContent || '').replace(/\s+/g, ' ');
-  }
-  return value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-}
-
-/** Direct Collins API query. A network/CORS error is intentionally surfaced so UI can offer website fallback. */
-export async function queryCollins(text, { signal = null } = {}) {
-  const query = clean(text);
-  if (!query) throw new Error('没有可查询的英文');
-  const key = getCollinsApiKey();
-  if (!key) throw new Error('请先配置 Collins API Key');
-  const dictionariesPayload = await collinsFetch('/dictionaries', key, signal);
-  const dictionaries = Array.isArray(dictionariesPayload) ? dictionariesPayload : Array.isArray(dictionariesPayload?.dictionaries) ? dictionariesPayload.dictionaries : [];
-  const candidates = [...dictionaries].sort((a, b) => dictionaryScore(b) - dictionaryScore(a));
-  if (!candidates.length) throw new Error('Collins API Key 没有返回可用词典');
-  let lastError = null;
-  for (const dictionary of candidates.slice(0, 6)) {
-    const code = clean(dictionary?.dictionaryCode || dictionary?.code || dictionary?.id);
-    if (!code) continue;
-    try {
-      const search = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/search/first?q=${encodeURIComponent(query)}`, key, signal);
-      const entryId = clean(search?.entryId || search?.id || search?.entry?.entryId || search?.entry?.id);
-      if (!entryId) continue;
-      const entry = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/entries/${encodeURIComponent(entryId)}`, key, signal);
-      const html = clean(entry?.entryContent || entry?.content || entry?.entry?.entryContent || entry?.entry?.content);
-      const resultText = htmlToText(html);
-      if (!resultText) continue;
-      return {
-        provider: 'Collins', query, dictionaryCode: code,
-        dictionaryName: clean(dictionary?.dictionaryName || dictionary?.name || code),
-        entryId, text: resultText,
-      };
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('Collins 未找到该条目');
 }

@@ -113,6 +113,7 @@ for (const label of ['Oxford', 'Collins', 'Groq', 'ChatGPT']) assert.ok(ui.inclu
 assert.ok(ui.includes('activeProviderQuery.controller.abort()'));
 assert.ok(ui.includes('if (!providerQueryIsCurrent(sequence)) return'));
 assert.ok(integrations.includes("const MAX_CONTEXT_RELATIONS = 16"));
-assert.ok(integrations.includes("'/dictionaries'"));
+assert.ok(integrations.includes("from './v3-collins.js'"));
+assert.ok(fs.readFileSync(path.join(root, 'js/v3-collins.js'), 'utf8').includes("'/dictionaries'"));
 
 console.log(`integration-tests: OK (max Shortcut URL ${maxUrl.length} chars @ ${maxUrl.text})`);

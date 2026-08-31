@@ -24,7 +24,8 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.7.3');
+assert.equal(pkg.version, '4.7.3+D.1');
+assert.ok(index.includes('css/provider-runtime.css'));
 assert.ok(index.includes('Vocabulary Index 4.7.3'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
@@ -44,6 +45,9 @@ assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
 assert.ok(sw.includes('v4.7.3-presentation-lifecycle'));
+assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
+  sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
+assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
 assert.ok(sw.includes('./js/v3-motion-runtime.js'));
 assert.ok(css472.includes('Runtime-only release'));
 assert.ok(css473.includes('.entry-relation-slot'));

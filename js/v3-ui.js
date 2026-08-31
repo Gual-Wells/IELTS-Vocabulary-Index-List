@@ -8,7 +8,7 @@ import {
 } from './v3-store.js';
 import {
   AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog,
-  getSelectedModel, queryVocabularyEntry, refreshModels, selectModel, setApiKey, suggestEntries, suggestSearchTerms,
+  getSelectedModel, queryVocabularyEntry, verifyVocabularyEntry, refreshModels, saveModelCatalog, selectModel, setApiKey, suggestEntries, suggestSearchTerms,
 } from './v3-ai.js';
 import {
   downloadText, entriesToCsv, readImportFile,
@@ -16,11 +16,14 @@ import {
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
+import { getCollinsDictionary, setCollinsDictionary, refreshCollinsDictionaries, validateDictionaryCode } from './v3-collins.js';
+import { createProviderSession } from './v3-provider-runtime.js';
+import { renderGroqLookup, renderGroqVerification, renderCollinsEntry } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.3';
+const APP_VERSION = '4.7.3+D.1';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -504,7 +507,7 @@ function createAppDialogFrame({
   const includeCancel = showCancel == null ? Boolean(onSubmit) : Boolean(showCancel);
   const frame = {
     layer, form, body: bodyNode, actions, closeButton, onSubmit, onCancel, onRestore,
-    submitButton: null, kind, dismissible, closing: false,
+    submitButton: null, kind, dismissible, closing: false, onDispose: null,
     returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
   };
   if (includeCancel) {
@@ -589,6 +592,7 @@ function closeDialog({ all = false } = {}) {
     activeSearchFrame = null;
     activeConfirmFrame = null;
     for (const frame of frames) {
+      frame.onDispose?.();
       frame.closing = true;
       frame.layer.classList.add('modal-layer-closing');
     }
@@ -604,6 +608,7 @@ function closeDialog({ all = false } = {}) {
   }
   const frame = dialogStack.pop();
   if (!frame || frame.closing) return;
+  frame.onDispose?.();
   frame.closing = true;
   if (frame === activeSearchFrame) activeSearchFrame = null;
   if (frame === activeConfirmFrame) activeConfirmFrame = null;
@@ -3865,16 +3870,19 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
 }
 
 function providerQueryIsCurrent(sequence) {
-  return activeProviderQuery?.sequence === sequence && dialogStack.some((frame) => frame.kind === 'action');
+  return activeProviderQuery?.sequence === sequence && !activeProviderQuery.frame.closing
+    && dialogStack.includes(activeProviderQuery.frame);
 }
 
-function providerResultBody(provider, entry, statusText = '查询中…') {
+function providerResultBody(provider, entry, statusText = '准备查询') {
   return [
-    el('div', { className: 'provider-result-card' }, [
+    el('div', { className: 'provider-result-card', dataset: { provider }, 'aria-busy': 'false' }, [
       el('p', { className: 'provider-result-provider', text: provider }),
       el('h3', { className: 'provider-result-word', text: entry.text }),
-      el('p', { className: 'provider-result-status', text: statusText }),
+      el('div', { className: 'provider-mode-controls', role: 'group', 'aria-label': 'Groq 查询用途' }),
+      el('p', { className: 'provider-result-status', text: statusText, role: 'status', 'aria-live': 'polite' }),
       el('div', { className: 'provider-result-content' }),
+      el('div', { className: 'provider-result-actions' }),
     ]),
   ];
 }
@@ -3882,41 +3890,76 @@ function providerResultBody(provider, entry, statusText = '查询中…') {
 async function startProviderQuery(provider, entry, collection) {
   if (activeProviderQuery) {
     activeProviderQuery.controller.abort();
-    if (dialogStack.at(-1)?.kind === 'action') closeDialog();
+    activeProviderQuery.session.dispose();
+    if (dialogStack.at(-1) === activeProviderQuery.frame) closeDialog();
   }
-  const controller = new AbortController();
-  const sequence = ++providerQuerySequence;
-  activeProviderQuery = { provider, entryId: entry.id, sequence, controller };
-  const body = providerResultBody(provider, entry);
-  const queryFrame = openActionDialog({ title: `${provider} 查询`, body });
-  const card = queryFrame?.body.querySelector('.provider-result-card');
-  const status = card?.querySelector('.provider-result-status');
-  const content = card?.querySelector('.provider-result-content');
-  try {
-    if (provider === 'Groq') {
-      const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION, section: sectionForEntry(entry) });
-      const result = await queryVocabularyEntry(context, { signal: controller.signal });
+  const queryFrame = openActionDialog({ title: provider + ' 查询', body: providerResultBody(provider, entry) });
+  const card = queryFrame.body.querySelector('.provider-result-card');
+  const status = card.querySelector('.provider-result-status');
+  const content = card.querySelector('.provider-result-content');
+  const actions = card.querySelector('.provider-result-actions');
+  const modes = card.querySelector('.provider-mode-controls');
+  let mode = 'lookup';
+  let session = null;
+  const modeButtons = [];
+  const setModes = () => modeButtons.forEach(([value, control]) => control.setAttribute('aria-pressed', String(mode === value)));
+  const runQuery = async () => {
+    session?.dispose();
+    const sequence = ++providerQuerySequence;
+    const requestModel = provider === 'Groq' ? getSelectedModel() : '';
+    content.replaceChildren();
+    const cancel = button('取消查询', 'secondary-button', () => session.cancel());
+    const retry = button('重新查询', 'secondary-button', () => { runQuery(); });
+    const configure = button('查询设置', 'text-button', () => openSettingsDialog());
+    actions.replaceChildren(cancel, retry, configure);
+    if (provider === 'Collins') actions.append(button('Collins 网站', 'text-button', () => window.location.assign(buildCollinsExternalUrl(entry.text))));
+    session = createProviderSession((state) => {
       if (!providerQueryIsCurrent(sequence)) return;
-      status.textContent = '完成';
-      content.replaceChildren(
-        result.summary ? el('p', { text: result.summary }) : null,
-        result.usage ? el('p', { className: 'help-text', text: result.usage }) : null,
-        result.warning ? el('div', { className: 'warning-box', text: result.warning }) : null,
-      );
-    } else if (provider === 'Collins') {
-      const result = await queryCollins(entry.text, { signal: controller.signal });
+      const busy = state === 'requesting' || state === 'retrying';
+      card.dataset.state = state;
+      card.setAttribute('aria-busy', String(busy));
+      cancel.hidden = !busy;
+      retry.hidden = busy;
+      const labels = { requesting: '正在查询…', retrying: '服务暂忙，正在有限重试…', ready: '查询完成',
+        cancelled: '已取消，可重新查询', empty: '未找到匹配词条', error: '查询未完成' };
+      status.textContent = labels[state] || '';
+    });
+    activeProviderQuery = { provider, entryId: entry.id, sequence, controller: session.controller, session, frame: queryFrame };
+    setModes();
+    try {
+      const rendered = await session.run(async (signal, onState) => {
+        if (provider === 'Collins') return renderCollinsEntry(await queryCollins(entry.text, { signal, onState }));
+        const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION });
+        if (mode === 'verification') return renderGroqVerification(await verifyVocabularyEntry(context, { signal, onState }));
+        return renderGroqLookup(await queryVocabularyEntry(context, { signal, onState }));
+      });
       if (!providerQueryIsCurrent(sequence)) return;
-      status.textContent = result.dictionaryName || '完成';
-      content.replaceChildren(el('p', { className: 'provider-dictionary-text', text: result.text }));
+      content.replaceChildren(rendered);
+      if (provider === 'Groq') status.textContent = (mode === 'verification' ? '核查完成' : '查词完成') + ' · ' + requestModel;
+    } catch (error) {
+      if (!providerQueryIsCurrent(sequence)) return;
+      if (error?.code === 'cancelled') return;
+      content.replaceChildren(el('div', { className: 'warning-box', role: 'alert',
+        text: error?.message || '查询失败，请稍后重试' }));
     }
-  } catch (error) {
-    if (controller.signal.aborted || !providerQueryIsCurrent(sequence)) return;
-    status.textContent = '未完成';
-    content.replaceChildren(el('div', { className: 'warning-box', text: error?.message || String(error) }));
-    if (provider === 'Collins') {
-      content.append(button('在 Collins 网站打开', 'secondary-button', () => { window.location.assign(buildCollinsExternalUrl(entry.text)); }));
+  };
+  if (provider === 'Groq') {
+    for (const [value, label] of [['lookup', '查词释义'], ['verification', '核查现有内容']]) {
+      const control = button(label, 'provider-mode-button', () => {
+        if (mode === value) return;
+        mode = value;
+        runQuery();
+      });
+      modeButtons.push([value, control]);
+      modes.append(control);
     }
-  }
+  } else { modes.hidden = true; }
+  queryFrame.onDispose = () => {
+    session?.dispose();
+    content.replaceChildren(); // dictionary results never survive their presentation frame
+    if (activeProviderQuery?.frame === queryFrame) activeProviderQuery = null;
+  };
+  await runQuery();
 }
 
 function openOxfordLookup(entry) {
@@ -4086,7 +4129,7 @@ function openQueryMenu(entry, collection, source) {
   const collins = iconButton('collins', 'query-menu-option collins-option', `用 Collins 查询 ${entry.text}`, () => {
     closeQueryMenu(); startProviderQuery('Collins', entry, collection).catch(displayError);
   });
-  const groq = iconButton('groq', 'query-menu-option groq-option', `用 Groq 核查 ${entry.text}`, () => {
+  const groq = iconButton('groq', 'query-menu-option groq-option', `用 Groq 查询 ${entry.text}`, () => {
     closeQueryMenu(); startProviderQuery('Groq', entry, collection).catch(displayError);
   });
   const chatgpt = iconButton('aiChat', 'query-menu-option chatgpt-option', `交给 ChatGPT 新建查询：${entry.text}`, () => {
@@ -5422,42 +5465,95 @@ function openSearchDialog() {
 
 function openSettingsDialog() {
   const state = getState();
-  const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…' });
-  const collinsKey = el('input', { type: 'password', value: getCollinsApiKey(), autocomplete: 'off', placeholder: 'Collins API Key' });
+  const settingsController = new AbortController();
+  const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…', spellcheck: 'false', autocapitalize: 'none' });
+  const collinsKey = el('input', { type: 'password', value: getCollinsApiKey(), autocomplete: 'off', placeholder: 'Collins API Key', spellcheck: 'false', autocapitalize: 'none' });
+  const dictionaryCode = el('input', { value: getCollinsDictionary(), placeholder: '例如 english；以账号授权为准', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+  const dictionaryChoices = el('select', { 'aria-label': '本次获取的 Collins 词典' });
+  const dictionaryChoiceField = field('账号返回的词典', dictionaryChoices);
+  dictionaryChoiceField.hidden = true;
+  dictionaryChoices.addEventListener('change', () => { if (dictionaryChoices.value) dictionaryCode.value = dictionaryChoices.value; });
+  const providerSettingsStatus = el('p', { className: 'help-text', role: 'status', 'aria-live': 'polite' });
   const model = el('select');
+  let draftModel = getSelectedModel();
+  let refreshedIds = null;
+  let refreshedKey = '';
   const numberMode = el('select', {}, [
     el('option', { value: 'none', text: '无序号', selected: state.settings.numberMode === 'none' }),
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
     el('option', { value: 'global', text: '连续编号', selected: !['none', 'group'].includes(state.settings.numberMode) }),
   ]);
   const lowLevelRelations = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: state.settings.closeLowLevelRelations !== false });
-  const renderModels = () => {
-    const catalog = getModelCatalog();
-    model.replaceChildren(el('option', { value: '', text: catalog.length ? '选择模型' : '未刷新' }), ...catalog.map((item) => el('option', { value: item.id, text: `${item.id}${item.active ? '' : '（历史）'}`, selected: item.id === getSelectedModel() })));
+  const renderModels = (catalog = getModelCatalog()) => {
+    model.replaceChildren(el('option', { value: '', text: '请选择可用模型' }),
+      ...catalog.map((item) => el('option', { value: item.id, text: item.id + ' · ' + item.label,
+        disabled: !item.available, selected: item.id === draftModel })));
+    model.value = draftModel;
   };
-  renderModels();
-  const refresh = button('刷新模型', 'secondary-button', async () => {
-    try { setApiKey(key.value); refresh.disabled = true; refresh.textContent = '刷新中…'; await refreshModels(); renderModels(); showToast('已刷新'); }
-    catch (error) { displayError(error); }
-    finally { refresh.disabled = false; refresh.textContent = '刷新模型'; }
+  model.addEventListener('change', () => { draftModel = model.value; });
+  key.addEventListener('input', () => {
+    refreshedIds = null;
+    renderModels(key.value.trim() === getApiKey() ? getModelCatalog() : getModelCatalog([]).map((item) => ({
+      ...item, available: item.compatible, label: item.compatible ? '账号可用性待刷新' : item.label,
+    })));
   });
-  const exchangeButton = button('数据交换', 'secondary-button', openDataExchangeDialog);
-  const manageButton = button('管理词库', 'secondary-button', openLibraryManager);
+  renderModels();
+  const refresh = button('刷新模型目录', 'secondary-button', async () => {
+    const requestedKey = key.value.trim();
+    try {
+      refresh.disabled = true;
+      providerSettingsStatus.textContent = '正在获取 Groq 模型目录…';
+      const result = await refreshModels({ apiKey: requestedKey, signal: settingsController.signal, persist: false });
+      if (settingsController.signal.aborted || requestedKey !== key.value.trim()) return;
+      refreshedIds = result.filter((item) => item.active).map((item) => item.id);
+      refreshedKey = requestedKey;
+      renderModels(result);
+      providerSettingsStatus.textContent = '模型目录已更新；密钥与选择将在保存后生效。';
+    } catch (error) {
+      if (!settingsController.signal.aborted) providerSettingsStatus.textContent = error.message;
+    } finally { refresh.disabled = false; }
+  });
+  const refreshDictionaries = button('获取账号词典', 'secondary-button', async () => {
+    const requestedKey = collinsKey.value.trim();
+    try {
+      refreshDictionaries.disabled = true;
+      providerSettingsStatus.textContent = '正在获取 Collins 词典（1 次请求）…';
+      const dictionaries = await refreshCollinsDictionaries({ apiKey: requestedKey, signal: settingsController.signal });
+      if (settingsController.signal.aborted || requestedKey !== collinsKey.value.trim()) return;
+      dictionaryChoices.replaceChildren(el('option', { value: '', text: '请选择词典' }),
+        ...dictionaries.map((d) => el('option', { value: d.code, text: d.name + ' · ' + d.code })));
+      dictionaryChoiceField.hidden = false;
+      providerSettingsStatus.textContent = dictionaries.length ? '请明确选择一本词典；不会自动尝试其他词典。' : '账号未返回可用词典，请核对授权。';
+    } catch (error) {
+      if (!settingsController.signal.aborted) providerSettingsStatus.textContent = error.message;
+    } finally { refreshDictionaries.disabled = false; }
+  });
+  collinsKey.addEventListener('input', () => { dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true; });
   const body = [
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('API Key', key), field('模型', model), refresh]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }), field('API Key', collinsKey)]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
+      el('p', { className: 'help-text', text: '查词释义与内容核查独立运行。语音、守卫和未知能力模型不可选。' }),
+      field('Groq API Key', key), field('查询与核查模型', model), refresh]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
+      el('p', { className: 'help-text', text: '每次查词只请求所选词典一次；结果仅在弹窗中展示，不缓存。' }),
+      field('Collins API Key', collinsKey), field('词典代码', dictionaryCode), refreshDictionaries, dictionaryChoiceField]),
+    el('p', { className: 'provider-footnote', text: '密钥仅保存在此设备、此站点。Collins 使用现有 HTTPS 接入方式；账号授权和跨域可用性需实际验证。' }),
+    providerSettingsStatus,
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [manageButton])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [exchangeButton])]),
-    el('section', { className: 'settings-section settings-version' }, [el('span', { text: `Vocabulary Index ${APP_VERSION}` })]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
+    el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
-  openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
-    setApiKey(key.value); setCollinsApiKey(collinsKey.value); if (model.value) selectModel(model.value);
+  const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
+    const code = dictionaryCode.value.trim();
+    if (code) validateDictionaryCode(code);
+    setApiKey(key.value); setCollinsApiKey(collinsKey.value); setCollinsDictionary(code); selectModel(model.value);
+    if (refreshedIds && refreshedKey === key.value.trim()) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
     showToast('已保存');
   } });
+  frame.onDispose = () => { settingsController.abort(); dictionaryChoices.replaceChildren(); };
 }
 
 function showMigrationNotice() {

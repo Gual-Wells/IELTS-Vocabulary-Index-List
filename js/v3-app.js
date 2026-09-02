@@ -2,7 +2,7 @@ import { initializeUI, notifyServiceWorkerUpdate, serviceWorkerReloadIsArmed } f
 import { exportLegacyGenerationBackup, getGenerationUpgradeStatus, replaceLegacyGenerationWithSeed } from './v3-db.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
-const MODULE_VERSION = '4.7.3+D.2';
+const MODULE_VERSION = '4.7.3+D.3';
 let reloadingForServiceWorker = false;
 
 const viewportMeta = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="viewport"]'));

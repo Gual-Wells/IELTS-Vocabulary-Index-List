@@ -16,14 +16,14 @@ import {
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
-import { getCollinsDictionary, setCollinsDictionary, refreshCollinsDictionaries, validateDictionaryCode } from './v3-collins.js';
+import { COLLINS_DICTIONARIES, getCollinsDictionary, setCollinsDictionary } from './v3-collins.js';
 import { createProviderSession } from './v3-provider-runtime.js';
 import { renderGroqLookup, renderGroqVerification, renderCollinsEntry } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 
-const APP_VERSION = '4.7.3+D.2';
+const APP_VERSION = '4.7.3+D.3';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
@@ -5468,15 +5468,15 @@ function openSettingsDialog() {
   const settingsController = new AbortController();
   const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…', spellcheck: 'false', autocapitalize: 'none' });
   const collinsKey = el('input', { type: 'password', value: getCollinsApiKey(), autocomplete: 'off', placeholder: 'Collins API Key', spellcheck: 'false', autocapitalize: 'none' });
-  const dictionaryCode = el('input', { value: getCollinsDictionary(), placeholder: '例如 english；以账号授权为准', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
-  const dictionaryChoices = el('select', { 'aria-label': '本次获取的 Collins 词典' });
-  const dictionaryChoiceField = field('账号返回的词典', dictionaryChoices);
-  dictionaryChoiceField.hidden = true;
-  dictionaryChoices.addEventListener('change', () => { if (dictionaryChoices.value) dictionaryCode.value = dictionaryChoices.value; });
+  const savedCollinsDictionary = getCollinsDictionary();
+  const dictionaryCode = el('select', { 'aria-label': 'Collins 词典' }, [
+    el('option', { value: '', text: '请选择词典' }),
+    ...COLLINS_DICTIONARIES.map((dictionary) => el('option', {
+      value: dictionary.code, text: dictionary.name, selected: dictionary.code === savedCollinsDictionary,
+    })),
+  ]);
   const groqSettingsStatus = el('p', { className: 'help-text provider-settings-status', role: 'status', 'aria-label': 'Groq 连接状态', 'aria-live': 'polite' });
-  const collinsSettingsStatus = el('p', { className: 'help-text provider-settings-status', role: 'status', 'aria-label': 'Collins 连接状态', 'aria-live': 'polite' });
   let modelRequest = null;
-  let dictionaryRequest = null;
   const model = el('select');
   let draftModel = getSelectedModel();
   let refreshedIds = null;
@@ -5521,40 +5521,15 @@ function openSettingsDialog() {
       if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) groqSettingsStatus.textContent = error.message;
     } finally { if (modelRequest === request) { refresh.disabled = false; modelRequest = null; } }
   });
-  const refreshDictionaries = button('获取账号词典', 'secondary-button', async () => {
-    const requestedKey = collinsKey.value.trim();
-    dictionaryRequest?.abort();
-    const request = dictionaryRequest = new AbortController();
-    dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true;
-    try {
-      refreshDictionaries.disabled = true;
-      collinsSettingsStatus.textContent = '正在获取 Collins 词典（1 次请求）…';
-      const dictionaries = await refreshCollinsDictionaries({ apiKey: requestedKey, signal: request.signal });
-      if (settingsController.signal.aborted || request.signal.aborted || dictionaryRequest !== request || requestedKey !== collinsKey.value.trim()) return;
-      dictionaryChoices.replaceChildren(el('option', { value: '', text: '请选择词典' }),
-        ...dictionaries.map((d) => el('option', { value: d.code, text: d.name + ' · ' + d.code })));
-      dictionaryChoiceField.hidden = false;
-      collinsSettingsStatus.textContent = dictionaries.length ? '请明确选择一本词典；不会自动尝试其他词典。' : '账号未返回可用词典，请核对授权。';
-    } catch (error) {
-      if (!settingsController.signal.aborted && !request.signal.aborted && dictionaryRequest === request) collinsSettingsStatus.textContent = error.message;
-    } finally { if (dictionaryRequest === request) { refreshDictionaries.disabled = false; dictionaryRequest = null; } }
-  });
-  collinsKey.addEventListener('input', () => {
-    dictionaryRequest?.abort(); dictionaryRequest = null;
-    refreshDictionaries.disabled = false;
-    collinsSettingsStatus.textContent = '';
-    dictionaryChoices.replaceChildren(); dictionaryChoiceField.hidden = true;
-  });
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
       el('p', { className: 'help-text', text: '查词释义与内容核查独立运行。语音、守卫和未知能力模型不可选。' }),
       field('Groq API Key', key), field('查询与核查模型', model), refresh, groqSettingsStatus]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
       el('p', { className: 'help-text', text: '每次查词只请求所选词典一次；结果仅在弹窗中展示，不缓存。' }),
-      field('Collins API Key', collinsKey), field('词典代码', dictionaryCode), refreshDictionaries, dictionaryChoiceField,
-      collinsSettingsStatus,
-      el('p', { className: 'provider-footnote', text: '此静态站点直连 Collins，需要对方允许浏览器跨域访问。若返回验证页或 CORS 错误，需确认官方接入条件；更换词典代码不能解决访问拦截。' })]),
-    el('p', { className: 'provider-footnote', text: '密钥保存在此设备、此站点，并仅发送给对应 Provider。不要将密钥或包含 accesskey 的完整地址写入仓库或错误报告。' }),
+      field('Collins API Key', collinsKey), field('Collins 词典', dictionaryCode),
+      el('p', { className: 'provider-footnote', text: '这里列出 VIX 支持的两本词典；当前账号是否获得授权，以实际查询结果为准。此静态站点直连 Collins，仍需对方允许浏览器跨域访问。' })]),
+    el('p', { className: 'provider-footnote', text: '密钥保存在此设备、此站点，并通过认证请求发送给对应 Provider。不要将密钥写入链接、仓库或错误报告。' }),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
@@ -5563,7 +5538,6 @@ function openSettingsDialog() {
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
     const code = dictionaryCode.value.trim();
-    if (code) validateDictionaryCode(code);
     setApiKey(key.value); setCollinsApiKey(collinsKey.value); setCollinsDictionary(code); selectModel(model.value);
     if (refreshedIds && refreshedKey === key.value.trim()) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
@@ -5571,8 +5545,7 @@ function openSettingsDialog() {
     showToast('已保存');
   } });
   frame.onDispose = () => {
-    settingsController.abort(); modelRequest?.abort(); dictionaryRequest?.abort();
-    dictionaryChoices.replaceChildren();
+    settingsController.abort(); modelRequest?.abort();
   };
 }
 

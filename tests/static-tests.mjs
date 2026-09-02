@@ -17,6 +17,7 @@ const db = read('js/v3-db.js');
 const store = read('js/v3-store.js');
 const exchange = read('js/v3-exchange.js');
 const integrations = read('js/v3-integrations.js');
+const collins = read('js/v3-collins.js');
 const upgrade = read('js/v3-upgrade.js');
 const sw = read('sw.js');
 const manifest = JSON.parse(read('manifest.webmanifest'));
@@ -24,7 +25,7 @@ const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
 
-assert.equal(pkg.version, '4.7.3+D.2');
+assert.equal(pkg.version, '4.7.3+D.3');
 assert.ok(index.includes('css/provider-runtime.css'));
 assert.ok(index.includes('Vocabulary Index 4.7.3'));
 assert.ok(index.includes('css/v4.0.1.css'));
@@ -84,6 +85,12 @@ assert.ok(csp.includes('https://api.groq.com'));
 assert.ok(csp.includes('https://api.collinsdictionary.com'));
 assert.ok(!/<script[^>]+src=["']https?:/i.test(index));
 assert.ok(!/<link[^>]+href=["']https?:/i.test(index));
+assert.ok(collins.includes("accessKey: apiKey.trim()"));
+assert.ok(collins.includes('/search/first/?q='));
+assert.ok(!collins.includes("url.searchParams.set('accesskey'"));
+assert.ok(!collins.includes('refreshCollinsDictionaries'));
+assert.ok(!ui.includes('获取账号词典'));
+assert.ok(!ui.includes('词典代码'));
 
 // Service worker precache is complete and duplicate-free.
 const precacheBody = sw.match(/const PRECACHE = \[([\s\S]*?)\];/)?.[1] || '';

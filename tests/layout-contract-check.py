@@ -1,7 +1,21 @@
+import os
+import shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+BROWSER_EXECUTABLE = os.environ.get('VIX_CHROMIUM_PATH') or shutil.which('chromium') or shutil.which('chromium-browser')
+if not BROWSER_EXECUTABLE:
+    for candidate in (
+        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+        r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+    ):
+        if Path(candidate).is_file():
+            BROWSER_EXECUTABLE = candidate
+            break
+if not BROWSER_EXECUTABLE:
+    raise RuntimeError('Set VIX_CHROMIUM_PATH to a Chromium-compatible browser executable')
 CSS = "\n".join((ROOT / p).read_text() for p in [
     'css/v3.css', 'css/v3.3.1.css', 'css/v3.4.0.css', 'css/v4.0.0.css', 'css/v4.0.1.css', 'css/v4.0.2.css', 'css/v4.1.0.css', 'css/v4.2.0.css', 'css/v4.3.0.css', 'css/v4.4.0.css', 'css/v4.5.0.css', 'css/v4.6.0.css', 'css/v4.7.0.css', 'css/v4.7.1.css', 'css/v4.7.2.css', 'css/v4.7.3.css'
 ])
@@ -44,7 +58,7 @@ HTML = f'''<!doctype html><html><head><meta name="viewport" content="width=devic
 def center_y(box): return box['y'] + box['height'] / 2
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+    browser = p.chromium.launch(headless=True, executable_path=BROWSER_EXECUTABLE, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width': 402, 'height': 874})
     page.set_content(HTML)
     page.evaluate("""

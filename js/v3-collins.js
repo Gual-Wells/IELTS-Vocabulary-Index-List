@@ -1,8 +1,15 @@
-import { ProviderError, fetchProviderJson, objectValue, textValue, arrayValue } from './v3-provider-runtime.js';
+import { ProviderError, fetchProviderJson, objectValue, textValue } from './v3-provider-runtime.js';
 
 const KEY_STORAGE = 'gualVocabulary.collinsApiKey';
 const DICTIONARY_STORAGE = 'gualVocabulary.collinsDictionaryCode';
 const BASE_URL = 'https://api.collinsdictionary.com/api/v1';
+
+export const COLLINS_DICTIONARIES = Object.freeze([
+  Object.freeze({ code: 'american-learner', name: 'Collins Cobuild Advanced American' }),
+  Object.freeze({ code: 'american', name: "Webster's New World College Dictionary" }),
+]);
+/** @type {ReadonlySet<string>} */
+const COLLINS_DICTIONARY_CODES = new Set(COLLINS_DICTIONARIES.map((dictionary) => dictionary.code));
 
 export function getCollinsApiKey() { return localStorage.getItem(KEY_STORAGE) || ''; }
 export function setCollinsApiKey(value) {
@@ -12,38 +19,30 @@ export function setCollinsApiKey(value) {
 export function getCollinsDictionary() { return localStorage.getItem(DICTIONARY_STORAGE) || ''; }
 export function validateDictionaryCode(value) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value)) {
-    throw new ProviderError('configuration', '请在设置中明确选择或填写 Collins 词典代码');
+    throw new ProviderError('configuration', 'Collins 词典选择无效，请在设置中重新选择');
   }
   return value;
 }
+export function validateSupportedCollinsDictionary(value) {
+  const code = validateDictionaryCode(value);
+  if (!COLLINS_DICTIONARY_CODES.has(code)) {
+    throw new ProviderError('configuration', '请在设置中选择 VIX 支持的 Collins 词典');
+  }
+  return code;
+}
 export function setCollinsDictionary(value) {
   const code = typeof value === 'string' ? value.trim() : '';
-  if (code) localStorage.setItem(DICTIONARY_STORAGE, validateDictionaryCode(code));
+  if (code) localStorage.setItem(DICTIONARY_STORAGE, validateSupportedCollinsDictionary(code));
   else localStorage.removeItem(DICTIONARY_STORAGE);
 }
 
 function collinsFetch(path, { apiKey = getCollinsApiKey(), signal = null, onState = (_state) => {} } = {}) {
   if (typeof apiKey !== 'string' || !apiKey.trim()) throw new ProviderError('configuration', '请先在设置中配置 Collins API Key');
-  // Preserve 4.7.3's HTTPS accesskey compatibility; never echo URL/key or silently
-  // switch authentication. Live account/CORS verification remains an external gate.
   const url = new URL(BASE_URL + path);
-  url.searchParams.set('accesskey', apiKey.trim());
-  return fetchProviderJson(url.href, { method: 'GET', headers: { Accept: 'application/json' } },
+  return fetchProviderJson(url.href, { method: 'GET', headers: {
+    Accept: 'application/json', accessKey: apiKey.trim(),
+  } },
     { provider: 'Collins', signal, timeoutMs: 20000, retries: 0, onState });
-}
-
-/** Explicit settings action only. Returned catalog lives in the settings frame. */
-export async function refreshCollinsDictionaries(options = {}) {
-  const payload = await collinsFetch('/dictionaries', options);
-  const rows = Array.isArray(payload) ? payload : objectValue(payload).dictionaries;
-  const seen = new Set();
-  return arrayValue(rows, 'dictionaries', 500).map((value) => {
-    const d = objectValue(value, 'dictionary');
-    const code = validateDictionaryCode(textValue(d.dictionaryCode, 'dictionaryCode', { max: 100 }));
-    if (seen.has(code)) throw new ProviderError('invalid-response', 'Collins 返回了重复词典代码');
-    seen.add(code);
-    return { code, name: textValue(d.dictionaryName, 'dictionaryName', { max: 300 }) };
-  });
 }
 
 export function decodeCollinsEntry(payload, query, dictionaryCode) {
@@ -57,7 +56,7 @@ export function decodeCollinsEntry(payload, query, dictionaryCode) {
 /** One click = one upstream request. No enumeration, retries or follow-up entry fetch. */
 export async function queryCollins(text, { signal = null, onState = (_state) => {}, dictionaryCode = getCollinsDictionary() } = {}) {
   const query = textValue(text, 'query', { max: 240 });
-  const code = validateDictionaryCode(dictionaryCode);
-  const payload = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/search/first?q=${encodeURIComponent(query)}&format=html`, { signal, onState });
+  const code = validateSupportedCollinsDictionary(dictionaryCode);
+  const payload = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/search/first/?q=${encodeURIComponent(query)}&format=html`, { signal, onState });
   return decodeCollinsEntry(payload, query, code);
 }

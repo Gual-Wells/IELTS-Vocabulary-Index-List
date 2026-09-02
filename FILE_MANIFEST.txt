@@ -50,7 +50,6 @@ CHANGE_REPORT_4.7.3.md
 DATA_FORMATS.md
 DATA_REPORT.md
 DEPLOY.md
-DEPLOY_D2.md
 LOCAL_ARCHITECTURE.md
 MIGRATION_3.0.0.md
 MIGRATION_3.1.0.md
@@ -105,6 +104,7 @@ PROJECT_HISTORY.md
 PROJECT_HISTORY_3.5.2_SNAPSHOT.md
 PROVIDER_RUNTIME_D1.md
 PROVIDER_RUNTIME_D2.md
+PROVIDER_RUNTIME_D3.md
 README.md
 REQUIREMENT_BASELINE_4.0.0.md
 REQUIREMENT_BASELINE_4.0.1.md
@@ -270,6 +270,8 @@ tests/MANUAL_CHECKLIST.md
 tests/integration-tests.mjs
 tests/layout-contract-check.py
 tests/performance-tests.mjs
+tests/provider-browser-fixture.js
+tests/provider-browser.html
 tests/provider-tests.mjs
 tests/run-tests.mjs
 tests/runtime-behavior-tests.mjs

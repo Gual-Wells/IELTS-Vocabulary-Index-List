@@ -6,7 +6,7 @@ import { decodeLookup, decodeVerification, decodeBatch, decodeSearch, decodeSugg
 import { getApiKey, setApiKey, selectModel, getSelectedModel, getModelCatalog, refreshModels,
   queryVocabularyEntry, verifyVocabularyEntry, checkEntries, AiCheckController, saveModelCatalog } from '../js/v3-ai.js';
 import { getCollinsApiKey, setCollinsApiKey, getCollinsDictionary, setCollinsDictionary,
-  queryCollins, refreshCollinsDictionaries } from '../js/v3-collins.js';
+  COLLINS_DICTIONARIES, queryCollins, validateSupportedCollinsDictionary } from '../js/v3-collins.js';
 
 const originalFetch = globalThis.fetch;
 const originalStorage = globalThis.localStorage;
@@ -109,38 +109,54 @@ test('draft model refresh does not persist credentials/catalog; unavailable mode
   await assert.rejects(queryVocabularyEntry(context), { code: 'configuration' });
   assert.equal(calls.length, 1);
 });
-test('legacy credential keys and explicit dictionary selection remain compatible', () => {
+test('legacy credential key and the fixed Collins registry remain compatible', () => {
   storage.set('gualVocabulary.collinsApiKey', 'old-collins');
   assert.equal(getCollinsApiKey(), 'old-collins'); assert.equal(getApiKey(), 'fixture-key-not-real');
   assert.equal(getCollinsDictionary(), '');
-  setCollinsDictionary('english'); assert.equal(getCollinsDictionary(), 'english');
-  assert.throws(() => setCollinsDictionary('../other?key=x'));
+  assert.deepEqual(COLLINS_DICTIONARIES, [
+    { code: 'american-learner', name: 'Collins Cobuild Advanced American' },
+    { code: 'american', name: "Webster's New World College Dictionary" },
+  ]);
+  assert.ok(Object.isFrozen(COLLINS_DICTIONARIES) && COLLINS_DICTIONARIES.every(Object.isFrozen));
+  setCollinsDictionary('american-learner'); assert.equal(getCollinsDictionary(), 'american-learner');
+  assert.equal(validateSupportedCollinsDictionary('american'), 'american');
+  assert.throws(() => setCollinsDictionary('english'), { code: 'configuration' });
+  assert.throws(() => setCollinsDictionary('../other?key=x'), { code: 'configuration' });
 });
 test('Collins lookup is exactly one search/first request with transient structured content', async () => {
-  setCollinsApiKey('collins-fixture'); setCollinsDictionary('english');
+  setCollinsApiKey('collins-fixture'); setCollinsDictionary('american-learner');
   mock({ entryId: 'thread_1', entryContent: '<div class="sense"><b>thread</b><p>Definition</p></div>' });
   const before = [...storage]; const result = await queryCollins('thread');
   assert.equal(calls.length, 1); const url = new URL(calls[0].url);
-  assert.equal(url.pathname, '/api/v1/dictionaries/english/search/first');
+  assert.equal(url.pathname, '/api/v1/dictionaries/american-learner/search/first/');
   assert.equal(url.searchParams.get('format'), 'html');
+  assert.equal(url.searchParams.has('accesskey'), false);
+  assert.equal(calls[0].options.headers.accessKey, 'collins-fixture');
+  assert.equal(calls[0].options.headers.Accept, 'application/json');
   assert.equal(calls[0].options.cache, 'no-store'); assert.equal(calls[0].options.referrerPolicy, 'no-referrer');
   assert.equal(calls[0].options.redirect, 'error');
   assert.ok(result.entryContent.includes('<b>thread</b>')); assert.deepEqual([...storage], before);
 });
-test('Collins requires configuration, never guesses a dictionary', async () => {
+test('both fixed Collins dictionaries use their canonical search/first path', async () => {
+  setCollinsApiKey('fixture'); mock({ entryId: 'entry-1', entryContent: '<p>entry</p>' });
+  for (const dictionaryCode of COLLINS_DICTIONARIES.map((dictionary) => dictionary.code)) {
+    await queryCollins('entry', { dictionaryCode });
+  }
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [
+    '/api/v1/dictionaries/american-learner/search/first/',
+    '/api/v1/dictionaries/american/search/first/',
+  ]);
+  assert.ok(calls.every((call) => call.options.headers.accessKey === 'fixture'));
+});
+test('Collins requires a supported explicit dictionary and never guesses or calls the catalog', async () => {
   setCollinsApiKey('fixture'); mock({});
+  await assert.rejects(queryCollins('thread'), { code: 'configuration' });
+  storage.set('gualVocabulary.collinsDictionaryCode', 'legacy-english');
   await assert.rejects(queryCollins('thread'), { code: 'configuration' });
   assert.equal(calls.length, 0);
 });
-test('Collins catalog is an explicit one-call settings action, zero catalog persistence', async () => {
-  mock({ dictionaries: [{ dictionaryCode: 'english', dictionaryName: 'English' }] });
-  const before = [...storage];
-  assert.deepEqual(await refreshCollinsDictionaries({ apiKey: 'fixture' }), [{ code: 'english', name: 'English' }]);
-  assert.equal(calls.length, 1); assert.equal(new URL(calls[0].url).pathname, '/api/v1/dictionaries');
-  assert.deepEqual([...storage], before);
-});
 test('Collins 401/404/429/500/network and malformed payload never retry or fall through', async () => {
-  setCollinsApiKey('fixture'); setCollinsDictionary('english');
+  setCollinsApiKey('fixture'); setCollinsDictionary('american');
   for (const [status, code] of [[401, 'authorization'], [404, 'not-found'], [429, 'rate-limit'], [500, 'unavailable']]) {
     mock({}, status); await assert.rejects(queryCollins('thread'), { code });
   }
@@ -174,7 +190,8 @@ test('access pages are distinct from JSON authorization errors and never retried
 test('Collins unreadable network errors remain unknown, not an authorization verdict', async () => {
   let count = 0;
   globalThis.fetch = async () => { count++; throw new TypeError('secret-url-and-key'); };
-  await assert.rejects(refreshCollinsDictionaries({ apiKey: 'fixture' }), error => {
+  setCollinsApiKey('fixture'); setCollinsDictionary('american');
+  await assert.rejects(queryCollins('thread'), error => {
     assert.equal(error.code, 'network');
     assert.ok(!error.message.includes('secret-url-and-key'));
     return true;

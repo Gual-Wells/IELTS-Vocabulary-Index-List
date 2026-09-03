@@ -1,32 +1,32 @@
 {
-  "generatedAt": "2026-09-02T00:00:00.000Z",
+  "generatedAt": "2026-09-03T00:00:00.000Z",
   "schemaVersion": 6,
-  "appVersion": "5.0.0-alpha.2",
-  "builtInSeedRevision": 5,
-  "contentGeneration": 5,
+  "appVersion": "5.0.0-alpha.3",
+  "builtInSeedRevision": 6,
+  "contentGeneration": 6,
   "total": {
     "domains": 3,
     "collections": 24,
-    "entries": 22910,
-    "words": 16188,
-    "phrases": 6672,
-    "content": 50,
-    "memberships": 60857,
-    "relationComponents": 18168,
+    "entries": 23486,
+    "words": 16222,
+    "phrases": 6938,
+    "content": 326,
+    "memberships": 61445,
+    "relationComponents": 19634,
     "studyStamps": 0
   },
   "global": {
     "words": {
-      "renderedRows": 16188,
-      "uniqueNormalized": 15871
+      "renderedRows": 16222,
+      "uniqueNormalized": 15904
     },
     "phrases": {
-      "renderedRows": 6672,
-      "uniqueNormalized": 6672
+      "renderedRows": 6938,
+      "uniqueNormalized": 6938
     },
     "content": {
-      "renderedRows": 50,
-      "uniqueNormalized": 50
+      "renderedRows": 326,
+      "uniqueNormalized": 326
     }
   },
   "generalEnglish": {
@@ -131,44 +131,45 @@
   },
   "computerTerms": {
     "domainId": "domain_computer_terms",
-    "entries": 1121,
-    "words": 544,
-    "phrases": 577,
+    "entries": 1421,
+    "words": 578,
+    "phrases": 843,
     "glossEnabled": true,
-    "glossCoverage": 1121,
+    "glossCoverage": 1421,
     "hiddenSourceCollections": [
       "collection_computer_terms_builtin_source"
     ],
     "visibleCollections": {
       "计算机基础与系统": {
-        "words": 214,
-        "phrases": 139,
+        "words": 224,
+        "phrases": 189,
         "content": 0,
-        "total": 353
+        "total": 413
       },
       "软件开发与数据": {
-        "words": 197,
-        "phrases": 222,
+        "words": 205,
+        "phrases": 278,
         "content": 0,
-        "total": 419
+        "total": 483
       },
       "网络、云与安全": {
-        "words": 114,
-        "phrases": 165,
+        "words": 119,
+        "phrases": 227,
         "content": 0,
-        "total": 279
+        "total": 346
       },
       "人工智能": {
-        "words": 19,
-        "phrases": 51,
+        "words": 30,
+        "phrases": 149,
         "content": 0,
-        "total": 70
+        "total": 179
       }
     },
     "sourceCounts": {
       "PY": 77,
       "CORE": 246,
       "HW": 46,
+      "VIX-6-CURATED": 300,
       "NIST": 76,
       "GH": 59,
       "MDN": 178,
@@ -185,47 +186,48 @@
   "nonStructured": {
     "domainId": "domain_general_collocations",
     "name": "通用英语搭配",
-    "entries": 50,
-    "content": 50,
+    "entries": 326,
+    "content": 326,
     "visibleCollections": {
       "句型": {
         "words": 0,
         "phrases": 0,
-        "content": 12,
-        "total": 12
+        "content": 72,
+        "total": 72
       },
       "语法框架": {
         "words": 0,
         "phrases": 0,
-        "content": 12,
-        "total": 12
+        "content": 72,
+        "total": 72
       },
       "模板表达": {
         "words": 0,
         "phrases": 0,
-        "content": 12,
-        "total": 12
+        "content": 92,
+        "total": 92
       },
       "语篇标记": {
         "words": 0,
         "phrases": 0,
-        "content": 14,
-        "total": 14
+        "content": 90,
+        "total": 90
       }
     }
   },
   "provenance": {
-    "records": 26,
+    "records": 27,
     "authorityCounts": {
       "legacy": 15,
       "official": 2,
       "publisher-approved mirror": 1,
       "community transcription": 1,
       "community compilation": 6,
-      "community mirror": 1
+      "community mirror": 1,
+      "VIX curated": 1
     },
-    "manifest": "data/sources/seed5/SOURCE_MANIFEST.json",
+    "manifest": "data/sources/seed5/SOURCE_MANIFEST.json + data/sources/seed6/VIX6_DOMAIN_EXPANSION.json",
     "runtimeManifest": "data/seed5-runtime/manifest.json"
   },
-  "scopeNote": "Seed5 broadly includes quality-acceptable official, publisher-approved and community source material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community sources remain explicitly labelled and are not represented as official releases."
+  "scopeNote": "The current Seed broadly includes quality-acceptable official, publisher-approved, community and VIX-curated material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community and curated sources remain explicitly labelled and are not represented as official releases."
 }

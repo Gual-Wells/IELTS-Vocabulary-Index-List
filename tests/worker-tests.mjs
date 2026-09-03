@@ -106,13 +106,22 @@ test('Collins bridge requires Access, validates registry, hides the secret and m
   assert.equal(spoofed.status, 401);
   assert.equal(jwksCalls, 0);
 
+  const cookieAuthenticated = await worker.fetch(new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { cookie: `unrelated=1; CF_Authorization=${await access.token()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'abandon', dictionaryCode: 'american-learner' }),
+  }), env);
+  assert.equal(cookieAuthenticated.status, 200);
+  assert.equal(ledgerCalls, 1);
+  assert.equal(upstreamCalls, 1);
+  assert.equal(jwksCalls, 1);
+
   const authenticated = await worker.fetch(new Request('https://vix.test/api/collins/lookup', {
     method: 'POST', headers: { 'cf-access-jwt-assertion': await access.token(), 'content-type': 'application/json' },
     body: JSON.stringify({ query: 'abandon', dictionaryCode: 'american-learner' }),
   }), env);
   assert.equal(authenticated.status, 200);
-  assert.equal(ledgerCalls, 1);
-  assert.equal(upstreamCalls, 1);
+  assert.equal(ledgerCalls, 2);
+  assert.equal(upstreamCalls, 2);
   assert.equal(jwksCalls, 1);
   assert.equal(authenticated.headers.get('cache-control'), 'no-store, private, max-age=0');
   assert.ok(!(await authenticated.text()).includes('server-secret'));
@@ -122,7 +131,31 @@ test('Collins bridge requires Access, validates registry, hides the secret and m
     body: JSON.stringify({ query: 'abandon', dictionaryCode: '../other' }),
   }), env);
   assert.equal(invalid.status, 400);
-  assert.equal(ledgerCalls, 1);
+  assert.equal(ledgerCalls, 2);
+  assert.equal(upstreamCalls, 2);
+});
+
+test('platform Access context is accepted only for the configured audience', async () => {
+  const access = await accessFixture();
+  let upstreamCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (new URL(url).hostname === 'vix-tests.cloudflareaccess.com') {
+      return new Response(JSON.stringify({ keys: [access.publicJwk] }), { headers: { 'content-type': 'application/json' } });
+    }
+    upstreamCalls++;
+    return new Response(JSON.stringify({ entryId: 'one', entryContent: '<p>entry</p>' }), { headers: { 'content-type': 'application/json' } });
+  };
+  const env = {
+    ALLOW_UNPROTECTED_LOCAL: 'false', COLLINS_ACCESS_KEY: 'server-secret', COLLINS_MONTHLY_LIMIT: '10',
+    TEAM_DOMAIN: 'https://vix-tests.cloudflareaccess.com', POLICY_AUD: 'vix-audience',
+    USAGE_LEDGER: { idFromName: (name) => name, get: () => ({ fetch: async () => new Response('{}') }) },
+  };
+  const request = () => new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'thread', dictionaryCode: 'american' }),
+  });
+  assert.equal((await worker.fetch(request(), env, { access: { aud: 'wrong-audience' } })).status, 401);
+  assert.equal((await worker.fetch(request(), env, { access: { aud: 'vix-audience' } })).status, 200);
   assert.equal(upstreamCalls, 1);
 });
 
@@ -193,7 +226,7 @@ test('SessionObject stores slot-only requests and accepts one bound result with 
   assert.deepEqual(await ownerRead.json(), result);
 });
 
-test('static asset responses receive the alpha2 security envelope', async () => {
+test('static asset responses receive the alpha3 security envelope', async () => {
   const response = await worker.fetch(new Request('https://vix.test/index.html'), {
     ASSETS: { fetch: async () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } }) },
   });

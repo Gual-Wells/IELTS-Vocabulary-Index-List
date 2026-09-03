@@ -18,7 +18,10 @@ const root = new URL('../', import.meta.url);
 const sourceRoot = new URL('../data/sources/seed5/', import.meta.url);
 const seed4 = JSON.parse(await fs.readFile(new URL('../data/seed-4.json', import.meta.url), 'utf8'));
 const sourceManifest = JSON.parse(await fs.readFile(new URL('SOURCE_MANIFEST.json', sourceRoot), 'utf8'));
-const timestamp = '2026-09-02T00:00:00.000Z';
+const domainExpansion = JSON.parse(await fs.readFile(new URL('../data/sources/seed6/VIX6_DOMAIN_EXPANSION.json', import.meta.url), 'utf8'));
+const SEED_REVISION = 6;
+if (Number(domainExpansion.seedRevision) !== SEED_REVISION) throw new Error('Domain expansion revision does not match the application Seed revision');
+const timestamp = domainExpansion.generatedAt;
 const generalDomainId = 'domain_general_english';
 const rejected = [];
 
@@ -237,6 +240,64 @@ const nonGeneralEntries = seed4.entries.filter((entry) => entry.domainId !== gen
 const nonGeneralCollections = seed4.collections.filter((collection) => collection.domainId !== generalDomainId);
 const nonGeneralCollectionIds = new Set(nonGeneralCollections.map((collection) => collection.id));
 const nonGeneralMemberships = seed4.memberships.filter((membership) => nonGeneralCollectionIds.has(membership.collectionId));
+const nonGeneralEntryByNaturalKey = new Map(nonGeneralEntries.map((entry) => [`${entry.domainId}\u0000${entry.normalizedText}`, entry]));
+const nonGeneralCollectionById = new Map(nonGeneralCollections.map((collection) => [collection.id, collection]));
+const nonGeneralMembershipKeys = new Set(nonGeneralMemberships.map((membership) => `${membership.entryId}\u0000${membership.collectionId}`));
+const expansionCounts = { computerAdded: 0, collocationsAdded: 0, membershipsAdded: 0, duplicatesReused: 0 };
+
+function addDomainExpansion({ domainId, collectionId, text, glossHans = '', contentType = '', sourceOrder }) {
+  const collection = nonGeneralCollectionById.get(collectionId);
+  if (!collection || collection.domainId !== domainId) throw new Error(`Unknown expansion collection: ${collectionId}`);
+  const normalizedText = normalizeEnglish(cleanCandidateText(text));
+  if (!normalizedText) throw new Error(`Invalid expansion entry: ${text}`);
+  const naturalKey = `${domainId}\u0000${normalizedText}`;
+  let entry = nonGeneralEntryByNaturalKey.get(naturalKey);
+  if (!entry) {
+    entry = createEntry({
+      id: safeId('entry', `${domainId}:${normalizedText}`), domainId, text,
+      kind: domainId === 'domain_general_collocations' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word'),
+      contentType,
+      glossHans,
+      glossHant: glossHans ? toTraditional(glossHans) : '',
+      glossSource: domainExpansion.source.key,
+      timestamp,
+    });
+    nonGeneralEntries.push(entry);
+    nonGeneralEntryByNaturalKey.set(naturalKey, entry);
+    if (domainId === 'domain_computer_terms') expansionCounts.computerAdded++;
+    else expansionCounts.collocationsAdded++;
+  } else {
+    expansionCounts.duplicatesReused++;
+  }
+  const membershipKey = `${entry.id}\u0000${collectionId}`;
+  if (nonGeneralMembershipKeys.has(membershipKey)) return;
+  nonGeneralMemberships.push(createMembership({
+    entryId: entry.id, collectionId, sourceLabel: 'VIX Seed 6 curated expansion', sourceOrder, timestamp,
+  }));
+  nonGeneralMembershipKeys.add(membershipKey);
+  expansionCounts.membershipsAdded++;
+}
+
+let expansionOrder = 200000;
+for (const [collectionId, items] of Object.entries(domainExpansion.computerTerms || {})) {
+  for (const [text, glossHans] of items) addDomainExpansion({
+    domainId: 'domain_computer_terms', collectionId, text, glossHans, sourceOrder: expansionOrder++,
+  });
+}
+const contentTypeGlosses = {
+  'sentence-pattern': '常用英语句型；方括号或省略号部分需结合语境替换。',
+  'grammar-framework': '常用语法框架；使用时需根据句法和语境补全。',
+  'template-expression': '常用表达模板；适合在写作或口语中按语境改写。',
+  'discourse-marker': '语篇连接表达；用于组织信息和标明逻辑关系。',
+};
+for (const [collectionId, items] of Object.entries(domainExpansion.collocations || {})) {
+  const collection = nonGeneralCollectionById.get(collectionId);
+  const contentType = collection?.label || '';
+  for (const text of items) addDomainExpansion({
+    domainId: 'domain_general_collocations', collectionId, text,
+    glossHans: contentTypeGlosses[contentType] || '常用英语表达。', contentType, sourceOrder: expansionOrder++,
+  });
+}
 const entries = [...nonGeneralEntries, ...generalEntries];
 
 const sourceTitles = new Map([
@@ -276,24 +337,24 @@ const seed = canonicalizeBackup({
   studyStamps: [],
   settings: {
     ...seed4.settings,
-    builtInSeedRevision: 5,
+    builtInSeedRevision: SEED_REVISION,
     migrationComplete: true,
-    migrationSource: 'seed5-three-way-generation',
+    migrationSource: 'seed6-three-way-generation',
     migrationNoticePending: false,
     closeLowLevelRelations: true,
     lastPositions: {},
     viewModes: {},
     calendarMonths: {},
-    contentSources: [...seed4.settings.contentSources, ...seed5ContentSources],
+    contentSources: [...seed4.settings.contentSources, ...seed5ContentSources, domainExpansion.source],
   },
 });
-if (!validateBackup(seed)) throw new Error('Seed5 failed Schema 6 validation');
+if (!validateBackup(seed)) throw new Error('Seed6 failed Schema 6 validation');
 
 const collectionCounts = Object.fromEntries(definitions.map((definition) => [definition.name,
   seed.memberships.filter((membership) => membership.collectionId === definition.id).length]));
 const report = {
-  protocol: 'vix-seed-build-report/2',
-  seedRevision: 5,
+  protocol: 'vix-seed-build-report/3',
+  seedRevision: SEED_REVISION,
   appVersion: APP_VERSION,
   generatedAt: timestamp,
   sourceManifest: 'data/sources/seed5/SOURCE_MANIFEST.json',
@@ -305,11 +366,14 @@ const report = {
     generalWords: generalEntries.filter((entry) => entry.kind === 'word').length,
     generalPhrases: generalEntries.filter((entry) => entry.kind === 'phrase').length,
     generalGlosses: generalEntries.filter((entry) => entry.glossHant).length,
+    computerEntries: nonGeneralEntries.filter((entry) => entry.domainId === 'domain_computer_terms').length,
+    collocationEntries: nonGeneralEntries.filter((entry) => entry.domainId === 'domain_general_collocations').length,
     memberships: seed.memberships.length,
     relations: seed.relationComponents.length,
     rejected: rejected.length,
   },
   collectionCounts,
+  expansionCounts,
   qualityPolicy: {
     strategy: 'broad inclusion after normalization and basic quality filtering',
     crossCollectionMembershipsPreserved: true,

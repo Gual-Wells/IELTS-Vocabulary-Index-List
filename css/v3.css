@@ -89,6 +89,26 @@ main { width: min(1080px, 100%); margin: 0 auto; padding: 18px 14px calc(36px + 
 .primary-button:active, .secondary-button:active, .danger-button:active, .compact-button:active, .text-button:active { transform: translateY(1px); }
 .primary-button[disabled], .secondary-button[disabled], .danger-button[disabled], .compact-button[disabled] { opacity: .42; cursor: default; }
 
+.settings-source-card {
+  width: 100%; min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface);
+  color: var(--ink); text-align: left; cursor: pointer;
+}
+.settings-source-card:active { background: var(--accent-soft); transform: translateY(1px); }
+.settings-source-card-copy { min-width: 0; display: grid; gap: 4px; }
+.settings-source-card-copy strong { font-size: 15px; }
+.settings-source-card-copy span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.settings-source-card > .ui-icon { width: 19px; height: 19px; flex: 0 0 auto; color: var(--accent); }
+.seed-source-dialog { display: grid; gap: 16px; }
+.seed-source-summaries { display: grid; gap: 8px; }
+.seed-source-summary { display: grid; gap: 4px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.seed-source-summary strong { font-size: 14px; }
+.seed-source-summary span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.source-document-link {
+  display: inline-flex; align-items: center; justify-content: center; width: 100%; color: var(--ink);
+  text-decoration: none; text-align: center;
+}
+
 .home-hero { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 4px 2px 20px; }
 .home-hero-copy { min-width: 0; }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 10px; letter-spacing: .17em; font-weight: 800; }
@@ -431,14 +451,14 @@ body.modal-open { overflow: hidden; }
 .drag-handle, .manager-more {
   width: 42px; height: 46px; border: 0; background: transparent; color: var(--muted); border-radius: 10px; cursor: grab;
 }
-.drag-handle { touch-action: none; }
+.drag-handle { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .manager-more { cursor: pointer; font-size: 17px; }
 .manager-fixed { width: 42px; height: 42px; }
 .manager-list { display: grid; }
 .manager-list .manager-row:last-of-type { border-bottom: 1px solid var(--line); }
 .manager-add { min-height: 46px; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 .manager-add-domain { width: 100%; }
-.dragging { opacity: .58; background: var(--accent-soft); box-shadow: var(--shadow-sm); }
+.dragging { opacity: .58; background: var(--accent-soft); box-shadow: var(--shadow-sm); contain: paint; }
 
 .search-dialog[open] {
   position: fixed;

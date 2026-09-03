@@ -25,7 +25,7 @@ test('runtime Seed5 manifest reassembles the full canonical source counts', asyn
   globalThis.fetch = localAssetFetch();
   const seed = await loadRuntimeSeed();
   const manifest = JSON.parse(await fs.readFile(new URL('../data/seed5-runtime/manifest.json', import.meta.url), 'utf8'));
-  assert.equal(seed.settings.builtInSeedRevision, 5);
+  assert.equal(seed.settings.builtInSeedRevision, 6);
   assert.equal(seed.entries.length, manifest.counts.entries);
   assert.equal(seed.memberships.length, manifest.counts.memberships);
   assert.equal(seed.relationComponents.length, manifest.counts.relationComponents);

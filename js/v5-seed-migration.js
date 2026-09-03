@@ -180,12 +180,13 @@ function mergeContentSources(currentSources, targetSources) {
 }
 
 /**
- * Reconcile a device snapshot with Seed5 using Seed4 as the common ancestor.
+ * Reconcile a device snapshot with the current built-in Seed using Seed4 as
+ * the common ancestor.
  * Built-in data follows field-level three-way merge; user-owned records and
  * explicit deletions win. Target IDs are aligned to existing device IDs so
  * pins, annotations and saved positions never need a lossy rewrite.
  */
-export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, { toRevision = 5, appliedAt = new Date().toISOString() } = {}) {
+export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, { toRevision = 6, appliedAt = new Date().toISOString() } = {}) {
   const base = canonicalizeBackup(baseInput);
   const current = canonicalizeBackup(currentInput);
   const target = alignTargetIds(base, current, canonicalizeBackup(targetInput));

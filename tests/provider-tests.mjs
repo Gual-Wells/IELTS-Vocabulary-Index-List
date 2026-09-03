@@ -200,6 +200,19 @@ test('Collins unreadable network errors remain unknown, not an authorization ver
   assert.equal(count, 1);
 });
 
+test('same-origin Access 401 is not misreported as a Collins key failure', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { code: 'access_required', message: 'Access required' },
+  }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  setCollinsDictionary('american');
+  await assert.rejects(queryCollins('thread'), error => {
+    assert.equal(error.code, 'access-session');
+    assert.match(error.message, /Cloudflare Access/);
+    assert.doesNotMatch(error.message, /密钥无效/);
+    return true;
+  });
+});
+
 test('transport retries only transient failures and respects bounded Retry-After', async () => {
   let n = 0;
   globalThis.fetch = async () => ++n < 3 ? respond({}, 503) : respond({ ok: true });

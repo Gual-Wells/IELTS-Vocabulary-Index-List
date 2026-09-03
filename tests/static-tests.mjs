@@ -8,6 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
+const baseCss = read('css/v3.css');
 const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css') + '\n' + read('css/v4.7.0.css') + '\n' + read('css/v4.7.1.css') + '\n' + read('css/v4.7.2.css') + '\n' + read('css/v4.7.3.css') + '\n' + read('css/v5.0.0.css');
 const css471 = read('css/v4.7.1.css');
 const css472 = read('css/v4.7.2.css');
@@ -33,9 +34,9 @@ const wrangler = read('wrangler.jsonc');
 const worker = read('worker/src/index.js');
 const accessJwt = read('worker/src/access-jwt.js');
 
-assert.equal(pkg.version, '5.0.0-alpha.2');
+assert.equal(pkg.version, '5.0.0-alpha.3');
 assert.ok(index.includes('css/provider-runtime.css'));
-assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.2'));
+assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.3'));
 assert.ok(index.includes('css/v5.0.0.css'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
@@ -54,7 +55,7 @@ assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v5.0.0-alpha.2-unified-runtime'));
+assert.ok(sw.includes('v5.0.0-alpha.3-unified-runtime'));
 assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
   sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
 assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
@@ -114,9 +115,9 @@ for (const relative of precache) {
 }
 for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './css/v5.0.0.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v5-seed-migration.js', './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 assert.equal(seedRuntimeManifest.protocol, 'vix-seed-runtime/1');
-assert.equal(seedRuntimeManifest.seedRevision, 5);
-for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.2.md', 'RELEASE_5.0.0-alpha.2.md', 'TEST_REPORT_5.0.0-alpha.2.md', 'SEED5_ATTRIBUTIONS.md']) {
-  assert.ok(exists(releaseDoc), `alpha.2 release document missing: ${releaseDoc}`);
+assert.equal(seedRuntimeManifest.seedRevision, 6);
+for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.3.md', 'RELEASE_5.0.0-alpha.3.md', 'TEST_REPORT_5.0.0-alpha.3.md', 'SEED5_ATTRIBUTIONS.md']) {
+  assert.ok(exists(releaseDoc), `alpha.3 release document missing: ${releaseDoc}`);
 }
 for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entries, ...seedRuntimeManifest.memberships, ...seedRuntimeManifest.relationComponents]) {
   assert.ok(exists(descriptor.path), `Seed runtime asset missing: ${descriptor.path}`);
@@ -135,8 +136,9 @@ assert.ok(fs.statSync(path.join(root, 'data/seed.json')).size > 25 * 1024 * 1024
   'Full audit seed should exercise the deployment exclusion boundary');
 
 // Protected Worker routes fail closed and validate Access assertions cryptographically.
-assert.ok(wrangler.includes('"TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com"'));
-assert.ok(wrangler.includes('"POLICY_AUD": "YOUR_ACCESS_APPLICATION_AUD_TAG"'));
+assert.ok(wrangler.includes('"TEAM_DOMAIN": "https://blue-breeze-4dac.cloudflareaccess.com"'));
+assert.ok(wrangler.includes('"POLICY_AUD": "15fef9936b16c8b08ed05b96a146ba6b19acfbd6a0a24c7fac6493fd1b04720d"'));
+assert.ok(wrangler.includes('"preview_urls": false'));
 assert.ok(wrangler.includes('"required": ["COLLINS_ACCESS_KEY"]'));
 assert.ok(worker.includes("import { authorizeAccess } from './access-jwt.js'"));
 assert.ok(!worker.includes('cf-access-authenticated-user-email'));
@@ -144,11 +146,13 @@ assert.ok(accessJwt.includes("header.alg !== 'RS256'"));
 assert.ok(accessJwt.includes('crypto.subtle.verify'));
 assert.ok(accessJwt.includes('payload.iss === teamDomain'));
 assert.ok(accessJwt.includes('audiences.includes(audience)'));
+assert.ok(accessJwt.includes("cookieValue(request, 'CF_Authorization')"));
+assert.ok(accessJwt.includes('executionContext?.access'));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
 assert.ok(db.includes('export const DB_VERSION = 5'));
-assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 5'));
+assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 6'));
 assert.ok(db.includes('reconcileSeedUpgrade'));
 assert.ok(db.includes('persistSeedMigrationBackup'));
 assert.ok(exchange.includes('export const VIX_VERSION = 2'));
@@ -161,6 +165,15 @@ assert.ok(store.includes('relatedEntriesByEntry'));
 assert.ok(store.includes('buildRelationComponentsForEntries'));
 assert.ok(db.includes('RelationComponents'));
 assert.ok(!db.includes("migrateLegacyBackup(raw)"), '内置 4.0 Seed 不得隐式迁移旧世代');
+
+// Nested collection and domain sorting must not share drag handles or process
+// every raw pointermove synchronously on iPhone.
+assert.ok(ui.includes('row.parentElement !== container'));
+assert.ok(ui.includes('requestAnimationFrame(processMove)'));
+assert.ok(ui.includes('event.stopPropagation()'));
+assert.ok(baseCss.includes('-webkit-touch-callout: none'));
+assert.ok(ui.includes('settings-source-card'));
+assert.ok(baseCss.includes('.source-document-link'));
 
 // VIX schema is v2 and contains the 4.0 domain/entry vocabulary.
 assert.match(schema.title, /VIX.*v2/i);

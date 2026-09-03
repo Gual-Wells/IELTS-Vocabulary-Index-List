@@ -1,13 +1,13 @@
-# Vocabulary Index 5.0.0-alpha.2
+# Vocabulary Index 5.0.0-alpha.3
 
 本包是以 VIX 4.7.3 为稳定交互基线完成的统一架构升级，不再是单独的 D3 试验包。D、A、C、B、E 五条路线已经在同一版本中兼并：Provider、Mirror/抑制、Seed5、Session Capsule/后端桥接，以及发布权威收口。
 
 ## 当前版本权威
 
-- App：`5.0.0-alpha.2`
+- App：`5.0.0-alpha.3`
 - Backup Schema：`6`
 - IndexedDB：`5`
-- Built-in Seed revision：`5`
+- Built-in Seed revision：`6`
 - VIX JSON：`2`
 - Navigation：`single-slot-vix-v1`
 - Session Capsule：`vix-session-capsule/2`
@@ -49,7 +49,7 @@ Seed5 采用“质量门槛后多多益善”，而不是“只有官方资料�
 - 写主库前在独立 IndexedDB 中保存迁移快照；主库写入是单事务，失败自动回滚；
 - 匹配的旧记录保持本机 ID，避免引用断裂。
 
-详见 `MIGRATION_5.0.0-alpha.2.md`。
+详见 `MIGRATION_5.0.0-alpha.3.md`。
 
 ## 部署边界
 

@@ -112,13 +112,40 @@ export async function verifyAccessJwt(token, env) {
   }
 }
 
-export async function authorizeAccess(request, env) {
+function cookieValue(request, name) {
+  const cookie = request.headers.get('cookie') || '';
+  for (const part of cookie.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    return part.slice(separator + 1).trim();
+  }
+  return '';
+}
+
+function platformAccessMatches(access, configuredAud) {
+  if (!access || typeof access !== 'object') return false;
+  const audiences = Array.isArray(access.aud) ? access.aud : [access.aud];
+  return audiences.includes(configuredAud);
+}
+
+export async function authorizeAccess(request, env, executionContext = null) {
   if (env?.ALLOW_UNPROTECTED_LOCAL === 'true') return { ok: true, localBypass: true };
   const { teamDomain, audience } = accessConfiguration(env);
   if (!teamDomain || !audience) return { ok: false, status: 503, code: 'access_not_configured' };
-  const token = request.headers.get('cf-access-jwt-assertion') || '';
-  if (!token) return { ok: false, status: 401, code: 'access_required' };
-  return (await verifyAccessJwt(token, env))
-    ? { ok: true, localBypass: false }
-    : { ok: false, status: 401, code: 'access_invalid' };
+  // Direct Worker invocations expose a platform-verified Access context. Static
+  // Assets currently run behind an internal router, so that context is not
+  // forwarded to the user Worker; in that topology the application-domain
+  // CF_Authorization cookie is the signed JWT available to the API route.
+  if (platformAccessMatches(executionContext?.access, audience)) {
+    return { ok: true, localBypass: false, source: 'platform-context' };
+  }
+  const tokens = [
+    request.headers.get('cf-access-jwt-assertion') || '',
+    cookieValue(request, 'CF_Authorization'),
+  ].filter((token, index, values) => token && values.indexOf(token) === index);
+  if (!tokens.length) return { ok: false, status: 401, code: 'access_required' };
+  for (const token of tokens) {
+    if (await verifyAccessJwt(token, env)) return { ok: true, localBypass: false, source: 'verified-jwt' };
+  }
+  return { ok: false, status: 401, code: 'access_invalid' };
 }

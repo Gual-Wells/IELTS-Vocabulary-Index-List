@@ -42,7 +42,7 @@ const report = {
   schemaVersion: seed.schemaVersion,
   appVersion: seed.appVersion,
   builtInSeedRevision: seed.settings.builtInSeedRevision,
-  contentGeneration: 5,
+  contentGeneration: 6,
   total: {
     domains: seed.domains.length,
     collections: seed.collections.length,
@@ -87,10 +87,10 @@ const report = {
   provenance: {
     records: sourceCatalog.length,
     authorityCounts: sourceAuthorityCounts,
-    manifest: 'data/sources/seed5/SOURCE_MANIFEST.json',
+    manifest: 'data/sources/seed5/SOURCE_MANIFEST.json + data/sources/seed6/VIX6_DOMAIN_EXPANSION.json',
     runtimeManifest: 'data/seed5-runtime/manifest.json',
   },
-  scopeNote: 'Seed5 broadly includes quality-acceptable official, publisher-approved and community source material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community sources remain explicitly labelled and are not represented as official releases.',
+  scopeNote: 'The current Seed broadly includes quality-acceptable official, publisher-approved, community and VIX-curated material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community and curated sources remain explicitly labelled and are not represented as official releases.',
 };
 await fs.writeFile(new URL('../data/seed-report.json', import.meta.url), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));

@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.2 部署
+# Vocabulary Index 5.0.0-alpha.3 部署
 
 ## 推荐拓扑
 
@@ -45,4 +45,4 @@ GitHub Pages 不执行 Worker：本地词库、Seed5、搜索、PIN、Mirror 文
 - Service Worker cache 名与 `js/v3-upgrade.js` 一致；
 - iPhone standalone 执行 `tests/MANUAL_CHECKLIST.md`。
 
-alpha.2 保持 Schema6/DB5/VIX2，但 Seed revision 升到 5。不要用旧 4.7.3 代码直接覆盖已升级站点作为数据回滚；先导出 Schema6 备份并在隔离环境验证。
+alpha.3 保持 Schema6/DB5/VIX2，Seed revision 升到 6。Worker 名仍为 `vix-5-alpha2`，因此继续覆盖同一 Cloudflare 项目；不要新建版本号 Worker。不要用旧 4.7.3 代码直接覆盖已升级站点作为数据回滚；先导出 Schema6 备份并在隔离环境验证。

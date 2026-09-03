@@ -30,8 +30,8 @@ function bearer(request) {
   return match?.[1] || '';
 }
 
-async function requireAccess(request, env) {
-  const authorization = await authorizeAccess(request, env);
+async function requireAccess(request, env, executionContext) {
+  const authorization = await authorizeAccess(request, env, executionContext);
   if (authorization.ok) return null;
   if (authorization.code === 'access_not_configured') {
     return error('access_not_configured', 'Cloudflare Access JWT 校验尚未配置', authorization.status);
@@ -79,8 +79,8 @@ function validSessionResult(value, session) {
     && new Set(value.matchedSlots).size === value.matchedSlots.length;
 }
 
-async function collinsLookup(request, env) {
-  const accessFailure = await requireAccess(request, env);
+async function collinsLookup(request, env, executionContext) {
+  const accessFailure = await requireAccess(request, env, executionContext);
   if (accessFailure) return accessFailure;
   if (!env.COLLINS_ACCESS_KEY) return error('not_configured', '服务端尚未配置 Collins Secret', 503);
   let input;
@@ -129,8 +129,8 @@ async function collinsLookup(request, env) {
   });
 }
 
-async function createSession(request, env) {
-  const accessFailure = await requireAccess(request, env);
+async function createSession(request, env, executionContext) {
+  const accessFailure = await requireAccess(request, env, executionContext);
   if (accessFailure) return accessFailure;
   let capsule;
   try { capsule = await bodyJson(request, MAX_SESSION_BYTES); }
@@ -192,10 +192,10 @@ function staticSecurity(response) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, executionContext) {
     const url = new URL(request.url);
-    if (request.method === 'POST' && url.pathname === '/api/collins/lookup') return collinsLookup(request, env);
-    if (request.method === 'POST' && url.pathname === '/api/vix/sessions') return createSession(request, env);
+    if (request.method === 'POST' && url.pathname === '/api/collins/lookup') return collinsLookup(request, env, executionContext);
+    if (request.method === 'POST' && url.pathname === '/api/vix/sessions') return createSession(request, env, executionContext);
     const match = /^\/api\/vix\/sessions\/([^/]+)\/(request|result)$/.exec(url.pathname);
     if (match) {
       if (match[2] === 'request' && request.method === 'GET') return sessionExchange(request, env, decodeURIComponent(match[1]), 'request');

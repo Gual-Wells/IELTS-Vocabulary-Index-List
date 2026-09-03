@@ -1449,44 +1449,85 @@ function searchResultButton(entry, onSelect, collectionId = projectionCollection
 function makeSortableList(container, onCommit) {
   let dragged = null;
   let pointerId = null;
+  let activeHandle = null;
   let originalIds = [];
+  let pendingPoint = null;
+  let frame = 0;
+  const sortableRows = () => [...container.children].filter((item) => item.matches?.('[data-sort-id]'));
+  const processMove = () => {
+    frame = 0;
+    if (!dragged || !pendingPoint) return;
+    const { x, y } = pendingPoint;
+    pendingPoint = null;
+    const scroller = container.closest('.dialog-body');
+    if (scroller) {
+      const bounds = scroller.getBoundingClientRect();
+      const edge = Math.min(56, bounds.height * .14);
+      if (y < bounds.top + edge) scroller.scrollBy({ top: -Math.min(18, bounds.top + edge - y), behavior: 'auto' });
+      else if (y > bounds.bottom - edge) scroller.scrollBy({ top: Math.min(18, y - (bounds.bottom - edge)), behavior: 'auto' });
+    }
+    const target = document.elementFromPoint(x, y)?.closest?.('[data-sort-id]');
+    if (!target || target === dragged || target.parentElement !== container) return;
+    const rect = target.getBoundingClientRect();
+    if (y < rect.top + rect.height / 2) {
+      if (dragged.nextElementSibling !== target) container.insertBefore(dragged, target);
+    } else if (target.nextElementSibling !== dragged) {
+      container.insertBefore(dragged, target.nextElementSibling);
+    }
+  };
   const finish = async (commit = true) => {
     if (!dragged) return;
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    pendingPoint = null;
+    try { if (activeHandle?.hasPointerCapture?.(pointerId)) activeHandle.releasePointerCapture(pointerId); } catch { /* Pointer capture may already be gone. */ }
     dragged.classList.remove('dragging');
     dragged = null;
     pointerId = null;
+    activeHandle = null;
     if (!commit) {
-      const rowById = new Map([...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => [item.dataset.sortId, item]));
+      const rowById = new Map(sortableRows().map((item) => [item.dataset.sortId, item]));
       for (const id of originalIds) if (rowById.has(id)) container.append(rowById.get(id));
       originalIds = [];
       return;
     }
-    const ids = [...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => item.dataset.sortId);
+    const ids = sortableRows().map((item) => item.dataset.sortId);
     originalIds = [];
     try { await onCommit(ids); }
     catch (error) { displayError(error); }
   };
-  container.querySelectorAll('.drag-handle').forEach((handle) => {
-    handle.addEventListener('pointerdown', (event) => {
-      const row = handle.closest('[data-sort-id]');
-      if (!row) return;
-      event.preventDefault();
-      pointerId = event.pointerId;
-      originalIds = [...container.querySelectorAll(':scope > [data-sort-id]')].map((item) => item.dataset.sortId);
-      dragged = row;
-      row.classList.add('dragging');
-      handle.setPointerCapture?.(pointerId);
-    });
-    handle.addEventListener('pointermove', (event) => {
-      if (!dragged || event.pointerId !== pointerId) return;
-      event.preventDefault();
-      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-sort-id]');
-      if (!target || target === dragged || target.parentElement !== container) return;
-      const rect = target.getBoundingClientRect();
-      container.insertBefore(dragged, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
-    });
-    handle.addEventListener('pointerup', () => finish(true));
-    handle.addEventListener('pointercancel', () => finish(false));
+  container.addEventListener('pointerdown', (event) => {
+    if (dragged || event.button > 0) return;
+    const handle = event.target.closest?.('.drag-handle');
+    const row = handle?.closest?.('[data-sort-id]');
+    // The domain list contains nested collection lists. Only bind a handle to
+    // the sortable row that is a direct child of this specific container.
+    if (!handle || !row || row.parentElement !== container) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pointerId = event.pointerId;
+    activeHandle = handle;
+    originalIds = sortableRows().map((item) => item.dataset.sortId);
+    dragged = row;
+    row.classList.add('dragging');
+    handle.setPointerCapture?.(pointerId);
+  });
+  container.addEventListener('pointermove', (event) => {
+    if (!dragged || event.pointerId !== pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pendingPoint = { x: event.clientX, y: event.clientY };
+    if (!frame) frame = requestAnimationFrame(processMove);
+  });
+  container.addEventListener('pointerup', (event) => {
+    if (event.pointerId !== pointerId) return;
+    event.stopPropagation();
+    finish(true);
+  });
+  container.addEventListener('pointercancel', (event) => {
+    if (event.pointerId !== pointerId) return;
+    event.stopPropagation();
+    finish(false);
   });
 }
 
@@ -5586,6 +5627,31 @@ function openSearchDialog() {
   });
 }
 
+function openSeedSourcesDialog() {
+  const sources = getState().settings.contentSources || [];
+  const legacyPublishedKeys = new Set(['MDN', 'PY', 'GH', 'K8S', 'CNCF', 'NIST', 'NIST-AI', 'IETF']);
+  const official = sources.filter((item) => legacyPublishedKeys.has(item.key) || ['official', 'publisher-approved mirror'].includes(item.authority));
+  const community = sources.filter((item) => /community/i.test(item.authority || ''));
+  const curated = sources.filter((item) => !official.includes(item) && !community.includes(item));
+  const summary = (label, items, description) => el('div', { className: 'seed-source-summary' }, [
+    el('strong', { text: `${label} · ${items.length}` }),
+    el('span', { text: description }),
+  ]);
+  openDialog({
+    title: 'Seed 数据来源', variant: 'management', showCancel: false,
+    body: el('div', { className: 'seed-source-dialog' }, [
+      el('p', { className: 'help-text', text: '这里说明 VIX 初始词库从哪里整理而来，以及原始资料的授权或使用边界。它只用于查阅，不会上传、替换或修改你设备里的词库。' }),
+      el('div', { className: 'seed-source-summaries' }, [
+        summary('官方或发布方资料', official, '由发布机构提供，或使用发布方认可的固定版本。'),
+        summary('社区资料', community, '用于扩大覆盖，并按原项目声明保留署名与许可信息。'),
+        summary('VIX 整理内容', curated, '包括计算机术语、句型与搭配等人工整理条目。'),
+      ]),
+      el('p', { className: 'provider-footnote', text: `当前内置来源记录共 ${sources.length} 项。来源说明不代表所有词条都具有相同权威等级。` }),
+      el('a', { className: 'secondary-button source-document-link', href: './SEED5_ATTRIBUTIONS.md', target: '_blank', rel: 'noopener', text: '打开完整来源与许可清单' }),
+    ]),
+  });
+}
+
 function openSettingsDialog() {
   const state = getState();
   const settingsController = new AbortController();
@@ -5659,9 +5725,14 @@ function openSettingsDialog() {
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Seed5 来源与许可' }),
-      el('p', { className: 'help-text', text: '官方与社区来源分开标记；部分社区数据带署名、相同方式共享或非商业限制。' }),
-      el('a', { className: 'secondary-button', href: './SEED5_ATTRIBUTIONS.md', target: '_blank', rel: 'noopener', text: '查看来源与许可' })]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '数据来源' }),
+      el('button', { type: 'button', className: 'settings-source-card', on: { click: openSeedSourcesDialog } }, [
+        el('span', { className: 'settings-source-card-copy' }, [
+          el('strong', { text: 'Seed 数据来源与许可' }),
+          el('span', { text: '了解初始词库的出处、质量层级和使用边界' }),
+        ]),
+        svgIcon('enter'),
+      ])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {

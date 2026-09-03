@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.0-alpha.3 — 2026-09-03
+
+- 修复 Cloudflare Access + Static Assets 下 API 取不到 `ctx.access`/assertion header 导致的 Collins 401；增加已签名 `CF_Authorization` Cookie 回退校验。
+- 管理词库拖动改为直接子项事件委托与逐帧排序，避免词域/词表重复监听及 iPhone 布局抖动。
+- 将默认蓝色来源链接改为产品内说明卡片与来源摘要。
+- Built-in Seed revision 升至 6：计算机术语 1,121 → 1,421，通用英语搭配 50 → 326；已安装 revision 5 的设备也会自动三方合并。
+- Cloudflare Worker 标识继续使用 `vix-5-alpha2`，既有 Access、Durable Objects 与 Secret 无需重配。
+
 ## 5.0.0-alpha.2 — 2026-09-02
 
 - 兼并 D/A/C/B/E：同源 Collins Worker Bridge、Structural→Effective Mirror、Seed5、Session Capsule、发布闭环。

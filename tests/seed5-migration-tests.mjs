@@ -17,9 +17,9 @@ const seed4 = JSON.parse(fs.readFileSync(new URL('../data/seed-4.json', import.m
 const seed5 = JSON.parse(fs.readFileSync(new URL('../data/seed.json', import.meta.url), 'utf8'));
 const generalDomainId = 'domain_general_english';
 
-test('untouched Seed4 becomes Seed5 while keeping matching device IDs', () => {
+test('untouched Seed4 becomes the current Seed while keeping matching device IDs', () => {
   const { backup, report } = reconcileSeedUpgrade(seed4, seed4, seed5, { appliedAt: '2026-09-02T00:00:00.000Z' });
-  assert.equal(backup.settings.builtInSeedRevision, 5);
+  assert.equal(backup.settings.builtInSeedRevision, 6);
   assert.equal(backup.entries.length, seed5.entries.length);
   assert.equal(backup.memberships.length, seed5.memberships.length);
   assert.equal(backup.collections.length, seed5.collections.length);
@@ -29,6 +29,23 @@ test('untouched Seed4 becomes Seed5 while keeping matching device IDs', () => {
   assert.ok(backup.collections.some((item) => item.name === 'C2'));
   assert.ok(backup.settings.contentSources.some((item) => item.key === 'SEED5:cefrj-1.6' && item.sha256));
   assert.equal(report.userEditsPreserved, 0);
+});
+
+test('an already upgraded revision 5 device receives revision 6 domain additions', () => {
+  const current = structuredClone(seed5);
+  const expansionIds = new Set(current.entries.filter((item) => item.glossSource === 'VIX-6-CURATED').map((item) => item.id));
+  assert.ok(expansionIds.size >= 400);
+  current.entries = current.entries.filter((item) => !expansionIds.has(item.id));
+  current.memberships = current.memberships.filter((item) => !expansionIds.has(item.entryId));
+  current.settings.contentSources = current.settings.contentSources.filter((item) => item.key !== 'VIX-6-CURATED');
+  current.settings.builtInSeedRevision = 5;
+  const { backup, report } = reconcileSeedUpgrade(seed4, canonicalizeBackup(current), seed5, {
+    toRevision: 6, appliedAt: '2026-09-03T00:00:00.000Z',
+  });
+  assert.equal(backup.settings.builtInSeedRevision, 6);
+  assert.ok(backup.entries.some((item) => item.glossSource === 'VIX-6-CURATED'));
+  assert.ok(backup.settings.contentSources.some((item) => item.key === 'VIX-6-CURATED'));
+  assert.ok(report.seedRecordsAdded >= expansionIds.size);
 });
 
 test('three-way reconciliation preserves user edits, records, deletion and study state', () => {

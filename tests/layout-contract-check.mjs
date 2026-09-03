@@ -25,6 +25,9 @@ const styles = [
   'css/v4.1.0.css', 'css/v4.2.0.css', 'css/v4.3.0.css', 'css/v4.4.0.css', 'css/v4.5.0.css', 'css/v4.6.0.css',
   'css/v4.7.0.css', 'css/v4.7.1.css', 'css/v4.7.2.css', 'css/v4.7.3.css', 'css/v5.0.0.css',
 ].map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
+const uiSource = fs.readFileSync(path.join(root, 'js/v3-ui.js'), 'utf8');
+const sortableSource = uiSource.match(/function makeSortableList\(container, onCommit\) \{[\s\S]*?\n\}(?=\n\nfunction libraryManagerBody)/)?.[0];
+assert.ok(sortableSource, 'Unable to extract the production sortable implementation');
 
 const actions = '<div class="entry-actions"><span class="entry-action-placeholder relation-placeholder"></span><button></button><button></button><button></button><button></button></div>';
 function row(id, index, word, { gloss = '', source = '', date = '' } = {}) {
@@ -101,8 +104,46 @@ try {
   assert.ok(toolbar && Math.abs(toolbar.height - 58) <= 0.7);
   assert.equal(await page.locator('body').evaluate((element) => getComputedStyle(element).userSelect), 'none');
   assert.equal(await page.locator('#dialog-form input').evaluate((element) => getComputedStyle(element).userSelect), 'text');
+
+  const sortableResult = await page.evaluate(async (source) => {
+    globalThis.displayError = (error) => { throw error; };
+    globalThis.eval(`${source}; globalThis.__makeSortableList = makeSortableList;`);
+    HTMLElement.prototype.setPointerCapture = () => {};
+    HTMLElement.prototype.releasePointerCapture = () => {};
+    HTMLElement.prototype.hasPointerCapture = () => false;
+    const outer = document.createElement('div');
+    outer.innerHTML = `
+      <section data-sort-id="domain-a"><button class="drag-handle"></button><div class="inner">
+        <div data-sort-id="collection-a"><button id="inner-handle" class="drag-handle"></button></div>
+        <div id="inner-target" data-sort-id="collection-b"><button class="drag-handle"></button></div>
+      </div></section>
+      <section data-sort-id="domain-b"><button class="drag-handle"></button></section>`;
+    document.body.append(outer);
+    const inner = outer.querySelector('.inner');
+    const innerTarget = outer.querySelector('#inner-target');
+    innerTarget.getBoundingClientRect = () => ({ top: 10, height: 40, bottom: 50, left: 0, right: 100, width: 100, x: 0, y: 10, toJSON() {} });
+    document.elementFromPoint = () => innerTarget;
+    const commits = { inner: [], outer: [] };
+    globalThis.__makeSortableList(inner, (ids) => { commits.inner.push(ids); });
+    globalThis.__makeSortableList(outer, (ids) => { commits.outer.push(ids); });
+    const handle = outer.querySelector('#inner-handle');
+    handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 7, button: 0, clientX: 8, clientY: 12 }));
+    handle.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, button: 0, clientX: 8, clientY: 45 }));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    handle.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, button: 0, clientX: 8, clientY: 45 }));
+    await Promise.resolve();
+    return {
+      innerOrder: [...inner.children].filter((item) => item.dataset.sortId).map((item) => item.dataset.sortId),
+      outerOrder: [...outer.children].filter((item) => item.dataset.sortId).map((item) => item.dataset.sortId),
+      commits,
+    };
+  }, sortableSource);
+  assert.deepEqual(sortableResult.innerOrder, ['collection-b', 'collection-a']);
+  assert.deepEqual(sortableResult.outerOrder, ['domain-a', 'domain-b']);
+  assert.deepEqual(sortableResult.commits.inner, [['collection-b', 'collection-a']]);
+  assert.deepEqual(sortableResult.commits.outer, []);
   await page.close();
 } finally {
   await browser.close();
 }
-console.log('layout-contract-check: OK (402x874, alpha2 styles)');
+console.log('layout-contract-check: OK (402x874, alpha3 styles)');

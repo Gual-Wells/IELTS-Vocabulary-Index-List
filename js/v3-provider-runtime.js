@@ -51,16 +51,20 @@ function wait(ms, signal) {
   });
 }
 
-function httpError(provider, response) {
+function httpError(provider, response, serverCode = '') {
   const status = response.status;
   const html = /\btext\/html\b/i.test(response.headers.get('Content-Type') || '');
   const challenge = response.headers.get('cf-mitigated') === 'challenge';
-  const code = challenge ? 'access-challenge' : status === 403 && html ? 'access-blocked'
+  const accessSession = ['access_required', 'access_invalid'].includes(serverCode);
+  const code = accessSession ? 'access-session' : serverCode === 'access_not_configured' ? 'configuration'
+    : challenge ? 'access-challenge' : status === 403 && html ? 'access-blocked'
     : status === 401 || status === 403 ? 'authorization' : status === 404 ? 'not-found'
     : status === 429 ? 'rate-limit' : status >= 500 ? 'unavailable' : 'request';
   const descriptions = {
     authorization: status === 403 ? '访问被拒绝，请核对账号授权与服务访问策略；不能仅据此判断密钥无效'
       : '密钥无效或未获授权，请检查设置与账号授权',
+    'access-session': 'VIX 私域登录会话未传入 API，请刷新页面或重新登录 Cloudflare Access',
+    configuration: 'VIX 私域服务尚未完成 Access 校验配置',
     'access-challenge': '接口返回了服务验证页，尚未进入 API；请向服务商确认 API 访问条件',
     'access-blocked': '访问被拒绝并返回网页，尚未取得 API JSON；请核对服务访问条件',
     'not-found': '未找到匹配词条或所选资源已不可用',
@@ -71,6 +75,18 @@ function httpError(provider, response) {
   return new ProviderError(code, `${provider}：${descriptions[code]}（HTTP ${status}）`, {
     status, retryAfterMs: parseRetryAfter(response.headers.get('Retry-After')),
   });
+}
+
+async function readServerErrorCode(response) {
+  if (!/\bapplication\/json\b/i.test(response.headers.get('Content-Type') || '')) return '';
+  const declaredLength = Number(response.headers.get('Content-Length') || 0);
+  if (declaredLength > 8192) return '';
+  try {
+    const payload = await response.json();
+    return typeof payload?.error?.code === 'string' ? payload.error.code.slice(0, 80) : '';
+  } catch {
+    return '';
+  }
 }
 
 /** No response bodies, keys or request URLs are logged or retained. */
@@ -103,7 +119,7 @@ export async function fetchProviderJson(url, options = {}, {
         });
         if (signal?.aborted) throw cancelledError();
         if (!response.ok) {
-          const error = httpError(provider, response);
+          const error = httpError(provider, response, await readServerErrorCode(response));
           try { await response.body?.cancel(); } catch { /* Preserve the typed HTTP failure. */ }
           throw error;
         }

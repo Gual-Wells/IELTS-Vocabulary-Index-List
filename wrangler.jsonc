@@ -27,7 +27,7 @@
   },
   "secrets": {
     "required": ["COLLINS_ACCESS_KEY"]
-  }
+  },
   "observability": {
     "enabled": true,
     "logs": { "enabled": false }

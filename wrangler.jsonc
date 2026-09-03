@@ -4,6 +4,7 @@
   "main": "worker/src/index.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
@@ -22,8 +23,8 @@
   "vars": {
     "COLLINS_MONTHLY_LIMIT": "1000",
     "ALLOW_UNPROTECTED_LOCAL": "false",
-    "TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com",
-    "POLICY_AUD": "YOUR_ACCESS_APPLICATION_AUD_TAG"
+    "TEAM_DOMAIN": "https://blue-breeze-4dac.cloudflareaccess.com",
+    "POLICY_AUD": "15fef9936b16c8b08ed05b96a146ba6b19acfbd6a0a24c7fac6493fd1b04720d"
   },
   "secrets": {
     "required": ["COLLINS_ACCESS_KEY"]

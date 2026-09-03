@@ -42,7 +42,7 @@ const report = {
   schemaVersion: seed.schemaVersion,
   appVersion: seed.appVersion,
   builtInSeedRevision: seed.settings.builtInSeedRevision,
-  contentGeneration: 6,
+  contentGeneration: 7,
   total: {
     domains: seed.domains.length,
     collections: seed.collections.length,
@@ -87,7 +87,7 @@ const report = {
   provenance: {
     records: sourceCatalog.length,
     authorityCounts: sourceAuthorityCounts,
-    manifest: 'data/sources/seed5/SOURCE_MANIFEST.json + data/sources/seed6/VIX6_DOMAIN_EXPANSION.json',
+    manifest: 'data/sources/seed5/SOURCE_MANIFEST.json + Seed6/Seed7 curated expansion',
     runtimeManifest: 'data/seed5-runtime/manifest.json',
   },
   scopeNote: 'The current Seed broadly includes quality-acceptable official, publisher-approved, community and VIX-curated material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community and curated sources remain explicitly labelled and are not represented as official releases.',

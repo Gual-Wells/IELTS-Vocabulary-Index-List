@@ -19,7 +19,7 @@ const generalDomainId = 'domain_general_english';
 
 test('untouched Seed4 becomes the current Seed while keeping matching device IDs', () => {
   const { backup, report } = reconcileSeedUpgrade(seed4, seed4, seed5, { appliedAt: '2026-09-02T00:00:00.000Z' });
-  assert.equal(backup.settings.builtInSeedRevision, 6);
+  assert.equal(backup.settings.builtInSeedRevision, 7);
   assert.equal(backup.entries.length, seed5.entries.length);
   assert.equal(backup.memberships.length, seed5.memberships.length);
   assert.equal(backup.collections.length, seed5.collections.length);
@@ -31,20 +31,20 @@ test('untouched Seed4 becomes the current Seed while keeping matching device IDs
   assert.equal(report.userEditsPreserved, 0);
 });
 
-test('an already upgraded revision 5 device receives revision 6 domain additions', () => {
+test('an already upgraded revision 6 device receives revision 7 domain additions', () => {
   const current = structuredClone(seed5);
-  const expansionIds = new Set(current.entries.filter((item) => item.glossSource === 'VIX-6-CURATED').map((item) => item.id));
-  assert.ok(expansionIds.size >= 400);
+  const expansionIds = new Set(current.entries.filter((item) => item.glossSource === 'VIX-7-CURATED').map((item) => item.id));
+  assert.ok(expansionIds.size >= 150);
   current.entries = current.entries.filter((item) => !expansionIds.has(item.id));
   current.memberships = current.memberships.filter((item) => !expansionIds.has(item.entryId));
-  current.settings.contentSources = current.settings.contentSources.filter((item) => item.key !== 'VIX-6-CURATED');
-  current.settings.builtInSeedRevision = 5;
+  current.settings.contentSources = current.settings.contentSources.filter((item) => item.key !== 'VIX-7-CURATED');
+  current.settings.builtInSeedRevision = 6;
   const { backup, report } = reconcileSeedUpgrade(seed4, canonicalizeBackup(current), seed5, {
-    toRevision: 6, appliedAt: '2026-09-03T00:00:00.000Z',
+    toRevision: 7, appliedAt: '2026-09-04T00:00:00.000Z',
   });
-  assert.equal(backup.settings.builtInSeedRevision, 6);
-  assert.ok(backup.entries.some((item) => item.glossSource === 'VIX-6-CURATED'));
-  assert.ok(backup.settings.contentSources.some((item) => item.key === 'VIX-6-CURATED'));
+  assert.equal(backup.settings.builtInSeedRevision, 7);
+  assert.ok(backup.entries.some((item) => item.glossSource === 'VIX-7-CURATED'));
+  assert.ok(backup.settings.contentSources.some((item) => item.key === 'VIX-7-CURATED'));
   assert.ok(report.seedRecordsAdded >= expansionIds.size);
 });
 

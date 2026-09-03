@@ -1,7 +1,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.3-unified-runtime-20260903-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.4-unified-runtime-20260904-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './css/provider-runtime.css', './css/v5.0.0.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-collins.js', './js/v3-provider-views.js',
@@ -9,7 +9,7 @@ const PRECACHE = [
   './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v3-runtime-geometry.js', './js/v3-store.js', './js/v3-db.js',
   './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
   './js/v5-version.js', './js/v5-suppression-runtime.js', './js/v5-mirror-runtime.js', './js/v5-session-capsule.js', './js/v5-seed-migration.js',
-  './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/seed-report.json', './data/seed5-build-report.json', './data/relation-low-level-lexemes.json',
+  './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json',
   './assets/icons/vix-icon-180-v4.png', './assets/icons/vix-icon-192-v4.png', './assets/icons/vix-icon-512-v4.png',
 ];
 

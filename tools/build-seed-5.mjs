@@ -18,10 +18,13 @@ const root = new URL('../', import.meta.url);
 const sourceRoot = new URL('../data/sources/seed5/', import.meta.url);
 const seed4 = JSON.parse(await fs.readFile(new URL('../data/seed-4.json', import.meta.url), 'utf8'));
 const sourceManifest = JSON.parse(await fs.readFile(new URL('SOURCE_MANIFEST.json', sourceRoot), 'utf8'));
-const domainExpansion = JSON.parse(await fs.readFile(new URL('../data/sources/seed6/VIX6_DOMAIN_EXPANSION.json', import.meta.url), 'utf8'));
-const SEED_REVISION = 6;
-if (Number(domainExpansion.seedRevision) !== SEED_REVISION) throw new Error('Domain expansion revision does not match the application Seed revision');
-const timestamp = domainExpansion.generatedAt;
+const domainExpansions = await Promise.all([
+  '../data/sources/seed6/VIX6_DOMAIN_EXPANSION.json',
+  '../data/sources/seed7/VIX7_DOMAIN_EXPANSION.json',
+].map(async (path) => JSON.parse(await fs.readFile(new URL(path, import.meta.url), 'utf8'))));
+const SEED_REVISION = 7;
+if (Number(domainExpansions.at(-1)?.seedRevision) !== SEED_REVISION) throw new Error('Latest domain expansion revision does not match the application Seed revision');
+const timestamp = domainExpansions.at(-1).generatedAt;
 const generalDomainId = 'domain_general_english';
 const rejected = [];
 
@@ -245,7 +248,7 @@ const nonGeneralCollectionById = new Map(nonGeneralCollections.map((collection) 
 const nonGeneralMembershipKeys = new Set(nonGeneralMemberships.map((membership) => `${membership.entryId}\u0000${membership.collectionId}`));
 const expansionCounts = { computerAdded: 0, collocationsAdded: 0, membershipsAdded: 0, duplicatesReused: 0 };
 
-function addDomainExpansion({ domainId, collectionId, text, glossHans = '', contentType = '', sourceOrder }) {
+function addDomainExpansion({ domainId, collectionId, text, glossHans = '', contentType = '', sourceOrder, sourceKey, sourceLabel }) {
   const collection = nonGeneralCollectionById.get(collectionId);
   if (!collection || collection.domainId !== domainId) throw new Error(`Unknown expansion collection: ${collectionId}`);
   const normalizedText = normalizeEnglish(cleanCandidateText(text));
@@ -259,7 +262,7 @@ function addDomainExpansion({ domainId, collectionId, text, glossHans = '', cont
       contentType,
       glossHans,
       glossHant: glossHans ? toTraditional(glossHans) : '',
-      glossSource: domainExpansion.source.key,
+      glossSource: sourceKey,
       timestamp,
     });
     nonGeneralEntries.push(entry);
@@ -272,31 +275,37 @@ function addDomainExpansion({ domainId, collectionId, text, glossHans = '', cont
   const membershipKey = `${entry.id}\u0000${collectionId}`;
   if (nonGeneralMembershipKeys.has(membershipKey)) return;
   nonGeneralMemberships.push(createMembership({
-    entryId: entry.id, collectionId, sourceLabel: 'VIX Seed 6 curated expansion', sourceOrder, timestamp,
+    entryId: entry.id, collectionId, sourceLabel, sourceOrder, timestamp,
   }));
   nonGeneralMembershipKeys.add(membershipKey);
   expansionCounts.membershipsAdded++;
 }
 
 let expansionOrder = 200000;
-for (const [collectionId, items] of Object.entries(domainExpansion.computerTerms || {})) {
-  for (const [text, glossHans] of items) addDomainExpansion({
-    domainId: 'domain_computer_terms', collectionId, text, glossHans, sourceOrder: expansionOrder++,
-  });
-}
 const contentTypeGlosses = {
   'sentence-pattern': '常用英语句型；方括号或省略号部分需结合语境替换。',
   'grammar-framework': '常用语法框架；使用时需根据句法和语境补全。',
   'template-expression': '常用表达模板；适合在写作或口语中按语境改写。',
   'discourse-marker': '语篇连接表达；用于组织信息和标明逻辑关系。',
 };
-for (const [collectionId, items] of Object.entries(domainExpansion.collocations || {})) {
-  const collection = nonGeneralCollectionById.get(collectionId);
-  const contentType = collection?.label || '';
-  for (const text of items) addDomainExpansion({
-    domainId: 'domain_general_collocations', collectionId, text,
-    glossHans: contentTypeGlosses[contentType] || '常用英语表达。', contentType, sourceOrder: expansionOrder++,
-  });
+for (const expansion of domainExpansions) {
+  const sourceKey = expansion.source.key;
+  const sourceLabel = `VIX Seed ${expansion.seedRevision} curated expansion`;
+  for (const [collectionId, items] of Object.entries(expansion.computerTerms || {})) {
+    for (const [text, glossHans] of items) addDomainExpansion({
+      domainId: 'domain_computer_terms', collectionId, text, glossHans,
+      sourceOrder: expansionOrder++, sourceKey, sourceLabel,
+    });
+  }
+  for (const [collectionId, items] of Object.entries(expansion.collocations || {})) {
+    const collection = nonGeneralCollectionById.get(collectionId);
+    const contentType = collection?.label || '';
+    for (const text of items) addDomainExpansion({
+      domainId: 'domain_general_collocations', collectionId, text,
+      glossHans: contentTypeGlosses[contentType] || '常用英语表达。', contentType,
+      sourceOrder: expansionOrder++, sourceKey, sourceLabel,
+    });
+  }
 }
 const entries = [...nonGeneralEntries, ...generalEntries];
 
@@ -339,16 +348,16 @@ const seed = canonicalizeBackup({
     ...seed4.settings,
     builtInSeedRevision: SEED_REVISION,
     migrationComplete: true,
-    migrationSource: 'seed6-three-way-generation',
+    migrationSource: 'seed7-three-way-generation',
     migrationNoticePending: false,
     closeLowLevelRelations: true,
     lastPositions: {},
     viewModes: {},
     calendarMonths: {},
-    contentSources: [...seed4.settings.contentSources, ...seed5ContentSources, domainExpansion.source],
+    contentSources: [...seed4.settings.contentSources, ...seed5ContentSources, ...domainExpansions.map((item) => item.source)],
   },
 });
-if (!validateBackup(seed)) throw new Error('Seed6 failed Schema 6 validation');
+if (!validateBackup(seed)) throw new Error('Seed7 failed Schema 6 validation');
 
 const collectionCounts = Object.fromEntries(definitions.map((definition) => [definition.name,
   seed.memberships.filter((membership) => membership.collectionId === definition.id).length]));

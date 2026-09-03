@@ -26,7 +26,7 @@ const styles = [
   'css/v4.7.0.css', 'css/v4.7.1.css', 'css/v4.7.2.css', 'css/v4.7.3.css', 'css/v5.0.0.css',
 ].map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
 const uiSource = fs.readFileSync(path.join(root, 'js/v3-ui.js'), 'utf8');
-const sortableSource = uiSource.match(/function makeSortableList\(container, onCommit\) \{[\s\S]*?\n\}(?=\n\nfunction libraryManagerBody)/)?.[0];
+const sortableSource = uiSource.match(/function makeSortableList\(container, onCommit\) \{[\s\S]*?\n\}(?=\n\nfunction createLibraryOrderDraft)/)?.[0];
 assert.ok(sortableSource, 'Unable to extract the production sortable implementation');
 
 const actions = '<div class="entry-actions"><span class="entry-action-placeholder relation-placeholder"></span><button></button><button></button><button></button><button></button></div>';
@@ -146,4 +146,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log('layout-contract-check: OK (402x874, alpha3 styles)');
+console.log('layout-contract-check: OK (402x874, alpha4 styles)');

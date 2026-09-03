@@ -226,7 +226,7 @@ test('SessionObject stores slot-only requests and accepts one bound result with 
   assert.deepEqual(await ownerRead.json(), result);
 });
 
-test('static asset responses receive the alpha3 security envelope', async () => {
+test('static asset responses receive the alpha4 security envelope', async () => {
   const response = await worker.fetch(new Request('https://vix.test/index.html'), {
     ASSETS: { fetch: async () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } }) },
   });

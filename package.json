@@ -1,11 +1,11 @@
 {
   "name": "gual-vocabulary-index",
   "private": true,
-  "version": "5.0.0-alpha.3",
+  "version": "5.0.0-alpha.4",
   "type": "module",
   "scripts": {
     "seed:fetch": "node tools/fetch-seed-5-sources.mjs",
-    "seed:build": "node tools/build-seed-5.mjs && node tools/build-seed-runtime.mjs && node tools/report-seed.mjs",
+    "seed:build": "node tools/build-seed-5.mjs && node tools/build-low-level-lexemes.mjs && node tools/build-seed-runtime.mjs && node tools/report-seed.mjs",
     "release:manifest": "node tools/build-release-manifest.mjs",
     "test": "node tests/run-tests.mjs",
     "test:static": "node tests/static-tests.mjs",

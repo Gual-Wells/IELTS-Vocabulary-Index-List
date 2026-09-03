@@ -34,9 +34,9 @@ const wrangler = read('wrangler.jsonc');
 const worker = read('worker/src/index.js');
 const accessJwt = read('worker/src/access-jwt.js');
 
-assert.equal(pkg.version, '5.0.0-alpha.3');
+assert.equal(pkg.version, '5.0.0-alpha.4');
 assert.ok(index.includes('css/provider-runtime.css'));
-assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.3'));
+assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.4'));
 assert.ok(index.includes('css/v5.0.0.css'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
@@ -55,7 +55,7 @@ assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v5.0.0-alpha.3-unified-runtime'));
+assert.ok(sw.includes('v5.0.0-alpha.4-unified-runtime'));
 assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
   sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
 assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
@@ -115,9 +115,9 @@ for (const relative of precache) {
 }
 for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './css/v5.0.0.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v5-seed-migration.js', './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
 assert.equal(seedRuntimeManifest.protocol, 'vix-seed-runtime/1');
-assert.equal(seedRuntimeManifest.seedRevision, 6);
-for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.3.md', 'RELEASE_5.0.0-alpha.3.md', 'TEST_REPORT_5.0.0-alpha.3.md', 'SEED5_ATTRIBUTIONS.md']) {
-  assert.ok(exists(releaseDoc), `alpha.3 release document missing: ${releaseDoc}`);
+assert.equal(seedRuntimeManifest.seedRevision, 7);
+for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.4.md', 'RELEASE_5.0.0-alpha.4.md', 'TEST_REPORT_5.0.0-alpha.4.md']) {
+  assert.ok(exists(releaseDoc), `alpha.4 release document missing: ${releaseDoc}`);
 }
 for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entries, ...seedRuntimeManifest.memberships, ...seedRuntimeManifest.relationComponents]) {
   assert.ok(exists(descriptor.path), `Seed runtime asset missing: ${descriptor.path}`);
@@ -152,7 +152,25 @@ assert.ok(accessJwt.includes('executionContext?.access'));
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
 assert.ok(db.includes('export const DB_VERSION = 5'));
-assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 6'));
+assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 7'));
+assert.ok(ui.includes('reorderLibrary(draft)'));
+assert.ok(!ui.includes('openSeedSourcesDialog'));
+const managerOpenStart = ui.indexOf('function openLibraryManager()');
+const managerOpenEnd = ui.indexOf('\nasync function exportBackupNow', managerOpenStart);
+const managerOpenSource = ui.slice(managerOpenStart, managerOpenEnd);
+assert.ok(managerOpenStart >= 0 && managerOpenEnd > managerOpenStart);
+assert.ok(managerOpenSource.includes("submitText: '保存'"));
+assert.ok(managerOpenSource.includes("cancelText: '取消'"));
+assert.ok(managerOpenSource.includes('await reorderLibrary(draft)'));
+assert.ok(!managerOpenSource.includes('reorderCollections('));
+assert.ok(!managerOpenSource.includes('reorderDomains('));
+const collectionCardStart = ui.indexOf('function collectionCard(collection)');
+const collectionCardEnd = ui.indexOf('\nfunction searchResultButton', collectionCardStart);
+const collectionCardSource = ui.slice(collectionCardStart, collectionCardEnd);
+assert.ok(collectionCardStart >= 0 && collectionCardEnd > collectionCardStart);
+assert.ok(!collectionCardSource.includes("svgIcon('enter')"));
+assert.ok(!collectionCardSource.includes("className: 'label'"));
+assert.equal(fs.existsSync(path.join(root, 'SEED5_ATTRIBUTIONS.md')), false);
 assert.ok(db.includes('reconcileSeedUpgrade'));
 assert.ok(db.includes('persistSeedMigrationBackup'));
 assert.ok(exchange.includes('export const VIX_VERSION = 2'));
@@ -172,15 +190,16 @@ assert.ok(ui.includes('row.parentElement !== container'));
 assert.ok(ui.includes('requestAnimationFrame(processMove)'));
 assert.ok(ui.includes('event.stopPropagation()'));
 assert.ok(baseCss.includes('-webkit-touch-callout: none'));
-assert.ok(ui.includes('settings-source-card'));
-assert.ok(baseCss.includes('.source-document-link'));
+assert.ok(!ui.includes('settings-source-card'));
+assert.ok(!baseCss.includes('.source-document-link'));
 
 // VIX schema is v2 and contains the 4.0 domain/entry vocabulary.
 assert.match(schema.title, /VIX.*v2/i);
 assert.ok(JSON.stringify(schema).includes('nonStructured'));
 assert.ok(JSON.stringify(schema).includes('contentType'));
 assert.ok(JSON.stringify(schema).includes('partsOfSpeech'));
-assert.ok(Array.isArray(lowLexemes.items) && lowLexemes.items.length >= 20);
+assert.equal(lowLexemes.generatedFromSeedRevision, 7);
+assert.ok(Array.isArray(lowLexemes.items) && lowLexemes.items.length >= 2300);
 assert.ok(lowLexemes.items.every((item) => item.normalizedText && item.category && item.reason));
 
 // Priority ownership is one projection rule for all three Entry kinds.

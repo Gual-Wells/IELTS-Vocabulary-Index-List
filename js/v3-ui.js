@@ -3,7 +3,7 @@ import {
   clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getRelationComponents, getRelatedEntries, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
   getMirrorState, installMirrorCurrent, setMirrorEnabled,
 } from './v3-store.js';
@@ -1372,15 +1372,6 @@ function isChineseQuery(value) {
   return /[\u3400-\u9fff]/u.test(String(value || ''));
 }
 
-function displayCollectionLabel(collection) {
-  const label = String(collection?.label || '').trim();
-  if (!label) return '';
-  const normalized = label.toLocaleLowerCase();
-  const name = String(collection?.name || '').trim().toLocaleLowerCase();
-  if (normalized === name || normalized === `oxford ${name}`) return '';
-  return label;
-}
-
 function collectionCountSummary(collectionId) {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
@@ -1405,7 +1396,6 @@ function collectionCard(collection) {
   if (!collection) return null;
   const state = getState();
   const entries = getVisibleEntries(collection.id);
-  const label = displayCollectionLabel(collection);
   let words = 0, phrases = 0, contents = 0;
   for (const entry of entries) {
     if (entry.kind === 'phrase') phrases += 1;
@@ -1427,8 +1417,7 @@ function collectionCard(collection) {
     type: 'button', className: classes,
     on: { click: () => { navigateCollection(collection.id, '', 'home').catch(displayError); } },
   }, [
-    el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name }), el('span', { className: 'arrow' }, [svgIcon('enter')])]),
-    label ? el('div', { className: 'label', text: label }) : null,
+    el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
     el('div', { className: 'count', text: count }),
   ]);
 }
@@ -1531,16 +1520,48 @@ function makeSortableList(container, onCommit) {
   });
 }
 
-function libraryManagerBody() {
+function createLibraryOrderDraft() {
   const state = getState();
+  return {
+    domainIds: [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)).map((item) => item.id),
+    collectionIdsByDomain: Object.fromEntries(state.domains.map((domain) => [domain.id, state.collections
+      .filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+      .map((item) => item.id)])),
+  };
+}
+
+function reconcileLibraryOrderDraft(draft) {
+  const state = getState();
+  const domainSet = new Set(state.domains.map((item) => item.id));
+  draft.domainIds = draft.domainIds.filter((id) => domainSet.has(id));
+  for (const domain of [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))) {
+    if (!draft.domainIds.includes(domain.id)) draft.domainIds.push(domain.id);
+    const liveIds = state.collections
+      .filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+      .map((item) => item.id);
+    const liveSet = new Set(liveIds);
+    const existing = (draft.collectionIdsByDomain[domain.id] || []).filter((id) => liveSet.has(id));
+    for (const id of liveIds) if (!existing.includes(id)) existing.push(id);
+    draft.collectionIdsByDomain[domain.id] = existing;
+  }
+  for (const domainId of Object.keys(draft.collectionIdsByDomain)) {
+    if (!domainSet.has(domainId)) delete draft.collectionIdsByDomain[domainId];
+  }
+  return draft;
+}
+
+function libraryManagerBody(draft) {
+  const state = getState();
+  reconcileLibraryOrderDraft(draft);
   const root = el('div', { className: 'library-manager' });
   const domainList = el('div', { className: 'manager-domain-list' });
-  const domains = [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const domains = draft.domainIds.map((id) => state.domainById.get(id)).filter(Boolean);
   for (const domain of domains) {
     const phraseCollection = state.collectionById.get(systemPhraseCollectionId(domain.id));
-    const normalCollections = state.collections
-      .filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden)
-      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+    const normalCollections = (draft.collectionIdsByDomain[domain.id] || [])
+      .map((id) => state.collectionById.get(id)).filter(Boolean);
     const section = el('section', { className: 'manager-domain', dataset: { sortId: domain.id } });
     const domainHeader = el('div', { className: 'manager-domain-header' }, [
       iconButton('grip', 'drag-handle', '拖动词域', () => {}),
@@ -1571,18 +1592,26 @@ function libraryManagerBody() {
     list.append(iconButton('add', 'manager-add', '新建词表', () => openAddCollectionDialog(domain.id)));
     section.append(domainHeader, fixed, list);
     domainList.append(section);
-    makeSortableList(list, (ids) => reorderCollections(domain.id, ids));
+    makeSortableList(list, (ids) => { draft.collectionIdsByDomain[domain.id] = [...ids]; });
   }
-  makeSortableList(domainList, reorderDomains);
+  makeSortableList(domainList, (ids) => { draft.domainIds = [...ids]; });
   root.append(domainList, el('button', { type: 'button', className: 'secondary-button manager-add-domain', on: { click: openAddDomainDialog } }, [svgIcon('add'), el('span', { text: '新建词域' })]));
   return root;
 }
 
 function openLibraryManager() {
+  const draft = createLibraryOrderDraft();
   const mount = el('div');
-  const refresh = () => mount.replaceChildren(libraryManagerBody());
+  const refresh = () => mount.replaceChildren(libraryManagerBody(draft));
   refresh();
-  openDialog({ title: '管理词库', body: mount, variant: 'management', showCancel: false, onRestore: refresh });
+  openDialog({
+    title: '管理词库', body: mount, variant: 'management', submitText: '保存', cancelText: '取消', onRestore: refresh,
+    onSubmit: async () => {
+      reconcileLibraryOrderDraft(draft);
+      await reorderLibrary(draft);
+      showToast('已保存');
+    },
+  });
 }
 
 async function exportBackupNow() {
@@ -2182,7 +2211,7 @@ function renderCollection(token = renderRevision) {
     : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : allEntries.length).toLocaleString();
   const viewLabel = collection.type === 'normal'
     ? (currentViewKind === 'phrase' ? '短语视图' : currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';
-  const collectionSubtitle = [countText, viewLabel, displayCollectionLabel(collection)].filter(Boolean).join(' · ');
+  const collectionSubtitle = [countText, viewLabel].filter(Boolean).join(' · ');
   elements['page-subtitle'].textContent = collectionSubtitle;
   renderLargeTitle({ eyebrow: domain?.name || (globalSystemView ? '全局索引' : ''), title: collection.name, subtitle: collectionSubtitle });
   elements['settings-button'].replaceChildren(svgIcon('more'));
@@ -5627,31 +5656,6 @@ function openSearchDialog() {
   });
 }
 
-function openSeedSourcesDialog() {
-  const sources = getState().settings.contentSources || [];
-  const legacyPublishedKeys = new Set(['MDN', 'PY', 'GH', 'K8S', 'CNCF', 'NIST', 'NIST-AI', 'IETF']);
-  const official = sources.filter((item) => legacyPublishedKeys.has(item.key) || ['official', 'publisher-approved mirror'].includes(item.authority));
-  const community = sources.filter((item) => /community/i.test(item.authority || ''));
-  const curated = sources.filter((item) => !official.includes(item) && !community.includes(item));
-  const summary = (label, items, description) => el('div', { className: 'seed-source-summary' }, [
-    el('strong', { text: `${label} · ${items.length}` }),
-    el('span', { text: description }),
-  ]);
-  openDialog({
-    title: 'Seed 数据来源', variant: 'management', showCancel: false,
-    body: el('div', { className: 'seed-source-dialog' }, [
-      el('p', { className: 'help-text', text: '这里说明 VIX 初始词库从哪里整理而来，以及原始资料的授权或使用边界。它只用于查阅，不会上传、替换或修改你设备里的词库。' }),
-      el('div', { className: 'seed-source-summaries' }, [
-        summary('官方或发布方资料', official, '由发布机构提供，或使用发布方认可的固定版本。'),
-        summary('社区资料', community, '用于扩大覆盖，并按原项目声明保留署名与许可信息。'),
-        summary('VIX 整理内容', curated, '包括计算机术语、句型与搭配等人工整理条目。'),
-      ]),
-      el('p', { className: 'provider-footnote', text: `当前内置来源记录共 ${sources.length} 项。来源说明不代表所有词条都具有相同权威等级。` }),
-      el('a', { className: 'secondary-button source-document-link', href: './SEED5_ATTRIBUTIONS.md', target: '_blank', rel: 'noopener', text: '打开完整来源与许可清单' }),
-    ]),
-  });
-}
-
 function openSettingsDialog() {
   const state = getState();
   const settingsController = new AbortController();
@@ -5711,28 +5715,15 @@ function openSettingsDialog() {
   });
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
-      el('p', { className: 'help-text', text: '查词释义与内容核查独立运行。语音、守卫和未知能力模型不可选。' }),
       field('Groq API Key', key), field('查询与核查模型', model), refresh, groqSettingsStatus]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
-      el('p', { className: 'help-text', text: '经同源 VIX 服务执行一次查询；真实 Collins Key 只存在于 Worker Secret，结果不缓存。' }),
-      field('Collins 词典', dictionaryCode),
-      el('p', { className: 'provider-footnote', text: '这里列出 VIX 支持的两本词典。未部署同源服务时会明确失败，不再尝试浏览器直连或公共 CORS 代理。' })]),
-    el('p', { className: 'provider-footnote', text: 'Groq 密钥只保存在此设备、此站点。Collins 密钥不进入浏览器、链接、仓库或错误报告。' }),
+      field('Collins 词典', dictionaryCode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
-      el('p', { className: 'help-text', text: mirrorStatusText() }),
       el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '数据来源' }),
-      el('button', { type: 'button', className: 'settings-source-card', on: { click: openSeedSourcesDialog } }, [
-        el('span', { className: 'settings-source-card-copy' }, [
-          el('strong', { text: 'Seed 数据来源与许可' }),
-          el('span', { text: '了解初始词库的出处、质量层级和使用边界' }),
-        ]),
-        svgIcon('enter'),
-      ])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {

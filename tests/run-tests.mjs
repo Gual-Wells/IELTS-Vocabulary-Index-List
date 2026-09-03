@@ -20,7 +20,7 @@ const timestamp = '2026-08-08T00:00:00.000Z';
 
 assert.equal(SCHEMA_VERSION, 6);
 assert.equal(DB_VERSION, 5);
-assert.equal(BUILTIN_SEED_REVISION, 6);
+assert.equal(BUILTIN_SEED_REVISION, 7);
 assert.equal(VIX_VERSION, 2);
 assert.equal(normalizeDisplayText('  Can’t   wait  '), "Can't wait");
 assert.equal(normalizeEnglish('well‑being'), 'well-being');
@@ -156,8 +156,8 @@ const contentPlan = planVixImport(seed, contentExample);
 assert.equal(contentPlan.summary.addedContent, 1, 'nonStructured VIX 预检必须正确统计新增 content');
 assert.equal(contentPlan.membershipIssues.length, 0);
 assert.equal(seed.schemaVersion, 6);
-assert.equal(seed.appVersion, '5.0.0-alpha.3');
-assert.equal(seed.settings.builtInSeedRevision, 6);
+assert.equal(seed.appVersion, '5.0.0-alpha.4');
+assert.equal(seed.settings.builtInSeedRevision, 7);
 assert.ok(seed.collections.some((item) => item.name === 'C2'));
 assert.ok(seed.collections.some((item) => item.name === 'NAWL'));
 assert.ok(seed.collections.some((item) => item.name === 'COCA 10000'));
@@ -169,6 +169,7 @@ assert.ok(!seed.domains.some((item) => item.name === '深拓英语'));
 assert.ok(seed.entries.filter((item) => item.kind === 'content').length >= 250);
 assert.ok(seed.entries.filter((item) => item.domainId === 'domain_computer_terms').length >= 1400);
 assert.ok(seed.settings.contentSources.some((item) => item.key === 'VIX-6-CURATED'));
+assert.ok(seed.settings.contentSources.some((item) => item.key === 'VIX-7-CURATED'));
 assert.equal(validateBackup(seed), true);
 
 console.log(`run-tests: OK (${seed.entries.length} seed entries; ${seed.relationComponents.length} relation components)`);

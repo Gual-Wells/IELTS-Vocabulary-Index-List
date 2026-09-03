@@ -1,32 +1,32 @@
 {
-  "generatedAt": "2026-09-03T00:00:00.000Z",
+  "generatedAt": "2026-09-04T00:00:00.000Z",
   "schemaVersion": 6,
-  "appVersion": "5.0.0-alpha.3",
-  "builtInSeedRevision": 6,
-  "contentGeneration": 6,
+  "appVersion": "5.0.0-alpha.4",
+  "builtInSeedRevision": 7,
+  "contentGeneration": 7,
   "total": {
     "domains": 3,
     "collections": 24,
-    "entries": 23486,
-    "words": 16222,
-    "phrases": 6938,
-    "content": 326,
-    "memberships": 61445,
-    "relationComponents": 19634,
+    "entries": 23917,
+    "words": 16237,
+    "phrases": 7085,
+    "content": 595,
+    "memberships": 61905,
+    "relationComponents": 20793,
     "studyStamps": 0
   },
   "global": {
     "words": {
-      "renderedRows": 16222,
-      "uniqueNormalized": 15904
+      "renderedRows": 16237,
+      "uniqueNormalized": 15916
     },
     "phrases": {
-      "renderedRows": 6938,
-      "uniqueNormalized": 6938
+      "renderedRows": 7085,
+      "uniqueNormalized": 7085
     },
     "content": {
-      "renderedRows": 326,
-      "uniqueNormalized": 326
+      "renderedRows": 595,
+      "uniqueNormalized": 595
     }
   },
   "generalEnglish": {
@@ -131,38 +131,38 @@
   },
   "computerTerms": {
     "domainId": "domain_computer_terms",
-    "entries": 1421,
-    "words": 578,
-    "phrases": 843,
+    "entries": 1583,
+    "words": 593,
+    "phrases": 990,
     "glossEnabled": true,
-    "glossCoverage": 1421,
+    "glossCoverage": 1583,
     "hiddenSourceCollections": [
       "collection_computer_terms_builtin_source"
     ],
     "visibleCollections": {
       "计算机基础与系统": {
-        "words": 224,
-        "phrases": 189,
+        "words": 230,
+        "phrases": 235,
         "content": 0,
-        "total": 413
+        "total": 465
       },
       "软件开发与数据": {
-        "words": 205,
-        "phrases": 278,
+        "words": 207,
+        "phrases": 305,
         "content": 0,
-        "total": 483
+        "total": 512
       },
       "网络、云与安全": {
-        "words": 119,
-        "phrases": 227,
+        "words": 121,
+        "phrases": 268,
         "content": 0,
-        "total": 346
+        "total": 389
       },
       "人工智能": {
-        "words": 30,
-        "phrases": 149,
+        "words": 35,
+        "phrases": 182,
         "content": 0,
-        "total": 179
+        "total": 217
       }
     },
     "sourceCounts": {
@@ -175,6 +175,7 @@
       "MDN": 178,
       "NIST-AI": 66,
       "DATA": 71,
+      "VIX-7-CURATED": 162,
       "K8S": 64,
       "OS": 29,
       "DSA": 81,
@@ -186,37 +187,37 @@
   "nonStructured": {
     "domainId": "domain_general_collocations",
     "name": "通用英语搭配",
-    "entries": 326,
-    "content": 326,
+    "entries": 595,
+    "content": 595,
     "visibleCollections": {
       "句型": {
         "words": 0,
         "phrases": 0,
-        "content": 72,
-        "total": 72
+        "content": 143,
+        "total": 143
       },
       "语法框架": {
         "words": 0,
         "phrases": 0,
-        "content": 72,
-        "total": 72
+        "content": 135,
+        "total": 135
       },
       "模板表达": {
         "words": 0,
         "phrases": 0,
-        "content": 92,
-        "total": 92
+        "content": 193,
+        "total": 193
       },
       "语篇标记": {
         "words": 0,
         "phrases": 0,
-        "content": 90,
-        "total": 90
+        "content": 124,
+        "total": 124
       }
     }
   },
   "provenance": {
-    "records": 27,
+    "records": 28,
     "authorityCounts": {
       "legacy": 15,
       "official": 2,
@@ -224,9 +225,9 @@
       "community transcription": 1,
       "community compilation": 6,
       "community mirror": 1,
-      "VIX curated": 1
+      "VIX curated": 2
     },
-    "manifest": "data/sources/seed5/SOURCE_MANIFEST.json + data/sources/seed6/VIX6_DOMAIN_EXPANSION.json",
+    "manifest": "data/sources/seed5/SOURCE_MANIFEST.json + Seed6/Seed7 curated expansion",
     "runtimeManifest": "data/seed5-runtime/manifest.json"
   },
   "scopeNote": "The current Seed broadly includes quality-acceptable official, publisher-approved, community and VIX-curated material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community and curated sources remain explicitly labelled and are not represented as official releases."

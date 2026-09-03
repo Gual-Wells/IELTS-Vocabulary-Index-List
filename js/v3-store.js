@@ -480,9 +480,49 @@ export async function reorderDomains(orderedIds) {
     order.forEach((id, index) => {
       const domain = draft.domains.find((item) => item.id === id);
       if (!domain) return;
+      if (domain.order === index) return;
       domain.order = index;
       domain.updatedAt = now;
     });
+  });
+}
+
+export async function reorderLibrary({ domainIds = [], collectionIdsByDomain = {} } = {}) {
+  return mutate('调整词库顺序', (draft) => {
+    const sameOrder = (left, right) => left.length === right.length && left.every((id, index) => id === right[index]);
+    const expectedDomains = new Set(draft.domains.map((item) => item.id));
+    const domainOrder = [...domainIds].filter((id) => expectedDomains.has(id));
+    for (const domain of draft.domains) if (!domainOrder.includes(domain.id)) domainOrder.push(domain.id);
+    const now = new Date().toISOString();
+    const currentDomainOrder = [...draft.domains]
+      .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+      .map((item) => item.id);
+    if (!sameOrder(domainOrder, currentDomainOrder)) {
+      domainOrder.forEach((id, index) => {
+        const domain = draft.domains.find((item) => item.id === id);
+        if (!domain) return;
+        domain.order = index;
+        domain.updatedAt = now;
+      });
+    }
+
+    for (const domain of draft.domains) {
+      const siblings = draft.collections.filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden);
+      const expected = new Set(siblings.map((item) => item.id));
+      const requested = Array.isArray(collectionIdsByDomain?.[domain.id]) ? collectionIdsByDomain[domain.id] : [];
+      const order = requested.filter((id) => expected.has(id));
+      for (const item of siblings) if (!order.includes(item.id)) order.push(item.id);
+      const currentOrder = [...siblings]
+        .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+        .map((item) => item.id);
+      if (sameOrder(order, currentOrder)) continue;
+      order.forEach((id, index) => {
+        const collection = siblings.find((item) => item.id === id);
+        if (!collection) return;
+        collection.order = index;
+        collection.updatedAt = now;
+      });
+    }
   });
 }
 

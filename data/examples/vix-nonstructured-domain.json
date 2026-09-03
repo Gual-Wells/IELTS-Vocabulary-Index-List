@@ -31,9 +31,9 @@
     ],
     "entries": [
       {
-        "key": "entry:domain_general_collocations:it remains to be seen whether",
+        "key": "entry:domain_general_collocations:it remains an open question whether",
         "domainKey": "domain_general_collocations",
-        "text": "It remains to be seen whether ...",
+        "text": "It remains an open question whether ...",
         "glossHans": "是否……尚有待观察",
         "glossHant": "是否……尚有待觀察",
         "glossSource": "示例",
@@ -47,7 +47,7 @@
     ],
     "memberships": [
       {
-        "entryKey": "entry:domain_general_collocations:it remains to be seen whether",
+        "entryKey": "entry:domain_general_collocations:it remains an open question whether",
         "collectionKey": "collection_general_collocations_patterns",
         "sourceLabel": "句型",
         "sourceOrder": 0

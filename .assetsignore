@@ -11,8 +11,9 @@ tools/
 tests/
 data/sources/
 data/seed.json
+data/seed-report.json
+data/seed5-build-report.json
 *.md
-!SEED5_ATTRIBUTIONS.md
 *.zip
 package.json
 package-lock.json

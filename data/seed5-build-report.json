@@ -1,21 +1,21 @@
 {
   "protocol": "vix-seed-build-report/3",
-  "seedRevision": 6,
-  "appVersion": "5.0.0-alpha.3",
-  "generatedAt": "2026-09-03T00:00:00.000Z",
+  "seedRevision": 7,
+  "appVersion": "5.0.0-alpha.4",
+  "generatedAt": "2026-09-04T00:00:00.000Z",
   "sourceManifest": "data/sources/seed5/SOURCE_MANIFEST.json",
   "counts": {
     "domains": 3,
     "collections": 24,
-    "entries": 23486,
+    "entries": 23917,
     "generalEntries": 21739,
     "generalWords": 15644,
     "generalPhrases": 6095,
     "generalGlosses": 12596,
-    "computerEntries": 1421,
-    "collocationEntries": 326,
-    "memberships": 61445,
-    "relations": 19634,
+    "computerEntries": 1583,
+    "collocationEntries": 595,
+    "memberships": 61905,
+    "relations": 20793,
     "rejected": 6
   },
   "collectionCounts": {
@@ -34,10 +34,10 @@
     "TEM 8": 14626
   },
   "expansionCounts": {
-    "computerAdded": 300,
-    "collocationsAdded": 276,
-    "membershipsAdded": 588,
-    "duplicatesReused": 60
+    "computerAdded": 462,
+    "collocationsAdded": 545,
+    "membershipsAdded": 1048,
+    "duplicatesReused": 245
   },
   "qualityPolicy": {
     "strategy": "broad inclusion after normalization and basic quality filtering",

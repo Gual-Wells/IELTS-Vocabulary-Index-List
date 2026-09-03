@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.3 架构
+# Vocabulary Index 5.0.0-alpha.4 架构
 
 ## 产品骨架
 

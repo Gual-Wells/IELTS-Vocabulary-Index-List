@@ -5,7 +5,7 @@ import { reconcileSeedUpgrade } from './v5-seed-migration.js';
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
 export const HISTORY_LIMIT = 100;
-export const BUILTIN_SEED_REVISION = 6;
+export const BUILTIN_SEED_REVISION = 7;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
 const SEED_MIGRATION_BACKUP_STORE = 'snapshots';

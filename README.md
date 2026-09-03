@@ -1,13 +1,13 @@
-# Vocabulary Index 5.0.0-alpha.3
+# Vocabulary Index 5.0.0-alpha.4
 
 本包是以 VIX 4.7.3 为稳定交互基线完成的统一架构升级，不再是单独的 D3 试验包。D、A、C、B、E 五条路线已经在同一版本中兼并：Provider、Mirror/抑制、Seed5、Session Capsule/后端桥接，以及发布权威收口。
 
 ## 当前版本权威
 
-- App：`5.0.0-alpha.3`
+- App：`5.0.0-alpha.4`
 - Backup Schema：`6`
 - IndexedDB：`5`
-- Built-in Seed revision：`6`
+- Built-in Seed revision：`7`
 - VIX JSON：`2`
 - Navigation：`single-slot-vix-v1`
 - Session Capsule：`vix-session-capsule/2`
@@ -33,8 +33,7 @@ Seed5 采用“质量门槛后多多益善”，而不是“只有官方资料�
 - 同一个词可保留多个集合归属，不把交叉来源压成单一标签；
 - 官方、发布方认可镜像、社区转录、社区汇编明确区分；
 - 原始来源 pin、SHA-256 与许可记录在 `data/sources/seed5/SOURCE_MANIFEST.json`；
-- 面向部署者的来源、署名与使用边界汇总见 `SEED5_ATTRIBUTIONS.md`；
-- 构建结果为 22,910 Entry、60,857 Membership，详见 `data/seed-report.json`。
+- 构建结果为 23,917 Entry、61,905 Membership，详见 `data/seed-report.json`。
 
 完整 `data/seed.json` 用于构建和审计。线上运行读取 `data/seed5-runtime/manifest.json` 及其 SHA-256 分片，单个文件约 4 MiB，避免 Cloudflare 25 MiB 静态资源上限。
 
@@ -49,7 +48,7 @@ Seed5 采用“质量门槛后多多益善”，而不是“只有官方资料�
 - 写主库前在独立 IndexedDB 中保存迁移快照；主库写入是单事务，失败自动回滚；
 - 匹配的旧记录保持本机 ID，避免引用断裂。
 
-详见 `MIGRATION_5.0.0-alpha.3.md`。
+详见 `MIGRATION_5.0.0-alpha.4.md`。
 
 ## 部署边界
 

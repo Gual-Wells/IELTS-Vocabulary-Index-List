@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.3 人工验收
+# Vocabulary Index 5.0.0-alpha.4 人工验收
 
 目标设备：iPhone 17 标准版，Safari 添加到主屏幕后 standalone 运行。每项记录设备、iOS 版本、部署 commit、时间、结果和截图。
 
@@ -37,7 +37,7 @@
 
 ## 4.7.3 交互回归
 
-- [ ] 显示 `5.0.0-alpha.3`，Home Screen 名仍为 `Vocabulary Index`。
+- [ ] 显示 `5.0.0-alpha.4`，Home Screen 名仍为 `Vocabulary Index`。
 - [ ] Collection Push、Back Pop、Home clear 符合 single-slot。
 - [ ] Word/Phrase、Alphabet/Date 切换得到 TOP + collapsed，无重叠或闪白。
 - [ ] Same-Collection Search/Relation 只落位一次。

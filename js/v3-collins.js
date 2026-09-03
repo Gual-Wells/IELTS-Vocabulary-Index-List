@@ -2,7 +2,7 @@ import { ProviderError, fetchProviderJson, objectValue, textValue } from './v3-p
 
 const KEY_STORAGE = 'gualVocabulary.collinsApiKey';
 const DICTIONARY_STORAGE = 'gualVocabulary.collinsDictionaryCode';
-const BASE_URL = 'https://api.collinsdictionary.com/api/v1';
+const LOOKUP_ENDPOINT = './api/collins/lookup';
 
 export const COLLINS_DICTIONARIES = Object.freeze([
   Object.freeze({ code: 'american-learner', name: 'Collins Cobuild Advanced American' }),
@@ -11,11 +11,9 @@ export const COLLINS_DICTIONARIES = Object.freeze([
 /** @type {ReadonlySet<string>} */
 const COLLINS_DICTIONARY_CODES = new Set(COLLINS_DICTIONARIES.map((dictionary) => dictionary.code));
 
-export function getCollinsApiKey() { return localStorage.getItem(KEY_STORAGE) || ''; }
-export function setCollinsApiKey(value) {
-  const key = typeof value === 'string' ? value.trim() : '';
-  if (key) localStorage.setItem(KEY_STORAGE, key); else localStorage.removeItem(KEY_STORAGE);
-}
+/** Legacy compatibility: the D1-D3 browser key is retired and never returned. */
+export function getCollinsApiKey() { return ''; }
+export function setCollinsApiKey(_value) { localStorage.removeItem(KEY_STORAGE); }
 export function getCollinsDictionary() { return localStorage.getItem(DICTIONARY_STORAGE) || ''; }
 export function validateDictionaryCode(value) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value)) {
@@ -36,13 +34,14 @@ export function setCollinsDictionary(value) {
   else localStorage.removeItem(DICTIONARY_STORAGE);
 }
 
-function collinsFetch(path, { apiKey = getCollinsApiKey(), signal = null, onState = (_state) => {} } = {}) {
-  if (typeof apiKey !== 'string' || !apiKey.trim()) throw new ProviderError('configuration', '请先在设置中配置 Collins API Key');
-  const url = new URL(BASE_URL + path);
-  return fetchProviderJson(url.href, { method: 'GET', headers: {
-    Accept: 'application/json', accessKey: apiKey.trim(),
-  } },
-    { provider: 'Collins', signal, timeoutMs: 20000, retries: 0, onState });
+function collinsFetch(query, dictionaryCode, { signal = null, onState = (_state) => {} } = {}) {
+  return fetchProviderJson(LOOKUP_ENDPOINT, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, dictionaryCode }),
+  }, {
+    provider: 'Collins', signal, timeoutMs: 20000, retries: 0, onState, credentials: 'same-origin',
+  });
 }
 
 export function decodeCollinsEntry(payload, query, dictionaryCode) {
@@ -57,6 +56,6 @@ export function decodeCollinsEntry(payload, query, dictionaryCode) {
 export async function queryCollins(text, { signal = null, onState = (_state) => {}, dictionaryCode = getCollinsDictionary() } = {}) {
   const query = textValue(text, 'query', { max: 240 });
   const code = validateSupportedCollinsDictionary(dictionaryCode);
-  const payload = await collinsFetch(`/dictionaries/${encodeURIComponent(code)}/search/first/?q=${encodeURIComponent(query)}&format=html`, { signal, onState });
+  const payload = await collinsFetch(query, code, { signal, onState });
   return decodeCollinsEntry(payload, query, code);
 }

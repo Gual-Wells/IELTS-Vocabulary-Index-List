@@ -76,7 +76,7 @@ function httpError(provider, response) {
 /** No response bodies, keys or request URLs are logged or retained. */
 export async function fetchProviderJson(url, options = {}, {
   provider = 'Provider', signal = null, timeoutMs = 45000, retries = 0,
-  retryBaseMs = 700, maxRetryDelayMs = 30000, onState = (_state) => {},
+  retryBaseMs = 700, maxRetryDelayMs = 30000, onState = (_state) => {}, credentials = 'omit',
 } = {}) {
   for (let attempt = 0; ; attempt += 1) {
     if (signal?.aborted) throw cancelledError();
@@ -98,7 +98,7 @@ export async function fetchProviderJson(url, options = {}, {
       onState('requesting');
       const payload = await Promise.race([interrupted, (async () => {
         const response = await fetch(url, {
-          ...options, signal: controller.signal, cache: 'no-store', credentials: 'omit',
+          ...options, signal: controller.signal, cache: 'no-store', credentials,
           referrerPolicy: 'no-referrer', redirect: 'error',
         });
         if (signal?.aborted) throw cancelledError();
@@ -124,7 +124,7 @@ export async function fetchProviderJson(url, options = {}, {
         ? new ProviderError('timeout', `${provider}：请求超时，请重试`)
         : error instanceof ProviderError ? error
           : new ProviderError('network', provider === 'Collins'
-            ? 'Collins：浏览器无法读取接口，可能是网络、CORS 跨域策略或服务验证拦截；尚不能判断密钥或词典权限'
+            ? 'Collins：无法连接 VIX 同源服务；请检查部署、网络或服务状态'
             : `${provider}：网络连接失败或浏览器跨域访问受限`);
     } finally {
       clearTimeout(timer);

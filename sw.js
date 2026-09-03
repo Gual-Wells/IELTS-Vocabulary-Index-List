@@ -1,14 +1,15 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v4.7.3-presentation-lifecycle-provider-D3-20260902-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.2-unified-runtime-20260902-3`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
-  './css/provider-runtime.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-collins.js', './js/v3-provider-views.js',
+  './css/provider-runtime.css', './css/v5.0.0.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-collins.js', './js/v3-provider-views.js',
   './', './index.html', './manifest.webmanifest', './css/v3.css', './css/v3.3.1.css', './css/v3.4.0.css', './css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css',
   './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v3-runtime-geometry.js', './js/v3-store.js', './js/v3-db.js',
   './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
-  './data/seed.json', './data/seed-report.json', './data/relation-low-level-lexemes.json',
+  './js/v5-version.js', './js/v5-suppression-runtime.js', './js/v5-mirror-runtime.js', './js/v5-session-capsule.js', './js/v5-seed-migration.js',
+  './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/seed-report.json', './data/seed5-build-report.json', './data/relation-low-level-lexemes.json',
   './assets/icons/vix-icon-180-v4.png', './assets/icons/vix-icon-192-v4.png', './assets/icons/vix-icon-512-v4.png',
 ];
 
@@ -16,6 +17,13 @@ sw.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     await cache.addAll(PRECACHE);
+    const manifestResponse = await cache.match('./data/seed5-runtime/manifest.json');
+    if (!manifestResponse) throw new Error('Seed5 runtime manifest was not precached');
+    const manifest = await manifestResponse.json();
+    if (manifest?.protocol !== 'vix-seed-runtime/1') throw new Error('Seed5 runtime manifest protocol mismatch');
+    const seedAssets = [manifest.meta, ...manifest.entries, ...manifest.memberships, ...manifest.relationComponents]
+      .map((descriptor) => `./${descriptor.path}`);
+    await cache.addAll(seedAssets);
   })());
 });
 
@@ -55,6 +63,9 @@ sw.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== sw.location.origin) return;
+  // API responses and capability-bearing Session traffic must always reach
+  // the network and must never enter Cache Storage.
+  if (url.pathname.startsWith('/api/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(appShellFirst(request));
     return;

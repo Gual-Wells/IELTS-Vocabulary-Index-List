@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const index = read('index.html');
-const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css') + '\n' + read('css/v4.7.0.css') + '\n' + read('css/v4.7.1.css') + '\n' + read('css/v4.7.2.css') + '\n' + read('css/v4.7.3.css');
+const css = read('css/v4.0.0.css') + '\n' + read('css/v4.0.1.css') + '\n' + read('css/v4.0.2.css') + '\n' + read('css/v4.1.0.css') + '\n' + read('css/v4.2.0.css') + '\n' + read('css/v4.3.0.css') + '\n' + read('css/v4.4.0.css') + '\n' + read('css/v4.5.0.css') + '\n' + read('css/v4.6.0.css') + '\n' + read('css/v4.7.0.css') + '\n' + read('css/v4.7.1.css') + '\n' + read('css/v4.7.2.css') + '\n' + read('css/v4.7.3.css') + '\n' + read('css/v5.0.0.css');
 const css471 = read('css/v4.7.1.css');
 const css472 = read('css/v4.7.2.css');
 const css473 = read('css/v4.7.3.css');
@@ -19,15 +20,23 @@ const exchange = read('js/v3-exchange.js');
 const integrations = read('js/v3-integrations.js');
 const collins = read('js/v3-collins.js');
 const upgrade = read('js/v3-upgrade.js');
+const version = read('js/v5-version.js');
 const sw = read('sw.js');
 const manifest = JSON.parse(read('manifest.webmanifest'));
 const pkg = JSON.parse(read('package.json'));
 const schema = JSON.parse(read('data/vix-json.schema.json'));
 const lowLexemes = JSON.parse(read('data/relation-low-level-lexemes.json'));
+const seedRuntimeManifest = JSON.parse(read('data/seed5-runtime/manifest.json'));
+const assetsIgnore = read('.assetsignore');
+const gitIgnore = read('.gitignore');
+const wrangler = read('wrangler.jsonc');
+const worker = read('worker/src/index.js');
+const accessJwt = read('worker/src/access-jwt.js');
 
-assert.equal(pkg.version, '4.7.3+D.3');
+assert.equal(pkg.version, '5.0.0-alpha.2');
 assert.ok(index.includes('css/provider-runtime.css'));
-assert.ok(index.includes('Vocabulary Index 4.7.3'));
+assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.2'));
+assert.ok(index.includes('css/v5.0.0.css'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
 assert.ok(index.includes('css/v4.1.0.css'));
@@ -45,7 +54,7 @@ assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v4.7.3-presentation-lifecycle'));
+assert.ok(sw.includes('v5.0.0-alpha.2-unified-runtime'));
 assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
   sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
 assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
@@ -78,16 +87,18 @@ assert.ok(index.includes('assets/icons/vix-icon-180-v4.png'));
 for (const file of ['assets/icons/vix-icon-180-v4.png', 'assets/icons/vix-icon-192-v4.png', 'assets/icons/vix-icon-512-v4.png']) assert.ok(exists(file), `${file} 缺失`);
 assert.ok(!exists('apple-touch-icon.png') && !exists('icon-192.png') && !exists('icon-512.png'));
 
-// CSP remains local-first while allowing only the configured direct providers.
+// CSP remains local-first; Collins is now a same-origin Worker bridge.
 const csp = index.match(/Content-Security-Policy" content="([^"]+)"/)?.[1] || '';
 assert.ok(csp.includes("default-src 'self'"));
 assert.ok(csp.includes('https://api.groq.com'));
-assert.ok(csp.includes('https://api.collinsdictionary.com'));
+assert.ok(!csp.includes('https://api.collinsdictionary.com'));
 assert.ok(!/<script[^>]+src=["']https?:/i.test(index));
 assert.ok(!/<link[^>]+href=["']https?:/i.test(index));
-assert.ok(collins.includes("accessKey: apiKey.trim()"));
-assert.ok(collins.includes('/search/first/?q='));
-assert.ok(!collins.includes("url.searchParams.set('accesskey'"));
+assert.ok(collins.includes("const LOOKUP_ENDPOINT = './api/collins/lookup'"));
+assert.ok(collins.includes("method: 'POST'"));
+assert.ok(collins.includes("credentials: 'same-origin'"));
+assert.ok(!collins.includes('api.collinsdictionary.com'));
+assert.ok(!collins.includes('accessKey'));
 assert.ok(!collins.includes('refreshCollinsDictionaries'));
 assert.ok(!ui.includes('获取账号词典'));
 assert.ok(!ui.includes('词典代码'));
@@ -101,12 +112,45 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './data/seed.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './css/v5.0.0.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v5-seed-migration.js', './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+assert.equal(seedRuntimeManifest.protocol, 'vix-seed-runtime/1');
+assert.equal(seedRuntimeManifest.seedRevision, 5);
+for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.2.md', 'RELEASE_5.0.0-alpha.2.md', 'TEST_REPORT_5.0.0-alpha.2.md', 'SEED5_ATTRIBUTIONS.md']) {
+  assert.ok(exists(releaseDoc), `alpha.2 release document missing: ${releaseDoc}`);
+}
+for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entries, ...seedRuntimeManifest.memberships, ...seedRuntimeManifest.relationComponents]) {
+  assert.ok(exists(descriptor.path), `Seed runtime asset missing: ${descriptor.path}`);
+  assert.equal(fs.statSync(path.join(root, descriptor.path)).size, descriptor.bytes);
+  assert.ok(descriptor.bytes < 25 * 1024 * 1024, `Seed runtime asset exceeds Cloudflare 25 MiB limit: ${descriptor.path}`);
+  assert.match(descriptor.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root, descriptor.path))).digest('hex'), descriptor.sha256);
+}
+assert.ok(sw.includes('seedAssets'));
+assert.match(assetsIgnore, /^data\/seed\.json$/m);
+assert.match(assetsIgnore, /^data\/sources\/$/m);
+assert.match(assetsIgnore, /^\.dev\.vars(?:\.\*)?$/m);
+assert.match(assetsIgnore, /^\.env(?:\.\*)?$/m);
+assert.match(gitIgnore, /^\.dev\.vars$/m);
+assert.ok(fs.statSync(path.join(root, 'data/seed.json')).size > 25 * 1024 * 1024,
+  'Full audit seed should exercise the deployment exclusion boundary');
+
+// Protected Worker routes fail closed and validate Access assertions cryptographically.
+assert.ok(wrangler.includes('"TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com"'));
+assert.ok(wrangler.includes('"POLICY_AUD": "YOUR_ACCESS_APPLICATION_AUD_TAG"'));
+assert.ok(wrangler.includes('"required": ["COLLINS_ACCESS_KEY"]'));
+assert.ok(worker.includes("import { authorizeAccess } from './access-jwt.js'"));
+assert.ok(!worker.includes('cf-access-authenticated-user-email'));
+assert.ok(accessJwt.includes("header.alg !== 'RS256'"));
+assert.ok(accessJwt.includes('crypto.subtle.verify'));
+assert.ok(accessJwt.includes('payload.iss === teamDomain'));
+assert.ok(accessJwt.includes('audiences.includes(audience)'));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));
 assert.ok(db.includes('export const DB_VERSION = 5'));
-assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 4'));
+assert.ok(db.includes('export const BUILTIN_SEED_REVISION = 5'));
+assert.ok(db.includes('reconcileSeedUpgrade'));
+assert.ok(db.includes('persistSeedMigrationBackup'));
 assert.ok(exchange.includes('export const VIX_VERSION = 2'));
 assert.ok(model.includes("['word', 'phrase', 'content']"));
 assert.ok(model.includes("contentMode = 'structured'"));
@@ -232,7 +276,8 @@ assert.ok(!css.includes('calc(var(--sticky-base-top) + 52px)'));
 // 4.7 retires Safari History as the internal transport rail. One root browser slot; VIX owns Back/Home.
 assert.ok(index.includes('id="home-button"'));
 assert.ok(!index.includes('id="navigation-underlay"'));
-assert.ok(ui.includes("const NAVIGATION_MODEL = 'single-slot-vix-v1'"));
+assert.ok(ui.includes('NAVIGATION_MODEL'));
+assert.ok(version.includes("export const NAVIGATION_MODEL = 'single-slot-vix-v1'"));
 assert.ok(ui.includes('navigationStack'));
 assert.ok(ui.includes('resetNavigationToHome'));
 assert.equal((ui.match(/history\.replaceState\s*\(/g) || []).length, 1);

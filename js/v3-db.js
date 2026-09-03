@@ -1,10 +1,14 @@
 import { canonicalizeBackup, SCHEMA_VERSION, validateBackup } from './v3-model.js';
+import { APP_VERSION } from './v5-version.js';
+import { reconcileSeedUpgrade } from './v5-seed-migration.js';
 
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
 export const HISTORY_LIMIT = 100;
-export const BUILTIN_SEED_REVISION = 4;
+export const BUILTIN_SEED_REVISION = 5;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
+const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
+const SEED_MIGRATION_BACKUP_STORE = 'snapshots';
 
 const PREFIX = 'v3';
 export const STORES = Object.freeze({
@@ -38,6 +42,61 @@ function transactionPromise(transaction) {
     transaction.onerror = () => reject(transaction.error || new Error('IndexedDB 事务失败'));
     transaction.onabort = () => reject(transaction.error || new Error('IndexedDB 事务已中止'));
   });
+}
+
+function openSeedMigrationBackupDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SEED_MIGRATION_BACKUP_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const backupDb = request.result;
+      if (!backupDb.objectStoreNames.contains(SEED_MIGRATION_BACKUP_STORE)) {
+        backupDb.createObjectStore(SEED_MIGRATION_BACKUP_STORE, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('无法创建 Seed 迁移安全备份'));
+  });
+}
+
+async function persistSeedMigrationBackup(snapshot, fromRevision, toRevision) {
+  const backupDb = await openSeedMigrationBackupDatabase();
+  const id = `seed-${fromRevision}-to-${toRevision}:${Date.now()}`;
+  try {
+    const tx = backupDb.transaction(SEED_MIGRATION_BACKUP_STORE, 'readwrite');
+    tx.objectStore(SEED_MIGRATION_BACKUP_STORE).put({
+      id,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      fromRevision,
+      toRevision,
+      snapshot,
+    });
+    await transactionPromise(tx);
+    return id;
+  } finally {
+    backupDb.close();
+  }
+}
+
+async function markSeedMigrationBackup(id, status, detail = '') {
+  const backupDb = await openSeedMigrationBackupDatabase();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = backupDb.transaction(SEED_MIGRATION_BACKUP_STORE, 'readwrite');
+      const store = tx.objectStore(SEED_MIGRATION_BACKUP_STORE);
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const record = request.result;
+        if (record) store.put({ ...record, status, detail: String(detail || '').slice(0, 500), completedAt: new Date().toISOString() });
+      };
+      request.onerror = () => reject(request.error || new Error('无法更新 Seed 迁移备份状态'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('无法更新 Seed 迁移备份状态'));
+      tx.onabort = () => reject(tx.error || new Error('Seed 迁移备份状态事务已中止'));
+    });
+  } finally {
+    backupDb.close();
+  }
 }
 
 /**
@@ -163,10 +222,52 @@ async function readLegacySnapshot(db) {
   };
 }
 
-async function loadLegacySeed() {
-  const response = await fetch(new URL('../data/seed.json', import.meta.url), { cache: 'no-store' });
+async function loadSeedFile(filename = 'seed.json') {
+  const response = await fetch(new URL(`../data/${filename}`, import.meta.url), { cache: 'no-store' });
   if (!response.ok) throw new Error(`无法读取内置词库（HTTP ${response.status}）`);
   return response.json();
+}
+
+async function sha256Text(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadSeedRuntimeAsset(descriptor) {
+  if (!descriptor?.path || !/^[a-f0-9]{64}$/.test(descriptor.sha256 || '')) throw new Error('Seed5 runtime manifest contains an invalid asset descriptor');
+  const response = await fetch(new URL(`../${descriptor.path}`, import.meta.url), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Cannot load Seed5 runtime asset ${descriptor.path} (HTTP ${response.status})`);
+  const text = await response.text();
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes !== Number(descriptor.bytes) || await sha256Text(text) !== descriptor.sha256) {
+    throw new Error(`Seed5 runtime asset integrity check failed: ${descriptor.path}`);
+  }
+  return JSON.parse(text);
+}
+
+export async function loadRuntimeSeed() {
+  const response = await fetch(new URL('../data/seed5-runtime/manifest.json', import.meta.url), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Cannot load Seed5 runtime manifest (HTTP ${response.status})`);
+  const manifest = await response.json();
+  if (manifest?.protocol !== 'vix-seed-runtime/1' || Number(manifest.seedRevision) !== BUILTIN_SEED_REVISION) {
+    throw new Error('Seed5 runtime manifest is incompatible with this application version');
+  }
+  const seed = await loadSeedRuntimeAsset(manifest.meta);
+  for (const [key, descriptors] of [['entries', manifest.entries], ['memberships', manifest.memberships], ['relationComponents', manifest.relationComponents]]) {
+    if (!Array.isArray(descriptors)) throw new Error(`Seed5 runtime manifest is missing ${key} chunks`);
+    seed[key] = [];
+    for (const descriptor of descriptors) {
+      const chunk = await loadSeedRuntimeAsset(descriptor);
+      if (!Array.isArray(chunk) || chunk.length !== Number(descriptor.count)) throw new Error(`Seed5 runtime chunk count mismatch: ${descriptor.path}`);
+      seed[key].push(...chunk);
+    }
+    if (seed[key].length !== Number(manifest.counts?.[key])) throw new Error(`Seed5 runtime total count mismatch: ${key}`);
+  }
+  return seed;
+}
+
+async function loadLegacySeed() {
+  return loadRuntimeSeed();
 }
 
 function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
@@ -181,7 +282,7 @@ function putBackupIntoTransaction(tx, backup, extraSettings = {}) {
     ...backup.settings,
     ...extraSettings,
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.6.0',
+    appVersion: APP_VERSION,
     initialized: true,
   };
   for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
@@ -193,34 +294,51 @@ async function loadCanonicalSeed() {
   return canonicalizeBackup(raw);
 }
 
+async function loadSeedMigrationBase() {
+  const raw = await loadSeedFile('seed-4.json');
+  if (Number(raw?.schemaVersion) !== SCHEMA_VERSION) throw new Error('Seed4 migration base is incompatible with the current schema');
+  return canonicalizeBackup(raw);
+}
+
 export function mergeBuiltInDomainBackup(_baseBackup, seedBackup) {
   // 4.0.0 is a content-generation break. Built-in seed updates are full
   // replacements and never perform the old add-only merge.
-  return canonicalizeBackup({ ...seedBackup, appVersion: '4.6.0', schemaVersion: SCHEMA_VERSION });
+  return canonicalizeBackup({ ...seedBackup, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION });
 }
 
 async function ensureBuiltInSeedRevision(db) {
   const applied = Number(await getSetting('builtInSeedRevision', 0));
   if (applied >= BUILTIN_SEED_REVISION) return { builtInMerged: false };
   return enqueueWrite(async () => {
-    const seed = await loadCanonicalSeed();
-    const existingNumberMode = await getSetting('numberMode', 'global');
-    const existingLowFilter = await getSetting('closeLowLevelRelations', true);
-    const revision = Date.now();
-    const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
-    const tx = db.transaction(writeStores, 'readwrite');
-    const completion = transactionPromise(tx);
-    putBackupIntoTransaction(tx, seed, {
-      numberMode: existingNumberMode,
-      closeLowLevelRelations: existingLowFilter !== false,
-      dataRevision: revision,
-      historyPointer: 0,
-      historySequence: 0,
-      builtInSeedRevision: BUILTIN_SEED_REVISION,
+    const current = await readCurrentSnapshot(db);
+    if (!current) throw new Error('Cannot reconcile Seed5 because the current device snapshot is unavailable');
+    const [base, seed] = await Promise.all([loadSeedMigrationBase(), loadCanonicalSeed()]);
+    const { backup, report } = reconcileSeedUpgrade(base, current, seed, {
+      toRevision: BUILTIN_SEED_REVISION,
+      appliedAt: new Date().toISOString(),
     });
-    tx.objectStore(STORES.history).clear();
-    await completion;
-    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION };
+    const backupId = await persistSeedMigrationBackup(current, applied, BUILTIN_SEED_REVISION);
+    const revision = Math.max(Date.now(), Number(current.settings?.dataRevision || 0) + 1);
+    try {
+      const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
+      const tx = db.transaction(writeStores, 'readwrite');
+      const completion = transactionPromise(tx);
+      putBackupIntoTransaction(tx, backup, {
+        dataRevision: revision,
+        historyPointer: 0,
+        historySequence: 0,
+        builtInSeedRevision: BUILTIN_SEED_REVISION,
+        seedMigrationBackupId: backupId,
+        seedMigrationReport: report,
+      });
+      tx.objectStore(STORES.history).clear();
+      await completion;
+    } catch (error) {
+      await markSeedMigrationBackup(backupId, 'rolled-back', error?.message || error).catch(() => undefined);
+      throw error;
+    }
+    await markSeedMigrationBackup(backupId, 'committed').catch(() => undefined);
+    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION, seedMigrationReport: report };
   });
 }
 
@@ -397,7 +515,7 @@ export async function exportBackup() {
   const snapshot = await readSnapshot();
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.6.0',
+    appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
     ...snapshot,
   });

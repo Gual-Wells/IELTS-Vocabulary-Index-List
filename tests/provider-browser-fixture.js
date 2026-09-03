@@ -12,7 +12,6 @@
   const values = new Map([
     ['gualVocabulary.groqApiKey', 'fixture-not-a-real-key'],
     ['gualVocabulary.groqModel', 'openai/gpt-oss-20b'],
-    ['gualVocabulary.collinsApiKey', 'fixture-not-a-real-key'],
     ['gualVocabulary.collinsDictionaryCode', 'american-learner'],
   ]);
   Object.defineProperty(window, 'localStorage', { configurable: true, value: {
@@ -28,7 +27,7 @@
   window.fetch = async (url, options = {}) => {
     const target = new URL(String(url), location.href);
     const groq = target.hostname === 'api.groq.com';
-    const collins = target.hostname === 'api.collinsdictionary.com';
+    const collins = target.origin === location.origin && target.pathname.endsWith('/api/collins/lookup');
     if (!groq && !collins) return originalFetch(url, options);
     const body = options.body ? JSON.parse(options.body) : null;
     fixture.calls.push({ provider: groq ? 'Groq' : 'Collins', path: target.pathname, body });

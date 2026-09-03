@@ -1,0 +1,42 @@
+/* Vocabulary Index 5.0 runtime additions. Uses the established VIX theme. */
+.mirror-status-banner {
+  position: sticky;
+  top: var(--topbar-height, 64px);
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 8px max(18px, env(safe-area-inset-right)) 8px max(18px, env(safe-area-inset-left));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.mirror-status-action {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  white-space: nowrap;
+}
+
+.mirror-management-status {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-subtle, var(--surface));
+}
+
+.mirror-management-status p { margin: 0; }
+.mirror-action-row { flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mirror-status-banner { scroll-behavior: auto; }
+}

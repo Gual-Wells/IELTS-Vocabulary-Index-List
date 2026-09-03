@@ -7,6 +7,11 @@ import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, recordHistoryOnly, redo as dbRedo,
   replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings, undo as dbUndo,
 } from './v3-db.js';
+import {
+  activateMirror, commitMirrorCurrent, deactivateMirror, effectiveEntryAllowed, effectiveProjectionFromMirror,
+  getMirrorSnapshot, initializeMirrorRuntime,
+} from './v5-mirror-runtime.js';
+import { APP_VERSION } from './v5-version.js';
 
 const listeners = new Set();
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('gual-vocabulary-index-v3') : null;
@@ -22,7 +27,7 @@ function backupFromState() {
   if (!state) throw new Error('Store 尚未初始化');
   return {
     schemaVersion: 6,
-    appVersion: '4.6.0',
+    appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
     domains: clone(state.domains),
     collections: clone(state.collections),
@@ -53,14 +58,18 @@ async function ensureLowLevelLexemes() {
 }
 
 function buildState(snapshot) {
-  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: '4.6.0', exportedAt: new Date().toISOString(), ...snapshot });
+  const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: APP_VERSION, exportedAt: new Date().toISOString(), ...snapshot });
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
     return a.order - b.order || a.name.localeCompare(b.name);
   });
-  const projection = buildProjection(backup);
+  const structuralProjection = buildProjection(backup);
+  const projection = effectiveProjectionFromMirror(structuralProjection);
+  const structuralEntryIds = new Set(backup.entries.map((entry) => entry.id));
+  const effectiveEntryIds = new Set(backup.entries.filter((entry) => effectiveEntryAllowed(entry.id)).map((entry) => entry.id));
   const visibleEntryIdsByCollection = new Map([...projection.entries()].map(([collectionId, entries]) => [collectionId, new Set(entries.map((entry) => entry.id))]));
+  const structuralEntryIdsByCollection = new Map([...structuralProjection.entries()].map(([collectionId, entries]) => [collectionId, new Set(entries.map((entry) => entry.id))]));
   const entryById = new Map(backup.entries.map((item) => [item.id, item]));
   const domainById = new Map(domains.map((item) => [item.id, item]));
   const entriesByNormalizedText = new Map();
@@ -97,7 +106,9 @@ function buildState(snapshot) {
     const raw = [...(rawAdjacency.get(entry.id) || [])].map((id) => entryById.get(id)).filter(Boolean)
       .sort((a,b) => a.normalizedText.localeCompare(b.normalizedText,'en') || a.id.localeCompare(b.id));
     rawRelationsByEntry.set(entry.id, raw);
-    const effective = raw.filter((target) => !edgeSuppressed(entry, target));
+    const effective = effectiveEntryIds.has(entry.id)
+      ? raw.filter((target) => effectiveEntryIds.has(target.id) && !edgeSuppressed(entry, target))
+      : [];
     effectiveAdjacency.set(entry.id, new Set(effective.map((target) => target.id)));
     relatedEntriesByEntry.set(entry.id, effective);
   }
@@ -121,8 +132,12 @@ function buildState(snapshot) {
   }
   const projectionUniqueCounts = new Map([...projection.entries()].map(([collectionId, list]) => [collectionId, uniqueProjectionCount(list)]));
   return {
-    ...backup, domains, collections, projection, visibleEntryIdsByCollection,
+    ...backup, domains, collections,
+    structuralProjection, effectiveProjection: projection, projection,
+    structuralEntryIds, effectiveEntryIds, structuralEntryIdsByCollection, visibleEntryIdsByCollection,
     revision: Number(snapshot.settings?.dataRevision || 0),
+    mirror: getMirrorSnapshot(),
+    suppressionRevision: getMirrorSnapshot().suppressionRevision,
     domainById, collectionById, entryById, entriesByNormalizedText,
     wordsByNormalizedText, phrasesByNormalizedText, contentByNormalizedText,
     globalConflictKeys, projectionUniqueCounts,
@@ -177,6 +192,7 @@ export async function reloadStore(type = 'reload') {
 }
 
 export async function initializeStore() {
+  await initializeMirrorRuntime();
   const migration = await initializeDatabase();
   await reloadStore('initialize');
   if (channel) {
@@ -1069,9 +1085,28 @@ export function getRelationComponents(entryId) {
 
 export function search(query, options = {}) {
   const entryIds = options.entryIds instanceof Set ? options.entryIds : null;
-  const entries = entryIds ? state.entries.filter((entry) => entryIds.has(entry.id)) : state.entries;
+  const allowed = entryIds || state.effectiveEntryIds;
+  const entries = state.entries.filter((entry) => allowed.has(entry.id));
   const { entryIds: _entryIds, ...searchOptions } = options;
   return searchBackup({ entries }, query, searchOptions);
+}
+
+export function getMirrorState() {
+  return getMirrorSnapshot();
+}
+
+export async function setMirrorEnabled(enabled) {
+  if (enabled) await activateMirror(state.entries.map((entry) => entry.id));
+  else deactivateMirror();
+  await reloadStore(enabled ? 'mirror-on' : 'mirror-off');
+  return getMirrorSnapshot();
+}
+
+export async function installMirrorCurrent(record) {
+  const result = await commitMirrorCurrent(record, state.entries.map((entry) => entry.id));
+  // CURRENT delivery never hot-swaps ACTIVE, so a store rebuild is unnecessary.
+  emit('mirror-current', result);
+  return result;
 }
 
 export async function restoreBackup(input) {

@@ -4,6 +4,7 @@ import {
   normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemDomainContentCollectionId, systemPhraseCollectionId,
   toTraditional,
 } from './v3-model.js';
+import { APP_VERSION } from './v5-version.js';
 
 export const VIX_FORMAT = 'vix-json';
 export const VIX_VERSION = 2;
@@ -290,7 +291,14 @@ function buildTargetSelection(pkg, selection, current) {
 }
 
 export function planVixImport(currentInput, rawPackage, selection = {}, conflictPolicy = 'current') {
-  const before = canonicalizeBackup(currentInput);
+  // Runtime callers pass a canonical IndexedDB snapshot. Avoid rebuilding the
+  // full Seed5 relation index before planning; the final candidate is still
+  // canonicalized and fully validated before it can be committed.
+  const looksCanonical = Number(currentInput?.schemaVersion) === 6
+    && Array.isArray(currentInput?.domains) && Array.isArray(currentInput?.collections)
+    && Array.isArray(currentInput?.entries) && Array.isArray(currentInput?.memberships)
+    && Array.isArray(currentInput?.relationComponents) && currentInput?.settings && typeof currentInput.settings === 'object';
+  const before = looksCanonical ? clone(currentInput) : canonicalizeBackup(currentInput);
   const pkg = normalizeVixPackage(rawPackage);
   const mismatch = declaredTargetMismatch(pkg, selection);
   const target = buildTargetSelection(pkg, selection, before);
@@ -586,7 +594,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
-    appVersion: '4.6.0',
+    appVersion: APP_VERSION,
     exportedAt: timestamp,
     domains,
     collections,

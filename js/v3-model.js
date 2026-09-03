@@ -1,3 +1,5 @@
+import { APP_VERSION } from './v5-version.js';
+
 export const SCHEMA_VERSION = 6;
 export const DEFAULT_DOMAIN_ID = 'domain_general_english';
 export const DEFAULT_DOMAIN_NAME = '通用英语';
@@ -1438,6 +1440,7 @@ for (const [source, target] of S2T_COMPUTER_GLOSS_OVERRIDES) {
   S2T_PHRASES.set(source, target);
   S2T_PHRASES.set(target, target);
 }
+const S2T_PHRASE_ENTRIES = [...S2T_PHRASES.entries()].sort((a, b) => b[0].length - a[0].length);
 
 const S2T_PAIRS = `万萬与與专业專業丛叢东東丝絲丢丟两兩严嚴丧喪个個丰豐临臨为為丽麗举舉么麼义義乌烏乐樂乔喬习習乡鄉书書买買乱亂争爭于於亏虧云雲亚亞产產亩畝亲親亿億仅僅从從仑侖仓倉仪儀们們价價众眾优優会會伞傘伟偉传傳伤傷伦倫伪偽体體余餘佣傭侠俠侣侶侥僥侦偵侧側侨僑侩儈俭儉债債倾傾偿償储儲儿兒兑兌党黨兰蘭关關兴興养養兽獸内內冈岡册冊写寫军軍农農冲沖决決况況冻凍净淨凉涼减減凑湊凤鳳凭憑凯凱击擊凿鑿刍芻划劃刘劉则則刚剛创創删刪别別刮颳制製刹剎剂劑剐剮剑劍剧劇劝勸办辦务務动動励勵劲勁劳勞势勢勋勳匀勻区區医醫华華协協单單卖賣卢盧卫衛却卻厅廳历歷厉厲压壓厌厭厕廁厦廈厨廚县縣参參双雙发發变變叙敘叶葉号號叹嘆吓嚇吕呂吗嗎吨噸听聽启啟吴吳呐吶呕嘔员員呛嗆呜嗚咏詠咙嚨咸鹹响響哑啞哗嘩哟喲唤喚啧嘖喷噴喽嘍嘘噓团團园園围圍国國图圖圆圓圣聖场場坏壞块塊坚堅坛壇坝壩坞塢坟墳坠墜垄壟垒壘垦墾垫墊埘塒埙塤堑塹墙牆壮壯声聲壳殼壶壺处處备備复復够夠头頭夹夾夺奪奋奮奖獎妇婦妈媽妆妝姗姍姜薑娄婁娱娛婴嬰孙孫学學宁寧宝寶实實宠寵审審宪憲宫宮宽寬宾賓寝寢对對寻尋导導寿壽将將尔爾尘塵尝嘗尧堯尸屍尽盡层層屉屜属屬岁歲岂豈岗崗岛島岭嶺岳嶽峡峽峦巒币幣帅帥师師帐帳帘簾带帶帮幫帧幀并並广廣庄莊庆慶庐廬库庫应應庙廟庞龐废廢开開异異弃棄张張弥彌弯彎弹彈强強归歸当當录錄彻徹径徑忆憶忧憂怀懷态態总總恋戀恳懇恶惡恼惱悦悅悬懸惊驚惧懼惨慘惩懲惯慣愤憤愿願慑懾戏戲战戰户戶扑撲执執扩擴扫掃扬揚扰擾抚撫抛拋抢搶护護报報担擔拟擬拥擁拦攔拨撥择擇挂掛挚摯挛攣挞撻挟挾挥揮损損换換捣搗据據掳擄掷擲掺摻揽攬搀攙携攜摄攝摆擺摇搖摊攤撑撐撵攆撷擷撸擼敌敵数數斋齋斗鬥斩斬断斷无無旧舊时時旷曠显顯晋晉晒曬晓曉暂暫术術朴樸机機杀殺杂雜权權条條来來杨楊杰傑极極构構枣棗枪槍柜櫃标標栈棧栋棟栏欄树樹样樣桥橋桩樁梦夢检檢楼樓横橫橹櫓欢歡欧歐歼殲残殘殴毆毁毀毕畢毙斃气氣氢氫汇匯汉漢汤湯沟溝没沒沥瀝沦淪沧滄沪滬泞濘泪淚泽澤洁潔洼窪浅淺浆漿浇澆浊濁测測济濟浑渾浓濃涂塗涌湧涛濤涝澇涡渦涣渙涤滌润潤涩澀涨漲渐漸渔漁渗滲温溫湾灣湿濕溃潰滚滾满滿滤濾滥濫滨濱滩灘滞滯漤灠潜潛潇瀟灭滅灯燈灵靈灾災灿燦炉爐点點炼煉烁爍烂爛烛燭热熱爱愛爷爺牵牽犊犢状狀犹猶狈狽狱獄独獨狭狹猎獵猫貓献獻玛瑪环環现現玺璽珐琺琐瑣琼瓊电電画畫畅暢疗療疟瘧疮瘡疯瘋瘫癱皑皚皱皺盘盤卢盧监監盖蓋盗盜眦眥睁睜瞒瞞矫矯矿礦码碼砖磚砚硯砾礫础礎硕碩确確碍礙礼禮祷禱祸禍离離秃禿秆稈种種积積称稱秽穢稳穩穷窮窃竊窍竅窝窩窥窺窜竄竞競笋筍笔筆笺箋筑築筛篩筝箏筹籌签簽简簡箩籮篮籃类類粮糧紧緊纠糾红紅纤纖约約级級纪紀纫紉纬緯纯純纱紗纲綱纳納纵縱纷紛纸紙纹紋纺紡纽紐线線练練组組细細织織终終绍紹经經绑綁绒絨结結绕繞绘繪给給络絡绝絕绞絞统統绢絹绣繡继繼绩績绪緒续續绳繩维維绵綿绷繃绿綠缀綴缄緘缅緬缆纜缓緩编編缘緣缚縛缝縫缠纏缩縮缴繳网網罗羅罚罰职職联聯聪聰肃肅肠腸肤膚肾腎肿腫胀脹胆膽胜勝胶膠脉脈脏臟脑腦脚腳脱脫脸臉腻膩腾騰舆輿舰艦舱艙艺藝节節芜蕪苇葦苍蒼苏蘇范範茧繭荐薦荆荊荡蕩荣榮药藥莲蓮获獲莹瑩营營萧蕭蓝藍蔷薔蔼藹蕴蘊薮藪虚虛虫蟲虽雖蚀蝕蚁蟻蚂螞蛊蠱蛮蠻补補衬襯袜襪袭襲装裝裤褲见見观觀规規觅覓视視览覽觉覺触觸誉譽计計订訂认認讨討让讓训訓议議讯訊记記讲講讳諱讶訝许許论論讼訟设設访訪诀訣证證评評识識诈詐诉訴诊診词詞译譯试試诗詩诚誠话話诞誕询詢该該详詳语語误誤诱誘说說诵誦请請诸諸诺諾读讀课課谁誰调調谈談谊誼谋謀谎謊谐諧谓謂谣謠谦謙谨謹谱譜贝貝负負贡貢财財责責贤賢败敗账賬货貨质質贩販贪貪贫貧贬貶购購贯貫贮貯贴貼贵貴贷貸贸貿费費贺賀贼賊贾賈资資赋賦赌賭赏賞赔賠赖賴赚賺赛賽赞讚赠贈赢贏赵趙赶趕趋趨跃躍践踐踪蹤车車轨軌轩軒转轉轮輪软軟轰轟轴軸轻輕载載较較辅輔辆輛辈輩辉輝辐輻辑輯输輸辕轅辖轄辗輾辙轍辞辭边邊辽遼达達迁遷过過迈邁运運还還这這进進远遠违違连連迟遲迩邇适適选選递遞逻邏遗遺邮郵邻鄰郑鄭酝醞酱醬酿釀释釋里裏鉴鑒钉釘针針钓釣钝鈍钟鐘钢鋼钥鑰钦欽钧鈞钩鉤钱錢钳鉗钻鑽铁鐵铃鈴铅鉛铜銅铭銘银銀铸鑄铺鋪链鏈销銷锁鎖锅鍋锋鋒错錯锡錫锣鑼锦錦键鍵锻鍛镀鍍镇鎮镜鏡镶鑲长長门門闪閃闭閉问問闯闖闲閒间間闻聞阅閱阐闡队隊阳陽阴陰阵陣阶階际際陆陸陈陳险險随隨隐隱难難雏雛雾霧静靜顶頂项項顺順须須顾顧顿頓颁頒颂頌预預领領颇頗颈頸频頻题題颜顏额額风風飞飛饥飢饭飯饮飲饲飼饱飽饰飾饼餅馆館马馬驭馭驯馴驰馳驱驅驳駁驻駐骑騎骗騙骚騷验驗骤驟鱼魚鲁魯鲜鮮鸟鳥鸡雞鸣鳴鸭鴨鸿鴻鹅鵝鹏鵬麦麥黄黃黉黌齐齊齿齒龙龍龟龜`;
 const S2T_CHARS = new Map();
@@ -1448,7 +1451,7 @@ for (let index = 0; index < S2T_PAIRS.length - 1; index += 2) {
 export function toTraditional(value) {
   let text = normalizeDisplayText(value);
   const protectedValues = [];
-  for (const [source, target] of [...S2T_PHRASES.entries()].sort((a, b) => b[0].length - a[0].length)) {
+  for (const [source, target] of S2T_PHRASE_ENTRIES) {
     if (!source || !text.includes(source)) continue;
     const marker = `\uE000${protectedValues.length.toString(36)}\uE001`;
     protectedValues.push(target);
@@ -1664,7 +1667,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
 
   return canonicalizeBackup({
     schemaVersion: SCHEMA_VERSION,
-    appVersion: '4.6.0',
+    appVersion: APP_VERSION,
     exportedAt: timestamp,
     domains,
     collections,
@@ -1734,17 +1737,23 @@ export function canonicalizeBackup(input) {
     studyStampMigrationIssues: [...array(settingsInput.studyStampMigrationIssues), ...migratedStudy.issues]
       .filter((item, index, list) => item?.type && list.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(item)) === index),
     builtInSeedRevision: Math.max(0, Number(settingsInput.builtInSeedRevision || 0)),
+    seedMigrationReport: settingsInput.seedMigrationReport && typeof settingsInput.seedMigrationReport === 'object'
+      ? JSON.parse(JSON.stringify(settingsInput.seedMigrationReport))
+      : null,
     contentSources: array(settingsInput.contentSources).map((item) => ({
       key: normalizeDisplayText(item?.key || item?.id || ''),
       title: normalizeDisplayText(item?.title || ''),
       publisher: normalizeDisplayText(item?.publisher || ''),
       url: normalizeDisplayText(item?.url || ''),
       retrievedAt: normalizeDisplayText(item?.retrievedAt || ''),
+      authority: normalizeDisplayText(item?.authority || ''),
+      license: normalizeDisplayText(item?.license || ''),
+      sha256: normalizeDisplayText(item?.sha256 || '').toLowerCase(),
     })).filter((item) => item.key && item.title),
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
-    appVersion: normalizeDisplayText(input?.appVersion || '4.6.0'),
+    appVersion: normalizeDisplayText(input?.appVersion || APP_VERSION),
     exportedAt: timestamp,
     domains,
     collections,
@@ -1756,11 +1765,11 @@ export function canonicalizeBackup(input) {
     studyStamps,
     settings,
   };
-  validateBackup(backup);
+  validateBackup(backup, { relationComponentsAlreadyBuilt: true, entriesCanonical: true });
   return backup;
 }
 
-export function validateBackup(backup) {
+export function validateBackup(backup, { relationComponentsAlreadyBuilt = false, entriesCanonical = false } = {}) {
   if (Number(backup?.schemaVersion) !== SCHEMA_VERSION) throw new Error('备份 schemaVersion 必须为 6');
   const domains = array(backup.domains);
   const collections = array(backup.collections);
@@ -1794,10 +1803,12 @@ export function validateBackup(backup) {
   unique(studyStamps, (item) => item.key, '学习日期键为空或重复');
   unique(contentSources, (item) => item.key, '内容来源键为空或重复');
   for (const source of contentSources) {
-    if (source.key.length > 120 || source.title.length > 240 || source.publisher.length > 160 || source.url.length > 1000 || source.retrievedAt.length > 40) {
+    if (source.key.length > 120 || source.title.length > 240 || source.publisher.length > 160 || source.url.length > 1000
+      || source.retrievedAt.length > 40 || source.authority.length > 120 || source.license.length > 240 || source.sha256.length > 64) {
       throw new Error('内容来源字段过长');
     }
     if (source.url && !/^https?:\/\//i.test(source.url)) throw new Error('内容来源 URL 无效');
+    if (source.sha256 && !/^[a-f0-9]{64}$/.test(source.sha256)) throw new Error('Invalid content source SHA-256');
   }
   for (const item of [...domains, ...collections, ...entries, ...memberships, ...pins]) {
     if (!validId(item.id)) throw new Error('数据包含无效或危险 ID');
@@ -1849,7 +1860,7 @@ export function validateBackup(backup) {
     }
   }
 
-  const expectedComponents = buildRelationComponentsForEntries(entries);
+  const expectedComponents = relationComponentsAlreadyBuilt ? components : buildRelationComponentsForEntries(entries);
   if (JSON.stringify(components) !== JSON.stringify(expectedComponents)) throw new Error('关系组件索引与内容不一致');
 
   const visible = buildProjection(backup);

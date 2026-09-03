@@ -98,7 +98,9 @@ assert.ok(homeGlobalSource.includes('animateSurfaceOpacity(grid, .97, 1'));
 
 
 // 4.7 single-slot PWA navigation: Safari history is not the VIX transport rail.
-assert.ok(ui.includes("const NAVIGATION_MODEL = 'single-slot-vix-v1'"));
+const versionSource = fs.readFileSync(path.join(root, 'js/v5-version.js'), 'utf8');
+assert.ok(ui.includes('NAVIGATION_MODEL'));
+assert.ok(versionSource.includes("export const NAVIGATION_MODEL = 'single-slot-vix-v1'"));
 assert.ok(ui.includes('navigationStack'));
 assert.ok(ui.includes('resetNavigationToHome'));
 assert.ok(ui.includes('runPresentationTransition'));

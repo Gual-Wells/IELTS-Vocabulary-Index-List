@@ -5,6 +5,7 @@ import {
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderCollections, reorderDomains, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
+  getMirrorState, installMirrorCurrent, setMirrorEnabled,
 } from './v3-store.js';
 import {
   AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog,
@@ -15,20 +16,21 @@ import {
 } from './v3-import.js';
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
-import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, getCollinsApiKey, queryCollins, setCollinsApiKey } from './v3-integrations.js';
+import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, queryCollins } from './v3-integrations.js';
 import { COLLINS_DICTIONARIES, getCollinsDictionary, setCollinsDictionary } from './v3-collins.js';
 import { createProviderSession } from './v3-provider-runtime.js';
 import { renderGroqLookup, renderGroqVerification, renderCollinsEntry } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
+import { MATCH_RESULT_KIND, SESSION_PROTOCOL, acceptMatchResult, buildMatcherPrompt, createMatchRequest, publishMatchRequest } from './v5-session-capsule.js';
+import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
-const APP_VERSION = '4.7.3+D.3';
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
-  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'query-menu', 'relation-target-menu',
+  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'mirror-status-banner', 'mirror-status-text', 'mirror-status-action', 'query-menu', 'relation-target-menu',
   'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
   'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog',
@@ -70,7 +72,6 @@ let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalTouchY = 0;
 let appNavigationDepth = 0;
-const NAVIGATION_MODEL = 'single-slot-vix-v1';
 const navigationStack = [];
 let navigationRuntimeId = '';
 let navigationRootToken = '';
@@ -130,7 +131,15 @@ function el(tag, options = {}, children = []) {
 }
 
 function button(text, className, handler, options = {}) {
-  return el('button', { type: 'button', className, text, disabled: options.disabled || false, on: { click: handler }, title: options.title || '' });
+  const guarded = (event) => {
+    try {
+      const result = handler(event);
+      if (result && typeof result.catch === 'function') result.catch(displayError);
+    } catch (error) {
+      displayError(error);
+    }
+  };
+  return el('button', { type: 'button', className, text, disabled: options.disabled || false, on: { click: guarded }, title: options.title || '' });
 }
 
 function appendScrollTrace(event, detail = {}) {
@@ -365,7 +374,7 @@ function updateVisualViewportVars({ immediate = false } = {}) {
 
 function topChromeBottom({ includeLetterNav = true } = {}) {
   const viewportTop = window.visualViewport?.offsetTop || 0;
-  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner')]
+  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .mirror-status-banner')]
     .filter((node) => !node.classList.contains('hidden'))
     .map((node) => node.getBoundingClientRect())
     .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 320)
@@ -1865,7 +1874,8 @@ async function clearAllAnnotationsFromHome() {
 }
 
 function renderHomeAnnotationBanner() {
-  const total = getState().annotations.length;
+  const state = getState();
+  const total = state.annotations.filter((item) => state.effectiveEntryIds.has(item.entryId)).length;
   if (!total || currentCollectionId) {
     elements['home-annotation-banner'].classList.add('hidden');
     updateOverlayLayout();
@@ -1876,6 +1886,114 @@ function renderHomeAnnotationBanner() {
   elements['clear-all-annotations'].replaceChildren(svgIcon('clear'), el('span', { text: '全部撤销' }));
   elements['home-annotation-banner'].classList.remove('hidden');
   updateOverlayLayout();
+}
+
+function mirrorStatusText(snapshot = getMirrorState()) {
+  if (snapshot.active) return `Mirror 已开启 · ${snapshot.active.entryIds.length.toLocaleString()} 条`;
+  if (snapshot.current) return `Mirror 已准备 · ${snapshot.current.entryIds.length.toLocaleString()} 条`;
+  return '尚无 Mirror';
+}
+
+function renderMirrorStatusBanner() {
+  const banner = elements['mirror-status-banner'];
+  if (!banner) return;
+  const snapshot = getMirrorState();
+  if (currentCollectionId || (!snapshot.current && !snapshot.active)) {
+    banner.classList.add('hidden');
+    updateOverlayLayout();
+    return;
+  }
+  elements['mirror-status-text'].textContent = mirrorStatusText(snapshot);
+  const action = elements['mirror-status-action'];
+  action.textContent = snapshot.active ? '管理 / 关闭' : '管理 / 开启';
+  action.onclick = openMirrorDialog;
+  banner.classList.remove('hidden');
+  updateOverlayLayout();
+}
+
+function openMirrorSessionCreator() {
+  const label = el('input', { type: 'text', maxlength: 160, placeholder: '例如：本周阅读材料', autocomplete: 'off' });
+  const mode = el('select', {}, [
+    el('option', { value: 'lexical', text: '严格词汇证据', selected: true }),
+    el('option', { value: 'semantic', text: '允许语义匹配' }),
+  ]);
+  const publish = el('input', { type: 'checkbox', className: 'vix-checkbox' });
+  openDialog({
+    title: '创建 Mirror 匹配请求',
+    description: '冻结当前完整 Structural Corpus；文件中只有本次 slot，没有 Entry ID。',
+    body: [
+      field('材料标记（可选）', label),
+      field('匹配模式', mode),
+      el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '同时发布到已部署的同源 Session Bridge' }), publish]),
+      el('p', { className: 'help-text', text: '默认会下载请求 Capsule 与匹配提示。将两者连同材料交给 ChatGPT，再把返回的 Result Capsule 导入 VIX。' }),
+    ],
+    submitText: '创建并下载',
+    onSubmit: async () => {
+      const request = await createMatchRequest(getState(), { materialLabel: label.value, matchMode: mode.value });
+      downloadText(`VIX-Match-Request-${request.sessionId}.json`, JSON.stringify(request, null, 2), 'application/json;charset=utf-8');
+      downloadText(`VIX-Matcher-Prompt-${request.sessionId}.txt`, buildMatcherPrompt(request), 'text/plain;charset=utf-8');
+      if (publish.checked) {
+        const binding = await publishMatchRequest(request);
+        downloadText(`VIX-Bridge-Binding-${request.sessionId}.json`, JSON.stringify({
+          protocol: SESSION_PROTOCOL, sessionId: request.sessionId, ...binding,
+        }, null, 2), 'application/json;charset=utf-8');
+      }
+      showToast('匹配请求已创建；Mirror 尚未改变');
+    },
+  });
+}
+
+function openMirrorDialog() {
+  const status = el('div', { className: 'mirror-management-status' });
+  const toggle = button('开启 Mirror', 'primary-button', async () => {
+    const before = getMirrorState();
+    await setMirrorEnabled(!before.enabled);
+    refresh();
+    showToast(before.enabled ? 'Mirror 已关闭' : 'Mirror 已开启');
+  });
+  const create = button('创建匹配请求', 'secondary-button', openMirrorSessionCreator);
+  const file = el('input', { type: 'file', accept: '.json,application/json' });
+  const importButton = button('验证并接收 Capsule', 'secondary-button', async () => {
+    const selected = file.files?.[0];
+    if (!selected) throw new Error('请先选择 Result Capsule JSON');
+    if (selected.size > 2 * 1024 * 1024) throw new Error('Result Capsule 文件过大');
+    let payload;
+    try { payload = JSON.parse(await selected.text()); }
+    catch { throw new Error('Result Capsule 不是有效 JSON'); }
+    if (payload?.kind !== MATCH_RESULT_KIND) throw new Error('所选文件不是 VIX Match Result Capsule');
+    const wasActive = getMirrorState().enabled;
+    const record = await acceptMatchResult(payload);
+    await installMirrorCurrent(record);
+    file.value = '';
+    refresh();
+    showToast(wasActive ? '新的 CURRENT 已接收；正在使用的 ACTIVE 未替换' : '新的 Mirror CURRENT 已接收');
+  });
+  const refresh = () => {
+    const snapshot = getMirrorState();
+    status.replaceChildren(...[
+      el('strong', { text: mirrorStatusText(snapshot) }),
+      snapshot.current ? el('p', { className: 'help-text', text: `CURRENT：${snapshot.current.materialLabel || '未命名'} · ${new Date(snapshot.current.createdAt).toLocaleString()}` }) : null,
+      snapshot.active && snapshot.current?.mirrorId !== snapshot.active.mirrorId
+        ? el('p', { className: 'provider-footnote', text: '新的 CURRENT 已到达；当前 ACTIVE 会保持到手动关闭再开启。' }) : null,
+    ].filter(Boolean));
+    toggle.textContent = snapshot.enabled ? '关闭 Mirror' : '开启 Mirror';
+    toggle.disabled = !snapshot.enabled && !snapshot.current;
+  };
+  refresh();
+  openDialog({
+    title: 'Mirror',
+    description: 'Mirror 只改变 Effective Projection，不修改词条、PIN、学习日期、备份或 Undo。',
+    body: [
+      status,
+      el('div', { className: 'settings-row mirror-action-row' }, [toggle, create]),
+      el('section', { className: 'settings-section' }, [
+        el('h3', { text: '接收匹配结果' }),
+        el('p', { className: 'help-text', text: '只有与本机冻结 Session 的 hash、sequence 和 slot 全部一致时才会原子替换 CURRENT。' }),
+        field('Result Capsule', file), importButton,
+      ]),
+    ],
+    variant: 'management', showCancel: false, onRestore: refresh,
+  });
 }
 
 async function switchHomeGlobalMode(sourceButton = null) {
@@ -1928,7 +2046,10 @@ function renderHome(token = renderRevision) {
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
-  const homeActions = [button('管理', 'secondary-button compact-button', openLibraryManager)];
+  const homeActions = [
+    button('Mirror', getMirrorState().enabled ? 'primary-button compact-button' : 'secondary-button compact-button', openMirrorDialog),
+    button('管理', 'secondary-button compact-button', openLibraryManager),
+  ];
   const toggleGlobal = el('button', {
     type: 'button',
     className: 'secondary-button compact-button global-mode-toggle',
@@ -1962,6 +2083,7 @@ function renderHome(token = renderRevision) {
   }
   elements['home-view'].replaceChildren(...sections);
   renderHomeAnnotationBanner();
+  renderMirrorStatusBanner();
   if (restoreHomeScrollPending) {
     restoreHomeScrollPending = false;
     const transaction = beginRootScrollTransaction('home-restore', { kind: 'scroll', scrollYFallback: homeScrollY });
@@ -1975,6 +2097,7 @@ function renderHome(token = renderRevision) {
 }
 
 function renderCollection(token = renderRevision) {
+  elements['mirror-status-banner']?.classList.add('hidden');
   const state = getState();
   const collection = state.collectionById.get(currentCollectionId);
   if (!collection) { goHome(); return; }
@@ -5467,7 +5590,6 @@ function openSettingsDialog() {
   const state = getState();
   const settingsController = new AbortController();
   const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…', spellcheck: 'false', autocapitalize: 'none' });
-  const collinsKey = el('input', { type: 'password', value: getCollinsApiKey(), autocomplete: 'off', placeholder: 'Collins API Key', spellcheck: 'false', autocapitalize: 'none' });
   const savedCollinsDictionary = getCollinsDictionary();
   const dictionaryCode = el('select', { 'aria-label': 'Collins 词典' }, [
     el('option', { value: '', text: '请选择词典' }),
@@ -5526,19 +5648,25 @@ function openSettingsDialog() {
       el('p', { className: 'help-text', text: '查词释义与内容核查独立运行。语音、守卫和未知能力模型不可选。' }),
       field('Groq API Key', key), field('查询与核查模型', model), refresh, groqSettingsStatus]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
-      el('p', { className: 'help-text', text: '每次查词只请求所选词典一次；结果仅在弹窗中展示，不缓存。' }),
-      field('Collins API Key', collinsKey), field('Collins 词典', dictionaryCode),
-      el('p', { className: 'provider-footnote', text: '这里列出 VIX 支持的两本词典；当前账号是否获得授权，以实际查询结果为准。此静态站点直连 Collins，仍需对方允许浏览器跨域访问。' })]),
-    el('p', { className: 'provider-footnote', text: '密钥保存在此设备、此站点，并通过认证请求发送给对应 Provider。不要将密钥写入链接、仓库或错误报告。' }),
+      el('p', { className: 'help-text', text: '经同源 VIX 服务执行一次查询；真实 Collins Key 只存在于 Worker Secret，结果不缓存。' }),
+      field('Collins 词典', dictionaryCode),
+      el('p', { className: 'provider-footnote', text: '这里列出 VIX 支持的两本词典。未部署同源服务时会明确失败，不再尝试浏览器直连或公共 CORS 代理。' })]),
+    el('p', { className: 'provider-footnote', text: 'Groq 密钥只保存在此设备、此站点。Collins 密钥不进入浏览器、链接、仓库或错误报告。' }),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
+      el('p', { className: 'help-text', text: mirrorStatusText() }),
+      el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Seed5 来源与许可' }),
+      el('p', { className: 'help-text', text: '官方与社区来源分开标记；部分社区数据带署名、相同方式共享或非商业限制。' }),
+      el('a', { className: 'secondary-button', href: './SEED5_ATTRIBUTIONS.md', target: '_blank', rel: 'noopener', text: '查看来源与许可' })]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
     const code = dictionaryCode.value.trim();
-    setApiKey(key.value); setCollinsApiKey(collinsKey.value); setCollinsDictionary(code); selectModel(model.value);
+    setApiKey(key.value); setCollinsDictionary(code); selectModel(model.value);
     if (refreshedIds && refreshedKey === key.value.trim()) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);

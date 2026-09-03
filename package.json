@@ -1,18 +1,28 @@
 {
   "name": "gual-vocabulary-index",
   "private": true,
-  "version": "4.7.3+D.3",
+  "version": "5.0.0-alpha.2",
   "type": "module",
   "scripts": {
+    "seed:fetch": "node tools/fetch-seed-5-sources.mjs",
+    "seed:build": "node tools/build-seed-5.mjs && node tools/build-seed-runtime.mjs && node tools/report-seed.mjs",
+    "release:manifest": "node tools/build-release-manifest.mjs",
     "test": "node tests/run-tests.mjs",
     "test:static": "node tests/static-tests.mjs",
     "test:stress": "node tests/stress-tests.mjs",
-    "test:all": "npm test && npm run test:static && npm run test:runtime && npm run test:behavior && npm run test:stress && npm run test:integrations && npm run test:providers && npm run test:performance && npm run test:layout",
+    "test:all": "npm test && npm run test:static && npm run test:runtime && npm run test:behavior && npm run test:stress && npm run test:integrations && npm run test:providers && npm run test:mirror && npm run test:worker && npm run test:seed && npm run test:performance && npm run test:layout",
     "test:providers": "node --test tests/provider-tests.mjs",
+    "test:mirror": "node --test tests/mirror-session-tests.mjs",
+    "test:seed": "node --test tests/seed5-migration-tests.mjs tests/seed-runtime-tests.mjs",
+    "test:worker": "node --test tests/worker-tests.mjs",
     "test:performance": "node tests/performance-tests.mjs",
     "test:integrations": "node tests/integration-tests.mjs",
     "test:runtime": "node tests/runtime-symbol-tests.mjs",
-    "test:layout": "python3 tests/layout-contract-check.py",
+    "test:layout": "node tests/layout-contract-check.mjs",
     "test:behavior": "node tests/runtime-behavior-tests.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "wrangler": "^4.128.0"
   }
 }

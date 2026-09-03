@@ -30,12 +30,19 @@ for (const entry of seed.entries.filter((item) => item.domainId === computer)) s
 const globalWords = projection.get(SYSTEM_GLOBAL_WORDS_ID) || [];
 const globalPhrases = projection.get(SYSTEM_GLOBAL_PHRASES_ID) || [];
 const globalContent = projection.get(SYSTEM_GLOBAL_CONTENT_ID) || [];
+const sourceCatalog = seed.settings.contentSources || [];
+const sourceAuthorityCounts = Object.fromEntries([...new Set(sourceCatalog.map((item) => item.authority || 'legacy'))]
+  .map((authority) => [authority, sourceCatalog.filter((item) => (item.authority || 'legacy') === authority).length]));
+const generalMembershipCounts = Object.fromEntries(seed.collections
+  .filter((collection) => collection.domainId === general && collection.type === 'normal')
+  .sort((left, right) => left.order - right.order)
+  .map((collection) => [collection.name, seed.memberships.filter((membership) => membership.collectionId === collection.id).length]));
 const report = {
   generatedAt: seed.exportedAt,
   schemaVersion: seed.schemaVersion,
   appVersion: seed.appVersion,
   builtInSeedRevision: seed.settings.builtInSeedRevision,
-  contentGeneration: 4,
+  contentGeneration: 5,
   total: {
     domains: seed.domains.length,
     collections: seed.collections.length,
@@ -57,6 +64,7 @@ const report = {
     words: (projection.get(systemDomainWordsCollectionId(general)) || []).length,
     phrases: (projection.get(systemPhraseCollectionId(general)) || []).length,
     visibleCollections: collectionCounts(general),
+    sourceMemberships: generalMembershipCounts,
   },
   computerTerms: {
     domainId: computer,
@@ -76,7 +84,13 @@ const report = {
     content: (projection.get(systemDomainContentCollectionId(contentDomain)) || []).length,
     visibleCollections: collectionCounts(contentDomain),
   },
-  scopeNote: 'Seed 4.0.0 in this package contains the validated local A1/A2/B1/B2/C1/AWL baseline, the existing computer-term domain, and a 50-entry non-structured starter domain. NAWL/CET/TEM/COCA remain documented data-source backlog because clean local source artifacts were not available in the handoff package; no synthetic replacement lists were fabricated.',
+  provenance: {
+    records: sourceCatalog.length,
+    authorityCounts: sourceAuthorityCounts,
+    manifest: 'data/sources/seed5/SOURCE_MANIFEST.json',
+    runtimeManifest: 'data/seed5-runtime/manifest.json',
+  },
+  scopeNote: 'Seed5 broadly includes quality-acceptable official, publisher-approved and community source material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community sources remain explicitly labelled and are not represented as official releases.',
 };
 await fs.writeFile(new URL('../data/seed-report.json', import.meta.url), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));

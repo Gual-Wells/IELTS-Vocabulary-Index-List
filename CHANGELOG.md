@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.0.0-alpha.2 — 2026-09-02
+
+- 兼并 D/A/C/B/E：同源 Collins Worker Bridge、Structural→Effective Mirror、Seed5、Session Capsule、发布闭环。
+- Collins 浏览器 Key 退役；固定两本词典；Key 仅存 Worker Secret；Cloudflare Access、一次上游请求和月度硬预算。
+- Worker 对 Access JWT 执行 RS256/JWKS、issuer、AUD 与时间声明校验；占位配置失败关闭，伪造头不再具有授权意义。
+- 新增 Seed5 13 个通用集合、来源 pin/SHA-256/许可与广泛社区材料策略；22,910 Entry、60,857 Membership。
+- 新增 Seed4→当前设备→Seed5 字段级三方迁移、独立迁移备份和单事务回滚。
+- 新增 SHA-256 Runtime Seed 分片，消除 43 MB 单文件部署限制。
+- 新增 Mirror CURRENT/ACTIVE 生命周期、slot-only Session Capsule、Durable Object capability transport。
+- 版本统一为 `5.0.0-alpha.2`；Schema6/DB5/VIX2 保持，Seed revision 升为 5。
+
 ## 4.7.3 — 2026-08-11
 
 - 退役4.7.1/4.7.2 opacity-blink Buffered State Commit；Manual Word/Phrase、Alphabet/Date继续4.7.2 TOP+collapsed合同，但改为Atomic Visual Commit；

@@ -117,7 +117,9 @@ assert.ok(integrations.includes("from './v3-collins.js'"));
 const collinsModule = fs.readFileSync(path.join(root, 'js/v3-collins.js'), 'utf8');
 assert.ok(collinsModule.includes("code: 'american-learner'"));
 assert.ok(collinsModule.includes("code: 'american'"));
-assert.ok(collinsModule.includes('/search/first/?q='));
+assert.ok(collinsModule.includes("const LOOKUP_ENDPOINT = './api/collins/lookup'"));
+assert.ok(collinsModule.includes("method: 'POST'"));
+assert.ok(!collinsModule.includes('api.collinsdictionary.com'));
 assert.ok(!collinsModule.includes("collinsFetch('/dictionaries'"));
 
 console.log(`integration-tests: OK (max Shortcut URL ${maxUrl.length} chars @ ${maxUrl.text})`);

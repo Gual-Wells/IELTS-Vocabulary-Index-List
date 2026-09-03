@@ -1,28 +1,28 @@
 {
-  "generatedAt": "2026-08-08T06:30:00.000Z",
+  "generatedAt": "2026-09-02T00:00:00.000Z",
   "schemaVersion": 6,
-  "appVersion": "4.0.0",
-  "builtInSeedRevision": 4,
-  "contentGeneration": 4,
+  "appVersion": "5.0.0-alpha.2",
+  "builtInSeedRevision": 5,
+  "contentGeneration": 5,
   "total": {
     "domains": 3,
-    "collections": 17,
-    "entries": 6176,
-    "words": 5539,
-    "phrases": 587,
+    "collections": 24,
+    "entries": 22910,
+    "words": 16188,
+    "phrases": 6672,
     "content": 50,
-    "memberships": 7574,
-    "relationComponents": 1240,
+    "memberships": 60857,
+    "relationComponents": 18168,
     "studyStamps": 0
   },
   "global": {
     "words": {
-      "renderedRows": 5539,
-      "uniqueNormalized": 5322
+      "renderedRows": 16188,
+      "uniqueNormalized": 15871
     },
     "phrases": {
-      "renderedRows": 587,
-      "uniqueNormalized": 587
+      "renderedRows": 6672,
+      "uniqueNormalized": 6672
     },
     "content": {
       "renderedRows": 50,
@@ -30,46 +30,103 @@
     }
   },
   "generalEnglish": {
-    "entries": 5005,
-    "words": 4995,
-    "phrases": 10,
+    "entries": 21739,
+    "words": 15644,
+    "phrases": 6095,
     "visibleCollections": {
       "A1": {
-        "words": 894,
-        "phrases": 5,
+        "words": 1072,
+        "phrases": 16,
         "content": 0,
-        "total": 899
+        "total": 1088
       },
       "A2": {
-        "words": 786,
-        "phrases": 5,
+        "words": 1230,
+        "phrases": 42,
         "content": 0,
-        "total": 791
+        "total": 1272
       },
       "B1": {
-        "words": 691,
-        "phrases": 0,
+        "words": 2124,
+        "phrases": 54,
         "content": 0,
-        "total": 691
+        "total": 2178
       },
       "B2": {
-        "words": 1294,
-        "phrases": 0,
+        "words": 2462,
+        "phrases": 35,
         "content": 0,
-        "total": 1294
+        "total": 2497
       },
       "C1": {
-        "words": 1277,
-        "phrases": 0,
+        "words": 893,
+        "phrases": 21,
         "content": 0,
-        "total": 1277
+        "total": 914
       },
-      "AWL": {
-        "words": 53,
+      "C2": {
+        "words": 846,
+        "phrases": 32,
+        "content": 0,
+        "total": 878
+      },
+      "NAWL": {
+        "words": 388,
         "phrases": 0,
         "content": 0,
-        "total": 53
+        "total": 388
+      },
+      "COCA 5000": {
+        "words": 342,
+        "phrases": 3,
+        "content": 0,
+        "total": 345
+      },
+      "COCA 10000": {
+        "words": 2097,
+        "phrases": 0,
+        "content": 0,
+        "total": 2097
+      },
+      "CET 4": {
+        "words": 149,
+        "phrases": 2731,
+        "content": 0,
+        "total": 2880
+      },
+      "CET 6": {
+        "words": 229,
+        "phrases": 1424,
+        "content": 0,
+        "total": 1653
+      },
+      "TEM 4": {
+        "words": 762,
+        "phrases": 636,
+        "content": 0,
+        "total": 1398
+      },
+      "TEM 8": {
+        "words": 3050,
+        "phrases": 1101,
+        "content": 0,
+        "total": 4151
       }
+    },
+    "sourceMemberships": {
+      "A1": 1088,
+      "A2": 1384,
+      "B1": 2394,
+      "B2": 2772,
+      "C1": 1009,
+      "C2": 972,
+      "NAWL": 957,
+      "COCA 5000": 4350,
+      "COCA 10000": 8670,
+      "CET 4": 6832,
+      "CET 6": 8844,
+      "TEM 4": 5244,
+      "TEM 8": 14626
     }
   },
   "computerTerms": {
@@ -157,5 +214,18 @@
       }
     }
   },
-  "scopeNote": "Seed 4.0.0 in this package contains the validated local A1/A2/B1/B2/C1/AWL baseline, the existing computer-term domain, and a 50-entry non-structured starter domain. NAWL/CET/TEM/COCA remain documented data-source backlog because clean local source artifacts were not available in the handoff package; no synthetic replacement lists were fabricated."
+  "provenance": {
+    "records": 26,
+    "authorityCounts": {
+      "legacy": 15,
+      "official": 2,
+      "publisher-approved mirror": 1,
+      "community transcription": 1,
+      "community compilation": 6,
+      "community mirror": 1
+    },
+    "manifest": "data/sources/seed5/SOURCE_MANIFEST.json",
+    "runtimeManifest": "data/seed5-runtime/manifest.json"
+  },
+  "scopeNote": "Seed5 broadly includes quality-acceptable official, publisher-approved and community source material after normalization, basic filtering and exact deduplication. Cross-list memberships are preserved; community sources remain explicitly labelled and are not represented as official releases."
 }

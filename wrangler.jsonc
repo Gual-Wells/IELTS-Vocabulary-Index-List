@@ -25,6 +25,9 @@
     "TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com",
     "POLICY_AUD": "YOUR_ACCESS_APPLICATION_AUD_TAG"
   },
+  "secrets": {
+    "required": ["COLLINS_ACCESS_KEY"]
+  }
   "observability": {
     "enabled": true,
     "logs": { "enabled": false }

@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.5 架构
+# Vocabulary Index 5.0.0-alpha.6 架构
 
 ## 发布拓扑
 
@@ -16,7 +16,9 @@ GitHub Pages                         Cloudflare Worker: vix-private
 
 - Worker 名固定为 `vix-private`，不包含版本号。
 - 只创建一个 Worker-level Access 应用，并覆盖 All traffic。
-- Access 在请求进入 Worker 前完成身份验证。API 只检查 Cloudflare Worker-level Access 提供的 `ctx.access` 是否存在，不再自行下载 JWKS，也不再绑定某个具体 Application AUD；因此版本更新与 AUD 变化不会要求改仓库配置。
+- Access 在请求进入 Worker 前完成身份验证，是私域版唯一的认证边界。
+- Workers Static Assets 会经过 Cloudflare 的内部资源路由器。该路由器会执行 Access，但不会把 `ctx.access` 传给用户 Worker；因此应用代码不再做第二次 `ctx.access`、JWT、JWKS 或 AUD 检查。
+- 私有性由 Worker-level Access 配置保证。若关闭这个 Access 应用，Worker 与 API 都会变成公开状态，因此部署验收必须确认 Access 已启用且未登录窗口首先出现登录页。
 - `COLLINS_ACCESS_KEY` 只存在于 Worker Secret；前端、Pages、备份和 Cache Storage 都不含该值。
 - `/api/health` 与 `/api/capabilities` 位于同一个 Access 边界内，只返回布尔配置状态，不返回 Secret。
 

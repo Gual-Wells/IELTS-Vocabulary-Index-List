@@ -1,6 +1,5 @@
 // @ts-check
 
-import { authorizeAccess } from './access-jwt.js';
 import { APP_VERSION } from '../../js/v5-version.js';
 
 const COLLINS_BASE = 'https://api.collinsdictionary.com/api/v1';
@@ -31,15 +30,6 @@ function error(code, message, status = 400) {
 function bearer(request) {
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.get('authorization') || '');
   return match?.[1] || '';
-}
-
-async function requireAccess(request, env, executionContext) {
-  const authorization = await authorizeAccess(request, env, executionContext);
-  if (authorization.ok) return null;
-  if (authorization.code === 'access_not_configured') {
-    return error('access_not_configured', 'Cloudflare Access JWT 校验尚未配置', authorization.status);
-  }
-  return error(authorization.code, '需要有效的 Cloudflare Access 会话', authorization.status);
 }
 
 async function bodyJson(request, limit) {
@@ -82,7 +72,7 @@ function validSessionResult(value, session) {
     && new Set(value.matchedSlots).size === value.matchedSlots.length;
 }
 
-async function collinsLookup(request, env, executionContext) {
+async function collinsLookup(request, env) {
   if (!env.COLLINS_ACCESS_KEY) return error('not_configured', '服务端尚未配置 Collins Secret', 503);
   let input;
   try { input = await bodyJson(request, 8 * 1024); }
@@ -131,7 +121,7 @@ async function collinsLookup(request, env, executionContext) {
   });
 }
 
-async function createSession(request, env, executionContext) {
+async function createSession(request, env) {
   let capsule;
   try { capsule = await bodyJson(request, MAX_SESSION_BYTES); }
   catch (response) { return response instanceof Response ? response : error('invalid_json', 'Session JSON 无效'); }
@@ -192,12 +182,12 @@ function staticSecurity(response) {
 }
 
 export default {
-  async fetch(request, env, executionContext) {
+  async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/api/')) {
-      const accessFailure = await requireAccess(request, env, executionContext);
-      if (accessFailure) return accessFailure;
-    }
+    // Worker-level Cloudflare Access is the sole authentication boundary.
+    // Workers Static Assets uses an internal router that enforces Access but
+    // does not forward ctx.access to this Worker, so duplicating that check
+    // here would reject every correctly authenticated API request.
     if (request.method === 'GET' && url.pathname === '/api/capabilities') {
       return json({
         protocol: CAPABILITY_PROTOCOL,
@@ -223,8 +213,8 @@ export default {
         checks,
       });
     }
-    if (request.method === 'POST' && url.pathname === '/api/collins/lookup') return collinsLookup(request, env, executionContext);
-    if (request.method === 'POST' && url.pathname === '/api/vix/sessions') return createSession(request, env, executionContext);
+    if (request.method === 'POST' && url.pathname === '/api/collins/lookup') return collinsLookup(request, env);
+    if (request.method === 'POST' && url.pathname === '/api/vix/sessions') return createSession(request, env);
     const match = /^\/api\/vix\/sessions\/([^/]+)\/(request|result)$/.exec(url.pathname);
     if (match) {
       if (match[2] === 'request' && request.method === 'GET') return sessionExchange(request, env, decodeURIComponent(match[1]), 'request');

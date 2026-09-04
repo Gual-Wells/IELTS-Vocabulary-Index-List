@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.5 部署
+# Vocabulary Index 5.0.0-alpha.6 部署
 
 本版本使用固定 Worker 名 `vix-private`。完成一次迁移后，后续版本只需推送 GitHub；通常不再修改 Cloudflare 变量、Access 应用或 Secret。
 
@@ -53,7 +53,7 @@ https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 ```json
 {
   "protocol": "vix-runtime-health/1",
-  "version": "5.0.0-alpha.5",
+  "version": "5.0.0-alpha.6",
   "status": "ok",
   "checks": {
     "assets": true,
@@ -68,7 +68,8 @@ https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 
 最后用一个未登录的无痕窗口访问首页：必须先出现 Cloudflare Access 登录页，不能直接进入 VIX。
 
+这是必要的安全验收。Workers Static Assets 的内部路由器会在 Worker 之前执行 Access，但不会把 `ctx.access` 继续传给 Worker；因此应用不能再用内部 401 判断 Access 是否存在。若无痕窗口可直接进入 VIX，应立即回到 Worker 的 Access 标签启用 All traffic，而不是继续使用私域功能。
+
 ## GitHub Pages
 
 Pages 继续使用仓库根目录，不需要为私域版单独修改。它会自动识别为静态形态并隐藏 Collins；本地词库、Groq 和文件式 Mirror 仍可用。
-

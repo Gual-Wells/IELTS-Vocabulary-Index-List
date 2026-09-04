@@ -1,11 +1,11 @@
-# Vocabulary Index 5.0.0-alpha.5 人工验收
+# Vocabulary Index 5.0.0-alpha.6 人工验收
 
 目标设备：iPhone 17 标准版，Safari 添加到主屏幕后 standalone 运行。每项记录设备、iOS 版本、部署 commit、时间、结果和截图。
 
 ## 部署与安全
 
 - [ ] 未登录时访问私域 Worker 会先进入 Cloudflare Access，不能直接打开 VIX 或调用 API。
-- [ ] 登录后 `/api/health` 为 `ok`；移除 Access 保护后 API 因缺少 `ctx.access` 返回 401。
+- [ ] 登录后 `/api/health` 为 `ok`；Access Applications 中只有一个 Worker-level 应用，没有 hostname 应用。
 - [ ] 登录后主屏幕 PWA 可重新打开，不循环登录。
 - [ ] Network 中没有 Collins Key、`accesskey` query 或官方 Collins 域直连。
 - [ ] 纯 GitHub Pages 自动隐藏 Collins 与远程 Session 发布；本地词库/Groq/Mirror 文件交换正常。
@@ -37,7 +37,7 @@
 
 ## 4.7.3 交互回归
 
-- [ ] 显示 `5.0.0-alpha.5`，Home Screen 名仍为 `Vocabulary Index`。
+- [ ] 显示 `5.0.0-alpha.6`，Home Screen 名仍为 `Vocabulary Index`。
 - [ ] Collection Push、Back Pop、Home clear 符合 single-slot。
 - [ ] Word/Phrase、Alphabet/Date 切换得到 TOP + collapsed，无重叠或闪白。
 - [ ] Same-Collection Search/Relation 只落位一次。

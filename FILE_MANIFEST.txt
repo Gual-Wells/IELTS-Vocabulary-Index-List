@@ -183,6 +183,7 @@ MIGRATION_5.0.0-alpha.2.md
 MIGRATION_5.0.0-alpha.3.md
 MIGRATION_5.0.0-alpha.4.md
 MIGRATION_5.0.0-alpha.5.md
+MIGRATION_5.0.0-alpha.6.md
 package.json
 PREUPDATE_ROADMAP_2026-08-04.md
 PRODUCT_MANUAL_3.0.4.md
@@ -220,6 +221,7 @@ RELEASE_5.0.0-alpha.2.md
 RELEASE_5.0.0-alpha.3.md
 RELEASE_5.0.0-alpha.4.md
 RELEASE_5.0.0-alpha.5.md
+RELEASE_5.0.0-alpha.6.md
 REQUIREMENT_BASELINE_4.0.0.md
 REQUIREMENT_BASELINE_4.0.1.md
 REQUIREMENT_BASELINE_4.0.2.md
@@ -286,6 +288,7 @@ TEST_REPORT_5.0.0-alpha.2.md
 TEST_REPORT_5.0.0-alpha.3.md
 TEST_REPORT_5.0.0-alpha.4.md
 TEST_REPORT_5.0.0-alpha.5.md
+TEST_REPORT_5.0.0-alpha.6.md
 tests/cold-start-browser.mjs
 tests/integration-tests.mjs
 tests/IPHONE_REDUCED_TESTS_4.3.0.md
@@ -349,6 +352,5 @@ UX_SPEC_4.7.0.md
 UX_SPEC_4.7.1.md
 UX_SPEC_4.7.2.md
 UX_SPEC_4.7.3.md
-worker/src/access-jwt.js
 worker/src/index.js
 wrangler.jsonc

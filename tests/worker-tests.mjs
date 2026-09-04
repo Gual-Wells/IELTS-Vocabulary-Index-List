@@ -53,15 +53,15 @@ function workerEnv(overrides = {}) {
 }
 
 function apiFetch(request, env) {
-  return worker.fetch(request, env, { access: { aud: 'vix-test-audience' } });
+  return worker.fetch(request, env, {});
 }
 
 test.after(() => { globalThis.fetch = originalFetch; });
 
-test('API routes fail closed when Worker-level Access did not provide ctx.access', async () => {
+test('API routes rely on the outer Worker-level Access boundary instead of unavailable Static Assets ctx.access', async () => {
   const response = await worker.fetch(new Request('https://vix.test/api/health'), workerEnv(), {});
-  assert.equal(response.status, 401);
-  assert.equal((await response.json()).error.code, 'access_required');
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).protocol, 'vix-runtime-health/1');
 });
 
 test('runtime capability and health endpoints describe the stable private Worker without secrets', async () => {
@@ -70,14 +70,14 @@ test('runtime capability and health endpoints describe the stable private Worker
   assert.equal(capabilities.status, 200);
   assert.deepEqual(await capabilities.json(), {
     protocol: 'vix-runtime-capabilities/1',
-    version: '5.0.0-alpha.5',
+    version: '5.0.0-alpha.6',
     deployment: 'private-worker',
     capabilities: { collins: true, sessionBridge: true },
   });
   const health = await apiFetch(new Request('https://vix.test/api/health'), env);
   const body = await health.json();
   assert.equal(body.protocol, 'vix-runtime-health/1');
-  assert.equal(body.version, '5.0.0-alpha.5');
+  assert.equal(body.version, '5.0.0-alpha.6');
   assert.equal(body.status, 'ok');
   assert.deepEqual(body.checks, { assets: true, collinsSecret: true, usageLedger: true, sessionStore: true });
   assert.ok(!JSON.stringify(body).includes('server-secret'));
@@ -184,7 +184,7 @@ test('SessionObject stores slot-only requests and accepts one bound result with 
   assert.deepEqual(await ownerRead.json(), result);
 });
 
-test('static asset responses receive the alpha5 security envelope', async () => {
+test('static asset responses receive the alpha6 security envelope', async () => {
   const response = await worker.fetch(new Request('https://vix.test/index.html'), workerEnv());
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /connect-src 'self' https:\/\/api\.groq\.com/);

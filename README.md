@@ -1,6 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.5
+# Vocabulary Index 5.0.0-alpha.6
 
-alpha.5 修正了两项基础架构问题：Collins 不再被第二层、绑定具体 Access AUD 的重复鉴权阻断；全新设备导入 Seed 时改为分批提交、显示进度并可从已完成批次继续。
+alpha.6 修正 Cloudflare Access 与 Workers Static Assets 的真实运行边界：Access 继续在 Cloudflare 边缘保护整个私域 Worker，但应用代码不再读取不会被内部静态资源路由器转发的 `ctx.access`。全新设备仍使用分批、带进度、可续传的 Seed 导入。
 
 ## 两种发布形态
 
@@ -11,7 +11,7 @@ alpha.5 修正了两项基础架构问题：Collins 不再被第二层、绑定�
 
 ## 当前版本
 
-- App：`5.0.0-alpha.5`
+- App：`5.0.0-alpha.6`
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`7`
@@ -29,4 +29,3 @@ npm run test:all
 `npm run build` 只把运行必需文件复制到 `dist/`。Cloudflare 不再上传 `worker/`、`tools/`、`tests/`、源数据、审计 Seed 或文档。
 
 完整部署步骤见 `DEPLOY.md`，架构边界见 `LOCAL_ARCHITECTURE.md`。
-

@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0-alpha.6 — 2026-09-04
+
+- 修复 alpha.5 在 Access 登录后仍返回 `access_required` 的确定性故障。
+- 按 Cloudflare Workers Static Assets 的官方边界删除应用内 `ctx.access` 重复检查；Worker-level Access 作为唯一外层认证边界。
+- 删除已无意义的本地 Access identity 模拟和 `access-jwt.js`，继续保持固定 `vix-private` Worker、单一 Access 应用与一次性 Secret 配置。
+- 保留 alpha.5 的能力识别、健康检查、运行时发布允许列表和可续传首次 Seed 导入。
+
 ## 5.0.0-alpha.5 — 2026-09-04
 
 - Collins 改为由单一 Worker-level Access 边界保护，API 仅检查 `ctx.access`，移除应用 AUD 重复校验。

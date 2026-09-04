@@ -5,12 +5,6 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "preview_urls": false,
-  "access": {
-    "dev": {
-      "aud": "vix-local",
-      "identity": { "email": "local@vix.invalid" }
-    }
-  },
   "assets": {
     "directory": "dist",
     "binding": "ASSETS",

@@ -102,7 +102,7 @@ try {
   });
   assert.equal(result.schemaVersion, 6);
   assert.equal(result.importState, null);
-  assert.equal(result.version, '5.0.0-alpha.6');
+  assert.equal(result.version, '5.0.0-alpha.7');
   assert.deepEqual(result.counts, {
     v3Domains: 3, v3Collections: 24, v3Entries: 23917, v3Memberships: 61905, v3RelationComponents: 20793,
   });

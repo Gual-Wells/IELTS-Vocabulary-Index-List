@@ -1,4 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.6 架构
+# Vocabulary Index 5.0.0-alpha.7 架构
+
+Collins Bridge 只能转发 Collins 官方 REST API；若上游返回 `cf-mitigated: challenge`，Worker 会以 `upstream_challenge` 失败关闭并写入脱敏日志，不保留挑战页、不泄露 Secret，也不尝试绕过服务防护。
 
 ## 发布拓扑
 

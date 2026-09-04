@@ -57,11 +57,23 @@ function httpError(provider, response, serverCode = '') {
   const challenge = response.headers.get('cf-mitigated') === 'challenge';
   const accessSession = ['access_required', 'access_invalid'].includes(serverCode);
   const upstreamAuthorization = serverCode === 'upstream_authorization';
-  const code = accessSession ? 'access-session' : upstreamAuthorization ? 'upstream-authorization' : serverCode === 'access_not_configured' ? 'configuration'
+  const upstreamChallenge = serverCode === 'upstream_challenge';
+  const upstreamNetwork = serverCode === 'upstream_network';
+  const upstreamFormat = serverCode === 'upstream_format';
+  const upstreamRedirect = serverCode === 'upstream_redirect';
+  const upstreamRateLimit = serverCode === 'upstream_rate_limit';
+  const code = accessSession ? 'access-session' : upstreamAuthorization ? 'upstream-authorization'
+    : upstreamChallenge ? 'upstream-challenge' : upstreamNetwork ? 'upstream-network'
+      : upstreamFormat ? 'upstream-format' : upstreamRedirect ? 'upstream-redirect'
+        : upstreamRateLimit ? 'rate-limit' : ['access_not_configured', 'not_configured'].includes(serverCode) ? 'configuration'
     : challenge ? 'access-challenge' : status === 403 && html ? 'access-blocked'
     : status === 401 || status === 403 ? 'authorization' : status === 404 ? 'not-found'
     : status === 429 ? 'rate-limit' : status >= 500 ? 'unavailable' : 'request';
   const descriptions = {
+    'upstream-challenge': 'Collins 官方防护拦截了 VIX 服务器请求；这不是本机登录或刷新问题',
+    'upstream-network': 'VIX 已进入私域服务，但服务器无法连接 Collins 官方接口',
+    'upstream-format': 'Collins 官方返回了网页而不是 API JSON',
+    'upstream-redirect': 'Collins 官方接口发生了非预期重定向',
     authorization: status === 403 ? '访问被拒绝，请核对账号授权与服务访问策略；不能仅据此判断密钥无效'
       : '密钥无效或未获授权，请检查设置与账号授权',
     'access-session': 'VIX 私域登录会话未传入 API，请刷新页面或重新登录 Cloudflare Access',

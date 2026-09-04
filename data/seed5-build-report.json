@@ -1,7 +1,7 @@
 {
   "protocol": "vix-seed-build-report/3",
   "seedRevision": 7,
-  "appVersion": "5.0.0-alpha.6",
+  "appVersion": "5.0.0-alpha.7",
   "generatedAt": "2026-09-04T00:00:00.000Z",
   "sourceManifest": "data/sources/seed5/SOURCE_MANIFEST.json",
   "counts": {

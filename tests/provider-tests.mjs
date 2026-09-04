@@ -213,6 +213,26 @@ test('same-origin Access 401 is not misreported as a Collins key failure', async
   });
 });
 
+test('Collins bridge failure codes remain specific after the browser receives HTTP 502', async () => {
+  const cases = [
+    ['upstream_challenge', 'upstream-challenge', /官方防护/],
+    ['upstream_network', 'upstream-network', /无法连接 Collins/],
+    ['upstream_format', 'upstream-format', /网页而不是 API JSON/],
+    ['upstream_redirect', 'upstream-redirect', /非预期重定向/],
+  ];
+  setCollinsDictionary('american-learner');
+  for (const [serverCode, providerCode, message] of cases) {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      error: { code: serverCode, message: 'sanitized server detail' },
+    }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    await assert.rejects(queryCollins('emission'), error => {
+      assert.equal(error.code, providerCode);
+      assert.match(error.message, message);
+      return true;
+    });
+  }
+});
+
 test('transport retries only transient failures and respects bounded Retry-After', async () => {
   let n = 0;
   globalThis.fetch = async () => ++n < 3 ? respond({}, 503) : respond({ ok: true });

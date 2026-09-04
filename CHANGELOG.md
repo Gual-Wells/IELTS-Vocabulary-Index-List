@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0-alpha.7 — 2026-09-04
+
+- Collins `search/first` 改用官方文档中的无尾斜杠规范路径，并拒绝携带 Secret 跟随意外重定向。
+- 识别 Collins 上游的 `cf-mitigated: challenge`，与 Secret 无效、限流、网络失败和非 JSON 响应分别报告。
+- Cloudflare Observability 只记录上游状态、内容类型和挑战标志，不记录查询词、URL、响应正文或 Secret。
+- 明确当前边界：VIX 不绕过 Collins 的服务防护；若 API 路径持续被挑战，需要 Collins 放行 API 客户端或提供获准的服务端接入方式。
+
 ## 5.0.0-alpha.6 — 2026-09-04
 
 - 修复 alpha.5 在 Access 登录后仍返回 `access_required` 的确定性故障。

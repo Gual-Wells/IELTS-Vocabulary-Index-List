@@ -1,4 +1,4 @@
-# Vocabulary Index 5.0.0-alpha.6 人工验收
+# Vocabulary Index 5.0.0-alpha.7 人工验收
 
 目标设备：iPhone 17 标准版，Safari 添加到主屏幕后 standalone 运行。每项记录设备、iOS 版本、部署 commit、时间、结果和截图。
 
@@ -29,6 +29,8 @@
 
 ## Provider
 
+- [ ] Collins 上游 Challenge 显示为“官方防护拦截”，不会再显示成泛化的“服务暂时不可用”。
+
 - [ ] Collins 设置只有两本固定词典，没有浏览器 Key 和“获取账号词典”。
 - [ ] 两本词典各查一次；一次点击只产生一个上游请求。
 - [ ] 404、授权失败、预算耗尽、上游 HTML/challenge、断网分别正确显示。
@@ -37,7 +39,7 @@
 
 ## 4.7.3 交互回归
 
-- [ ] 显示 `5.0.0-alpha.6`，Home Screen 名仍为 `Vocabulary Index`。
+- [ ] 显示 `5.0.0-alpha.7`，Home Screen 名仍为 `Vocabulary Index`。
 - [ ] Collection Push、Back Pop、Home clear 符合 single-slot。
 - [ ] Word/Phrase、Alphabet/Date 切换得到 TOP + collapsed，无重叠或闪白。
 - [ ] Same-Collection Search/Relation 只落位一次。

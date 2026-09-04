@@ -27,6 +27,17 @@ function error(code, message, status = 400) {
   return json({ error: { code, message } }, status);
 }
 
+function collinsUpstreamFailure(code, message, response = null, status = 502) {
+  console.warn(JSON.stringify({
+    event: 'collins_upstream_failure',
+    code,
+    upstreamStatus: response?.status || 0,
+    contentType: (response?.headers.get('content-type') || '').slice(0, 80),
+    challenged: response?.headers.get('cf-mitigated') === 'challenge',
+  }));
+  return error(code, message, status);
+}
+
 function bearer(request) {
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.get('authorization') || '');
   return match?.[1] || '';
@@ -89,27 +100,39 @@ async function collinsLookup(request, env) {
   });
   if (!allowance.ok) return error('budget_exhausted', 'Collins 本月硬额度已用完', 429);
 
-  const upstream = new URL(`${COLLINS_BASE}/dictionaries/${encodeURIComponent(dictionaryCode)}/search/first/`);
+  // Collins documents the canonical endpoint without a trailing slash.
+  const upstream = new URL(`${COLLINS_BASE}/dictionaries/${encodeURIComponent(dictionaryCode)}/search/first`);
   upstream.searchParams.set('q', query);
   upstream.searchParams.set('format', 'html');
   let response;
   try {
     response = await fetch(upstream, {
       method: 'GET',
-      headers: { 'accept': 'application/json', 'accessKey': env.COLLINS_ACCESS_KEY },
-      redirect: 'error',
+      headers: { accept: 'application/json', accessKey: env.COLLINS_ACCESS_KEY },
+      // Never forward the server-side secret to an unexpected redirect target.
+      redirect: 'manual',
     });
   } catch {
-    return error('upstream_network', 'Collins 上游连接失败', 502);
+    return collinsUpstreamFailure('upstream_network', 'Collins 上游连接失败');
+  }
+  if (response.headers.get('cf-mitigated') === 'challenge') {
+    try { await response.body?.cancel(); } catch { /* no challenge page retention */ }
+    return collinsUpstreamFailure('upstream_challenge', 'Collins 官方防护拦截了服务器请求', response);
+  }
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    try { await response.body?.cancel(); } catch { /* no redirect body retention */ }
+    return collinsUpstreamFailure('upstream_redirect', 'Collins 上游返回了意外重定向', response);
   }
   if (!response.ok) {
     try { await response.body?.cancel(); } catch { /* no body retention */ }
-    const code = [401, 403].includes(response.status) ? 'upstream_authorization' : 'upstream_http';
-    return error(code, `Collins 上游返回 HTTP ${response.status}`, response.status === 404 ? 404 : 502);
+    const code = [401, 403].includes(response.status) ? 'upstream_authorization'
+      : response.status === 429 ? 'upstream_rate_limit' : 'upstream_http';
+    return collinsUpstreamFailure(code, `Collins 上游返回 HTTP ${response.status}`, response,
+      response.status === 404 ? 404 : response.status === 429 ? 429 : 502);
   }
   if (!/application\/json/i.test(response.headers.get('content-type') || '')) {
     try { await response.body?.cancel(); } catch { /* no body retention */ }
-    return error('upstream_format', 'Collins 上游未返回 JSON', 502);
+    return collinsUpstreamFailure('upstream_format', 'Collins 上游未返回 JSON', response);
   }
   return new Response(response.body, {
     status: 200,

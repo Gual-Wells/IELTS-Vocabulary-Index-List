@@ -70,14 +70,14 @@ test('runtime capability and health endpoints describe the stable private Worker
   assert.equal(capabilities.status, 200);
   assert.deepEqual(await capabilities.json(), {
     protocol: 'vix-runtime-capabilities/1',
-    version: '5.0.0-alpha.6',
+    version: '5.0.0-alpha.7',
     deployment: 'private-worker',
     capabilities: { collins: true, sessionBridge: true },
   });
   const health = await apiFetch(new Request('https://vix.test/api/health'), env);
   const body = await health.json();
   assert.equal(body.protocol, 'vix-runtime-health/1');
-  assert.equal(body.version, '5.0.0-alpha.6');
+  assert.equal(body.version, '5.0.0-alpha.7');
   assert.equal(body.status, 'ok');
   assert.deepEqual(body.checks, { assets: true, collinsSecret: true, usageLedger: true, sessionStore: true });
   assert.ok(!JSON.stringify(body).includes('server-secret'));
@@ -96,7 +96,7 @@ test('Collins bridge relies on the outer Access boundary, validates the registry
     upstreamCalls++;
     const target = url instanceof URL ? url : new URL(url);
     assert.equal(target.hostname, 'api.collinsdictionary.com');
-    assert.equal(target.pathname, '/api/v1/dictionaries/american-learner/search/first/');
+    assert.equal(target.pathname, '/api/v1/dictionaries/american-learner/search/first');
     assert.equal(target.searchParams.get('q'), 'abandon');
     assert.equal(options.headers.accessKey, 'server-secret');
     return new Response(JSON.stringify({ entryId: 'one', entryContent: '<p>entry</p>' }), {
@@ -136,6 +136,44 @@ test('Collins reports missing and rejected server credentials distinctly', async
   }), workerEnv());
   assert.equal(rejected.status, 502);
   assert.equal((await rejected.json()).error.code, 'upstream_authorization');
+});
+
+test('Collins identifies an upstream Cloudflare challenge without retaining its HTML', async () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (value) => warnings.push(String(value));
+  globalThis.fetch = async () => new Response('<html>challenge</html>', {
+    status: 403,
+    headers: { 'content-type': 'text/html; charset=UTF-8', 'cf-mitigated': 'challenge' },
+  });
+  let response;
+  try {
+    response = await apiFetch(new Request('https://vix.test/api/collins/lookup', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'emission', dictionaryCode: 'american-learner' }),
+    }), workerEnv());
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: { code: 'upstream_challenge', message: 'Collins 官方防护拦截了服务器请求' },
+  });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /"challenged":true/);
+  assert.doesNotMatch(warnings[0], /emission|server-secret|challenge<\/html>/);
+});
+
+test('Collins does not follow an unexpected redirect with the server secret', async () => {
+  globalThis.fetch = async () => new Response(null, {
+    status: 302, headers: { location: 'https://invalid.example/' },
+  });
+  const response = await apiFetch(new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'emission', dictionaryCode: 'american' }),
+  }), workerEnv());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'upstream_redirect');
 });
 
 test('UsageLedger enforces a monthly hard limit', async () => {
@@ -184,7 +222,7 @@ test('SessionObject stores slot-only requests and accepts one bound result with 
   assert.deepEqual(await ownerRead.json(), result);
 });
 
-test('static asset responses receive the alpha6 security envelope', async () => {
+test('static asset responses receive the alpha7 security envelope', async () => {
   const response = await worker.fetch(new Request('https://vix.test/index.html'), workerEnv());
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /connect-src 'self' https:\/\/api\.groq\.com/);

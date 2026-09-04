@@ -1,4 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.6
+# Vocabulary Index 5.0.0-alpha.7
+
+alpha.7 将 Collins 上游连接、授权、重定向、非 JSON 响应与 Cloudflare Challenge 分开报告，并在日志中只记录脱敏后的状态类别。它不会尝试绕过 Collins 的服务防护。
 
 alpha.6 修正 Cloudflare Access 与 Workers Static Assets 的真实运行边界：Access 继续在 Cloudflare 边缘保护整个私域 Worker，但应用代码不再读取不会被内部静态资源路由器转发的 `ctx.access`。全新设备仍使用分批、带进度、可续传的 Seed 导入。
 
@@ -11,7 +13,7 @@ alpha.6 修正 Cloudflare Access 与 Workers Static Assets 的真实运行边界
 
 ## 当前版本
 
-- App：`5.0.0-alpha.6`
+- App：`5.0.0-alpha.7`
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`7`

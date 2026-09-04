@@ -33,9 +33,9 @@ const gitIgnore = read('.gitignore');
 const wrangler = read('wrangler.jsonc');
 const worker = read('worker/src/index.js');
 
-assert.equal(pkg.version, '5.0.0-alpha.6');
+assert.equal(pkg.version, '5.0.0-alpha.7');
 assert.ok(index.includes('css/provider-runtime.css'));
-assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.6'));
+assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.7'));
 assert.ok(index.includes('css/v5.0.0.css'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
@@ -54,7 +54,7 @@ assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v5.0.0-alpha.6-shell'));
+assert.ok(sw.includes('v5.0.0-alpha.7-shell'));
 assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
   sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
 assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
@@ -116,8 +116,8 @@ for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.cs
 for (const excluded of ['./data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json']) assert.ok(!precache.includes(excluded));
 assert.equal(seedRuntimeManifest.protocol, 'vix-seed-runtime/1');
 assert.equal(seedRuntimeManifest.seedRevision, 7);
-for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.6.md', 'RELEASE_5.0.0-alpha.6.md', 'TEST_REPORT_5.0.0-alpha.6.md']) {
-  assert.ok(exists(releaseDoc), `alpha.6 release document missing: ${releaseDoc}`);
+for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.7.md', 'RELEASE_5.0.0-alpha.7.md', 'TEST_REPORT_5.0.0-alpha.7.md']) {
+  assert.ok(exists(releaseDoc), `alpha.7 release document missing: ${releaseDoc}`);
 }
 for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entries, ...seedRuntimeManifest.memberships, ...seedRuntimeManifest.relationComponents]) {
   assert.ok(exists(descriptor.path), `Seed runtime asset missing: ${descriptor.path}`);

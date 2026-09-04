@@ -146,4 +146,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log('layout-contract-check: OK (402x874, alpha4 styles)');
+console.log('layout-contract-check: OK (402x874, alpha5 styles)');

@@ -56,7 +56,8 @@ function httpError(provider, response, serverCode = '') {
   const html = /\btext\/html\b/i.test(response.headers.get('Content-Type') || '');
   const challenge = response.headers.get('cf-mitigated') === 'challenge';
   const accessSession = ['access_required', 'access_invalid'].includes(serverCode);
-  const code = accessSession ? 'access-session' : serverCode === 'access_not_configured' ? 'configuration'
+  const upstreamAuthorization = serverCode === 'upstream_authorization';
+  const code = accessSession ? 'access-session' : upstreamAuthorization ? 'upstream-authorization' : serverCode === 'access_not_configured' ? 'configuration'
     : challenge ? 'access-challenge' : status === 403 && html ? 'access-blocked'
     : status === 401 || status === 403 ? 'authorization' : status === 404 ? 'not-found'
     : status === 429 ? 'rate-limit' : status >= 500 ? 'unavailable' : 'request';
@@ -64,6 +65,7 @@ function httpError(provider, response, serverCode = '') {
     authorization: status === 403 ? '访问被拒绝，请核对账号授权与服务访问策略；不能仅据此判断密钥无效'
       : '密钥无效或未获授权，请检查设置与账号授权',
     'access-session': 'VIX 私域登录会话未传入 API，请刷新页面或重新登录 Cloudflare Access',
+    'upstream-authorization': '服务端 Collins Secret 无效或未获当前词典授权',
     configuration: 'VIX 私域服务尚未完成 Access 校验配置',
     'access-challenge': '接口返回了服务验证页，尚未进入 API；请向服务商确认 API 访问条件',
     'access-blocked': '访问被拒绝并返回网页，尚未取得 API JSON；请核对服务访问条件',

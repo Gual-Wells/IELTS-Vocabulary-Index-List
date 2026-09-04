@@ -1,48 +1,74 @@
-# Vocabulary Index 5.0.0-alpha.4 部署
+# Vocabulary Index 5.0.0-alpha.5 部署
 
-## 推荐拓扑
+本版本使用固定 Worker 名 `vix-private`。完成一次迁移后，后续版本只需推送 GitHub；通常不再修改 Cloudflare 变量、Access 应用或 Secret。
+
+## 一、删除旧的 alpha.2 配置
+
+确认新包已经上传 GitHub 后再执行：
+
+1. Cloudflare Zero Trust → Access controls → Applications。
+2. 删除旧的 `VIX hostname access`。
+3. 删除旧的 `vix-5-alpha2 - Cloudflare Workers`。
+4. 返回主 Cloudflare 控制台 → Compute → Workers & Pages。
+5. 打开旧的 `vix-5-alpha2` → Settings → Delete Worker。
+
+不要删除 Zero Trust 账户、付款资料或 GitHub 仓库。若旧项目创建了仅供它使用的 API Token，可在新部署成功后再撤销；无法确认用途时不要删。
+
+## 二、一次性创建稳定私域版
+
+1. Workers & Pages → Create application → Import a repository / Connect to Git。
+2. 选择 VIX GitHub 仓库。
+3. 填写：
+   - Project name：`vix-private`
+   - Build command：`npm run build`
+   - Deploy command：`npx wrangler deploy`
+   - Path：`/`
+4. 关闭非生产分支构建（除非确实需要预览）。
+5. 打开 Protect with Cloudflare Access：
+   - Scope：All traffic
+   - Policy：Cloudflare account members / Allow
+6. 点击 Deploy。
+
+部署完成后，Access controls → Applications 中应当只有一个与 `vix-private` 对应的 Worker 应用。不要再额外创建 hostname 应用。
+
+## 三、配置 Collins Secret
+
+1. Workers & Pages → `vix-private` → Settings → Variables and Secrets。
+2. Add variable，类型选 Secret。
+3. Name：`COLLINS_ACCESS_KEY`。
+4. Value：填写 Collins Key，保存并让 Cloudflare 完成配置部署。
+
+仓库中的 `wrangler.jsonc` 已启用 `keep_vars`。未来 GitHub 自动部署不会清除此 Secret。
+
+## 四、验收
+
+先在浏览器访问：
 
 ```text
-iPhone / Browser
-  ├─ 静态应用与 Seed5 分片
-  ├─ Groq：浏览器直连（用户自己的 Key）
-  ├─ Collins：POST /api/collins/lookup
-  └─ Session：/api/vix/sessions/*
-                 ↓
-        Cloudflare Worker
-          ├─ Collins Secret
-          ├─ 月度硬预算 Durable Object
-          └─ 临时 Session Durable Object
+https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 ```
 
-生产部署使用 `wrangler.jsonc`。`.assetsignore` 会排除工具、测试、原始 Seed5 来源和完整 43 MB `data/seed.json`；线上只上传 SHA-256 分片，最大约 4 MiB。
+登录 Access 后应看到：
 
-## 首次部署
+```json
+{
+  "protocol": "vix-runtime-health/1",
+  "version": "5.0.0-alpha.5",
+  "status": "ok",
+  "checks": {
+    "assets": true,
+    "collinsSecret": true,
+    "usageLedger": true,
+    "sessionStore": true
+  }
+}
+```
 
-1. 把本包完整解压到 GitHub 仓库根目录。
-2. 安装 Node.js，在根目录执行完整测试。
-3. 登录 Wrangler：`npx wrangler login`。
-4. 在 Cloudflare Zero Trust 中为生产域建立 Access Application，并复制 Team domain 与 Application Audience (AUD) tag。
-5. 把 `wrangler.jsonc` 中 `TEAM_DOMAIN` 改为完整的 `https://<team>.cloudflareaccess.com`，把 `POLICY_AUD` 改为该应用的 AUD tag。保留占位值时受保护 API 会失败关闭并返回 503。
-6. 创建 Secret：`npx wrangler secret put COLLINS_ACCESS_KEY`。
-7. 确认 `COLLINS_MONTHLY_LIMIT`；默认 1000 次/月，达到后在上游请求前返回 429。
-8. 执行 `npx wrangler deploy`。
-9. 在 Safari 打开生产域、完成 Access 登录，再添加到主屏幕。
+再访问站点首页，设置中选择 Collins 词典并查一个常见词。若健康检查是 `ok` 但查询返回 `upstream_authorization`，说明 Cloudflare 已工作，问题只在 Collins Key 或该 Key 的词典授权。
 
-不要把真实 Key 放进 `.dev.vars.example`。本地开发可复制为 `.dev.vars`，它已被 Git 与 Assets 排除。`ALLOW_UNPROTECTED_LOCAL=true` 只允许本地调试，生产保持 `false`。生产 Worker 不信任 `cf-access-authenticated-user-email` 或仅仅“存在”的 JWT 头：它会从 Team domain 的 `/cdn-cgi/access/certs` 获取并轮换缓存 JWK，验证 RS256 签名、issuer、AUD 与有效期。
+最后用一个未登录的无痕窗口访问首页：必须先出现 Cloudflare Access 登录页，不能直接进入 VIX。
 
-## GitHub Pages 降级模式
+## GitHub Pages
 
-GitHub Pages 不执行 Worker：本地词库、Seed5、搜索、PIN、Mirror 文件交换、Groq 可以工作；Collins 同源接口和远程 Session Bridge 不可用。不要改回浏览器直连 Collins，也不要使用公共 CORS 代理。完整验收应将同一 GitHub 仓库连接到 Cloudflare Workers。
+Pages 继续使用仓库根目录，不需要为私域版单独修改。它会自动识别为静态形态并隐藏 Collins；本地词库、Groq 和文件式 Mirror 仍可用。
 
-## 发布前检查
-
-- Seed runtime 每个资产小于 25 MiB，SHA-256 测试通过；
-- Collins Key 只存在于 Secret；任何曾在聊天、截图或日志中出现的旧 Key 都应轮换；
-- Access 占位配置返回 503；未登录、伪造头、错误 AUD 或无效签名返回 401；有效登录后允许请求；
-- Collins 一次点击只产生一次上游请求；
-- Session request 不含 Entry ID，write token 只能使用一次；
-- Service Worker cache 名与 `js/v3-upgrade.js` 一致；
-- iPhone standalone 执行 `tests/MANUAL_CHECKLIST.md`。
-
-alpha.4 保持 Schema6/DB5/VIX2，Seed revision 升到 7。Worker 名仍为 `vix-5-alpha2`，因此继续覆盖同一 Cloudflare 项目；不要新建版本号 Worker。不要用旧 4.7.3 代码直接覆盖已升级站点作为数据回滚；先导出 Schema6 备份并在隔离环境验证。

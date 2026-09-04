@@ -10,7 +10,7 @@ const slash = (value) => value.split(path.sep).join('/');
 function excluded(relative) {
   const parts = relative.split('/');
   const base = parts.at(-1);
-  return parts.includes('.git') || parts.includes('.wrangler') || parts.includes('node_modules')
+  return parts.includes('.git') || parts.includes('.wrangler') || parts.includes('node_modules') || parts.includes('dist')
     || parts.some((part) => /^pip-(?:build|ephem|install|target)-/.test(part))
     || relative === '.dev.vars' || /^\.dev\.vars\.(?!example$)/.test(relative)
     || relative === '.env' || /^\.env\.(?!example$)/.test(relative)

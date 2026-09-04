@@ -191,9 +191,11 @@ export async function reloadStore(type = 'reload') {
   return reloadPromise;
 }
 
-export async function initializeStore() {
+export async function initializeStore({ onProgress = () => {} } = {}) {
+  onProgress({ phase: 'runtime', label: '正在准备本地状态', percent: 1 });
   await initializeMirrorRuntime();
-  const migration = await initializeDatabase();
+  const migration = await initializeDatabase({ onProgress });
+  onProgress({ phase: 'projection', label: '正在建立词表索引', percent: 96 });
   await reloadStore('initialize');
   if (channel) {
     channel.onmessage = async (event) => {
@@ -202,6 +204,7 @@ export async function initializeStore() {
       await reloadStore('external-change');
     };
   }
+  onProgress({ phase: 'ready', label: '准备完成', percent: 100 });
   return migration;
 }
 

@@ -24,6 +24,7 @@ import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { MATCH_RESULT_KIND, SESSION_PROTOCOL, acceptMatchResult, buildMatcherPrompt, createMatchRequest, publishMatchRequest } from './v5-session-capsule.js';
+import { hasRuntimeCapability } from './v5-runtime-capabilities.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -1987,7 +1988,8 @@ function openMirrorSessionCreator() {
     el('option', { value: 'lexical', text: '严格词汇证据', selected: true }),
     el('option', { value: 'semantic', text: '允许语义匹配' }),
   ]);
-  const publish = el('input', { type: 'checkbox', className: 'vix-checkbox' });
+  const publish = el('input', { type: 'checkbox', className: 'vix-checkbox mirror-bridge-toggle' });
+  publish.disabled = !hasRuntimeCapability('sessionBridge');
   openDialog({
     title: '创建 Mirror 匹配请求',
     description: '冻结当前完整 Structural Corpus；文件中只有本次 slot，没有 Entry ID。',
@@ -4329,7 +4331,7 @@ function openQueryMenu(entry, collection, source) {
     closeQueryMenu();
     try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
   });
-  const providerOptions = [[oxford, 'Oxford'], [collins, 'Collins'], [groq, 'Groq'], [chatgpt, 'ChatGPT']];
+  const providerOptions = [[oxford, 'Oxford'], ...(hasRuntimeCapability('collins') ? [[collins, 'Collins']] : []), [groq, 'Groq'], [chatgpt, 'ChatGPT']];
   for (const [option, label] of providerOptions) {
     option.setAttribute('role', 'menuitem');
     option.append(el('span', { className: 'query-provider-label', text: label }));
@@ -5661,6 +5663,7 @@ function openSettingsDialog() {
   const settingsController = new AbortController();
   const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…', spellcheck: 'false', autocapitalize: 'none' });
   const savedCollinsDictionary = getCollinsDictionary();
+  const collinsAvailable = hasRuntimeCapability('collins');
   const dictionaryCode = el('select', { 'aria-label': 'Collins 词典' }, [
     el('option', { value: '', text: '请选择词典' }),
     ...COLLINS_DICTIONARIES.map((dictionary) => el('option', {
@@ -5726,9 +5729,10 @@ function openSettingsDialog() {
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
+  if (!collinsAvailable) body.splice(1, 1);
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
     const code = dictionaryCode.value.trim();
-    setApiKey(key.value); setCollinsDictionary(code); selectModel(model.value);
+    setApiKey(key.value); if (collinsAvailable) setCollinsDictionary(code); selectModel(model.value);
     if (refreshedIds && refreshedKey === key.value.trim()) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
@@ -5911,7 +5915,7 @@ function initializeNavigationModel() {
   history.replaceState(rootNavigationHistoryState(), '', location.pathname + location.search);
 }
 
-export async function initializeUI() {
+export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['back-button']?.replaceChildren(svgIcon('back'));
   elements['home-button']?.replaceChildren(svgIcon('home'));
   elements['search-button']?.replaceChildren(svgIcon('search'));
@@ -5983,7 +5987,7 @@ export async function initializeUI() {
   document.addEventListener('touchmove', handleModalTouchMove, { passive: false, capture: true });
   if ('onscrollend' in window) window.addEventListener('scrollend', handleRootScrollEnd, { passive: true });
   subscribe(handleStoreEvent);
-  await initializeStore();
+  await initializeStore({ onProgress });
   initializeNavigationModel();
   updateVisualViewportVars();
   elements['boot-screen'].classList.add('hidden');

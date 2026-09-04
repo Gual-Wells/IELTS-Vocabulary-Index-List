@@ -1,12 +1,18 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "vix-5-alpha2",
+  "name": "vix-private",
   "main": "worker/src/index.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "preview_urls": false,
+  "access": {
+    "dev": {
+      "aud": "vix-local",
+      "identity": { "email": "local@vix.invalid" }
+    }
+  },
   "assets": {
-    "directory": ".",
+    "directory": "dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
@@ -21,16 +27,11 @@
     { "tag": "v1", "new_sqlite_classes": ["SessionObject", "UsageLedger"] }
   ],
   "vars": {
-    "COLLINS_MONTHLY_LIMIT": "1000",
-    "ALLOW_UNPROTECTED_LOCAL": "false",
-    "TEAM_DOMAIN": "https://blue-breeze-4dac.cloudflareaccess.com",
-    "POLICY_AUD": "15fef9936b16c8b08ed05b96a146ba6b19acfbd6a0a24c7fac6493fd1b04720d"
+    "COLLINS_MONTHLY_LIMIT": "1000"
   },
-  "secrets": {
-    "required": ["COLLINS_ACCESS_KEY"]
-  },
+  "keep_vars": true,
   "observability": {
     "enabled": true,
-    "logs": { "enabled": false }
+    "logs": { "enabled": true, "invocation_logs": true }
   }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.0-alpha.5 — 2026-09-04
+
+- Collins 改为由单一 Worker-level Access 边界保护，API 仅检查 `ctx.access`，移除应用 AUD 重复校验。
+- Worker 固定命名为 `vix-private`，新增运行能力与健康检查接口。
+- Cloudflare 静态资源改为 `dist/` 允许列表，源码、工具、测试、报告与源数据不再上传。
+- 首次 Seed 导入分批提交、显示进度并可从完整批次恢复。
+- Service Worker 只预缓存应用壳，Seed 分片按需读取与缓存。
+
 ## 5.0.0-alpha.3 — 2026-09-03
 
 - 修复 Cloudflare Access + Static Assets 下 API 取不到 `ctx.access`/assertion header 导致的 Collins 401；增加已签名 `CF_Authorization` Cookie 回退校验。

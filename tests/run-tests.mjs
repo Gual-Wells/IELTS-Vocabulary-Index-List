@@ -156,7 +156,7 @@ const contentPlan = planVixImport(seed, contentExample);
 assert.equal(contentPlan.summary.addedContent, 1, 'nonStructured VIX 预检必须正确统计新增 content');
 assert.equal(contentPlan.membershipIssues.length, 0);
 assert.equal(seed.schemaVersion, 6);
-assert.equal(seed.appVersion, '5.0.0-alpha.4');
+assert.equal(seed.appVersion, '5.0.0-alpha.5');
 assert.equal(seed.settings.builtInSeedRevision, 7);
 assert.ok(seed.collections.some((item) => item.name === 'C2'));
 assert.ok(seed.collections.some((item) => item.name === 'NAWL'));

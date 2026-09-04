@@ -46,6 +46,14 @@ button, summary { -webkit-tap-highlight-color: transparent; }
   width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid var(--line-strong);
   border-radius: 18px; font: 600 28px/1 Georgia, serif; color: var(--accent); background: var(--surface); box-shadow: var(--shadow);
 }
+.boot-screen p { margin: 0; text-align: center; }
+.boot-progress {
+  width: min(260px, 72vw); height: 5px; border: 0; border-radius: 999px; overflow: hidden;
+  color: var(--accent); background: var(--accent-soft);
+}
+.boot-progress::-webkit-progress-bar { background: var(--accent-soft); }
+.boot-progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; transition: width 180ms ease; }
+.boot-progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
 .app { min-height: 100dvh; }
 .app.has-pin { --context-height: 62px; }

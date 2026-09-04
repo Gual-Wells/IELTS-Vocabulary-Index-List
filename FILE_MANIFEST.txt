@@ -149,6 +149,7 @@ js/v3-store.js
 js/v3-ui.js
 js/v3-upgrade.js
 js/v5-mirror-runtime.js
+js/v5-runtime-capabilities.js
 js/v5-seed-migration.js
 js/v5-session-capsule.js
 js/v5-suppression-runtime.js
@@ -181,6 +182,7 @@ MIGRATION_4.7.3.md
 MIGRATION_5.0.0-alpha.2.md
 MIGRATION_5.0.0-alpha.3.md
 MIGRATION_5.0.0-alpha.4.md
+MIGRATION_5.0.0-alpha.5.md
 package.json
 PREUPDATE_ROADMAP_2026-08-04.md
 PRODUCT_MANUAL_3.0.4.md
@@ -217,6 +219,7 @@ README.md
 RELEASE_5.0.0-alpha.2.md
 RELEASE_5.0.0-alpha.3.md
 RELEASE_5.0.0-alpha.4.md
+RELEASE_5.0.0-alpha.5.md
 REQUIREMENT_BASELINE_4.0.0.md
 REQUIREMENT_BASELINE_4.0.1.md
 REQUIREMENT_BASELINE_4.0.2.md
@@ -282,6 +285,8 @@ TEST_REPORT_4.7.3.md
 TEST_REPORT_5.0.0-alpha.2.md
 TEST_REPORT_5.0.0-alpha.3.md
 TEST_REPORT_5.0.0-alpha.4.md
+TEST_REPORT_5.0.0-alpha.5.md
+tests/cold-start-browser.mjs
 tests/integration-tests.mjs
 tests/IPHONE_REDUCED_TESTS_4.3.0.md
 tests/IPHONE_REDUCED_TESTS_4.4.0.md
@@ -307,6 +312,7 @@ tests/seed5-migration-tests.mjs
 tests/static-tests.mjs
 tests/stress-tests.mjs
 tests/worker-tests.mjs
+tools/build-dist.mjs
 tools/build-low-level-lexemes.mjs
 tools/build-release-manifest.mjs
 tools/build-seed-4.mjs

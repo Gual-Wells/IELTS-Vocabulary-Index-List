@@ -40,3 +40,4 @@
 @media (prefers-reduced-motion: reduce) {
   .mirror-status-banner { scroll-behavior: auto; }
 }
+label:has(.mirror-bridge-toggle:disabled) { display: none; }

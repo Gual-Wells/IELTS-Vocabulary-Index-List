@@ -1,11 +1,13 @@
 {
   "name": "gual-vocabulary-index",
   "private": true,
-  "version": "5.0.0-alpha.4",
+  "version": "5.0.0-alpha.5",
   "type": "module",
   "scripts": {
     "seed:fetch": "node tools/fetch-seed-5-sources.mjs",
     "seed:build": "node tools/build-seed-5.mjs && node tools/build-low-level-lexemes.mjs && node tools/build-seed-runtime.mjs && node tools/report-seed.mjs",
+    "build": "node tools/build-dist.mjs",
+    "deploy": "npm run build && wrangler deploy",
     "release:manifest": "node tools/build-release-manifest.mjs",
     "test": "node tests/run-tests.mjs",
     "test:static": "node tests/static-tests.mjs",
@@ -19,6 +21,7 @@
     "test:integrations": "node tests/integration-tests.mjs",
     "test:runtime": "node tests/runtime-symbol-tests.mjs",
     "test:layout": "node tests/layout-contract-check.mjs",
+    "test:cold-start": "node tests/cold-start-browser.mjs",
     "test:behavior": "node tests/runtime-behavior-tests.mjs"
   },
   "devDependencies": {

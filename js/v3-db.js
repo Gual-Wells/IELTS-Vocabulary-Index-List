@@ -9,6 +9,8 @@ export const BUILTIN_SEED_REVISION = 7;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
 const SEED_MIGRATION_BACKUP_STORE = 'snapshots';
+const FRESH_IMPORT_PROTOCOL = 'vix-seed-import/1';
+const FRESH_IMPORT_BATCH_SIZE = 1000;
 
 const PREFIX = 'v3';
 export const STORES = Object.freeze({
@@ -235,7 +237,7 @@ async function sha256Text(text) {
 
 async function loadSeedRuntimeAsset(descriptor) {
   if (!descriptor?.path || !/^[a-f0-9]{64}$/.test(descriptor.sha256 || '')) throw new Error('Seed5 runtime manifest contains an invalid asset descriptor');
-  const response = await fetch(new URL(`../${descriptor.path}`, import.meta.url), { cache: 'no-store' });
+  const response = await fetch(new URL(`../${descriptor.path}`, import.meta.url), { cache: 'default' });
   if (!response.ok) throw new Error(`Cannot load Seed5 runtime asset ${descriptor.path} (HTTP ${response.status})`);
   const text = await response.text();
   const bytes = new TextEncoder().encode(text).length;
@@ -245,13 +247,18 @@ async function loadSeedRuntimeAsset(descriptor) {
   return JSON.parse(text);
 }
 
-export async function loadRuntimeSeed() {
-  const response = await fetch(new URL('../data/seed5-runtime/manifest.json', import.meta.url), { cache: 'no-store' });
+async function loadSeedRuntimeManifest() {
+  const response = await fetch(new URL('../data/seed5-runtime/manifest.json', import.meta.url), { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Cannot load Seed5 runtime manifest (HTTP ${response.status})`);
   const manifest = await response.json();
   if (manifest?.protocol !== 'vix-seed-runtime/1' || Number(manifest.seedRevision) !== BUILTIN_SEED_REVISION) {
     throw new Error('Seed5 runtime manifest is incompatible with this application version');
   }
+  return manifest;
+}
+
+export async function loadRuntimeSeed() {
+  const manifest = await loadSeedRuntimeManifest();
   const seed = await loadSeedRuntimeAsset(manifest.meta);
   for (const [key, descriptors] of [['entries', manifest.entries], ['memberships', manifest.memberships], ['relationComponents', manifest.relationComponents]]) {
     if (!Array.isArray(descriptors)) throw new Error(`Seed5 runtime manifest is missing ${key} chunks`);
@@ -264,6 +271,134 @@ export async function loadRuntimeSeed() {
     if (seed[key].length !== Number(manifest.counts?.[key])) throw new Error(`Seed5 runtime total count mismatch: ${key}`);
   }
   return seed;
+}
+
+function freshImportPlan(manifest, meta) {
+  const descriptors = [manifest.meta, ...manifest.entries, ...manifest.memberships, ...manifest.relationComponents];
+  const planId = `seed-${manifest.seedRevision}:${descriptors.map((item) => item.sha256).join(':')}`;
+  const metaStreams = ['domains', 'collections', 'pins', 'annotations', 'studyStamps'].map((key) => ({
+    id: `meta:${key}`, storeKey: key, items: Array.isArray(meta[key]) ? meta[key] : [],
+  }));
+  const chunkStreams = [
+    ...manifest.entries.map((descriptor) => ({ id: descriptor.path, storeKey: 'entries', descriptor })),
+    ...manifest.memberships.map((descriptor) => ({ id: descriptor.path, storeKey: 'memberships', descriptor })),
+    ...manifest.relationComponents.map((descriptor) => ({ id: descriptor.path, storeKey: 'relationComponents', descriptor })),
+  ];
+  const totalRecords = metaStreams.reduce((sum, stream) => sum + stream.items.length, 0)
+    + chunkStreams.reduce((sum, stream) => sum + Number(stream.descriptor.count || 0), 0);
+  return { planId, metaStreams, chunkStreams, totalRecords };
+}
+
+async function readImportState(db) {
+  const tx = db.transaction(STORES.settings, 'readonly');
+  const completion = transactionPromise(tx);
+  const record = await requestPromise(tx.objectStore(STORES.settings).get('seedImportState'));
+  await completion;
+  return record?.value || null;
+}
+
+async function resetFreshImport(db, planId, totalRecords) {
+  const allStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
+  const tx = db.transaction(allStores, 'readwrite');
+  const completion = transactionPromise(tx);
+  for (const key of DATA_STORE_KEYS) tx.objectStore(STORES[key]).clear();
+  tx.objectStore(STORES.settings).clear();
+  tx.objectStore(STORES.history).clear();
+  const state = {
+    protocol: FRESH_IMPORT_PROTOCOL,
+    planId,
+    totalRecords,
+    writtenRecords: 0,
+    completed: {},
+    startedAt: new Date().toISOString(),
+  };
+  tx.objectStore(STORES.settings).put({ key: 'seedImportState', value: state });
+  await completion;
+  return state;
+}
+
+async function writeFreshImportBatch(db, stream, items, start, state) {
+  const end = Math.min(items.length, start + FRESH_IMPORT_BATCH_SIZE);
+  const tx = db.transaction([STORES[stream.storeKey], STORES.settings], 'readwrite');
+  const completion = transactionPromise(tx);
+  const store = tx.objectStore(STORES[stream.storeKey]);
+  for (let index = start; index < end; index += 1) store.put(items[index]);
+  const next = {
+    ...state,
+    writtenRecords: Number(state.writtenRecords || 0) + (end - start),
+    completed: { ...state.completed, [stream.id]: end },
+    updatedAt: new Date().toISOString(),
+  };
+  tx.objectStore(STORES.settings).put({ key: 'seedImportState', value: next });
+  await completion;
+  return next;
+}
+
+function reportFreshImport(onProgress, state, label = '正在导入内置词库') {
+  const total = Math.max(1, Number(state.totalRecords || 0));
+  const completed = Math.min(total, Number(state.writtenRecords || 0));
+  onProgress({
+    phase: 'seed-import',
+    label,
+    completed,
+    total,
+    percent: Math.min(94, 5 + Math.round((completed / total) * 89)),
+  });
+}
+
+async function importFreshSeed(db, { onProgress = () => {} } = {}) {
+  onProgress({ phase: 'seed-download', label: '正在核验内置词库', percent: 3 });
+  const manifest = await loadSeedRuntimeManifest();
+  const meta = await loadSeedRuntimeAsset(manifest.meta);
+  if (Number(meta?.schemaVersion) !== SCHEMA_VERSION) throw new Error('Seed5 runtime metadata is incompatible with the current schema');
+  const plan = freshImportPlan(manifest, meta);
+  let state = await readImportState(db);
+  const resumed = state?.protocol === FRESH_IMPORT_PROTOCOL && state.planId === plan.planId;
+  if (!resumed) state = await resetFreshImport(db, plan.planId, plan.totalRecords);
+  reportFreshImport(onProgress, state, resumed ? '正在继续导入内置词库' : '正在导入内置词库');
+
+  const importStream = async (stream, items) => {
+    let offset = Math.min(items.length, Number(state.completed?.[stream.id] || 0));
+    while (offset < items.length) {
+      state = await writeFreshImportBatch(db, stream, items, offset, state);
+      offset = Number(state.completed[stream.id] || 0);
+      reportFreshImport(onProgress, state);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
+  for (const stream of plan.metaStreams) await importStream(stream, stream.items);
+  for (const stream of plan.chunkStreams) {
+    const completed = Number(state.completed?.[stream.id] || 0);
+    if (completed >= Number(stream.descriptor.count || 0)) continue;
+    const items = await loadSeedRuntimeAsset(stream.descriptor);
+    if (!Array.isArray(items) || items.length !== Number(stream.descriptor.count)) {
+      throw new Error(`Seed5 runtime chunk count mismatch: ${stream.descriptor.path}`);
+    }
+    await importStream(stream, items);
+  }
+  if (Number(state.writtenRecords) !== plan.totalRecords) throw new Error('Seed5 runtime import ended with an incomplete record count');
+
+  const tx = db.transaction([STORES.settings, STORES.history], 'readwrite');
+  const completion = transactionPromise(tx);
+  const settingsStore = tx.objectStore(STORES.settings);
+  settingsStore.clear();
+  const settings = {
+    ...meta.settings,
+    schemaVersion: SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    initialized: true,
+    dataRevision: Date.now(),
+    historyPointer: 0,
+    historySequence: 0,
+    builtInSeedRevision: BUILTIN_SEED_REVISION,
+    migrationNoticePending: false,
+  };
+  for (const [key, value] of Object.entries(settings)) settingsStore.put({ key, value });
+  tx.objectStore(STORES.history).clear();
+  await completion;
+  onProgress({ phase: 'seed-import', label: '内置词库已就绪', completed: plan.totalRecords, total: plan.totalRecords, percent: 95 });
+  return { resumed, totalRecords: plan.totalRecords };
 }
 
 async function loadLegacySeed() {
@@ -342,25 +477,15 @@ async function ensureBuiltInSeedRevision(db) {
   });
 }
 
-export async function initializeDatabase() {
+export async function initializeDatabase({ onProgress = () => {} } = {}) {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
   if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
   if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
 
   return enqueueWrite(async () => {
-    const seed = await loadCanonicalSeed();
-    const allStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
-    const tx = db.transaction(allStores, 'readwrite');
-    const completion = transactionPromise(tx);
-    putBackupIntoTransaction(tx, seed, {
-      dataRevision: Date.now(), historyPointer: 0, historySequence: 0,
-      builtInSeedRevision: BUILTIN_SEED_REVISION,
-      migrationNoticePending: false,
-    });
-    tx.objectStore(STORES.history).clear();
-    await completion;
-    return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION };
+    const fresh = await importFreshSeed(db, { onProgress });
+    return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
   });
 }
 

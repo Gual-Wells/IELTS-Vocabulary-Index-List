@@ -1,6 +1,7 @@
 // @ts-check
 
 import { authorizeAccess } from './access-jwt.js';
+import { APP_VERSION } from '../../js/v5-version.js';
 
 const COLLINS_BASE = 'https://api.collinsdictionary.com/api/v1';
 const COLLINS_CODES = new Set(['american-learner', 'american']);
@@ -8,6 +9,8 @@ const SESSION_PROTOCOL = 'vix-session-capsule/2';
 const MAX_SESSION_BYTES = 12 * 1024 * 1024;
 const MAX_RESULT_BYTES = 2 * 1024 * 1024;
 const CHUNK_CHARS = 60_000;
+const CAPABILITY_PROTOCOL = 'vix-runtime-capabilities/1';
+const HEALTH_PROTOCOL = 'vix-runtime-health/1';
 
 function json(value, status = 200, extra = {}) {
   return new Response(JSON.stringify(value), {
@@ -80,8 +83,6 @@ function validSessionResult(value, session) {
 }
 
 async function collinsLookup(request, env, executionContext) {
-  const accessFailure = await requireAccess(request, env, executionContext);
-  if (accessFailure) return accessFailure;
   if (!env.COLLINS_ACCESS_KEY) return error('not_configured', '服务端尚未配置 Collins Secret', 503);
   let input;
   try { input = await bodyJson(request, 8 * 1024); }
@@ -113,7 +114,8 @@ async function collinsLookup(request, env, executionContext) {
   }
   if (!response.ok) {
     try { await response.body?.cancel(); } catch { /* no body retention */ }
-    return error('upstream_http', `Collins 上游返回 HTTP ${response.status}`, response.status === 404 ? 404 : 502);
+    const code = [401, 403].includes(response.status) ? 'upstream_authorization' : 'upstream_http';
+    return error(code, `Collins 上游返回 HTTP ${response.status}`, response.status === 404 ? 404 : 502);
   }
   if (!/application\/json/i.test(response.headers.get('content-type') || '')) {
     try { await response.body?.cancel(); } catch { /* no body retention */ }
@@ -130,8 +132,6 @@ async function collinsLookup(request, env, executionContext) {
 }
 
 async function createSession(request, env, executionContext) {
-  const accessFailure = await requireAccess(request, env, executionContext);
-  if (accessFailure) return accessFailure;
   let capsule;
   try { capsule = await bodyJson(request, MAX_SESSION_BYTES); }
   catch (response) { return response instanceof Response ? response : error('invalid_json', 'Session JSON 无效'); }
@@ -194,6 +194,35 @@ function staticSecurity(response) {
 export default {
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+      const accessFailure = await requireAccess(request, env, executionContext);
+      if (accessFailure) return accessFailure;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/capabilities') {
+      return json({
+        protocol: CAPABILITY_PROTOCOL,
+        version: APP_VERSION,
+        deployment: 'private-worker',
+        capabilities: {
+          collins: Boolean(env.COLLINS_ACCESS_KEY && env.USAGE_LEDGER),
+          sessionBridge: Boolean(env.SESSION_OBJECT),
+        },
+      });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/health') {
+      const checks = {
+        assets: Boolean(env.ASSETS),
+        collinsSecret: Boolean(env.COLLINS_ACCESS_KEY),
+        usageLedger: Boolean(env.USAGE_LEDGER),
+        sessionStore: Boolean(env.SESSION_OBJECT),
+      };
+      return json({
+        protocol: HEALTH_PROTOCOL,
+        version: APP_VERSION,
+        status: Object.values(checks).every(Boolean) ? 'ok' : 'degraded',
+        checks,
+      });
+    }
     if (request.method === 'POST' && url.pathname === '/api/collins/lookup') return collinsLookup(request, env, executionContext);
     if (request.method === 'POST' && url.pathname === '/api/vix/sessions') return createSession(request, env, executionContext);
     const match = /^\/api\/vix\/sessions\/([^/]+)\/(request|result)$/.exec(url.pathname);

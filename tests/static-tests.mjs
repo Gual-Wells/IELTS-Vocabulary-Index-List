@@ -34,9 +34,9 @@ const wrangler = read('wrangler.jsonc');
 const worker = read('worker/src/index.js');
 const accessJwt = read('worker/src/access-jwt.js');
 
-assert.equal(pkg.version, '5.0.0-alpha.4');
+assert.equal(pkg.version, '5.0.0-alpha.5');
 assert.ok(index.includes('css/provider-runtime.css'));
-assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.4'));
+assert.ok(index.includes('Vocabulary Index 5.0.0-alpha.5'));
 assert.ok(index.includes('css/v5.0.0.css'));
 assert.ok(index.includes('css/v4.0.1.css'));
 assert.ok(index.includes('css/v4.0.2.css'));
@@ -55,7 +55,7 @@ assert.ok(css.includes('.modal-host'));
 assert.ok(css.includes('inset: 0'));
 assert.ok(index.includes('css/v4.0.0.css'));
 assert.ok(!index.includes('css/v3.5.2.css'));
-assert.ok(sw.includes('v5.0.0-alpha.4-unified-runtime'));
+assert.ok(sw.includes('v5.0.0-alpha.5-shell'));
 assert.equal(upgrade.match(/const EXPECTED_CACHE = `([^`]+)`/)?.[1],
   sw.match(/const CACHE_NAME = `([^`]+)`/)?.[1], 'Cache bridge and Service Worker must target the same generation');
 assert.ok(!sw.includes('./tests/provider-browser'), 'QA fixtures must not enter the app precache');
@@ -113,11 +113,12 @@ for (const relative of precache) {
   if (!clean || clean === './') continue;
   assert.ok(exists(clean), `SW 预缓存资源缺失：${relative}`);
 }
-for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './css/v5.0.0.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v5-seed-migration.js', './data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const required of ['./css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css', './css/v5.0.0.css', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v5-seed-migration.js', './js/v5-runtime-capabilities.js', './assets/icons/vix-icon-192-v4.png']) assert.ok(precache.includes(required));
+for (const excluded of ['./data/seed5-runtime/manifest.json', './data/seed-4.json', './data/relation-low-level-lexemes.json']) assert.ok(!precache.includes(excluded));
 assert.equal(seedRuntimeManifest.protocol, 'vix-seed-runtime/1');
 assert.equal(seedRuntimeManifest.seedRevision, 7);
-for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.4.md', 'RELEASE_5.0.0-alpha.4.md', 'TEST_REPORT_5.0.0-alpha.4.md']) {
-  assert.ok(exists(releaseDoc), `alpha.4 release document missing: ${releaseDoc}`);
+for (const releaseDoc of ['README.md', 'DEPLOY.md', 'LOCAL_ARCHITECTURE.md', 'MIGRATION_5.0.0-alpha.5.md', 'RELEASE_5.0.0-alpha.5.md', 'TEST_REPORT_5.0.0-alpha.5.md']) {
+  assert.ok(exists(releaseDoc), `alpha.5 release document missing: ${releaseDoc}`);
 }
 for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entries, ...seedRuntimeManifest.memberships, ...seedRuntimeManifest.relationComponents]) {
   assert.ok(exists(descriptor.path), `Seed runtime asset missing: ${descriptor.path}`);
@@ -126,7 +127,7 @@ for (const descriptor of [seedRuntimeManifest.meta, ...seedRuntimeManifest.entri
   assert.match(descriptor.sha256, /^[a-f0-9]{64}$/);
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root, descriptor.path))).digest('hex'), descriptor.sha256);
 }
-assert.ok(sw.includes('seedAssets'));
+assert.ok(!sw.includes('seedAssets'));
 assert.match(assetsIgnore, /^data\/seed\.json$/m);
 assert.match(assetsIgnore, /^data\/sources\/$/m);
 assert.match(assetsIgnore, /^\.dev\.vars(?:\.\*)?$/m);
@@ -135,19 +136,19 @@ assert.match(gitIgnore, /^\.dev\.vars$/m);
 assert.ok(fs.statSync(path.join(root, 'data/seed.json')).size > 25 * 1024 * 1024,
   'Full audit seed should exercise the deployment exclusion boundary');
 
-// Protected Worker routes fail closed and validate Access assertions cryptographically.
-assert.ok(wrangler.includes('"TEAM_DOMAIN": "https://blue-breeze-4dac.cloudflareaccess.com"'));
-assert.ok(wrangler.includes('"POLICY_AUD": "15fef9936b16c8b08ed05b96a146ba6b19acfbd6a0a24c7fac6493fd1b04720d"'));
+// A stable Worker identity and one outer Access boundary replace per-release AUD wiring.
+assert.ok(wrangler.includes('"name": "vix-private"'));
+assert.ok(wrangler.includes('"directory": "dist"'));
+assert.ok(wrangler.includes('"keep_vars": true'));
+assert.ok(!wrangler.includes('"TEAM_DOMAIN"'));
+assert.ok(!wrangler.includes('"POLICY_AUD"'));
 assert.ok(wrangler.includes('"preview_urls": false'));
-assert.ok(wrangler.includes('"required": ["COLLINS_ACCESS_KEY"]'));
-assert.ok(worker.includes("import { authorizeAccess } from './access-jwt.js'"));
-assert.ok(!worker.includes('cf-access-authenticated-user-email'));
-assert.ok(accessJwt.includes("header.alg !== 'RS256'"));
-assert.ok(accessJwt.includes('crypto.subtle.verify'));
-assert.ok(accessJwt.includes('payload.iss === teamDomain'));
-assert.ok(accessJwt.includes('audiences.includes(audience)'));
-assert.ok(accessJwt.includes("cookieValue(request, 'CF_Authorization')"));
+assert.ok(worker.includes("url.pathname === '/api/capabilities'"));
+assert.ok(worker.includes("url.pathname === '/api/health'"));
+assert.ok(worker.includes('const accessFailure = await requireAccess'));
 assert.ok(accessJwt.includes('executionContext?.access'));
+assert.ok(!accessJwt.includes('crypto.subtle.verify'));
+assert.ok(!accessJwt.includes('cloudflareaccess.com'));
 
 // 4.0 generation/model constants.
 assert.ok(model.includes('export const SCHEMA_VERSION = 6'));

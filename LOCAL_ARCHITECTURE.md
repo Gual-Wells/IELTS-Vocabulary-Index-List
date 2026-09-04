@@ -1,37 +1,41 @@
-# Vocabulary Index 5.0.0-alpha.4 架构
+# Vocabulary Index 5.0.0-alpha.5 架构
 
-## 产品骨架
-
-4.7.3 的 single-slot navigation、ScrollCoordinator、Atomic Visual Commit、Stable Relation Row、42 Entry / 960 px 双向虚拟化、LetterRail、retained Modal 与 iPhone 视觉体系继续作为 UI 基线。alpha.2 的新增 UI 使用已有颜色变量、圆角、边框、safe-area 和 motion policy。
-
-## 数据投影
+## 发布拓扑
 
 ```text
-Schema6 / DB5 / VIX2
-          │
-          ├─ Structural Projection（事实 Membership + 优先级占有）
-          │          │
-          │          └─ Suppression Runtime（OR reasons / 独立 revision）
-          │                         │
-          └─────────────────────────┴─ Effective Projection
-                                      └─ UI / Search / Relation presentation
+GitHub Pages                         Cloudflare Worker: vix-private
+公开静态壳                           单一 Cloudflare Access 边界
+├─ 本地 IndexedDB                    ├─ 同一静态壳与 IndexedDB
+├─ Groq（用户自己的 Key）            ├─ Collins Secret + 月度额度
+└─ 文件式 Mirror                     └─ Durable Objects Session Bridge
 ```
 
-Mirror CURRENT 持久化，ACTIVE 只存在于当前运行会话。ACTIVE 开启后，新的 CURRENT 不会热替换；必须关闭再开启。有效空 Mirror 与缺失/损坏严格区分。
+前端调用同源 `/api/capabilities`。有效 JSON 表示私域 Worker；404、HTML、超时或网络失败都安全降级为静态形态。
 
-## Seed 与迁移
+## Cloudflare 边界
 
-完整构建物是 `data/seed.json`；Seed4 公共祖先是 `data/seed-4.json`。运行时通过 `data/seed5-runtime/manifest.json` 加载分片，每片校验 byte length 和 SHA-256，重组后再做 Schema6 canonicalization。
+- Worker 名固定为 `vix-private`，不包含版本号。
+- 只创建一个 Worker-level Access 应用，并覆盖 All traffic。
+- Access 在请求进入 Worker 前完成身份验证。API 只检查 Cloudflare Worker-level Access 提供的 `ctx.access` 是否存在，不再自行下载 JWKS，也不再绑定某个具体 Application AUD；因此版本更新与 AUD 变化不会要求改仓库配置。
+- `COLLINS_ACCESS_KEY` 只存在于 Worker Secret；前端、Pages、备份和 Cache Storage 都不含该值。
+- `/api/health` 与 `/api/capabilities` 位于同一个 Access 边界内，只返回布尔配置状态，不返回 Secret。
 
-升级使用字段级三方合并。Seed 只覆盖用户没有改动的内置字段；用户记录、删除和内容绑定状态优先。迁移快照存于独立数据库 `vix-seed-migration-backups-v1`。
+## 发布内容边界
 
-## Provider 与 Session
+`wrangler.jsonc` 的静态目录是 `dist/`。`tools/build-dist.mjs` 使用明确允许列表构建该目录：
 
-- Groq：现有浏览器 Provider Runtime，用户 Key 保留在本地。
-- Collins：固定两本词典；前端只提交 `{query,dictionaryCode}` 到同源 Bridge；Worker Secret 构造一次官方请求；无目录发现、自动换词典、重试或结果持久化。
-- Session Capsule：外发 Corpus 只有连续 slot，不含 Entry ID；结果以 protocol、sessionId、两类 hash、sequence、expiry 绑定，本机才把 slot 映射回 ID。
-- Bridge capability 只存 hash，write capability 一次性失效，过期 alarm 删除数据。
+- HTML、manifest、Service Worker；
+- `css/`、`js/`、图标；
+- Runtime Seed 分片、Seed4 迁移基线、低级词汇关联表。
 
-## Worker 与缓存
+源数据、报告、测试、工具、Worker 源码和本地环境文件不会作为静态资源发布。
 
-Worker 负责静态安全头、Collins Bridge、月度预算和临时 Session。`/api/*` 永不进入 Service Worker Cache；响应均为 `no-store`。生产由 Cloudflare Access 保护，Worker 使用 Team domain JWKS 验证 Access JWT 的 RS256 签名、issuer、AUD 与有效期；Secret 不下发浏览器。
+## 首次初始化
+
+- Runtime Seed 仍逐片校验字节数与 SHA-256。
+- 约十万条 IndexedDB 记录按 1000 条一批提交。
+- 每批把进度写入 `seedImportState`；页面被关闭后可从最后一个完整批次继续。
+- 只有全部数据写完后才写入 `schemaVersion` 与 `initialized`，所以半成品不会被误认为可用数据库。
+- Service Worker 只预缓存应用壳；Seed 分片在实际读取时按需缓存，不再用一次 `cache.addAll` 下载约 41 MiB 数据。
+
+现有 alpha.4 设备的 Schema、DB 与 Seed revision 未变，不会重导 Seed；只更新应用壳与运行逻辑。

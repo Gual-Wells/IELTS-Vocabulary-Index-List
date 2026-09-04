@@ -1,6 +1,7 @@
 import { initializeUI, notifyServiceWorkerUpdate, serviceWorkerReloadIsArmed } from './v3-ui.js';
 import { exportLegacyGenerationBackup, getGenerationUpgradeStatus, replaceLegacyGenerationWithSeed } from './v3-db.js';
 import { APP_VERSION } from './v5-version.js';
+import { detectRuntimeCapabilities } from './v5-runtime-capabilities.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
 const MODULE_VERSION = APP_VERSION;
@@ -67,6 +68,13 @@ function watchServiceWorkerRegistration(registration) {
   });
 }
 
+function updateBootProgress(progress = {}) {
+  const status = document.querySelector('#boot-screen p');
+  const indicator = /** @type {HTMLProgressElement | null} */ (document.getElementById('boot-progress'));
+  if (status && progress.label) status.textContent = progress.label;
+  if (indicator && Number.isFinite(progress.percent)) indicator.value = Math.max(0, Math.min(100, Number(progress.percent)));
+}
+
 function bootChoice(title, description, actions) {
   return new Promise((resolve) => {
     const boot = document.getElementById('boot-screen');
@@ -117,8 +125,10 @@ async function start() {
   if (HTML_VERSION !== MODULE_VERSION) {
     throw new Error(`页面版本 ${HTML_VERSION || '未知'} 与模块版本 ${MODULE_VERSION} 不一致。请完全关闭旧页面并重新打开。`);
   }
+  const runtimePromise = detectRuntimeCapabilities();
   await handleGenerationUpgradeIfNeeded();
-  await initializeUI();
+  await runtimePromise;
+  await initializeUI({ onProgress: updateBootProgress });
   if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });

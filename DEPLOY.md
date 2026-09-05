@@ -1,6 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.8 部署
+# Vocabulary Index 5.0.0-alpha.9 部署
 
-alpha.8 不需要新增或修改 Cloudflare 配置：继续使用固定的 `vix-private` Worker、原 Access 应用与原 `COLLINS_ACCESS_KEY` Secret。上传仓库后等待 GitHub 集成自动完成一次新部署即可。
+alpha.9 不需要在 Cloudflare 控制台新增或修改配置：继续使用固定的 `vix-private` Worker、原 Access 应用与原 `COLLINS_ACCESS_KEY` Secret。上传仓库后等待 GitHub 集成自动完成一次新部署即可。`wrangler.jsonc` 已内置 `node tools/build-dist.mjs`，Cloudflare 继续执行 `npx wrangler deploy` 时会自动重建前端资产；控制台里的 Build command 可以保持空白。
 
 alpha.7 沿用固定 `vix-private` Worker、同一个 Access 应用和同一个 `COLLINS_ACCESS_KEY` Secret；从 alpha.6 更新时不需要重建或修改这些 Cloudflare 配置。
 
@@ -57,7 +57,7 @@ https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 ```json
 {
   "protocol": "vix-runtime-health/1",
-  "version": "5.0.0-alpha.8",
+  "version": "5.0.0-alpha.9",
   "status": "ok",
   "checks": {
     "assets": true,
@@ -68,7 +68,7 @@ https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 }
 ```
 
-再访问站点首页，设置中选择 Collins 词典并查一个常见词。若健康检查是 `ok` 但查询返回 `upstream_authorization`，说明 Cloudflare 已工作，问题只在 Collins Key 或该 Key 的词典授权。
+再访问站点首页，设置中选择 Collins 词典并查一个常见词。健康检查为 `ok` 只代表 Worker、Secret 与绑定存在；查词失败时以界面里的精简诊断为准。`upstream_authorization` 表示上游 401，`upstream_forbidden` 表示上游 JSON 403，`upstream_blocked` 或 `upstream_challenge` 表示 Collins 边缘防护拦截。
 
 最后用一个未登录的无痕窗口访问首页：必须先出现 Cloudflare Access 登录页，不能直接进入 VIX。
 

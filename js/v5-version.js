@@ -1,4 +1,4 @@
-export const APP_VERSION = '5.0.0-alpha.8';
+export const APP_VERSION = '5.0.0-alpha.9';
 export const BACKUP_SCHEMA_VERSION = 6;
 export const INDEXED_DB_VERSION = 5;
 export const VIX_DATA_FORMAT_VERSION = 2;

@@ -70,14 +70,14 @@ test('runtime capability and health endpoints describe the stable private Worker
   assert.equal(capabilities.status, 200);
   assert.deepEqual(await capabilities.json(), {
     protocol: 'vix-runtime-capabilities/1',
-    version: '5.0.0-alpha.8',
+    version: '5.0.0-alpha.9',
     deployment: 'private-worker',
     capabilities: { collins: true, sessionBridge: true },
   });
   const health = await apiFetch(new Request('https://vix.test/api/health'), env);
   const body = await health.json();
   assert.equal(body.protocol, 'vix-runtime-health/1');
-  assert.equal(body.version, '5.0.0-alpha.8');
+  assert.equal(body.version, '5.0.0-alpha.9');
   assert.equal(body.status, 'ok');
   assert.deepEqual(body.checks, { assets: true, collinsSecret: true, usageLedger: true, sessionStore: true });
   assert.ok(!JSON.stringify(body).includes('server-secret'));
@@ -99,7 +99,7 @@ test('Collins bridge relies on the outer Access boundary, validates the registry
     assert.equal(target.pathname, '/api/v1/dictionaries/american-learner/search/first');
     assert.equal(target.searchParams.get('q'), 'abandon');
     assert.equal(options.headers.accessKey, 'server-secret');
-    assert.match(options.headers['user-agent'], /^Vocabulary-Index\/5\.0\.0-alpha\.8 /);
+    assert.match(options.headers['user-agent'], /^Vocabulary-Index\/5\.0\.0-alpha\.9 /);
     assert.equal(options.redirect, 'manual');
     return new Response(JSON.stringify({ entryId: 'one', entryContent: '<p>entry</p>' }), {
       headers: { 'content-type': 'application/json' },
@@ -137,7 +137,12 @@ test('Collins reports missing and rejected server credentials distinctly', async
     body: JSON.stringify({ query: 'thread', dictionaryCode: 'american' }),
   }), workerEnv());
   assert.equal(rejected.status, 502);
-  assert.equal((await rejected.json()).error.code, 'upstream_authorization');
+  const rejectedError = (await rejected.json()).error;
+  assert.equal(rejectedError.code, 'upstream_authorization');
+  assert.deepEqual(rejectedError.diagnostics, {
+    upstreamStatus: 401, contentType: '', challenged: false, cfRay: '',
+    attempts: 1, strategy: 'vix-service', firstFailure: '',
+  });
 });
 
 test('Collins identifies an upstream Cloudflare challenge without retaining its HTML', async () => {
@@ -162,8 +167,12 @@ test('Collins identifies an upstream Cloudflare challenge without retaining its 
     console.warn = originalWarn;
   }
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), {
-    error: { code: 'upstream_challenge', message: 'Collins 官方防护拦截了服务器请求' },
+  const failure = (await response.json()).error;
+  assert.equal(failure.code, 'upstream_challenge');
+  assert.equal(failure.message, 'Collins 官方防护拦截了服务器请求');
+  assert.deepEqual(failure.diagnostics, {
+    upstreamStatus: 403, contentType: 'text/html', challenged: true, cfRay: 'safe-ray-id',
+    attempts: 2, strategy: 'cloudflare-workers', firstFailure: 'challenge',
   });
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /"challenged":true/);
@@ -172,7 +181,7 @@ test('Collins identifies an upstream Cloudflare challenge without retaining its 
   assert.match(warnings[0], /"strategy":"cloudflare-workers"/);
   assert.doesNotMatch(warnings[0], /emission|server-secret|challenge<\/html>/);
   assert.deepEqual(userAgents, [
-    'Vocabulary-Index/5.0.0-alpha.8 (+https://github.com/Gual-Wells/IELTS-Vocabulary-Index-List)',
+    'Vocabulary-Index/5.0.0-alpha.9 (+https://github.com/Gual-Wells/IELTS-Vocabulary-Index-List)',
     'Cloudflare-Workers',
   ]);
 });
@@ -213,7 +222,7 @@ test('Collins retries one challenged request with the fallback server identity w
   assert.equal(response.status, 200);
   assert.equal(ledgerCalls, 1);
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].userAgent, 'Vocabulary-Index/5.0.0-alpha.8 (+https://github.com/Gual-Wells/IELTS-Vocabulary-Index-List)');
+  assert.equal(requests[0].userAgent, 'Vocabulary-Index/5.0.0-alpha.9 (+https://github.com/Gual-Wells/IELTS-Vocabulary-Index-List)');
   assert.equal(requests[1].userAgent, 'Cloudflare-Workers');
   assert.ok(requests.every((item) => item.accessKey === 'server-secret'));
   assert.ok(requests.every((item) => !item.url.includes('server-secret')));
@@ -222,6 +231,70 @@ test('Collins retries one challenged request with the fallback server identity w
   assert.match(notices[0], /"firstCfRay":"first-ray"/);
   assert.match(notices[0], /"cfRay":"second-ray"/);
   assert.doesNotMatch(notices[0], /earnest|server-secret|challenge<\/html>/);
+});
+
+test('Collins retries an unlabelled HTML 403 once and keeps one ledger charge', async () => {
+  let ledgerCalls = 0;
+  let upstreamCalls = 0;
+  const env = workerEnv({
+    USAGE_LEDGER: {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => { ledgerCalls++; return new Response('{}', { status: 200 }); } }),
+    },
+  });
+  globalThis.fetch = async () => {
+    upstreamCalls++;
+    if (upstreamCalls === 1) return new Response('<html>blocked</html>', {
+      status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cf-ray': 'first-html-ray' },
+    });
+    return new Response(JSON.stringify({ entryId: 'one', entryContent: '<p>entry</p>' }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const response = await apiFetch(new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'earnest', dictionaryCode: 'american-learner' }),
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(upstreamCalls, 2);
+  assert.equal(ledgerCalls, 1);
+});
+
+test('Collins distinguishes JSON permission denial from an HTML edge block', async () => {
+  let upstreamCalls = 0;
+  globalThis.fetch = async () => {
+    upstreamCalls++;
+    return new Response(JSON.stringify({ error: 'forbidden' }), {
+      status: 403, headers: { 'content-type': 'application/json', 'cf-ray': 'json-ray' },
+    });
+  };
+  let response = await apiFetch(new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'earnest', dictionaryCode: 'american-learner' }),
+  }), workerEnv());
+  let failure = (await response.json()).error;
+  assert.equal(failure.code, 'upstream_forbidden');
+  assert.equal(failure.diagnostics.upstreamStatus, 403);
+  assert.equal(failure.diagnostics.contentType, 'application/json');
+  assert.equal(upstreamCalls, 1, 'JSON permission failures are not retried');
+
+  upstreamCalls = 0;
+  globalThis.fetch = async () => {
+    upstreamCalls++;
+    return new Response('<html>edge block</html>', {
+      status: 403, headers: { 'content-type': 'text/html', 'cf-ray': `html-ray-${upstreamCalls}` },
+    });
+  };
+  response = await apiFetch(new Request('https://vix.test/api/collins/lookup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'earnest', dictionaryCode: 'american-learner' }),
+  }), workerEnv());
+  failure = (await response.json()).error;
+  assert.equal(failure.code, 'upstream_blocked');
+  assert.equal(failure.diagnostics.attempts, 2);
+  assert.equal(failure.diagnostics.strategy, 'cloudflare-workers');
+  assert.equal(failure.diagnostics.firstFailure, 'html-403');
+  assert.equal(upstreamCalls, 2);
 });
 
 test('Collins does not follow an unexpected redirect with the server secret', async () => {
@@ -282,7 +355,7 @@ test('SessionObject stores slot-only requests and accepts one bound result with 
   assert.deepEqual(await ownerRead.json(), result);
 });
 
-test('static asset responses receive the alpha8 security envelope', async () => {
+test('static asset responses receive the alpha9 security envelope', async () => {
   const response = await worker.fetch(new Request('https://vix.test/index.html'), workerEnv());
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /connect-src 'self' https:\/\/api\.groq\.com/);

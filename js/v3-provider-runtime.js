@@ -1,11 +1,12 @@
 // Provider transport owns cancellation through body decoding, never VIX data.
 export class ProviderError extends Error {
-  constructor(code, message, { status = 0, retryAfterMs = 0 } = {}) {
+  constructor(code, message, { status = 0, retryAfterMs = 0, diagnostics = null } = {}) {
     super(message);
     this.name = 'ProviderError';
     this.code = code;
     this.status = status;
     this.retryAfterMs = retryAfterMs;
+    this.diagnostics = diagnostics;
   }
 }
 
@@ -51,18 +52,44 @@ function wait(ms, signal) {
   });
 }
 
-function httpError(provider, response, serverCode = '') {
+function safeServerDiagnostics(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const upstreamStatus = Number.isInteger(value.upstreamStatus) && value.upstreamStatus >= 0 && value.upstreamStatus <= 599
+    ? value.upstreamStatus : 0;
+  const attempts = value.attempts === 2 ? 2 : 1;
+  const strategy = ['vix-service', 'cloudflare-workers'].includes(value.strategy) ? value.strategy : '';
+  const contentType = typeof value.contentType === 'string' ? value.contentType.slice(0, 80) : '';
+  const challenged = value.challenged === true;
+  const cfRay = typeof value.cfRay === 'string' ? value.cfRay.slice(0, 80) : '';
+  const firstFailure = ['challenge', 'html-403'].includes(value.firstFailure) ? value.firstFailure : '';
+  return { upstreamStatus, attempts, strategy, contentType, challenged, cfRay, firstFailure };
+}
+
+function diagnosticSuffix(provider, diagnostics) {
+  if (provider !== 'Collins' || !diagnostics) return '';
+  const type = /html/i.test(diagnostics.contentType) ? 'HTML'
+    : /json/i.test(diagnostics.contentType) ? 'JSON' : diagnostics.contentType || '无类型';
+  const challenge = diagnostics.challenged ? ' · challenge' : '';
+  return `；诊断 ${diagnostics.upstreamStatus || 0}/${type}/${diagnostics.attempts}次/${diagnostics.strategy || 'unknown'}${challenge}`;
+}
+
+function httpError(provider, response, serverError = {}) {
   const status = response.status;
+  const serverCode = typeof serverError.code === 'string' ? serverError.code : '';
+  const diagnostics = safeServerDiagnostics(serverError.diagnostics);
   const html = /\btext\/html\b/i.test(response.headers.get('Content-Type') || '');
   const challenge = response.headers.get('cf-mitigated') === 'challenge';
   const accessSession = ['access_required', 'access_invalid'].includes(serverCode);
   const upstreamAuthorization = serverCode === 'upstream_authorization';
+  const upstreamForbidden = serverCode === 'upstream_forbidden';
+  const upstreamBlocked = serverCode === 'upstream_blocked';
   const upstreamChallenge = serverCode === 'upstream_challenge';
   const upstreamNetwork = serverCode === 'upstream_network';
   const upstreamFormat = serverCode === 'upstream_format';
   const upstreamRedirect = serverCode === 'upstream_redirect';
   const upstreamRateLimit = serverCode === 'upstream_rate_limit';
   const code = accessSession ? 'access-session' : upstreamAuthorization ? 'upstream-authorization'
+    : upstreamForbidden ? 'upstream-forbidden' : upstreamBlocked ? 'upstream-blocked'
     : upstreamChallenge ? 'upstream-challenge' : upstreamNetwork ? 'upstream-network'
       : upstreamFormat ? 'upstream-format' : upstreamRedirect ? 'upstream-redirect'
         : upstreamRateLimit ? 'rate-limit' : ['access_not_configured', 'not_configured'].includes(serverCode) ? 'configuration'
@@ -78,6 +105,8 @@ function httpError(provider, response, serverCode = '') {
       : '密钥无效或未获授权，请检查设置与账号授权',
     'access-session': 'VIX 私域登录会话未传入 API，请刷新页面或重新登录 Cloudflare Access',
     'upstream-authorization': '服务端 Collins Secret 无效或未获当前词典授权',
+    'upstream-forbidden': 'Collins 官方拒绝了当前密钥或词典权限',
+    'upstream-blocked': 'Collins 官方边缘防护拦截了服务器请求',
     configuration: 'VIX 私域服务尚未完成 Access 校验配置',
     'access-challenge': '接口返回了服务验证页，尚未进入 API；请向服务商确认 API 访问条件',
     'access-blocked': '访问被拒绝并返回网页，尚未取得 API JSON；请核对服务访问条件',
@@ -86,20 +115,23 @@ function httpError(provider, response, serverCode = '') {
     unavailable: '服务暂时不可用，请稍后再试',
     request: '请求未被接受，请检查模型或词典设置',
   };
-  return new ProviderError(code, `${provider}：${descriptions[code]}（HTTP ${status}）`, {
-    status, retryAfterMs: parseRetryAfter(response.headers.get('Retry-After')),
+  return new ProviderError(code, `${provider}：${descriptions[code]}${diagnosticSuffix(provider, diagnostics)}（HTTP ${status}）`, {
+    status, retryAfterMs: parseRetryAfter(response.headers.get('Retry-After')), diagnostics,
   });
 }
 
-async function readServerErrorCode(response) {
-  if (!/\bapplication\/json\b/i.test(response.headers.get('Content-Type') || '')) return '';
+async function readServerError(response) {
+  if (!/\bapplication\/json\b/i.test(response.headers.get('Content-Type') || '')) return {};
   const declaredLength = Number(response.headers.get('Content-Length') || 0);
-  if (declaredLength > 8192) return '';
+  if (declaredLength > 8192) return {};
   try {
     const payload = await response.json();
-    return typeof payload?.error?.code === 'string' ? payload.error.code.slice(0, 80) : '';
+    return {
+      code: typeof payload?.error?.code === 'string' ? payload.error.code.slice(0, 80) : '',
+      diagnostics: safeServerDiagnostics(payload?.error?.diagnostics),
+    };
   } catch {
-    return '';
+    return {};
   }
 }
 
@@ -133,7 +165,7 @@ export async function fetchProviderJson(url, options = {}, {
         });
         if (signal?.aborted) throw cancelledError();
         if (!response.ok) {
-          const error = httpError(provider, response, await readServerErrorCode(response));
+          const error = httpError(provider, response, await readServerError(response));
           try { await response.body?.cancel(); } catch { /* Preserve the typed HTTP failure. */ }
           throw error;
         }

@@ -219,6 +219,8 @@ test('Collins bridge failure codes remain specific after the browser receives HT
     ['upstream_network', 'upstream-network', /无法连接 Collins/],
     ['upstream_format', 'upstream-format', /网页而不是 API JSON/],
     ['upstream_redirect', 'upstream-redirect', /非预期重定向/],
+    ['upstream_forbidden', 'upstream-forbidden', /拒绝了当前密钥或词典权限/],
+    ['upstream_blocked', 'upstream-blocked', /边缘防护拦截/],
   ];
   setCollinsDictionary('american-learner');
   for (const [serverCode, providerCode, message] of cases) {
@@ -231,6 +233,36 @@ test('Collins bridge failure codes remain specific after the browser receives HT
       return true;
     });
   }
+});
+
+test('Collins bridge exposes only bounded safe upstream diagnostics', async () => {
+  setCollinsDictionary('american-learner');
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: {
+      code: 'upstream_blocked',
+      message: 'server detail is not used',
+      diagnostics: {
+        upstreamStatus: 403,
+        contentType: 'text/html',
+        challenged: false,
+        cfRay: 'safe-ray',
+        attempts: 2,
+        strategy: 'cloudflare-workers',
+        firstFailure: 'html-403',
+        secret: 'must-not-surface',
+      },
+    },
+  }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+  await assert.rejects(queryCollins('earnest'), error => {
+    assert.equal(error.code, 'upstream-blocked');
+    assert.match(error.message, /诊断 403\/HTML\/2次\/cloudflare-workers/);
+    assert.doesNotMatch(error.message, /must-not-surface|server detail/);
+    assert.deepEqual(error.diagnostics, {
+      upstreamStatus: 403, attempts: 2, strategy: 'cloudflare-workers', contentType: 'text/html',
+      challenged: false, cfRay: 'safe-ray', firstFailure: 'html-403',
+    });
+    return true;
+  });
 });
 
 test('transport retries only transient failures and respects bounded Retry-After', async () => {

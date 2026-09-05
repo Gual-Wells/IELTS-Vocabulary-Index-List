@@ -3,6 +3,9 @@
   "name": "vix-private",
   "main": "worker/src/index.js",
   "compatibility_date": "2026-09-01",
+  "build": {
+    "command": "node tools/build-dist.mjs"
+  },
   "workers_dev": true,
   "preview_urls": false,
   "assets": {
@@ -26,6 +29,8 @@
   "keep_vars": true,
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": true }
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1, "persist": true }
   }
 }

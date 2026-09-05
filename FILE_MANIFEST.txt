@@ -186,6 +186,7 @@ MIGRATION_5.0.0-alpha.5.md
 MIGRATION_5.0.0-alpha.6.md
 MIGRATION_5.0.0-alpha.7.md
 MIGRATION_5.0.0-alpha.8.md
+MIGRATION_5.0.0-alpha.9.md
 package.json
 PREUPDATE_ROADMAP_2026-08-04.md
 PRODUCT_MANUAL_3.0.4.md
@@ -226,6 +227,7 @@ RELEASE_5.0.0-alpha.5.md
 RELEASE_5.0.0-alpha.6.md
 RELEASE_5.0.0-alpha.7.md
 RELEASE_5.0.0-alpha.8.md
+RELEASE_5.0.0-alpha.9.md
 REQUIREMENT_BASELINE_4.0.0.md
 REQUIREMENT_BASELINE_4.0.1.md
 REQUIREMENT_BASELINE_4.0.2.md
@@ -295,6 +297,7 @@ TEST_REPORT_5.0.0-alpha.5.md
 TEST_REPORT_5.0.0-alpha.6.md
 TEST_REPORT_5.0.0-alpha.7.md
 TEST_REPORT_5.0.0-alpha.8.md
+TEST_REPORT_5.0.0-alpha.9.md
 tests/cold-start-browser.mjs
 tests/integration-tests.mjs
 tests/IPHONE_REDUCED_TESTS_4.3.0.md

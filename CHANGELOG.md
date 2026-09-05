@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.0-alpha.9 — 2026-09-05
+
+- Collins 失败响应带回不含密钥、查询词与正文的精简诊断，不再依赖 Cloudflare 日志页面。
+- 对缺少 `cf-mitigated` 标头的 HTML 403 也执行一次有界备用身份重试。
+- 分开识别上游 401、JSON 403、HTML 403 与 challenge，避免把边缘拦截误报成密钥无效。
+- 显式启用 100% Workers Logs 采样、持久化与查询串脱敏；设置随仓库部署，无需手工改控制台。
+- 把前端构建接入 Wrangler 部署流程，防止源码仓库不含 `dist/` 时部署旧 PWA 资产。
+
 ## 5.0.0-alpha.8 — 2026-09-05
 
 - Collins 查词请求改用明确的 VIX 服务端标识，不再依赖 Cloudflare 子请求的默认指纹。

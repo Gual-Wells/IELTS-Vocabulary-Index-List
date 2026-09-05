@@ -1,6 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.8 架构
+# Vocabulary Index 5.0.0-alpha.9 架构
 
-alpha.8 仅调整 Worker 到 Collins 的上游请求策略：主请求携带明确的 VIX 服务端标识；只有 `cf-mitigated: challenge` 才进行一次备用透明标识重试。配额在尝试前只扣减一次，鉴权仍只通过 `accessKey` 请求头传递，禁止查询参数密钥、浏览器伪装、自动重定向与无限重试。
+alpha.9 调整 Worker 到 Collins 的上游请求策略与故障可观测性：主请求携带明确的 VIX 服务端标识；`cf-mitigated: challenge` 或 HTML 403 才进行一次备用透明标识重试。失败响应只返回上游状态、MIME、尝试次数、策略、challenge 标记与 Ray ID，不返回密钥、查询词或正文。配额在尝试前只扣减一次，鉴权仍只通过 `accessKey` 请求头传递，禁止查询参数密钥、浏览器伪装、自动重定向与无限重试。
 
 Collins Bridge 只能转发 Collins 官方 REST API；若上游返回 `cf-mitigated: challenge`，Worker 会以 `upstream_challenge` 失败关闭并写入脱敏日志，不保留挑战页、不泄露 Secret，也不尝试绕过服务防护。
 

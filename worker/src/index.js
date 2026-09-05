@@ -34,23 +34,31 @@ function json(value, status = 200, extra = {}) {
   });
 }
 
-function error(code, message, status = 400) {
-  return json({ error: { code, message } }, status);
+function error(code, message, status = 400, details = {}) {
+  return json({ error: { code, message, ...details } }, status);
 }
 
 function collinsUpstreamFailure(code, message, response = null, status = 502, diagnostics = {}) {
   const requestDiagnostics = (response && COLLINS_RESPONSE_DIAGNOSTICS.get(response)) || diagnostics;
-  console.warn(JSON.stringify({
-    event: 'collins_upstream_failure',
-    code,
+  const safeDiagnostics = {
     upstreamStatus: response?.status || 0,
-    contentType: (response?.headers.get('content-type') || '').slice(0, 80),
+    contentType: (response?.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase().slice(0, 80),
     challenged: response?.headers.get('cf-mitigated') === 'challenge',
     cfRay: (response?.headers.get('cf-ray') || '').slice(0, 80),
     attempts: requestDiagnostics.attempts || 1,
     strategy: requestDiagnostics.strategy || COLLINS_REQUEST_PROFILES[0].name,
-  }));
-  return error(code, message, status);
+    firstFailure: requestDiagnostics.firstFailure || '',
+  };
+  console.warn(JSON.stringify({ event: 'collins_upstream_failure', code, ...safeDiagnostics }));
+  return error(code, message, status, { diagnostics: safeDiagnostics });
+}
+
+function collinsChallenge(response) {
+  return response.headers.get('cf-mitigated') === 'challenge';
+}
+
+function collinsHtmlForbidden(response) {
+  return response.status === 403 && /\btext\/html\b/i.test(response.headers.get('content-type') || '');
 }
 
 function collinsFetch(upstream, accessKey, profile) {
@@ -135,16 +143,19 @@ async function collinsLookup(request, env) {
   let response;
   let requestProfile = COLLINS_REQUEST_PROFILES[0];
   let attempts = 1;
+  let firstFailure = '';
   try {
     response = await collinsFetch(upstream, env.COLLINS_ACCESS_KEY, requestProfile);
   } catch {
     return collinsUpstreamFailure('upstream_network', 'Collins 上游连接失败');
   }
-  // A Collins edge rule can challenge Cloudflare's default subrequest
-  // fingerprint. Retry exactly once with another transparent server identity.
-  if (response.headers.get('cf-mitigated') === 'challenge') {
+  // Some Collins edge responses omit cf-mitigated even though the 403 body is
+  // HTML. Both forms are safe to retry exactly once with another transparent
+  // server identity; JSON authorization failures are never retried.
+  if (collinsChallenge(response) || collinsHtmlForbidden(response)) {
+    firstFailure = collinsChallenge(response) ? 'challenge' : 'html-403';
     const firstCfRay = (response.headers.get('cf-ray') || '').slice(0, 80);
-    try { await response.body?.cancel(); } catch { /* no challenge page retention */ }
+    try { await response.body?.cancel(); } catch { /* no edge page retention */ }
     requestProfile = COLLINS_REQUEST_PROFILES[1];
     attempts = 2;
     try {
@@ -153,21 +164,23 @@ async function collinsLookup(request, env) {
       return collinsUpstreamFailure('upstream_network', 'Collins upstream connection failed', null, 502, {
         attempts,
         strategy: requestProfile.name,
+        firstFailure,
       });
     }
-    if (response.headers.get('cf-mitigated') !== 'challenge') {
+    if (!collinsChallenge(response) && !collinsHtmlForbidden(response)) {
       console.info(JSON.stringify({
         event: 'collins_upstream_recovered',
         attempts,
         strategy: requestProfile.name,
+        firstFailure,
         upstreamStatus: response.status,
         firstCfRay,
         cfRay: (response.headers.get('cf-ray') || '').slice(0, 80),
       }));
     }
   }
-  COLLINS_RESPONSE_DIAGNOSTICS.set(response, { attempts, strategy: requestProfile.name });
-  if (response.headers.get('cf-mitigated') === 'challenge') {
+  COLLINS_RESPONSE_DIAGNOSTICS.set(response, { attempts, strategy: requestProfile.name, firstFailure });
+  if (collinsChallenge(response)) {
     try { await response.body?.cancel(); } catch { /* no challenge page retention */ }
     return collinsUpstreamFailure('upstream_challenge', 'Collins 官方防护拦截了服务器请求', response);
   }
@@ -177,7 +190,9 @@ async function collinsLookup(request, env) {
   }
   if (!response.ok) {
     try { await response.body?.cancel(); } catch { /* no body retention */ }
-    const code = [401, 403].includes(response.status) ? 'upstream_authorization'
+    const code = response.status === 401 ? 'upstream_authorization'
+      : response.status === 403 && collinsHtmlForbidden(response) ? 'upstream_blocked'
+        : response.status === 403 ? 'upstream_forbidden'
       : response.status === 429 ? 'upstream_rate_limit' : 'upstream_http';
     return collinsUpstreamFailure(code, `Collins 上游返回 HTTP ${response.status}`, response,
       response.status === 404 ? 404 : response.status === 429 ? 429 : 502);

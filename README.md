@@ -1,6 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.8
+# Vocabulary Index 5.0.0-alpha.9
 
-alpha.8 为 Collins 服务端查词请求加入明确的 VIX 客户端标识；只有上游明确返回 Cloudflare Challenge 时，才使用第二个透明服务端标识重试一次。它不改变固定 `vix-private` Worker、Cloudflare Access、Secret 或 PWA 部署结构。
+alpha.9 在 Collins 服务端查词失败时直接返回安全、精简的上游诊断，并把缺少 challenge 标头的 HTML 403 纳入一次有界备用身份重试。它不改变固定 `vix-private` Worker、Cloudflare Access、Secret 或 PWA 部署结构。
 
 alpha.7 将 Collins 上游连接、授权、重定向、非 JSON 响应与 Cloudflare Challenge 分开报告，并在日志中只记录脱敏后的状态类别。它不会尝试绕过 Collins 的服务防护。
 
@@ -15,7 +15,7 @@ alpha.6 修正 Cloudflare Access 与 Workers Static Assets 的真实运行边界
 
 ## 当前版本
 
-- App：`5.0.0-alpha.8`
+- App：`5.0.0-alpha.9`
 - Backup Schema：`6`
 - IndexedDB：`5`
 - Built-in Seed revision：`7`

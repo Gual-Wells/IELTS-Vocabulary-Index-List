@@ -4,6 +4,17 @@ import { APP_VERSION } from '../../js/v5-version.js';
 
 const COLLINS_BASE = 'https://api.collinsdictionary.com/api/v1';
 const COLLINS_CODES = new Set(['american-learner', 'american']);
+const COLLINS_REQUEST_PROFILES = [
+  {
+    name: 'vix-service',
+    userAgent: `Vocabulary-Index/${APP_VERSION} (+https://github.com/Gual-Wells/IELTS-Vocabulary-Index-List)`,
+  },
+  {
+    name: 'cloudflare-workers',
+    userAgent: 'Cloudflare-Workers',
+  },
+];
+const COLLINS_RESPONSE_DIAGNOSTICS = new WeakMap();
 const SESSION_PROTOCOL = 'vix-session-capsule/2';
 const MAX_SESSION_BYTES = 12 * 1024 * 1024;
 const MAX_RESULT_BYTES = 2 * 1024 * 1024;
@@ -27,15 +38,32 @@ function error(code, message, status = 400) {
   return json({ error: { code, message } }, status);
 }
 
-function collinsUpstreamFailure(code, message, response = null, status = 502) {
+function collinsUpstreamFailure(code, message, response = null, status = 502, diagnostics = {}) {
+  const requestDiagnostics = (response && COLLINS_RESPONSE_DIAGNOSTICS.get(response)) || diagnostics;
   console.warn(JSON.stringify({
     event: 'collins_upstream_failure',
     code,
     upstreamStatus: response?.status || 0,
     contentType: (response?.headers.get('content-type') || '').slice(0, 80),
     challenged: response?.headers.get('cf-mitigated') === 'challenge',
+    cfRay: (response?.headers.get('cf-ray') || '').slice(0, 80),
+    attempts: requestDiagnostics.attempts || 1,
+    strategy: requestDiagnostics.strategy || COLLINS_REQUEST_PROFILES[0].name,
   }));
   return error(code, message, status);
+}
+
+function collinsFetch(upstream, accessKey, profile) {
+  return fetch(upstream, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      accessKey,
+      'user-agent': profile.userAgent,
+    },
+    // Never forward the server-side secret to an unexpected redirect target.
+    redirect: 'manual',
+  });
 }
 
 function bearer(request) {
@@ -105,16 +133,40 @@ async function collinsLookup(request, env) {
   upstream.searchParams.set('q', query);
   upstream.searchParams.set('format', 'html');
   let response;
+  let requestProfile = COLLINS_REQUEST_PROFILES[0];
+  let attempts = 1;
   try {
-    response = await fetch(upstream, {
-      method: 'GET',
-      headers: { accept: 'application/json', accessKey: env.COLLINS_ACCESS_KEY },
-      // Never forward the server-side secret to an unexpected redirect target.
-      redirect: 'manual',
-    });
+    response = await collinsFetch(upstream, env.COLLINS_ACCESS_KEY, requestProfile);
   } catch {
     return collinsUpstreamFailure('upstream_network', 'Collins 上游连接失败');
   }
+  // A Collins edge rule can challenge Cloudflare's default subrequest
+  // fingerprint. Retry exactly once with another transparent server identity.
+  if (response.headers.get('cf-mitigated') === 'challenge') {
+    const firstCfRay = (response.headers.get('cf-ray') || '').slice(0, 80);
+    try { await response.body?.cancel(); } catch { /* no challenge page retention */ }
+    requestProfile = COLLINS_REQUEST_PROFILES[1];
+    attempts = 2;
+    try {
+      response = await collinsFetch(upstream, env.COLLINS_ACCESS_KEY, requestProfile);
+    } catch {
+      return collinsUpstreamFailure('upstream_network', 'Collins upstream connection failed', null, 502, {
+        attempts,
+        strategy: requestProfile.name,
+      });
+    }
+    if (response.headers.get('cf-mitigated') !== 'challenge') {
+      console.info(JSON.stringify({
+        event: 'collins_upstream_recovered',
+        attempts,
+        strategy: requestProfile.name,
+        upstreamStatus: response.status,
+        firstCfRay,
+        cfRay: (response.headers.get('cf-ray') || '').slice(0, 80),
+      }));
+    }
+  }
+  COLLINS_RESPONSE_DIAGNOSTICS.set(response, { attempts, strategy: requestProfile.name });
   if (response.headers.get('cf-mitigated') === 'challenge') {
     try { await response.body?.cancel(); } catch { /* no challenge page retention */ }
     return collinsUpstreamFailure('upstream_challenge', 'Collins 官方防护拦截了服务器请求', response);

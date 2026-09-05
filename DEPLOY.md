@@ -1,4 +1,6 @@
-# Vocabulary Index 5.0.0-alpha.7 部署
+# Vocabulary Index 5.0.0-alpha.8 部署
+
+alpha.8 不需要新增或修改 Cloudflare 配置：继续使用固定的 `vix-private` Worker、原 Access 应用与原 `COLLINS_ACCESS_KEY` Secret。上传仓库后等待 GitHub 集成自动完成一次新部署即可。
 
 alpha.7 沿用固定 `vix-private` Worker、同一个 Access 应用和同一个 `COLLINS_ACCESS_KEY` Secret；从 alpha.6 更新时不需要重建或修改这些 Cloudflare 配置。
 
@@ -55,7 +57,7 @@ https://vix-private.<你的 workers.dev 子域>.workers.dev/api/health
 ```json
 {
   "protocol": "vix-runtime-health/1",
-  "version": "5.0.0-alpha.7",
+  "version": "5.0.0-alpha.8",
   "status": "ok",
   "checks": {
     "assets": true,

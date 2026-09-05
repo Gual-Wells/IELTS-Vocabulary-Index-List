@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0-alpha.8 — 2026-09-05
+
+- Collins 查词请求改用明确的 VIX 服务端标识，不再依赖 Cloudflare 子请求的默认指纹。
+- 仅在 Collins 明确返回 `cf-mitigated: challenge` 时，以第二个透明服务端标识重试一次；其余错误不重试。
+- 单次用户查词最多两次上游尝试，但月度配额只扣减一次；密钥继续只放在 `accessKey` 请求头中。
+- 增加不含查询词、响应正文与密钥的恢复诊断；保留 `cf-ray` 便于后续向 Collins 核查。
+
 ## 5.0.0-alpha.7 — 2026-09-04
 
 - Collins `search/first` 改用官方文档中的无尾斜杠规范路径，并拒绝携带 Secret 跟随意外重定向。

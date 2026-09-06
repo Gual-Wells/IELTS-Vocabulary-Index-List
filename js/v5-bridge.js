@@ -126,6 +126,12 @@ export function saveGroqSecret(apiKey, options = {}) {
   return bridgeRequest('/v1/settings/groq', { ...options, method: 'PUT', body: { apiKey: key } });
 }
 
+export function validateGroqSecret(apiKey, options = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new BridgeError('configuration', '请填写 Groq API Key');
+  return bridgeRequest('/v1/settings/groq/validate', { ...options, method: 'POST', body: { apiKey: key } });
+}
+
 export function deleteGroqSecret(options = {}) {
   return bridgeRequest('/v1/settings/groq', { ...options, method: 'DELETE' });
 }

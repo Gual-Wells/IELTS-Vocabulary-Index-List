@@ -28,7 +28,7 @@ import {
 } from './v5-mirror3.js';
 import {
   acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, getBridgeConfig,
-  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext,
+  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -5771,10 +5771,22 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     test.disabled = true;
     status.textContent = '正在测试 Bridge…';
     try {
-      const result = await testBridgeConfig({ url: url.value, deviceToken: token.value });
-      reflectGroqState(result);
-      status.textContent = result?.groqReachable ? 'Bridge 与 Groq 正常' : 'Bridge 正常 · Groq 未配置';
-      showToast('Bridge 正常');
+      const config = { url: url.value, deviceToken: token.value };
+      const candidateKey = groqKey.value.trim();
+      let result = await testBridgeConfig(config, { probeGroq: false });
+      if (candidateKey) {
+        status.textContent = '正在测试当前 Groq Key…';
+        const validated = await validateGroqSecret(candidateKey, { config });
+        const groqModels = Array.isArray(validated?.models) ? validated.models : [];
+        result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
+        status.textContent = '当前 Groq Key 可用 · 尚未保存';
+        showToast('Groq Key 可用');
+      } else {
+        result = await testBridgeConfig(config);
+        reflectGroqState(result);
+        status.textContent = result?.groqReachable ? 'Bridge 与 Groq 正常' : 'Bridge 正常 · Groq 未配置';
+        showToast('Bridge 正常');
+      }
     } catch (error) {
       status.textContent = `Bridge 测试失败：${error?.message || String(error)}`;
       throw error;

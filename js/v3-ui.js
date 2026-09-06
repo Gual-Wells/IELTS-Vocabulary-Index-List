@@ -656,6 +656,7 @@ function openDialog({
   host.append(frame.layer);
   requestAnimationFrame(() => {
     if (!frame.layer.isConnected || frame.closing) return;
+    frame.body.scrollTop = 0;
     const focusable = focusableModalNodes(frame.form);
     const safeFocus = frame.closeButton || focusable.find((node) => node.tagName === 'BUTTON') || frame.form;
     safeFocus?.focus?.({ preventScroll: true });
@@ -1989,10 +1990,11 @@ function renderMirrorStatusBanner() {
   updateOverlayLayout();
 }
 
-async function synchronizeMirrorContext({ notify = false } = {}) {
+async function synchronizeMirrorContext({ notify = false, config = null } = {}) {
   const context = await buildMirrorContext(getState());
-  if (bridgeConfigured()) await uploadMirrorContext(context);
-  if (notify) showToast(bridgeConfigured() ? 'Mirror Context 已同步' : 'Mirror Context 已生成');
+  const canUpload = config ? Boolean(config.url && config.deviceToken) : bridgeConfigured();
+  if (canUpload) await uploadMirrorContext(context, config ? { config } : {});
+  if (notify) showToast(canUpload ? 'Mirror Context 已同步' : 'Mirror Context 已生成');
   return context;
 }
 
@@ -2136,8 +2138,14 @@ async function openMirrorDialog() {
   });
   const create = button('下载请求', 'secondary-button', openMirrorRequestCreator);
   const sync = button('同步 Bridge', 'secondary-button', async () => { await synchronizeMirrorContext({ notify: true }); await receiveMirrorInbox({ notify: true }); refresh(); });
-  const file = el('input', { type: 'file', accept: '.json,application/json' });
-  const importButton = button('导入结果', 'secondary-button', () => importMirrorResultFile(file.files?.[0]));
+  const file = el('input', { type: 'file', className: 'mirror-file-input', accept: '.json,application/json' });
+  const fileName = el('span', { className: 'mirror-file-name', text: '未选择文件' });
+  const importButton = button('导入', 'secondary-button', () => importMirrorResultFile(file.files?.[0]), { disabled: true });
+  const chooseFile = button('选择结果文件', 'secondary-button', () => file.click());
+  file.addEventListener('change', () => {
+    fileName.textContent = file.files?.[0]?.name || '未选择文件';
+    importButton.disabled = !file.files?.length;
+  });
   const pendingHost = el('div', { className: 'mirror-pending-list' });
   const refresh = async () => {
     const snapshot = getMirrorState();
@@ -2158,9 +2166,8 @@ async function openMirrorDialog() {
       status,
       el('div', { className: 'settings-row mirror-action-row' }, [toggle, create, ...(bridgeConfigured() ? [sync] : [])]),
       pendingHost,
-      el('section', { className: 'settings-section' }, [
-        el('h3', { text: '导入' }), field('Mirror Result', file), importButton,
-      ]),
+      file,
+      el('div', { className: 'mirror-import-row' }, [chooseFile, importButton, fileName]),
     ],
     variant: 'management', showCancel: false, onRestore: refresh,
   });
@@ -4416,7 +4423,10 @@ function openQueryMenu(entry, collection, source) {
   }
   elements['query-menu'].replaceChildren(...providerOptions.map(([option]) => option));
   showPopoverSurface(elements['query-menu']);
-  requestAnimationFrame(() => { positionQueryMenu(); oxford.focus({ preventScroll: true }); });
+  requestAnimationFrame(() => {
+    positionQueryMenu();
+    if (source.matches(':focus-visible')) oxford.focus({ preventScroll: true });
+  });
 }
 
 function entryActionButtons(entry, collection, pinned, studyStamp) {
@@ -5736,19 +5746,34 @@ function openSearchDialog() {
   });
 }
 
-function openBridgeDialog() {
+function openBridgeDialog({ onConfigured = null } = {}) {
   const saved = getBridgeConfig();
   const url = el('input', { type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev', autocomplete: 'url', spellcheck: 'false' });
   const token = el('input', { type: 'password', value: saved.deviceToken, placeholder: 'Device Token', autocomplete: 'off', spellcheck: 'false' });
-  const groqKey = el('input', { type: 'password', value: '', placeholder: 'Groq API Key', autocomplete: 'off', spellcheck: 'false' });
+  const groqKey = el('input', { type: 'password', value: '', placeholder: 'Groq API Key', autocomplete: 'new-password', spellcheck: 'false' });
   const status = el('p', { className: 'provider-settings-status', role: 'status', 'aria-live': 'polite' });
+  const reflectGroqState = (result, { announce = false } = {}) => {
+    if (result?.groq) {
+      groqKey.placeholder = '已保存在 Bridge；留空不变';
+      if (announce) status.textContent = 'Groq Key 已保存在 Bridge';
+      return;
+    }
+    groqKey.placeholder = result?.groqState === 'master_key_mismatch' || result?.groqState === 'unreadable'
+      ? '请重新输入 Groq API Key' : 'Groq API Key';
+  };
+  if (saved.url && saved.deviceToken) {
+    queueMicrotask(async () => {
+      try { reflectGroqState(await testBridgeConfig(saved, { probeGroq: false }), { announce: true }); }
+      catch { /* The explicit Test/Save actions report connection errors. */ }
+    });
+  }
   const test = button('测试', 'secondary-button', async () => {
     test.disabled = true;
     status.textContent = '正在测试 Bridge…';
     try {
       const result = await testBridgeConfig({ url: url.value, deviceToken: token.value });
-      const details = [result?.groq ? 'Groq 已配置' : 'Groq 未配置', result?.context ? 'Mirror 已同步' : 'Mirror 未同步'];
-      status.textContent = `Bridge 正常 · ${details.join(' · ')}`;
+      reflectGroqState(result);
+      status.textContent = result?.groqReachable ? 'Bridge 与 Groq 正常' : 'Bridge 正常 · Groq 未配置';
       showToast('Bridge 正常');
     } catch (error) {
       status.textContent = `Bridge 测试失败：${error?.message || String(error)}`;
@@ -5761,31 +5786,44 @@ function openBridgeDialog() {
     await deleteGroqSecret();
     status.textContent = 'Groq Key 已删除';
   });
-  const clear = button('清除本机配置', 'secondary-button', () => {
+  const clear = button('清除配置', 'secondary-button', () => {
     clearBridgeConfig();
     url.value = '';
     token.value = '';
     status.textContent = '本机配置已清除';
   });
-  const functionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: '下载 VIX 函数' });
-  const instructionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '下载个性化指令' });
+  const functionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
+  const instructionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
   openDialog({
     title: 'Bridge', variant: 'management', submitText: '保存',
     body: [
       field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
+      status,
       el('div', { className: 'settings-row' }, [test, removeKey, clear]),
-      el('div', { className: 'settings-row' }, [functionLink, instructionLink]), status,
+      el('div', { className: 'settings-row bridge-download-row' }, [functionLink, instructionLink]),
     ],
     onSubmit: async () => {
       const nextConfig = { url: url.value, deviceToken: token.value };
       status.textContent = '正在验证 Bridge…';
-      await testBridgeConfig(nextConfig);
-      setBridgeConfig(nextConfig);
+      let result = await testBridgeConfig(nextConfig, { probeGroq: false });
       if (groqKey.value.trim()) {
         status.textContent = '正在保存 Groq Key…';
-        try { await saveGroqSecret(groqKey.value); }
+        try {
+          await saveGroqSecret(groqKey.value, { config: nextConfig });
+          groqKey.value = '';
+          groqKey.placeholder = '已保存在 Bridge；留空不变';
+        }
         catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
       }
+      result = await testBridgeConfig(nextConfig);
+      const activeModelIds = Array.isArray(result?.groqModels)
+        ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
+        : [];
+      status.textContent = '正在同步 Mirror…';
+      await synchronizeMirrorContext({ config: nextConfig });
+      setBridgeConfig(nextConfig);
+      if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
+      onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
       status.textContent = 'Bridge 已保存';
       scheduleMirrorInboxPoll();
       showToast('Bridge 已保存');
@@ -5834,7 +5872,12 @@ function openSettingsDialog() {
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
       field('查询模型', model), refresh, groqSettingsStatus]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }),
-      el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', openBridgeDialog)])]),
+      el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog({
+        onConfigured: ({ groqReady }) => {
+          renderModels();
+          groqSettingsStatus.textContent = groqReady ? 'Bridge 与 Groq 已连接' : 'Bridge 已连接 · Groq 未配置';
+        },
+      }))])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
       el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),

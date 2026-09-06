@@ -58,4 +58,25 @@
 .mirror-candidate-copy > span,
 .mirror-candidate-target { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .mirror-candidate-target { max-width: 132px; text-align: right; }
-.bridge-download { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.bridge-download,
+.bridge-download:visited {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text) !important;
+  text-decoration: none;
+}
+.bridge-download-row { flex-wrap: wrap; }
+.mirror-file-input { display: none !important; }
+.mirror-import-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.mirror-file-name { min-width: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+/* A nested tool replaces its parent visually while retaining parent state. */
+.modal-layer[inert] { visibility: hidden; }
+
+/* Only the providers that still exist own columns in the query chooser. */
+.query-menu {
+  width: max-content !important;
+  min-width: 0 !important;
+  grid-template-columns: repeat(2, 46px) !important;
+}

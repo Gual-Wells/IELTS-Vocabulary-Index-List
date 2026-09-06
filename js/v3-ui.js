@@ -28,7 +28,7 @@ import {
 } from './v5-mirror3.js';
 import {
   acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, getBridgeConfig,
-  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridge, testBridgeConfig, uploadMirrorContext,
+  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -5743,8 +5743,19 @@ function openBridgeDialog() {
   const groqKey = el('input', { type: 'password', value: '', placeholder: 'Groq API Key', autocomplete: 'off', spellcheck: 'false' });
   const status = el('p', { className: 'provider-settings-status', role: 'status', 'aria-live': 'polite' });
   const test = button('测试', 'secondary-button', async () => {
-    const result = await testBridgeConfig({ url: url.value, deviceToken: token.value });
-    status.textContent = result?.status === 'ok' ? 'Bridge 正常' : 'Bridge 异常';
+    test.disabled = true;
+    status.textContent = '正在测试 Bridge…';
+    try {
+      const result = await testBridgeConfig({ url: url.value, deviceToken: token.value });
+      const details = [result?.groq ? 'Groq 已配置' : 'Groq 未配置', result?.context ? 'Mirror 已同步' : 'Mirror 未同步'];
+      status.textContent = `Bridge 正常 · ${details.join(' · ')}`;
+      showToast('Bridge 正常');
+    } catch (error) {
+      status.textContent = `Bridge 测试失败：${error?.message || String(error)}`;
+      throw error;
+    } finally {
+      test.disabled = false;
+    }
   });
   const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
     await deleteGroqSecret();
@@ -5766,11 +5777,16 @@ function openBridgeDialog() {
       el('div', { className: 'settings-row' }, [functionLink, instructionLink]), status,
     ],
     onSubmit: async () => {
-      setBridgeConfig({ url: url.value, deviceToken: token.value });
-      if (groqKey.value.trim()) await saveGroqSecret(groqKey.value);
-      await testBridge();
-      await synchronizeMirrorContext();
-      await receiveMirrorInbox();
+      const nextConfig = { url: url.value, deviceToken: token.value };
+      status.textContent = '正在验证 Bridge…';
+      await testBridgeConfig(nextConfig);
+      setBridgeConfig(nextConfig);
+      if (groqKey.value.trim()) {
+        status.textContent = '正在保存 Groq Key…';
+        try { await saveGroqSecret(groqKey.value); }
+        catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
+      }
+      status.textContent = 'Bridge 已保存';
       scheduleMirrorInboxPoll();
       showToast('Bridge 已保存');
     },

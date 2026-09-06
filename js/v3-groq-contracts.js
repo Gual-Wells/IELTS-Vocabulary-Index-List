@@ -15,8 +15,8 @@ const str = { type: 'string' };
 const obj = (properties) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const list = (items) => ({ type: 'array', items });
 export const GROQ_SCHEMAS = {
-  lookup: obj({ headword: str, pronunciation: str, partOfSpeech: str, meaning: str,
-    examples: list(obj({ english: str, translation: str })), usageNote: str }),
+  lookup: obj({ headword: str, partOfSpeech: str, memoryCue: str, meaning: str,
+    collocations: list(str), usageHints: list(str), examples: list(obj({ english: str, translation: str })) }),
   verification: obj({ verdict: { type: 'string', enum: ['ok', 'issue', 'uncertain'] },
     explanation: str, suggestedText: str, suggestedGloss: str }),
   search: obj({ terms: list(str) }),
@@ -28,15 +28,16 @@ export function decodeLookup(payload) {
   const p = objectValue(payload);
   return {
     headword: textValue(p.headword, 'headword', { max: 240 }),
-    pronunciation: textValue(p.pronunciation, 'pronunciation', { empty: true, max: 240 }),
     partOfSpeech: textValue(p.partOfSpeech, 'partOfSpeech', { empty: true, max: 120 }),
-    meaning: textValue(p.meaning, 'meaning'),
-    examples: arrayValue(p.examples, 'examples', 3).map((value) => {
+    memoryCue: textValue(p.memoryCue, 'memoryCue', { empty: true, max: 160 }),
+    meaning: textValue(p.meaning, 'meaning', { max: 500 }),
+    collocations: arrayValue(p.collocations, 'collocations', 8).map((value) => textValue(value, 'collocation', { max: 120 })),
+    usageHints: arrayValue(p.usageHints, 'usageHints', 5).map((value) => textValue(value, 'usageHint', { max: 240 })),
+    examples: arrayValue(p.examples, 'examples', 5).map((value) => {
       const e = objectValue(value, 'example');
       return { english: textValue(e.english, 'example.english', { max: 800 }),
         translation: textValue(e.translation, 'example.translation', { empty: true, max: 800 }) };
     }),
-    usageNote: textValue(p.usageNote, 'usageNote', { empty: true, max: 1000 }),
   };
 }
 

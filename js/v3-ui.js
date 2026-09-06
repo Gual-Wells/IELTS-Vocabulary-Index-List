@@ -5,26 +5,31 @@ import {
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
-  getMirrorState, installMirrorCurrent, setMirrorEnabled,
+  getMirrorState, importMirrorCandidates, installMirrorCurrent, setMirrorEnabled,
 } from './v3-store.js';
 import {
-  AiCheckController, checkEntries, createAiCheckBatches, getApiKey, getModelCatalog,
-  getSelectedModel, queryVocabularyEntry, verifyVocabularyEntry, refreshModels, saveModelCatalog, selectModel, setApiKey, suggestEntries, suggestSearchTerms,
+  AiCheckController, checkEntries, createAiCheckBatches, getModelCatalog,
+  getSelectedModel, queryVocabularyEntry, verifyVocabularyEntry, refreshModels, saveModelCatalog, selectModel, suggestEntries, suggestSearchTerms,
 } from './v3-ai.js';
 import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
-import { buildChatGPTPrompt, buildChatGPTShortcutUrl, buildCollinsExternalUrl, buildOxfordLookupUrl, createEntryContext, queryCollins } from './v3-integrations.js';
-import { COLLINS_DICTIONARIES, getCollinsDictionary, setCollinsDictionary } from './v3-collins.js';
+import { buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 import { createProviderSession } from './v3-provider-runtime.js';
-import { renderGroqLookup, renderGroqVerification, renderCollinsEntry } from './v3-provider-views.js';
+import { renderGroqLookup, renderGroqVerification } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
-import { MATCH_RESULT_KIND, SESSION_PROTOCOL, acceptMatchResult, buildMatcherPrompt, createMatchRequest, publishMatchRequest } from './v5-session-capsule.js';
-import { hasRuntimeCapability } from './v5-runtime-capabilities.js';
+import {
+  buildMirrorContext, createMirrorRequestFile, extendMirrorRecord, listPendingMirrorResults, prepareMirrorResult,
+  removePendingMirrorResult, savePendingMirrorResult,
+} from './v5-mirror3.js';
+import {
+  acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, getBridgeConfig,
+  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridge, testBridgeConfig, uploadMirrorContext,
+} from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -78,6 +83,9 @@ let navigationRuntimeId = '';
 let navigationRootToken = '';
 let navigationTraversalInProgress = false;
 let pendingPageSnapshot = null;
+let mirrorBridgeTimer = 0;
+let mirrorInboxTimer = 0;
+let mirrorPendingCount = 0;
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
@@ -250,13 +258,11 @@ const ICONS = {
   intra: '<rect x="4.2" y="5.2" width="15.6" height="13.6" rx="2.4"></rect><path d="M7.4 12h8.5M13.1 9.2 15.9 12l-2.8 2.8"></path>',
   external: '<rect x="3.3" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><rect x="14.1" y="5.2" width="6.6" height="13.6" rx="1.8"></rect><path d="M9.6 12h6.1M13.2 9.4l2.6 2.6-2.6 2.6"></path>',
   nonstruct: '<path d="M4.2 6.1h6.3v11.8H4.2zM13.5 6.1h6.3v11.8h-6.3z"></path><path d="M10.5 12h3M12 10.5v3"></path>',
-  collins: '<path d="M5 4.8h14v14.4H5z"></path><path d="M8 8.2h8M8 12h6M8 15.8h7"></path>',
   groq: '<path d="M7.2 5.3h9.6M5.2 8.8h13.6v8.6H5.2z"></path><path d="M8.2 12h7.6M8.2 14.8h4.5"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
   dictionary: '<path d="M6 5.2h11.2c.9 0 1.6.7 1.6 1.6v10.4H7.6c-.9 0-1.6-.7-1.6-1.6V5.2Z"></path><path d="M8.7 9h6.8M6 16.4h12.8M7.6 19h11.2"></path>',
   switchParallel: '<path d="M5 8h12.2M14.4 5.2 17.2 8l-2.8 2.8"></path><path d="M19 16H6.8M9.6 13.2 6.8 16l2.8 2.8"></path>',
-  aiChat: '<path d="M5.2 5.3h13.6v10.6H11l-4.1 2.8v-2.8H5.2z"></path><path d="M8.2 9.1h7.6M8.2 12.1h5.1"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
   clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
@@ -1960,16 +1966,17 @@ function renderHomeAnnotationBanner() {
 }
 
 function mirrorStatusText(snapshot = getMirrorState()) {
-  if (snapshot.active) return `Mirror 已开启 · ${snapshot.active.entryIds.length.toLocaleString()} 条`;
-  if (snapshot.current) return `Mirror 已准备 · ${snapshot.current.entryIds.length.toLocaleString()} 条`;
-  return '尚无 Mirror';
+  const pending = mirrorPendingCount ? ` · ${mirrorPendingCount.toLocaleString()} 份待确认` : '';
+  if (snapshot.active) return `Mirror 已开启 · ${snapshot.active.entryIds.length.toLocaleString()} 条${pending}`;
+  if (snapshot.current) return `Mirror 已准备 · ${snapshot.current.entryIds.length.toLocaleString()} 条${pending}`;
+  return mirrorPendingCount ? `${mirrorPendingCount.toLocaleString()} 份 Mirror 待确认` : '尚无 Mirror';
 }
 
 function renderMirrorStatusBanner() {
   const banner = elements['mirror-status-banner'];
   if (!banner) return;
   const snapshot = getMirrorState();
-  if (currentCollectionId || (!snapshot.current && !snapshot.active)) {
+  if (currentCollectionId || (!snapshot.current && !snapshot.active && !mirrorPendingCount)) {
     banner.classList.add('hidden');
     updateOverlayLayout();
     return;
@@ -1982,40 +1989,144 @@ function renderMirrorStatusBanner() {
   updateOverlayLayout();
 }
 
-function openMirrorSessionCreator() {
-  const label = el('input', { type: 'text', maxlength: 160, placeholder: '例如：本周阅读材料', autocomplete: 'off' });
-  const mode = el('select', {}, [
-    el('option', { value: 'lexical', text: '严格词汇证据', selected: true }),
-    el('option', { value: 'semantic', text: '允许语义匹配' }),
-  ]);
-  const publish = el('input', { type: 'checkbox', className: 'vix-checkbox mirror-bridge-toggle' });
-  publish.disabled = !hasRuntimeCapability('sessionBridge');
+async function synchronizeMirrorContext({ notify = false } = {}) {
+  const context = await buildMirrorContext(getState());
+  if (bridgeConfigured()) await uploadMirrorContext(context);
+  if (notify) showToast(bridgeConfigured() ? 'Mirror Context 已同步' : 'Mirror Context 已生成');
+  return context;
+}
+
+async function receiveMirrorInbox({ notify = false } = {}) {
+  if (!bridgeConfigured()) return [];
+  const payload = await getMirrorInbox();
+  const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+  for (const run of runs) await savePendingMirrorResult(run.result);
+  const pending = await listPendingMirrorResults();
+  const previous = mirrorPendingCount;
+  mirrorPendingCount = pending.length;
+  renderMirrorStatusBanner();
+  if (notify && mirrorPendingCount > previous) showToast('收到新的 Mirror');
+  return pending;
+}
+
+function scheduleMirrorContextSync() {
+  if (!bridgeConfigured()) return;
+  clearTimeout(mirrorBridgeTimer);
+  mirrorBridgeTimer = window.setTimeout(() => synchronizeMirrorContext().catch(() => {}), 1200);
+}
+
+function scheduleMirrorInboxPoll(delay = 45000) {
+  clearTimeout(mirrorInboxTimer);
+  if (!bridgeConfigured()) return;
+  mirrorInboxTimer = window.setTimeout(async () => {
+    try { await receiveMirrorInbox({ notify: true }); } catch {}
+    finally { if (document.visibilityState === 'visible') scheduleMirrorInboxPoll(); }
+  }, delay);
+}
+
+function openMirrorRequestCreator() {
+  const label = el('input', { type: 'text', maxlength: 160, placeholder: '材料标题', autocomplete: 'off' });
   openDialog({
-    title: '创建 Mirror 匹配请求',
-    description: '冻结当前完整 Structural Corpus；文件中只有本次 slot，没有 Entry ID。',
-    body: [
-      field('材料标记（可选）', label),
-      field('匹配模式', mode),
-      el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '同时发布到已部署的同源 Session Bridge' }), publish]),
-      el('p', { className: 'help-text', text: '默认会下载请求 Capsule 与匹配提示。将两者连同材料交给 ChatGPT，再把返回的 Result Capsule 导入 VIX。' }),
-    ],
-    submitText: '创建并下载',
+    title: 'Mirror 请求', body: [field('材料标题', label)], submitText: '下载',
     onSubmit: async () => {
-      const request = await createMatchRequest(getState(), { materialLabel: label.value, matchMode: mode.value });
-      downloadText(`VIX-Match-Request-${request.sessionId}.json`, JSON.stringify(request, null, 2), 'application/json;charset=utf-8');
-      downloadText(`VIX-Matcher-Prompt-${request.sessionId}.txt`, buildMatcherPrompt(request), 'text/plain;charset=utf-8');
-      if (publish.checked) {
-        const binding = await publishMatchRequest(request);
-        downloadText(`VIX-Bridge-Binding-${request.sessionId}.json`, JSON.stringify({
-          protocol: SESSION_PROTOCOL, sessionId: request.sessionId, ...binding,
-        }, null, 2), 'application/json;charset=utf-8');
-      }
-      showToast('匹配请求已创建；Mirror 尚未改变');
+      const context = await synchronizeMirrorContext();
+      const request = createMirrorRequestFile(context, label.value);
+      downloadText(`VIX-Mirror-Request-${Date.now()}.json`, JSON.stringify(request, null, 2), 'application/json;charset=utf-8');
+      showToast('Mirror 请求已下载');
     },
   });
 }
 
-function openMirrorDialog() {
+function mirrorCandidateLetter(candidate) {
+  const value = normalizeEnglish(candidate.text);
+  const letter = value.charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(letter) ? letter : '#';
+}
+
+function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
+  const candidates = prepared.candidates.filter((item) => item.valid);
+  const selected = new Set(candidates.map((item) => item.candidateId));
+  const root = el('div', { className: 'mirror-candidate-tree' });
+  const titleInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: candidates.length > 0, disabled: !candidates.length, dataset: { scope: 'all' } });
+  const title = el('label', { className: 'mirror-candidate-heading' }, [titleInput, el('strong', { text: prepared.mirrorRecord.materialLabel || '临时词表' }), el('span', { text: String(candidates.length) })]);
+  root.append(title);
+  const byLetter = new Map();
+  for (const candidate of candidates) {
+    const letter = mirrorCandidateLetter(candidate);
+    if (!byLetter.has(letter)) byLetter.set(letter, []);
+    byLetter.get(letter).push(candidate);
+  }
+  for (const [letter, items] of [...byLetter].sort(([a], [b]) => a.localeCompare(b))) {
+    const section = el('section', { className: 'mirror-candidate-letter', dataset: { letter } });
+    const letterInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { scope: 'letter', letter } });
+    section.append(el('label', { className: 'mirror-candidate-heading' }, [letterInput, el('strong', { text: letter }), el('span', { text: String(items.length) })]));
+    for (const candidate of items.sort((a, b) => a.text.localeCompare(b.text))) {
+      const input = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { scope: 'candidate', candidateId: candidate.candidateId } });
+      const collections = candidate.collectionKeys.map((id) => getState().collectionById.get(id)?.name).filter(Boolean).join(' · ');
+      section.append(el('label', { className: 'mirror-candidate-row' }, [
+        input,
+        el('span', { className: 'mirror-candidate-copy' }, [el('strong', { text: candidate.text }), candidate.glossHant || candidate.glossHans ? el('span', { text: candidate.glossHant || candidate.glossHans }) : null]),
+        el('span', { className: 'mirror-candidate-target', text: collections }),
+      ]));
+    }
+    root.append(section);
+  }
+  const syncParents = () => {
+    for (const section of root.querySelectorAll('.mirror-candidate-letter')) {
+      const leaves = [...section.querySelectorAll('input[data-scope="candidate"]')];
+      const parent = section.querySelector('input[data-scope="letter"]');
+      const count = leaves.filter((input) => input.checked).length;
+      parent.checked = count === leaves.length && leaves.length > 0;
+      parent.indeterminate = count > 0 && count < leaves.length;
+    }
+    const leaves = [...root.querySelectorAll('input[data-scope="candidate"]')];
+    const count = leaves.filter((input) => input.checked).length;
+    titleInput.checked = count === leaves.length && leaves.length > 0;
+    titleInput.indeterminate = count > 0 && count < leaves.length;
+  };
+  root.addEventListener('change', (event) => {
+    const input = event.target.closest('input[type="checkbox"]');
+    if (!input) return;
+    if (input.dataset.scope === 'all') {
+      for (const leaf of root.querySelectorAll('input[data-scope="candidate"]')) leaf.checked = input.checked;
+    } else if (input.dataset.scope === 'letter') {
+      const section = input.closest('.mirror-candidate-letter');
+      for (const leaf of section.querySelectorAll('input[data-scope="candidate"]')) leaf.checked = input.checked;
+    }
+    selected.clear();
+    for (const leaf of root.querySelectorAll('input[data-scope="candidate"]:checked')) selected.add(leaf.dataset.candidateId);
+    syncParents();
+  });
+  openDialog({
+    title: '确认 Mirror', body: [root], variant: 'management', showCancel: true, cancelText: '取消', submitText: '提交',
+    onSubmit: async () => {
+      const imported = await importMirrorCandidates(candidates, selected);
+      const relatedEntryIds = candidates.filter((candidate) => selected.has(candidate.candidateId))
+        .flatMap((candidate) => candidate.relatedEntryIds || []);
+      const mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, [
+        ...prepared.mirrorRecord.entryIds, ...relatedEntryIds, ...imported.entryIds,
+      ]);
+      await installMirrorCurrent(mirrorRecord);
+      if (bridgeRun) await acknowledgeMirrorRun(prepared.runId);
+      await removePendingMirrorResult(prepared.runId);
+      mirrorPendingCount = (await listPendingMirrorResults()).length;
+      renderApp();
+      showToast(`Mirror 已提交 · 新增 ${imported.created} 条`);
+    },
+  });
+}
+
+async function importMirrorResultFile(file) {
+  if (!file) throw new Error('请选择 Mirror Result JSON');
+  if (file.size > 3 * 1024 * 1024) throw new Error('Mirror Result 文件过大');
+  let payload;
+  try { payload = JSON.parse(await file.text()); } catch { throw new Error('Mirror Result 不是有效 JSON'); }
+  const prepared = await savePendingMirrorResult(payload);
+  mirrorPendingCount = (await listPendingMirrorResults()).length;
+  openMirrorCandidateReview(prepared);
+}
+
+async function openMirrorDialog() {
   const status = el('div', { className: 'mirror-management-status' });
   const toggle = button('开启 Mirror', 'primary-button', async () => {
     const before = getMirrorState();
@@ -2023,45 +2134,32 @@ function openMirrorDialog() {
     refresh();
     showToast(before.enabled ? 'Mirror 已关闭' : 'Mirror 已开启');
   });
-  const create = button('创建匹配请求', 'secondary-button', openMirrorSessionCreator);
+  const create = button('下载请求', 'secondary-button', openMirrorRequestCreator);
+  const sync = button('同步 Bridge', 'secondary-button', async () => { await synchronizeMirrorContext({ notify: true }); await receiveMirrorInbox({ notify: true }); refresh(); });
   const file = el('input', { type: 'file', accept: '.json,application/json' });
-  const importButton = button('验证并接收 Capsule', 'secondary-button', async () => {
-    const selected = file.files?.[0];
-    if (!selected) throw new Error('请先选择 Result Capsule JSON');
-    if (selected.size > 2 * 1024 * 1024) throw new Error('Result Capsule 文件过大');
-    let payload;
-    try { payload = JSON.parse(await selected.text()); }
-    catch { throw new Error('Result Capsule 不是有效 JSON'); }
-    if (payload?.kind !== MATCH_RESULT_KIND) throw new Error('所选文件不是 VIX Match Result Capsule');
-    const wasActive = getMirrorState().enabled;
-    const record = await acceptMatchResult(payload);
-    await installMirrorCurrent(record);
-    file.value = '';
-    refresh();
-    showToast(wasActive ? '新的 CURRENT 已接收；正在使用的 ACTIVE 未替换' : '新的 Mirror CURRENT 已接收');
-  });
-  const refresh = () => {
+  const importButton = button('导入结果', 'secondary-button', () => importMirrorResultFile(file.files?.[0]));
+  const pendingHost = el('div', { className: 'mirror-pending-list' });
+  const refresh = async () => {
     const snapshot = getMirrorState();
-    status.replaceChildren(...[
-      el('strong', { text: mirrorStatusText(snapshot) }),
-      snapshot.current ? el('p', { className: 'help-text', text: `CURRENT：${snapshot.current.materialLabel || '未命名'} · ${new Date(snapshot.current.createdAt).toLocaleString()}` }) : null,
-      snapshot.active && snapshot.current?.mirrorId !== snapshot.active.mirrorId
-        ? el('p', { className: 'provider-footnote', text: '新的 CURRENT 已到达；当前 ACTIVE 会保持到手动关闭再开启。' }) : null,
-    ].filter(Boolean));
+    status.replaceChildren(el('strong', { text: mirrorStatusText(snapshot) }));
     toggle.textContent = snapshot.enabled ? '关闭 Mirror' : '开启 Mirror';
     toggle.disabled = !snapshot.enabled && !snapshot.current;
+    const pending = await listPendingMirrorResults();
+    mirrorPendingCount = pending.length;
+    pendingHost.replaceChildren(...pending.map((item) => button(item.raw?.materialLabel || item.runId, 'mirror-pending-button', async () => {
+      openMirrorCandidateReview(await prepareMirrorResult(item.raw), { bridgeRun: true });
+    })));
+    renderMirrorStatusBanner();
   };
-  refresh();
+  await refresh();
   openDialog({
     title: 'Mirror',
-    description: 'Mirror 只改变 Effective Projection，不修改词条、PIN、学习日期、备份或 Undo。',
     body: [
       status,
-      el('div', { className: 'settings-row mirror-action-row' }, [toggle, create]),
+      el('div', { className: 'settings-row mirror-action-row' }, [toggle, create, ...(bridgeConfigured() ? [sync] : [])]),
+      pendingHost,
       el('section', { className: 'settings-section' }, [
-        el('h3', { text: '接收匹配结果' }),
-        el('p', { className: 'help-text', text: '只有与本机冻结 Session 的 hash、sequence 和 slot 全部一致时才会原子替换 CURRENT。' }),
-        field('Result Capsule', file), importButton,
+        el('h3', { text: '导入' }), field('Mirror Result', file), importButton,
       ]),
     ],
     variant: 'management', showCancel: false, onRestore: refresh,
@@ -4107,7 +4205,6 @@ async function startProviderQuery(provider, entry, collection) {
     const retry = button('重新查询', 'secondary-button', () => { runQuery(); });
     const configure = button('查询设置', 'text-button', () => openSettingsDialog());
     actions.replaceChildren(cancel, retry, configure);
-    if (provider === 'Collins') actions.append(button('Collins 网站', 'text-button', () => window.location.assign(buildCollinsExternalUrl(entry.text))));
     session = createProviderSession((state) => {
       if (!providerQueryIsCurrent(sequence)) return;
       const busy = state === 'requesting' || state === 'retrying';
@@ -4123,7 +4220,6 @@ async function startProviderQuery(provider, entry, collection) {
     setModes();
     try {
       const rendered = await session.run(async (signal, onState) => {
-        if (provider === 'Collins') return renderCollinsEntry(await queryCollins(entry.text, { signal, onState }));
         const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION });
         if (mode === 'verification') return renderGroqVerification(await verifyVocabularyEntry(context, { signal, onState }));
         return renderGroqLookup(await queryVocabularyEntry(context, { signal, onState }));
@@ -4159,17 +4255,6 @@ async function startProviderQuery(provider, entry, collection) {
 
 function openOxfordLookup(entry) {
   window.location.assign(buildOxfordLookupUrl(entry.text));
-}
-
-function openChatGPTEntryQuery(entry, collection) {
-  const state = getState();
-  const context = createEntryContext(state, entry, collection.id, {
-    appVersion: APP_VERSION,
-    viewMode: getViewMode(collection.id),
-    section: sectionForEntry(entry),
-  });
-  const prompt = buildChatGPTPrompt(context);
-  window.location.assign(buildChatGPTShortcutUrl(prompt));
 }
 
 function estimatedTextUnits(text) {
@@ -4321,17 +4406,10 @@ function openQueryMenu(entry, collection, source) {
     closeQueryMenu();
     try { openOxfordLookup(entry); } catch (error) { displayError(error); }
   });
-  const collins = iconButton('collins', 'query-menu-option collins-option', `用 Collins 查询 ${entry.text}`, () => {
-    closeQueryMenu(); startProviderQuery('Collins', entry, collection).catch(displayError);
-  });
   const groq = iconButton('groq', 'query-menu-option groq-option', `用 Groq 查询 ${entry.text}`, () => {
     closeQueryMenu(); startProviderQuery('Groq', entry, collection).catch(displayError);
   });
-  const chatgpt = iconButton('aiChat', 'query-menu-option chatgpt-option', `交给 ChatGPT 新建查询：${entry.text}`, () => {
-    closeQueryMenu();
-    try { openChatGPTEntryQuery(entry, collection); } catch (error) { displayError(error); }
-  });
-  const providerOptions = [[oxford, 'Oxford'], ...(hasRuntimeCapability('collins') ? [[collins, 'Collins']] : []), [groq, 'Groq'], [chatgpt, 'ChatGPT']];
+  const providerOptions = [[oxford, 'Oxford'], [groq, 'Groq']];
   for (const [option, label] of providerOptions) {
     option.setAttribute('role', 'menuitem');
     option.append(el('span', { className: 'query-provider-label', text: label }));
@@ -5325,7 +5403,7 @@ function openAiCheckDialog(collectionId) {
     body: [summary, el('p', { className: 'help-text', text: '运行期间可暂停、继续、取消或收起为临时任务胶囊。' })],
     submitText: '开始核查',
     onSubmit: async () => {
-      if (!getApiKey()) throw new Error('请先在设置中配置 Groq API Key');
+      if (!bridgeConfigured()) throw new Error('请先配置 Bridge');
       if (!getSelectedModel()) throw new Error('请先刷新并选择 Groq 模型');
       setTimeout(() => startAiCheck(collectionId, viewKind), 0);
     },
@@ -5658,24 +5736,55 @@ function openSearchDialog() {
   });
 }
 
+function openBridgeDialog() {
+  const saved = getBridgeConfig();
+  const url = el('input', { type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev', autocomplete: 'url', spellcheck: 'false' });
+  const token = el('input', { type: 'password', value: saved.deviceToken, placeholder: 'Device Token', autocomplete: 'off', spellcheck: 'false' });
+  const groqKey = el('input', { type: 'password', value: '', placeholder: 'Groq API Key', autocomplete: 'off', spellcheck: 'false' });
+  const status = el('p', { className: 'provider-settings-status', role: 'status', 'aria-live': 'polite' });
+  const test = button('测试', 'secondary-button', async () => {
+    const result = await testBridgeConfig({ url: url.value, deviceToken: token.value });
+    status.textContent = result?.status === 'ok' ? 'Bridge 正常' : 'Bridge 异常';
+  });
+  const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
+    await deleteGroqSecret();
+    status.textContent = 'Groq Key 已删除';
+  });
+  const clear = button('清除本机配置', 'secondary-button', () => {
+    clearBridgeConfig();
+    url.value = '';
+    token.value = '';
+    status.textContent = '本机配置已清除';
+  });
+  const functionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: '下载 VIX 函数' });
+  const instructionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '下载个性化指令' });
+  openDialog({
+    title: 'Bridge', variant: 'management', submitText: '保存',
+    body: [
+      field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
+      el('div', { className: 'settings-row' }, [test, removeKey, clear]),
+      el('div', { className: 'settings-row' }, [functionLink, instructionLink]), status,
+    ],
+    onSubmit: async () => {
+      setBridgeConfig({ url: url.value, deviceToken: token.value });
+      if (groqKey.value.trim()) await saveGroqSecret(groqKey.value);
+      await testBridge();
+      await synchronizeMirrorContext();
+      await receiveMirrorInbox();
+      scheduleMirrorInboxPoll();
+      showToast('Bridge 已保存');
+    },
+  });
+}
+
 function openSettingsDialog() {
   const state = getState();
   const settingsController = new AbortController();
-  const key = el('input', { type: 'password', value: getApiKey(), autocomplete: 'off', placeholder: 'gsk_…', spellcheck: 'false', autocapitalize: 'none' });
-  const savedCollinsDictionary = getCollinsDictionary();
-  const collinsAvailable = hasRuntimeCapability('collins');
-  const dictionaryCode = el('select', { 'aria-label': 'Collins 词典' }, [
-    el('option', { value: '', text: '请选择词典' }),
-    ...COLLINS_DICTIONARIES.map((dictionary) => el('option', {
-      value: dictionary.code, text: dictionary.name, selected: dictionary.code === savedCollinsDictionary,
-    })),
-  ]);
-  const groqSettingsStatus = el('p', { className: 'help-text provider-settings-status', role: 'status', 'aria-label': 'Groq 连接状态', 'aria-live': 'polite' });
+  const groqSettingsStatus = el('p', { className: 'provider-settings-status', role: 'status', 'aria-label': 'Groq 连接状态', 'aria-live': 'polite' });
   let modelRequest = null;
   const model = el('select');
   let draftModel = getSelectedModel();
   let refreshedIds = null;
-  let refreshedKey = '';
   const numberMode = el('select', {}, [
     el('option', { value: 'none', text: '无序号', selected: state.settings.numberMode === 'none' }),
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
@@ -5689,38 +5798,27 @@ function openSettingsDialog() {
     model.value = draftModel;
   };
   model.addEventListener('change', () => { draftModel = model.value; });
-  key.addEventListener('input', () => {
-    modelRequest?.abort(); modelRequest = null;
-    refresh.disabled = false;
-    groqSettingsStatus.textContent = '';
-    refreshedIds = null;
-    renderModels(key.value.trim() === getApiKey() ? getModelCatalog() : getModelCatalog([]).map((item) => ({
-      ...item, available: item.compatible, label: item.compatible ? '账号可用性待刷新' : item.label,
-    })));
-  });
   renderModels();
   const refresh = button('刷新模型目录', 'secondary-button', async () => {
-    const requestedKey = key.value.trim();
     modelRequest?.abort();
     const request = modelRequest = new AbortController();
     try {
       refresh.disabled = true;
       groqSettingsStatus.textContent = '正在获取 Groq 模型目录…';
-      const result = await refreshModels({ apiKey: requestedKey, signal: request.signal, persist: false });
-      if (settingsController.signal.aborted || request.signal.aborted || modelRequest !== request || requestedKey !== key.value.trim()) return;
+      const result = await refreshModels({ signal: request.signal, persist: false });
+      if (settingsController.signal.aborted || request.signal.aborted || modelRequest !== request) return;
       refreshedIds = result.filter((item) => item.active).map((item) => item.id);
-      refreshedKey = requestedKey;
       renderModels(result);
-      groqSettingsStatus.textContent = '模型目录已更新；密钥与选择将在保存后生效。';
+      groqSettingsStatus.textContent = '模型目录已更新';
     } catch (error) {
       if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) groqSettingsStatus.textContent = error.message;
     } finally { if (modelRequest === request) { refresh.disabled = false; modelRequest = null; } }
   });
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
-      field('Groq API Key', key), field('查询与核查模型', model), refresh, groqSettingsStatus]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Collins' }),
-      field('Collins 词典', dictionaryCode)]),
+      field('查询模型', model), refresh, groqSettingsStatus]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }),
+      el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', openBridgeDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
       el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
@@ -5729,11 +5827,9 @@ function openSettingsDialog() {
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
-  if (!collinsAvailable) body.splice(1, 1);
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
-    const code = dictionaryCode.value.trim();
-    setApiKey(key.value); if (collinsAvailable) setCollinsDictionary(code); selectModel(model.value);
-    if (refreshedIds && refreshedKey === key.value.trim()) saveModelCatalog(refreshedIds);
+    selectModel(model.value);
+    if (refreshedIds) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
     showToast('已保存');
@@ -5820,6 +5916,8 @@ function refreshVisibleEntryRows(entryIds = []) {
 }
 
 function handleStoreEvent({ type, detail }) {
+  if ((type === 'mutation' && detail?.mirrorContextChanged)
+    || ['restore', 'reset-seed', 'undo', 'redo', 'external-change', 'sync'].includes(type)) scheduleMirrorContextSync();
   if ((historyRestoreInProgress || presentationMutationInProgress) && ['view-mode', 'calendar-month'].includes(type)) return;
   if (type === 'calendar-month') return;
   if (type === 'mutation' && detail?.kind === 'pin') return;
@@ -5993,5 +6091,17 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');
   renderApp();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') { clearTimeout(mirrorInboxTimer); return; }
+    receiveMirrorInbox({ notify: true }).catch(() => {}).finally(() => scheduleMirrorInboxPoll());
+  });
+  Promise.resolve().then(async () => {
+    mirrorPendingCount = (await listPendingMirrorResults()).length;
+    renderMirrorStatusBanner();
+    if (!bridgeConfigured()) return;
+    await synchronizeMirrorContext();
+    await receiveMirrorInbox({ notify: true });
+    scheduleMirrorInboxPoll();
+  }).catch(() => {});
   setTimeout(showMigrationNotice, 60);
 }

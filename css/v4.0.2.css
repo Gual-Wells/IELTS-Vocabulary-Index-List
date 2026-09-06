@@ -16,8 +16,6 @@ html.system-modal-surface body {
 
 /* Query providers use the same dark outline language. */
 .query-menu-option.oxford-option,
-.query-menu-option.collins-option,
-.query-menu-option.groq-option,
-.query-menu-option.chatgpt-option {
+.query-menu-option.groq-option {
   color: var(--text) !important;
 }

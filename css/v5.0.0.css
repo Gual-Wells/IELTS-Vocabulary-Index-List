@@ -40,4 +40,22 @@
 @media (prefers-reduced-motion: reduce) {
   .mirror-status-banner { scroll-behavior: auto; }
 }
-label:has(.mirror-bridge-toggle:disabled) { display: none; }
+.mirror-pending-list:empty { display: none; }
+.mirror-pending-list { display: grid; gap: 8px; }
+.mirror-pending-button { min-height: 44px; text-align: left; }
+.mirror-candidate-tree { display: grid; gap: 12px; }
+.mirror-candidate-heading,
+.mirror-candidate-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+}
+.mirror-candidate-heading { border-bottom: 1px solid var(--line); }
+.mirror-candidate-letter { display: grid; }
+.mirror-candidate-copy { display: grid; min-width: 0; }
+.mirror-candidate-copy > span,
+.mirror-candidate-target { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.mirror-candidate-target { max-width: 132px; text-align: right; }
+.bridge-download { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }

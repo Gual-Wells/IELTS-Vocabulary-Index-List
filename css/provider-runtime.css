@@ -26,20 +26,6 @@
 .provider-example + .provider-example { margin-top: 10px; }
 .provider-example-english { color: var(--text); }
 .provider-example-translation { color: var(--muted); font-size: 12px; }
-.provider-footnote { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .provider-result-actions { border-top: 1px solid var(--line); padding-top: 10px; align-items: center; }
 .provider-result-actions > button { min-height: 44px; max-width: 100%; }
-.provider-collins-entry { overflow-wrap: anywhere; }
-.provider-collins-entry p { margin: 8px 0; }
-.provider-collins-entry h4 { margin: 8px 0; font-size: 16px; }
-.provider-collins-entry ol, .provider-collins-entry ul { padding-left: 22px; }
-.provider-collins-entry table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.provider-collins-entry td, .provider-collins-entry th { padding: 4px; border: 1px solid var(--line); }
-.provider-collins-entry .collins-headword { font-weight: 750; font-size: 18px; }
-.provider-collins-entry .collins-pronunciation, .provider-collins-entry .collins-pos,
-.provider-collins-entry .collins-label { color: var(--muted); font-size: 12px; }
-.provider-collins-entry .collins-sense { display: block; margin-top: 10px; }
-.provider-collins-entry li.collins-sense { display: list-item; }
-.provider-collins-entry .collins-example { color: var(--accent-ink); }
-.provider-collins-entry .collins-copyright { display: block; color: var(--muted); font-size: 11px; }
 .settings-section select, .settings-section input { min-width: 0; max-width: 100%; }

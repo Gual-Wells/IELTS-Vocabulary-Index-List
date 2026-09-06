@@ -179,13 +179,13 @@ export function getState() {
   return state;
 }
 
-export async function reloadStore(type = 'reload') {
+export async function reloadStore(type = 'reload', detail = null) {
   if (reloadPromise) return reloadPromise;
   reloadPromise = (async () => {
     await ensureLowLevelLexemes();
     const snapshot = await readSnapshot();
     state = buildState(snapshot);
-    emit(type);
+    emit(type, detail);
     return state;
   })().finally(() => { reloadPromise = null; });
   return reloadPromise;
@@ -350,7 +350,8 @@ async function mutate(label, mutator, retry = true) {
   if (!changes.length) return state;
   try {
     const revision = await commitChanges(changes, { label, expectedRevision: state.revision });
-    await reloadStore('mutation');
+    const mirrorContextChanged = changes.some((change) => ['domains', 'collections', 'entries', 'memberships'].includes(change.store));
+    await reloadStore('mutation', { mirrorContextChanged });
     broadcast(revision);
     return state;
   } catch (error) {
@@ -664,6 +665,64 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
     }
     [...mergedItems.values()].forEach((item, index) => upsertEntryInDraft(draft, collection, item, index));
   });
+}
+
+export async function importMirrorCandidates(candidates, selectedCandidateIds) {
+  const selected = new Set(selectedCandidateIds || []);
+  const summary = { created: 0, merged: 0, memberships: 0, skipped: 0, unassigned: 0, entryIds: [] };
+  if (!selected.size) return summary;
+  await mutate('导入 Mirror 候选词', (draft) => {
+    const domainById = new Map(draft.domains.map((item) => [item.id, item]));
+    const collectionById = new Map(draft.collections.map((item) => [item.id, item]));
+    const membershipSet = new Set(draft.memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
+    for (const candidate of candidates || []) {
+      if (!selected.has(candidate?.candidateId)) continue;
+      const domain = domainById.get(candidate.domainKey);
+      const collections = [...new Set(candidate.collectionKeys || [])]
+        .map((id) => collectionById.get(id))
+        .filter((item) => item?.type === 'normal' && item.domainId === candidate.domainKey);
+      const normalized = normalizeEnglish(candidate.text);
+      if (!domain || !collections.length || !normalized) { summary.unassigned += 1; continue; }
+      let entry = draft.entries.find((item) => item.domainId === domain.id && item.normalizedText === normalized);
+      if (!entry) {
+        const requestedKind = ['word', 'phrase', 'content'].includes(candidate.kind) ? candidate.kind : '';
+        entry = createEntry({
+          domainId: domain.id,
+          text: candidate.text,
+          kind: requestedKind,
+          contentType: requestedKind === 'content' ? 'mirror' : '',
+          partsOfSpeech: candidate.partsOfSpeech || [],
+          glossHans: domain.glossEnabled ? (candidate.glossHans || '') : '',
+          glossHant: domain.glossEnabled ? (candidate.glossHant || candidate.glossHans || '') : '',
+          glossSource: domain.glossEnabled && (candidate.glossHant || candidate.glossHans) ? 'mirror' : '',
+        });
+        draft.entries.push(entry);
+        summary.created += 1;
+      } else {
+        summary.merged += 1;
+        if (domain.glossEnabled && !entry.glossHant && (candidate.glossHant || candidate.glossHans)) {
+          entry.glossHant = normalizeGlossHant(candidate.glossHant || candidate.glossHans);
+          entry.glossSource = 'mirror';
+          entry.updatedAt = new Date().toISOString();
+        }
+      }
+      if (!summary.entryIds.includes(entry.id)) summary.entryIds.push(entry.id);
+      for (const collection of collections) {
+        const key = `${entry.id}\u0000${collection.id}`;
+        if (membershipSet.has(key)) continue;
+        draft.memberships.push(createMembership({
+          entryId: entry.id,
+          collectionId: collection.id,
+          sourceLabel: (candidate.partsOfSpeech || []).join(', '),
+          sourceOrder: nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id)),
+        }));
+        membershipSet.add(key);
+        summary.memberships += 1;
+      }
+    }
+  });
+  summary.skipped = Math.max(0, selected.size - summary.created - summary.merged - summary.unassigned);
+  return summary;
 }
 
 export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '', glossSource = 'manual', contentType = '' } = {}) {

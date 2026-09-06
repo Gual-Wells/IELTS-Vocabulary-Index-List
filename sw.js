@@ -1,14 +1,15 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.9-shell-20260905-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.10-shell-20260906-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
-  './css/provider-runtime.css', './css/v5.0.0.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-collins.js', './js/v3-provider-views.js',
+  './css/provider-runtime.css', './css/v5.0.0.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-provider-views.js',
   './', './index.html', './manifest.webmanifest', './css/v3.css', './css/v3.3.1.css', './css/v3.4.0.css', './css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css',
   './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v3-runtime-geometry.js', './js/v3-store.js', './js/v3-db.js',
   './js/v3-model.js', './js/v3-import.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
-  './js/v5-version.js', './js/v5-runtime-capabilities.js', './js/v5-suppression-runtime.js', './js/v5-mirror-runtime.js', './js/v5-session-capsule.js', './js/v5-seed-migration.js',
+  './js/v5-version.js', './js/v5-suppression-runtime.js', './js/v5-mirror-runtime.js', './js/v5-mirror3.js', './js/v5-bridge.js', './js/v5-seed-migration.js',
+  './integration/vix-function/VIX-Function.ps1', './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md',
   './assets/icons/vix-icon-180-v4.png', './assets/icons/vix-icon-192-v4.png', './assets/icons/vix-icon-512-v4.png',
 ];
 

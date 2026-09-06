@@ -1,7 +1,6 @@
 import { initializeUI, notifyServiceWorkerUpdate, serviceWorkerReloadIsArmed } from './v3-ui.js';
 import { exportLegacyGenerationBackup, getGenerationUpgradeStatus, replaceLegacyGenerationWithSeed } from './v3-db.js';
 import { APP_VERSION } from './v5-version.js';
-import { detectRuntimeCapabilities } from './v5-runtime-capabilities.js';
 
 const HTML_VERSION = /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="application-version"]'))?.content || '';
 const MODULE_VERSION = APP_VERSION;
@@ -113,7 +112,7 @@ async function handleGenerationUpgradeIfNeeded() {
     const backup = await exportLegacyGenerationBackup();
     downloadJsonFile(`Vocabulary-Index-${backup.appVersion || '3.5.2'}-Pre-4.7.3-Backup.json`, backup);
   }
-  const confirm = await bootChoice('确认替换内容世代', '将清除旧 Seed、用户自建内容、PIN、学习日期、标注、浏览状态与撤销历史；Groq / Collins Key、模型选择和一般显示偏好不属于旧内容数据。此操作不能由 4.7.3 撤销。', [
+  const confirm = await bootChoice('确认替换内容世代', '将清除旧 Seed、用户自建内容、PIN、学习日期、标注、浏览状态与撤销历史；Bridge 配置、模型选择和一般显示偏好不属于旧内容数据。此操作不能由 4.7.3 撤销。', [
     { label: '取消启动', value: 'cancel', primary: false },
     { label: '替换并进入 4.7.3', value: 'replace', primary: true },
   ]);
@@ -125,9 +124,7 @@ async function start() {
   if (HTML_VERSION !== MODULE_VERSION) {
     throw new Error(`页面版本 ${HTML_VERSION || '未知'} 与模块版本 ${MODULE_VERSION} 不一致。请完全关闭旧页面并重新打开。`);
   }
-  const runtimePromise = detectRuntimeCapabilities();
   await handleGenerationUpgradeIfNeeded();
-  await runtimePromise;
   await initializeUI({ onProgress: updateBootProgress });
   if ('serviceWorker' in navigator) {
     try {

@@ -33,8 +33,9 @@ function Invoke-Bridge($Method, $Path, $Body = $null, $IdempotencyKey = '') {
   if ($IdempotencyKey) { $headers['Idempotency-Key'] = $IdempotencyKey }
   $parameters = @{ Method = $Method; Uri = $config.url + $Path; Headers = $headers; UseBasicParsing = $true }
   if ($null -ne $Body) {
-    $parameters['ContentType'] = 'application/json'
-    $parameters['Body'] = ($Body | ConvertTo-Json -Depth 100 -Compress)
+    $json = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 100 -Compress }
+    $parameters['ContentType'] = 'application/json; charset=utf-8'
+    $parameters['Body'] = [Text.Encoding]::UTF8.GetBytes($json)
   }
   Invoke-RestMethod @parameters
 }
@@ -89,9 +90,10 @@ if ($Action -eq 'Start') {
 
 if ($Action -eq 'Submit') {
   if (-not $RunId -or -not (Test-Path -LiteralPath $File)) { throw 'Submit requires -RunId and -File.' }
-  $body = Get-Content -LiteralPath $File -Raw | ConvertFrom-Json
+  $jsonText = Get-Content -LiteralPath $File -Raw -Encoding UTF8
+  $body = $jsonText | ConvertFrom-Json
   if ([string]$body.runId -ne $RunId) { throw 'RunId does not match the result file.' }
-  $response = Invoke-Bridge 'PUT' ('/v1/runs/' + [Uri]::EscapeDataString($RunId) + '/result') $body
+  $response = Invoke-Bridge 'PUT' ('/v1/runs/' + [Uri]::EscapeDataString($RunId) + '/result') $jsonText
   $safeRunId = $RunId -replace '[^A-Za-z0-9_-]', '_'
   $contextPath = Join-Path $runRoot ($safeRunId + '-context.json')
   if (Test-Path -LiteralPath $contextPath) { Remove-Item -LiteralPath $contextPath -Force }

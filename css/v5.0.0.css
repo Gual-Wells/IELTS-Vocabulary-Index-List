@@ -40,7 +40,12 @@
 @media (prefers-reduced-motion: reduce) {
   .mirror-status-banner { scroll-behavior: auto; }
 }
-.mirror-pending-list:empty { display: none; }
+.mirror-pending-list:empty::before {
+  content: "无待审核材料";
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
 .mirror-pending-list { display: grid; gap: 8px; }
 .mirror-pending-button { min-height: 44px; text-align: left; }
 .mirror-candidate-tree { display: grid; gap: 12px; }
@@ -71,12 +76,219 @@
 .mirror-import-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .mirror-file-name { min-width: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 
-/* A nested tool replaces its parent visually while retaining parent state. */
-.modal-layer[inert] { visibility: hidden; }
+/* Retained parent layers remain visible, readable as context, and non-interactive. */
+.modal-layer[inert] {
+  pointer-events: none;
+}
+.modal-layer[inert] .modal-card {
+  opacity: .66;
+  transform: translateY(-8px) scale(.985);
+}
+.modal-layer[data-depth]:not([data-depth="1"]) .modal-card {
+  box-shadow: 0 18px 48px rgb(0 0 0 / 18%);
+}
+
+/* Settings, Bridge, Mirror and provider results use one VIX card language. */
+.modal-card-management,
+.modal-card-action {
+  width: min(620px, calc(var(--visual-width, 100vw) - 28px));
+  border-radius: 21px;
+}
+.modal-card-management {
+  max-height: min(calc(var(--visual-height, 100dvh) - 40px), 820px);
+}
+.modal-card-action {
+  max-height: min(calc(var(--visual-height, 100dvh) - 48px), 780px);
+}
+.modal-card-management .dialog-header,
+.modal-card-action .dialog-header {
+  min-height: 58px !important;
+  padding: 15px 18px 12px !important;
+}
+.modal-card-management .dialog-body,
+.modal-card-action .dialog-body {
+  padding: 16px 18px !important;
+  gap: 14px !important;
+}
+.modal-card-management .dialog-actions,
+.modal-card-action .dialog-actions {
+  padding: 11px 16px calc(11px + var(--safe-bottom)) !important;
+}
+.settings-section {
+  gap: 10px !important;
+  padding: 2px 0 15px !important;
+}
+.settings-section > h3,
+.mirror-management-section > h3 {
+  margin: 0;
+  color: var(--accent-ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+}
+
+.mirror-review {
+  display: grid;
+  gap: 14px;
+}
+.mirror-review-summary,
+.mirror-review-layer,
+.mirror-library-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.mirror-review-summary { padding: 15px 16px; }
+.mirror-review-material,
+.mirror-review-layer-heading,
+.mirror-review-group-heading,
+.mirror-review-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.mirror-review-material > span,
+.mirror-review-layer-heading > span,
+.mirror-review-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.mirror-review-material small,
+.mirror-review-layer-heading small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mirror-review-layer-heading {
+  min-height: 58px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+.mirror-review-group-heading {
+  min-height: 46px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--accent-ink);
+}
+.mirror-review-group + .mirror-review-group { border-top: 1px solid var(--line-strong); }
+.mirror-review-row {
+  min-height: 60px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.mirror-review-row:last-child { border-bottom: 0; }
+.mirror-review-copy > strong { overflow-wrap: anywhere; }
+.mirror-review-gloss,
+.mirror-review-meta,
+.mirror-review-evidence {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.mirror-review-gloss { color: var(--text); }
+.mirror-review-meta { color: var(--muted); }
+.mirror-review-evidence {
+  color: var(--accent-ink);
+  line-height: 1.45;
+}
+.mirror-review-count,
+.mirror-review-group-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mirror-class-badge,
+.mirror-library-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--surface));
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mirror-review-empty {
+  margin: 0;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mirror-layer-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 750;
+}
+.mirror-record-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.mirror-management-section {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+.mirror-management-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.mirror-library {
+  display: grid;
+  gap: 10px;
+}
+.mirror-library-card {
+  display: grid;
+}
+.mirror-library-card[data-status="archived"] { opacity: .72; }
+.mirror-library-open {
+  appearance: none;
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 11px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 720;
+  text-align: left;
+}
+.mirror-library-open > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mirror-library-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.mirror-library-state { margin-right: auto; }
 
 /* Only the providers that still exist own columns in the query chooser. */
 .query-menu {
   width: max-content !important;
   min-width: 0 !important;
   grid-template-columns: repeat(2, 46px) !important;
+}
+
+@media (max-width: 620px) {
+  .modal-card-management,
+  .modal-card-action {
+    width: calc(var(--visual-width, 100vw) - 28px);
+    max-width: calc(var(--visual-width, 100vw) - 28px);
+  }
+  .mirror-review-row { grid-template-columns: auto minmax(0, 1fr); }
+  .mirror-review-row > .mirror-class-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
 }

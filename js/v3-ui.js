@@ -5,7 +5,7 @@ import {
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
-  getMirrorState, importMirrorCandidates, installMirrorCurrent, setMirrorEnabled,
+  archiveMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, restoreMirror, setMirrorEnabled,
 } from './v3-store.js';
 import {
   AiCheckController, checkEntries, createAiCheckBatches, getModelCatalog,
@@ -28,7 +28,7 @@ import {
 } from './v5-mirror3.js';
 import {
   acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, getBridgeConfig,
-  getMirrorInbox, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
+  getMirrorHistory, getMirrorInbox, recoverMirrorResult, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -1968,8 +1968,9 @@ function renderHomeAnnotationBanner() {
 
 function mirrorStatusText(snapshot = getMirrorState()) {
   const pending = mirrorPendingCount ? ` · ${mirrorPendingCount.toLocaleString()} 份待确认` : '';
-  if (snapshot.active) return `Mirror 已开启 · ${snapshot.active.entryIds.length.toLocaleString()} 条${pending}`;
-  if (snapshot.current) return `Mirror 已准备 · ${snapshot.current.entryIds.length.toLocaleString()} 条${pending}`;
+  const label = (record) => record?.material?.label || record?.materialLabel || '未命名材料';
+  if (snapshot.active) return `Mirror · ${label(snapshot.active)} · ${snapshot.active.entryIds.length.toLocaleString()} 条${pending}`;
+  if (snapshot.current) return `Mirror 已准备 · ${label(snapshot.current)}${pending}`;
   return mirrorPendingCount ? `${mirrorPendingCount.toLocaleString()} 份 Mirror 待确认` : '尚无 Mirror';
 }
 
@@ -2045,7 +2046,7 @@ function mirrorCandidateLetter(candidate) {
   return /^[A-Z]$/.test(letter) ? letter : '#';
 }
 
-function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
+function openMirrorCandidateReviewLegacy(prepared, { bridgeRun = false } = {}) {
   const candidates = prepared.candidates.filter((item) => item.valid);
   const selected = new Set(candidates.map((item) => item.candidateId));
   const root = el('div', { className: 'mirror-candidate-tree' });
@@ -2118,6 +2119,202 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
   });
 }
 
+function mirrorClassLabel(value) {
+  return value === 'phrase' ? '短语' : value === 'usage' ? '用法' : '词汇';
+}
+
+function mirrorImportanceLabel(value) {
+  return value === 'core' ? '核心' : value === 'context' ? '语境' : '相关';
+}
+
+function mirrorEvidenceText(evidence) {
+  const first = Array.isArray(evidence) ? evidence.find((item) => item?.quote) : null;
+  return first ? [first.quote, first.location].filter(Boolean).join(' · ') : '';
+}
+
+function syncMirrorReviewChecks(root) {
+  for (const group of root.querySelectorAll('[data-mirror-review-group]')) {
+    const leaves = [...group.querySelectorAll('input[data-review-role="leaf"]')];
+    const parent = group.querySelector('input[data-review-role="group"]');
+    if (!parent) continue;
+    const count = leaves.filter((input) => input.checked).length;
+    parent.checked = leaves.length > 0 && count === leaves.length;
+    parent.indeterminate = count > 0 && count < leaves.length;
+  }
+  for (const layer of root.querySelectorAll('[data-mirror-review-layer]')) {
+    const leaves = [...layer.querySelectorAll('input[data-review-role="leaf"]')];
+    const parent = layer.querySelector('input[data-review-role="layer"]');
+    if (!parent) continue;
+    const count = leaves.filter((input) => input.checked).length;
+    parent.checked = leaves.length > 0 && count === leaves.length;
+    parent.indeterminate = count > 0 && count < leaves.length;
+  }
+  const leaves = [...root.querySelectorAll('input[data-review-role="leaf"]')];
+  const material = root.querySelector('input[data-review-role="material"]');
+  if (material) {
+    const count = leaves.filter((input) => input.checked).length;
+    material.checked = leaves.length > 0 && count === leaves.length;
+    material.indeterminate = count > 0 && count < leaves.length;
+  }
+}
+
+function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
+  const existingMatches = (prepared.existingMatches || []).filter((item) => item.valid);
+  const candidates = prepared.candidates.filter((item) => item.valid);
+  const root = el('div', { className: 'mirror-review' });
+  const materialInput = el('input', {
+    type: 'checkbox', className: 'vix-checkbox', checked: existingMatches.length + candidates.length > 0,
+    dataset: { reviewRole: 'material' },
+  });
+  root.append(el('header', { className: 'mirror-review-summary' }, [
+    el('label', { className: 'mirror-review-material' }, [
+      materialInput,
+      el('span', {}, [
+        el('strong', { text: prepared.mirrorRecord.materialLabel || '临时材料' }),
+        el('small', { text: existingMatches.length + ' 条已有匹配 · ' + candidates.length + ' 条新候选' }),
+      ]),
+    ]),
+  ]));
+
+  const existingLayer = el('section', { className: 'mirror-review-layer', dataset: { mirrorReviewLayer: 'existing' } });
+  const existingLayerInput = el('input', {
+    type: 'checkbox', className: 'vix-checkbox', checked: existingMatches.some((item) => item.selectedByDefault),
+    disabled: !existingMatches.length, dataset: { reviewRole: 'layer' },
+  });
+  existingLayer.append(el('label', { className: 'mirror-review-layer-heading' }, [
+    existingLayerInput,
+    el('span', {}, [el('strong', { text: '已有 VIX 词汇' }), el('small', { text: '保留在本材料 Mirror 中' })]),
+    el('span', { className: 'mirror-review-count', text: String(existingMatches.length) }),
+  ]));
+  const existingByClass = new Map();
+  existingMatches.forEach((match, index) => {
+    const key = match.mirrorClass || 'vocabulary';
+    if (!existingByClass.has(key)) existingByClass.set(key, []);
+    existingByClass.get(key).push({ match, index });
+  });
+  for (const key of ['vocabulary', 'phrase', 'usage']) {
+    const items = existingByClass.get(key) || [];
+    if (!items.length) continue;
+    const group = el('section', { className: 'mirror-review-group', dataset: { mirrorReviewGroup: key } });
+    const groupInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { reviewRole: 'group' } });
+    group.append(el('label', { className: 'mirror-review-group-heading' }, [
+      groupInput, el('strong', { text: mirrorClassLabel(key) }), el('span', { text: String(items.length) }),
+    ]));
+    for (const { match, index } of items) {
+      const input = el('input', {
+        type: 'checkbox', className: 'vix-checkbox', checked: match.selectedByDefault,
+        dataset: { reviewRole: 'leaf', matchIndex: String(index) },
+      });
+      const evidence = mirrorEvidenceText(match.evidence);
+      group.append(el('label', { className: 'mirror-review-row' }, [
+        input,
+        el('span', { className: 'mirror-review-copy' }, [
+          el('strong', { text: match.entryText || match.lemma || match.surfaceForm }),
+          match.glossHant || match.glossHans ? el('span', { className: 'mirror-review-gloss', text: match.glossHant || match.glossHans }) : null,
+          el('span', { className: 'mirror-review-meta', text: [match.surfaceForm && match.surfaceForm !== match.entryText ? match.surfaceForm : '', mirrorImportanceLabel(match.importance), match.glossHant || match.glossHans ? '释义修复' : '', match.relationNoise ? '低级组件' : ''].filter(Boolean).join(' · ') }),
+          evidence ? el('span', { className: 'mirror-review-evidence', text: evidence }) : null,
+        ]),
+        el('span', { className: 'mirror-class-badge', text: mirrorClassLabel(match.mirrorClass) }),
+      ]));
+    }
+    existingLayer.append(group);
+  }
+  if (!existingMatches.length) existingLayer.append(el('p', { className: 'mirror-review-empty', text: '本材料没有匹配到已有条目' }));
+  root.append(existingLayer);
+
+  const candidateLayer = el('section', { className: 'mirror-review-layer', dataset: { mirrorReviewLayer: 'candidate' } });
+  const candidateLayerInput = el('input', {
+    type: 'checkbox', className: 'vix-checkbox', checked: candidates.some((item) => item.selectedByDefault),
+    disabled: !candidates.length, dataset: { reviewRole: 'layer' },
+  });
+  candidateLayer.append(el('label', { className: 'mirror-review-layer-heading' }, [
+    candidateLayerInput,
+    el('span', {}, [el('strong', { text: 'VIX 外新候选' }), el('small', { text: '提交后写入词库并保存材料关系' })]),
+    el('span', { className: 'mirror-review-count', text: String(candidates.length) }),
+  ]));
+  const byLetter = new Map();
+  candidates.forEach((candidate) => {
+    const letter = mirrorCandidateLetter(candidate);
+    if (!byLetter.has(letter)) byLetter.set(letter, []);
+    byLetter.get(letter).push(candidate);
+  });
+  for (const [letter, items] of [...byLetter].sort(([left], [right]) => left.localeCompare(right))) {
+    const group = el('section', { className: 'mirror-review-group', dataset: { mirrorReviewGroup: letter } });
+    const groupInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { reviewRole: 'group' } });
+    group.append(el('label', { className: 'mirror-review-group-heading' }, [
+      groupInput, el('strong', { text: letter }), el('span', { text: String(items.length) }),
+    ]));
+    for (const candidate of items.sort((left, right) => left.text.localeCompare(right.text, 'en'))) {
+      const input = el('input', {
+        type: 'checkbox', className: 'vix-checkbox', checked: candidate.selectedByDefault,
+        dataset: { reviewRole: 'leaf', candidateId: candidate.candidateId },
+      });
+      const collections = candidate.collectionKeys.map((id) => getState().collectionById.get(id)?.name).filter(Boolean).join(' · ');
+      group.append(el('label', { className: 'mirror-review-row' }, [
+        input,
+        el('span', { className: 'mirror-review-copy' }, [
+          el('strong', { text: candidate.text }),
+          candidate.glossHant || candidate.glossHans ? el('span', { className: 'mirror-review-gloss', text: candidate.glossHant || candidate.glossHans }) : null,
+          el('span', { className: 'mirror-review-meta', text: [mirrorImportanceLabel(candidate.importance), collections].filter(Boolean).join(' · ') }),
+          el('span', { className: 'mirror-review-evidence', text: mirrorEvidenceText(candidate.evidence) }),
+        ]),
+        el('span', { className: 'mirror-class-badge', text: mirrorClassLabel(candidate.mirrorClass) }),
+      ]));
+    }
+    candidateLayer.append(group);
+  }
+  if (!candidates.length) candidateLayer.append(el('p', { className: 'mirror-review-empty', text: '本材料没有需要新增的候选' }));
+  root.append(candidateLayer);
+
+  root.addEventListener('change', (event) => {
+    const input = event.target.closest('input[type="checkbox"]');
+    if (!input) return;
+    if (input.dataset.reviewRole === 'material') {
+      for (const leaf of root.querySelectorAll('input[data-review-role="leaf"]')) leaf.checked = input.checked;
+    } else if (input.dataset.reviewRole === 'layer') {
+      const layer = input.closest('[data-mirror-review-layer]');
+      for (const leaf of layer.querySelectorAll('input[data-review-role="leaf"]')) leaf.checked = input.checked;
+    } else if (input.dataset.reviewRole === 'group') {
+      const group = input.closest('[data-mirror-review-group]');
+      for (const leaf of group.querySelectorAll('input[data-review-role="leaf"]')) leaf.checked = input.checked;
+    }
+    syncMirrorReviewChecks(root);
+  });
+  syncMirrorReviewChecks(root);
+
+  openDialog({
+    title: '审核 Mirror', body: [root], variant: 'management', showCancel: true, cancelText: '取消', submitText: '提交',
+    onSubmit: async () => {
+      const selectedExisting = [...root.querySelectorAll('input[data-match-index]:checked')]
+        .map((input) => existingMatches[Number(input.dataset.matchIndex)]).filter(Boolean);
+      const selectedCandidateIds = new Set([...root.querySelectorAll('input[data-candidate-id]:checked')].map((input) => input.dataset.candidateId));
+      const imported = await importMirrorCandidates(candidates, selectedCandidateIds, selectedExisting);
+      const candidateImports = candidates.filter((candidate) => selectedCandidateIds.has(candidate.candidateId))
+        .map((candidate) => ({
+          candidateId: candidate.candidateId,
+          entryId: imported.entryIdByCandidateId[candidate.candidateId],
+          text: candidate.text,
+          mirrorClass: candidate.mirrorClass,
+          importance: candidate.importance,
+          evidence: candidate.evidence,
+          collectionKeys: candidate.collectionKeys,
+          relatedEntryIds: candidate.relatedEntryIds,
+        })).filter((item) => item.entryId);
+      const mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, {
+        existingMatches: selectedExisting,
+        candidateImports,
+        entryIds: [...selectedExisting.map((item) => item.entryId), ...candidateImports.map((item) => item.entryId)],
+      });
+      await installMirrorCurrent(mirrorRecord);
+      if (bridgeRun) await acknowledgeMirrorRun(prepared.runId);
+      await removePendingMirrorResult(prepared.runId);
+      mirrorPendingCount = (await listPendingMirrorResults()).length;
+      renderApp();
+      showToast('Mirror 已保存 · ' + selectedExisting.length + ' 条已有 · ' + imported.created + ' 条新增');
+    },
+  });
+}
+
 async function importMirrorResultFile(file) {
   if (!file) throw new Error('请选择 Mirror Result JSON');
   if (file.size > 3 * 1024 * 1024) throw new Error('Mirror Result 文件过大');
@@ -2128,7 +2325,7 @@ async function importMirrorResultFile(file) {
   openMirrorCandidateReview(prepared);
 }
 
-async function openMirrorDialog() {
+async function openMirrorDialogLegacy() {
   const status = el('div', { className: 'mirror-management-status' });
   const toggle = button('开启 Mirror', 'primary-button', async () => {
     const before = getMirrorState();
@@ -2168,6 +2365,172 @@ async function openMirrorDialog() {
       pendingHost,
       file,
       el('div', { className: 'mirror-import-row' }, [chooseFile, importButton, fileName]),
+    ],
+    variant: 'management', showCancel: false, onRestore: refresh,
+  });
+}
+
+function mirrorRecordClassCounts(record) {
+  const counts = { vocabulary: 0, phrase: 0, usage: 0 };
+  for (const item of [...(record.existingMatches || []), ...(record.candidateImports || [])]) {
+    const key = ['vocabulary', 'phrase', 'usage'].includes(item.mirrorClass) ? item.mirrorClass : 'vocabulary';
+    counts[key] += 1;
+  }
+  if (!Object.values(counts).some(Boolean)) counts.vocabulary = record.entryIds?.length || 0;
+  return counts;
+}
+
+function mirrorReadOnlyLayer(title, subtitle, items) {
+  const section = el('section', { className: 'mirror-review-layer mirror-record-layer' }, [
+    el('header', { className: 'mirror-review-layer-heading' }, [
+      el('span', { className: 'mirror-layer-mark', text: String(items.length) }),
+      el('span', {}, [el('strong', { text: title }), el('small', { text: subtitle })]),
+      el('span', { className: 'mirror-review-count', text: String(items.length) }),
+    ]),
+  ]);
+  if (!items.length) {
+    section.append(el('p', { className: 'mirror-review-empty', text: '无' }));
+    return section;
+  }
+  for (const item of items) {
+    section.append(el('div', { className: 'mirror-review-row mirror-record-row' }, [
+      el('span', { className: 'mirror-layer-mark', text: mirrorClassLabel(item.mirrorClass).slice(0, 1) }),
+      el('span', { className: 'mirror-review-copy' }, [
+        el('strong', { text: item.entryText || item.text || item.lemma || item.surfaceForm }),
+        el('span', { className: 'mirror-review-meta', text: [item.surfaceForm && item.surfaceForm !== item.entryText ? item.surfaceForm : '', mirrorImportanceLabel(item.importance)].filter(Boolean).join(' · ') }),
+        mirrorEvidenceText(item.evidence) ? el('span', { className: 'mirror-review-evidence', text: mirrorEvidenceText(item.evidence) }) : null,
+      ]),
+      el('span', { className: 'mirror-class-badge', text: mirrorClassLabel(item.mirrorClass) }),
+    ]));
+  }
+  return section;
+}
+
+function openMirrorRecordDetail(record) {
+  const counts = mirrorRecordClassCounts(record);
+  openDialog({
+    title: record.material?.label || record.materialLabel || 'Mirror 材料',
+    description: counts.vocabulary + ' 词汇 · ' + counts.phrase + ' 短语 · ' + counts.usage + ' 用法',
+    body: [
+      mirrorReadOnlyLayer('已有 VIX 词汇', '来自材料的现有匹配', record.existingMatches || []),
+      mirrorReadOnlyLayer('VIX 外新词', '审核后已写入词库的候选', record.candidateImports || []),
+    ],
+    variant: 'management',
+    showCancel: false,
+  });
+}
+
+async function openMirrorDialog() {
+  const status = el('div', { className: 'mirror-management-status' });
+  const libraryHost = el('div', { className: 'mirror-library' });
+  const pendingHost = el('div', { className: 'mirror-pending-list' });
+  const recoveryHost = el('div', { className: 'mirror-pending-list' });
+  const sync = bridgeConfigured() ? button('同步 Bridge', 'secondary-button', async () => {
+    await synchronizeMirrorContext({ notify: true });
+    await receiveMirrorInbox({ notify: true });
+    await refresh();
+  }) : null;
+  const create = button('下载请求', 'secondary-button', openMirrorRequestCreator);
+  const file = el('input', { type: 'file', className: 'mirror-file-input', accept: '.json,application/json' });
+  const fileName = el('span', { className: 'mirror-file-name', text: '未选择文件' });
+  const importButton = button('导入结果', 'secondary-button', () => importMirrorResultFile(file.files?.[0]), { disabled: true });
+  const chooseFile = button('选择文件', 'secondary-button', () => file.click());
+  file.addEventListener('change', () => {
+    fileName.textContent = file.files?.[0]?.name || '未选择文件';
+    importButton.disabled = !file.files?.length;
+  });
+
+  async function refresh() {
+    const snapshot = getMirrorState();
+    status.replaceChildren(
+      el('strong', { text: snapshot.active ? '正在使用 ' + (snapshot.active.material?.label || snapshot.active.materialLabel || 'Mirror') : '未开启材料 Mirror' }),
+      el('p', { text: (snapshot.library?.length || 0) + ' 份材料 · ' + mirrorPendingCount + ' 份待审核' }),
+    );
+    const records = snapshot.library || [];
+    libraryHost.replaceChildren();
+    if (!records.length) libraryHost.append(el('p', { className: 'mirror-review-empty', text: '尚无已审核材料' }));
+    for (const item of records) {
+      const record = item.record;
+      const counts = mirrorRecordClassCounts(record);
+      const active = snapshot.active?.mirrorId === record.mirrorId;
+      const card = el('article', { className: 'mirror-library-card', dataset: { status: item.status } });
+      const open = button(record.material?.label || record.materialLabel || '未命名材料', 'mirror-library-open', () => openMirrorRecordDetail(record));
+      open.append(el('span', { text: counts.vocabulary + ' 词汇 · ' + counts.phrase + ' 短语 · ' + counts.usage + ' 用法' }));
+      const toggle = button(active ? '关闭' : '打开', active ? 'primary-button compact-button' : 'secondary-button compact-button', async () => {
+        if (active) await setMirrorEnabled(false);
+        else {
+          if (item.status === 'archived') await restoreMirror(record.mirrorId);
+          await setMirrorEnabled(true, record.mirrorId);
+        }
+        renderApp();
+        await refresh();
+      });
+      const archive = button(item.status === 'archived' ? '恢复' : '归档', 'secondary-button compact-button', async () => {
+        if (item.status === 'archived') await restoreMirror(record.mirrorId);
+        else await archiveMirror(record.mirrorId);
+        renderApp();
+        await refresh();
+      });
+      card.append(open, el('div', { className: 'mirror-library-actions' }, [
+        el('span', { className: 'mirror-library-state', text: active ? '使用中' : item.status === 'archived' ? '已归档' : '可用' }),
+        toggle, archive,
+      ]));
+      libraryHost.append(card);
+    }
+    const pending = await listPendingMirrorResults();
+    mirrorPendingCount = pending.length;
+    pendingHost.replaceChildren(...pending.map((item) => button(item.raw?.materialLabel || item.runId, 'mirror-pending-button', async () => {
+      openMirrorCandidateReview(await prepareMirrorResult(item.raw), { bridgeRun: true });
+    })));
+    recoveryHost.replaceChildren();
+    if (bridgeConfigured()) {
+      const localRunIds = new Set([
+        ...records.map((item) => item.record?.runId || String(item.record?.mirrorId || '').replace(/^mirror_/, '')),
+        ...pending.map((item) => item.runId),
+      ].filter(Boolean));
+      try {
+        const history = await getMirrorHistory();
+        const recoverable = (history?.runs || []).filter((run) => run.recoverable && !localRunIds.has(run.runId));
+        recoveryHost.replaceChildren(...recoverable.map((run) => button(
+          run.materialLabel || run.runId,
+          'mirror-pending-button',
+          async () => {
+            const recovered = await recoverMirrorResult(run.runId);
+            const prepared = await savePendingMirrorResult(recovered.result);
+            mirrorPendingCount = (await listPendingMirrorResults()).length;
+            openMirrorCandidateReview(prepared, { bridgeRun: true });
+          },
+        )));
+      } catch {
+        recoveryHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: 'Bridge 历史暂不可用' }));
+      }
+    }
+    renderMirrorStatusBanner();
+  }
+
+  await refresh();
+  openDialog({
+    title: 'Mirror',
+    body: [
+      status,
+      el('section', { className: 'mirror-management-section' }, [
+        el('h3', { text: '材料' }),
+        libraryHost,
+      ]),
+      el('section', { className: 'mirror-management-section' }, [
+        el('h3', { text: '待审核' }),
+        pendingHost,
+      ]),
+      el('section', { className: 'mirror-management-section' }, [
+        el('h3', { text: '可恢复' }),
+        recoveryHost,
+      ]),
+      el('section', { className: 'mirror-management-section' }, [
+        el('h3', { text: '接收' }),
+        el('div', { className: 'settings-row mirror-action-row' }, [sync, create].filter(Boolean)),
+        file,
+        el('div', { className: 'mirror-import-row' }, [chooseFile, importButton, fileName]),
+      ]),
     ],
     variant: 'management', showCancel: false, onRestore: refresh,
   });
@@ -2306,7 +2669,9 @@ function renderCollection(token = renderRevision) {
   elements['home-annotation-banner'].classList.add('hidden');
   elements['search-button'].classList.add('hidden');
   elements['bottom-toolbar'].classList.remove('hidden');
-  elements['page-title'].textContent = collection.name;
+  const activeMirror = getMirrorState().active;
+  const activeMirrorLabel = activeMirror?.material?.label || activeMirror?.materialLabel || '';
+  elements['page-title'].textContent = activeMirrorLabel || collection.name;
   let words = 0, phrases = 0, contents = 0;
   for (const entry of allEntries) {
     if (entry.kind === 'phrase') phrases += 1;
@@ -2320,7 +2685,11 @@ function renderCollection(token = renderRevision) {
     ? (currentViewKind === 'phrase' ? '短语视图' : currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';
   const collectionSubtitle = [countText, viewLabel].filter(Boolean).join(' · ');
   elements['page-subtitle'].textContent = collectionSubtitle;
-  renderLargeTitle({ eyebrow: domain?.name || (globalSystemView ? '全局索引' : ''), title: collection.name, subtitle: collectionSubtitle });
+  renderLargeTitle({
+    eyebrow: activeMirrorLabel ? 'MIRROR · ' + collection.name : domain?.name || (globalSystemView ? '全局索引' : ''),
+    title: activeMirrorLabel || collection.name,
+    subtitle: collectionSubtitle,
+  });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '更多');
   renderCollectionToolbar(collection);
@@ -5892,7 +6261,7 @@ function openSettingsDialog() {
       }))])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
       el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '关闭低级词汇关联' }), lowLevelRelations])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),

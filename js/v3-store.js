@@ -8,8 +8,8 @@ import {
   replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings, undo as dbUndo,
 } from './v3-db.js';
 import {
-  activateMirror, commitMirrorCurrent, deactivateMirror, effectiveEntryAllowed, effectiveProjectionFromMirror,
-  getMirrorSnapshot, initializeMirrorRuntime,
+  activateMirror, archiveMirrorRecord, commitMirrorCurrent, deactivateMirror, effectiveEntryAllowed, effectiveProjectionFromMirror,
+  getMirrorSnapshot, initializeMirrorRuntime, restoreMirrorRecord, selectMirrorCurrent,
 } from './v5-mirror-runtime.js';
 import { APP_VERSION } from './v5-version.js';
 
@@ -141,6 +141,7 @@ function buildState(snapshot) {
     domainById, collectionById, entryById, entriesByNormalizedText,
     wordsByNormalizedText, phrasesByNormalizedText, contentByNormalizedText,
     globalConflictKeys, projectionUniqueCounts,
+    lowLevelRelationLexemes: new Set(lowLevelRelationLexemes),
     relationComponentsByEntry: componentsByEntry,
     rawRelationsByEntry, relatedEntriesByEntry, effectiveAdjacency,
     // Compatibility views used by older call sites while UI is migrated to generic relations.
@@ -667,14 +668,31 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
   });
 }
 
-export async function importMirrorCandidates(candidates, selectedCandidateIds) {
+export async function importMirrorCandidates(candidates, selectedCandidateIds, selectedExistingMatches = []) {
   const selected = new Set(selectedCandidateIds || []);
-  const summary = { created: 0, merged: 0, memberships: 0, skipped: 0, unassigned: 0, entryIds: [] };
-  if (!selected.size) return summary;
+  const summary = { created: 0, merged: 0, memberships: 0, repairedGlosses: 0, skipped: 0, unassigned: 0, entryIds: [], entryIdByCandidateId: {} };
+  const repairMatches = Array.isArray(selectedExistingMatches) ? selectedExistingMatches : [];
+  if (!selected.size && !repairMatches.length) return summary;
+  const corruptedGloss = (value) => {
+    const compact = String(value || '').replace(/[\s,.;:!?，。；：！？、()[\]{}'"“”‘’·—_-]/g, '');
+    return compact.length > 0 && /^\?+$/.test(compact);
+  };
   await mutate('导入 Mirror 候选词', (draft) => {
     const domainById = new Map(draft.domains.map((item) => [item.id, item]));
     const collectionById = new Map(draft.collections.map((item) => [item.id, item]));
     const membershipSet = new Set(draft.memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
+    for (const match of repairMatches) {
+      const entry = draft.entries.find((item) => item.id === match?.entryId);
+      const domain = entry ? domainById.get(entry.domainId) : null;
+      if (!entry || !domain?.glossEnabled || (!match?.glossHant && !match?.glossHans)) continue;
+      if (!entry.glossHant || corruptedGloss(entry.glossHant)) {
+        entry.glossHans = normalizeDisplayText(match.glossHans || entry.glossHans || '');
+        entry.glossHant = normalizeGlossHant(match.glossHant || match.glossHans);
+        entry.glossSource = 'mirror';
+        entry.updatedAt = new Date().toISOString();
+        summary.repairedGlosses += 1;
+      }
+    }
     for (const candidate of candidates || []) {
       if (!selected.has(candidate?.candidateId)) continue;
       const domain = domainById.get(candidate.domainKey);
@@ -700,13 +718,16 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds) {
         summary.created += 1;
       } else {
         summary.merged += 1;
-        if (domain.glossEnabled && !entry.glossHant && (candidate.glossHant || candidate.glossHans)) {
+        if (domain.glossEnabled && (!entry.glossHant || corruptedGloss(entry.glossHant)) && (candidate.glossHant || candidate.glossHans)) {
+          entry.glossHans = normalizeDisplayText(candidate.glossHans || entry.glossHans || '');
           entry.glossHant = normalizeGlossHant(candidate.glossHant || candidate.glossHans);
           entry.glossSource = 'mirror';
           entry.updatedAt = new Date().toISOString();
+          summary.repairedGlosses += 1;
         }
       }
       if (!summary.entryIds.includes(entry.id)) summary.entryIds.push(entry.id);
+      summary.entryIdByCandidateId[candidate.candidateId] = entry.id;
       for (const collection of collections) {
         const key = `${entry.id}\u0000${collection.id}`;
         if (membershipSet.has(key)) continue;
@@ -1197,10 +1218,28 @@ export function getMirrorState() {
   return getMirrorSnapshot();
 }
 
-export async function setMirrorEnabled(enabled) {
-  if (enabled) await activateMirror(state.entries.map((entry) => entry.id));
+export async function setMirrorEnabled(enabled, mirrorId = '') {
+  if (enabled) await activateMirror(state.entries.map((entry) => entry.id), mirrorId);
   else deactivateMirror();
   await reloadStore(enabled ? 'mirror-on' : 'mirror-off');
+  return getMirrorSnapshot();
+}
+
+export async function selectMirror(mirrorId) {
+  await selectMirrorCurrent(mirrorId);
+  await reloadStore('mirror-selected');
+  return getMirrorSnapshot();
+}
+
+export async function archiveMirror(mirrorId) {
+  await archiveMirrorRecord(mirrorId);
+  await reloadStore('mirror-archived');
+  return getMirrorSnapshot();
+}
+
+export async function restoreMirror(mirrorId) {
+  await restoreMirrorRecord(mirrorId);
+  await reloadStore('mirror-restored');
   return getMirrorSnapshot();
 }
 

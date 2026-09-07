@@ -116,6 +116,14 @@ export function getMirrorInbox(options = {}) {
   return bridgeRequest('/v1/inbox', options);
 }
 
+export function getMirrorHistory(options = {}) {
+  return bridgeRequest('/v1/history', options);
+}
+
+export function recoverMirrorResult(runId, options = {}) {
+  return bridgeRequest('/v1/runs/' + encodeURIComponent(runId) + '/result', options);
+}
+
 export function acknowledgeMirrorRun(runId, options = {}) {
   return bridgeRequest(`/v1/runs/${encodeURIComponent(runId)}/ack`, { ...options, method: 'POST', body: {} });
 }

@@ -15,7 +15,7 @@ const suppression = new SuppressionRuntime();
 let current = null;
 /** @type {any | null} */
 let active = null;
-/** @type {Map<string, {record: any, status: string, reviewedAt: string, archivedAt: string}>} */
+/** @type {Map<string, {record: any, reviewedAt: string}>} */
 let library = new Map();
 let initialized = false;
 let databasePromise = null;
@@ -175,9 +175,7 @@ function libraryRows() {
     .sort((left, right) => String(right.record.createdAt).localeCompare(String(left.record.createdAt)))
     .map((item) => ({
       record: clone(item.record),
-      status: active?.mirrorId === item.record.mirrorId ? 'active' : item.status,
       reviewedAt: item.reviewedAt,
-      archivedAt: item.archivedAt,
     }));
 }
 
@@ -197,22 +195,20 @@ export async function initializeMirrorRuntime() {
       const record = validateMirrorRecord(row.record);
       library.set(record.mirrorId, {
         record,
-        status: row.status === 'archived' ? 'archived' : 'ready',
         reviewedAt: validIso(row.reviewedAt) ? row.reviewedAt : record.createdAt,
-        archivedAt: validIso(row.archivedAt) ? row.archivedAt : '',
       });
     } catch {}
   }
   if (legacyCurrent) {
     try {
       const record = validateMirrorRecord(legacyCurrent);
-      library.set(record.mirrorId, { record, status: 'ready', reviewedAt: record.createdAt, archivedAt: '' });
+      library.set(record.mirrorId, { record, reviewedAt: record.createdAt });
       currentId = record.mirrorId;
-      await putRow({ key: RECORD_PREFIX + record.mirrorId, record: clone(record), status: 'ready', reviewedAt: record.createdAt, archivedAt: '' });
+      await putRow({ key: RECORD_PREFIX + record.mirrorId, record: clone(record), reviewedAt: record.createdAt });
       await putRow({ key: CURRENT_KEY, mirrorId: record.mirrorId });
     } catch {}
   }
-  current = library.get(currentId)?.record || libraryRows().find((item) => item.status !== 'archived')?.record || null;
+  current = library.get(currentId)?.record || null;
   initialized = true;
   return getMirrorSnapshot();
 }
@@ -241,7 +237,7 @@ export async function commitMirrorCurrent(record, structuralEntryIds) {
   const universe = new Set(structuralEntryIds);
   for (const id of validated.entryIds) if (!universe.has(id)) throw new Error('Mirror 包含当前词库未知 Entry：' + id);
   const reviewedAt = new Date().toISOString();
-  const envelope = { record: validated, status: 'ready', reviewedAt, archivedAt: '' };
+  const envelope = { record: validated, reviewedAt };
   library.set(validated.mirrorId, envelope);
   await putRow({ key: RECORD_PREFIX + validated.mirrorId, ...clone(envelope) });
   await putRow({ key: CURRENT_KEY, mirrorId: validated.mirrorId });
@@ -254,6 +250,7 @@ export async function selectMirrorCurrent(mirrorId) {
   await initializeMirrorRuntime();
   const envelope = library.get(String(mirrorId || ''));
   if (!envelope) throw new Error('Mirror 材料不存在');
+  if (active && active.mirrorId !== envelope.record.mirrorId) deactivateMirror();
   current = envelope.record;
   await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId });
   emit('selected');
@@ -265,7 +262,6 @@ export async function activateMirror(structuralEntryIds, mirrorId = '') {
   await initializeMirrorRuntime();
   if (mirrorId) await selectMirrorCurrent(mirrorId);
   if (!current) throw new Error('当前设备没有可用 Mirror');
-  if (library.get(current.mirrorId)?.status === 'archived') throw new Error('请先恢复已归档的 Mirror');
   active = validateMirrorRecord(clone(current));
   setMirrorSuppression(suppression, structuralEntryIds, active.entryIds);
   emit('active');
@@ -279,26 +275,19 @@ export function deactivateMirror() {
   return getMirrorSnapshot();
 }
 
-export async function archiveMirrorRecord(mirrorId) {
+export async function deleteMirrorRecord(mirrorId) {
   await initializeMirrorRuntime();
-  const envelope = library.get(String(mirrorId || ''));
-  if (!envelope) throw new Error('Mirror 材料不存在');
-  if (active?.mirrorId === envelope.record.mirrorId) deactivateMirror();
-  envelope.status = 'archived';
-  envelope.archivedAt = new Date().toISOString();
-  await putRow({ key: RECORD_PREFIX + envelope.record.mirrorId, ...clone(envelope) });
-  emit('archived');
-  return getMirrorSnapshot();
-}
-
-export async function restoreMirrorRecord(mirrorId) {
-  await initializeMirrorRuntime();
-  const envelope = library.get(String(mirrorId || ''));
-  if (!envelope) throw new Error('Mirror 材料不存在');
-  envelope.status = 'ready';
-  envelope.archivedAt = '';
-  await putRow({ key: RECORD_PREFIX + envelope.record.mirrorId, ...clone(envelope) });
-  emit('restored');
+  const id = String(mirrorId || '');
+  const envelope = library.get(id);
+  if (!envelope) return getMirrorSnapshot();
+  if (active?.mirrorId === id) deactivateMirror();
+  library.delete(id);
+  await deleteRow(RECORD_PREFIX + id);
+  if (current?.mirrorId === id) {
+    current = null;
+    await deleteRow(CURRENT_KEY);
+  }
+  emit('deleted');
   return getMirrorSnapshot();
 }
 

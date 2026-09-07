@@ -423,6 +423,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   }
 
   const entryByIdentity = new Map(entries.map((item) => [contentIdentity(item.domainId, item.normalizedText), item]));
+  const entryIndexById = new Map(entries.map((item, index) => [item.id, index]));
   const entryCandidatesByReference = new Map();
   const entryCandidatesByNormalizedText = new Map();
   const registerCandidate = (map, key, entry) => {
@@ -449,6 +450,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     if (!entry) {
       entry = createEntry({ id: stableId('entry', `${domainId}:${incoming.normalizedText}`), domainId, text: incoming.text, kind: incoming.kind, contentType: incoming.contentType, partsOfSpeech: incoming.partsOfSpeech, glossHans: incoming.glossHans, glossHant: incoming.glossHant, glossSource: incoming.glossSource, timestamp });
       entries.push(entry);
+      entryIndexById.set(entry.id, entries.length - 1);
       entryByIdentity.set(identity, entry);
     } else {
       let glossHant = entry.glossHant;
@@ -458,7 +460,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
         if (!entry.glossHant || conflictPolicy === 'import') { glossHant = incoming.glossHant; glossSource = incoming.glossSource || entry.glossSource; }
       }
       const updated = createEntry({ ...entry, text: incoming.text || entry.text, kind: incoming.kind || entry.kind, contentType: incoming.contentType || entry.contentType, partsOfSpeech: incoming.partsOfSpeech?.length ? incoming.partsOfSpeech : entry.partsOfSpeech, glossHans: incoming.glossHans || entry.glossHans, glossHant, glossSource, updatedAt: timestamp, timestamp });
-      entries = entries.map((item) => item.id === entry.id ? updated : item);
+      entries[entryIndexById.get(entry.id)] = updated;
       entry = updated;
       entryByIdentity.set(identity, updated);
       skippedDuplicates += 1;

@@ -8,9 +8,8 @@ export const LEGACY_MIRROR_RESULT_PROTOCOL = 'vix-mirror-result/3';
 const DB_NAME = 'vix-mirror3-runtime-v1';
 const DB_VERSION = 2;
 const CONTEXTS = 'contexts';
-const PENDING = 'pending';
 let databasePromise = null;
-const memoryStores = { [CONTEXTS]: new Map(), [PENDING]: new Map() };
+const memoryStores = { [CONTEXTS]: new Map() };
 
 function clone(value) { return value == null ? value : structuredClone(value); }
 function clean(value, max = 240) { return String(value ?? '').trim().slice(0, max); }
@@ -45,7 +44,6 @@ function openDatabase() {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(CONTEXTS)) db.createObjectStore(CONTEXTS, { keyPath: 'revision' });
-      if (!db.objectStoreNames.contains(PENDING)) db.createObjectStore(PENDING, { keyPath: 'runId' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => { databasePromise = null; reject(request.error || new Error('无法打开 Mirror 数据库')); };
@@ -55,8 +53,7 @@ function openDatabase() {
 async function put(storeName, value) {
   const db = await openDatabase();
   if (!db) {
-    const key = storeName === CONTEXTS ? value.revision : value.runId;
-    memoryStores[storeName].set(key, clone(value));
+    memoryStores[storeName].set(value.revision, clone(value));
     return;
   }
   const tx = db.transaction(storeName, 'readwrite');
@@ -164,16 +161,6 @@ export async function buildMirrorContext(state) {
     savedAt: context.createdAt,
   });
   return clone(context);
-}
-
-export function createMirrorRequestFile(context, materialLabel = '') {
-  if (context?.protocol !== MIRROR_CONTEXT_PROTOCOL) throw new Error('Mirror Context 无效');
-  return {
-    protocol: MIRROR_CONTEXT_PROTOCOL,
-    kind: 'vix-mirror-request',
-    materialLabel: clean(materialLabel, 160),
-    ...clone(context),
-  };
 }
 
 function validateHash(value, field) {
@@ -341,27 +328,4 @@ export async function extendMirrorRecord(record, update) {
     core.candidateImports = clone(update?.candidateImports || core.candidateImports || []);
   }
   return { ...core, mirrorHash: await hashJson(core) };
-}
-
-export async function savePendingMirrorResult(raw) {
-  const prepared = await prepareMirrorResult(raw);
-  await put(PENDING, { runId: prepared.runId, receivedAt: new Date().toISOString(), raw: clone(raw) });
-  return prepared;
-}
-
-export async function listPendingMirrorResults() {
-  const db = await openDatabase();
-  if (!db) return [...memoryStores[PENDING].values()].sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))).map(clone);
-  const tx = db.transaction(PENDING, 'readonly');
-  const items = await requestPromise(tx.objectStore(PENDING).getAll());
-  await transactionPromise(tx);
-  return items.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))).map(clone);
-}
-
-export async function removePendingMirrorResult(runId) {
-  const db = await openDatabase();
-  if (!db) { memoryStores[PENDING].delete(runId); return; }
-  const tx = db.transaction(PENDING, 'readwrite');
-  tx.objectStore(PENDING).delete(runId);
-  await transactionPromise(tx);
 }

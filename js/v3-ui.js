@@ -5,7 +5,7 @@ import {
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
-  archiveMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, restoreMirror, setMirrorEnabled,
+  deleteMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, selectMirror, setMirrorEnabled,
 } from './v3-store.js';
 import {
   AiCheckController, checkEntries, createAiCheckBatches, getModelCatalog,
@@ -22,13 +22,10 @@ import { renderGroqLookup, renderGroqVerification } from './v3-provider-views.js
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
+import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  buildMirrorContext, createMirrorRequestFile, extendMirrorRecord, listPendingMirrorResults, prepareMirrorResult,
-  removePendingMirrorResult, savePendingMirrorResult,
-} from './v5-mirror3.js';
-import {
-  acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, getBridgeConfig,
-  getMirrorHistory, getMirrorInbox, recoverMirrorResult, saveGroqSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
+  acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
+  getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -85,7 +82,10 @@ let navigationTraversalInProgress = false;
 let pendingPageSnapshot = null;
 let mirrorBridgeTimer = 0;
 let mirrorInboxTimer = 0;
-let mirrorPendingCount = 0;
+let mirrorNotices = [];
+let mirrorNoticeBusy = false;
+let mirrorRemoteFilesCache = [];
+const MIRROR_CONTEXT_SYNC_KEY = 'gualVocabulary.mirrorContextSync';
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
@@ -381,7 +381,7 @@ function updateVisualViewportVars({ immediate = false } = {}) {
 
 function topChromeBottom({ includeLetterNav = true } = {}) {
   const viewportTop = window.visualViewport?.offsetTop || 0;
-  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner, .mirror-status-banner')]
+  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner')]
     .filter((node) => !node.classList.contains('hidden'))
     .map((node) => node.getBoundingClientRect())
     .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 320)
@@ -1966,35 +1966,53 @@ function renderHomeAnnotationBanner() {
   updateOverlayLayout();
 }
 
-function mirrorStatusText(snapshot = getMirrorState()) {
-  const pending = mirrorPendingCount ? ` · ${mirrorPendingCount.toLocaleString()} 份待确认` : '';
-  const label = (record) => record?.material?.label || record?.materialLabel || '未命名材料';
-  if (snapshot.active) return `Mirror · ${label(snapshot.active)} · ${snapshot.active.entryIds.length.toLocaleString()} 条${pending}`;
-  if (snapshot.current) return `Mirror 已准备 · ${label(snapshot.current)}${pending}`;
-  return mirrorPendingCount ? `${mirrorPendingCount.toLocaleString()} 份 Mirror 待确认` : '尚无 Mirror';
-}
-
 function renderMirrorStatusBanner() {
   const banner = elements['mirror-status-banner'];
   if (!banner) return;
-  const snapshot = getMirrorState();
-  if (currentCollectionId || (!snapshot.current && !snapshot.active && !mirrorPendingCount)) {
+  if (currentCollectionId || !mirrorNotices.length) {
     banner.classList.add('hidden');
-    updateOverlayLayout();
     return;
   }
-  elements['mirror-status-text'].textContent = mirrorStatusText(snapshot);
+  const notice = mirrorNotices[0];
+  const label = notice.materialLabel || notice.runId || '未命名材料';
+  elements['mirror-status-text'].textContent = `新 Mirror 文件 · ${label}`;
   const action = elements['mirror-status-action'];
-  action.textContent = snapshot.active ? '管理 / 关闭' : '管理 / 开启';
-  action.onclick = openMirrorDialog;
+  action.textContent = mirrorNotices.length > 1 ? `知道了 · 还有 ${mirrorNotices.length - 1} 个` : '知道了';
+  action.disabled = mirrorNoticeBusy;
+  action.onclick = async () => {
+    if (mirrorNoticeBusy) return;
+    mirrorNoticeBusy = true;
+    action.disabled = true;
+    try {
+      await acknowledgeMirrorRun(notice.runId);
+      mirrorNotices = mirrorNotices.filter((item) => item.runId !== notice.runId);
+      renderMirrorStatusBanner();
+    } catch (error) {
+      displayError(error);
+    } finally {
+      mirrorNoticeBusy = false;
+      if (action.isConnected) action.disabled = false;
+    }
+  };
+  banner.onclick = (event) => {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    action.click();
+  };
+  banner.dataset.stack = String(Math.min(3, mirrorNotices.length));
   banner.classList.remove('hidden');
-  updateOverlayLayout();
 }
 
-async function synchronizeMirrorContext({ notify = false, config = null } = {}) {
-  const context = await buildMirrorContext(getState());
+async function synchronizeMirrorContext({ notify = false, config = null, force = false } = {}) {
   const canUpload = config ? Boolean(config.url && config.deviceToken) : bridgeConfigured();
-  if (canUpload) await uploadMirrorContext(context, config ? { config } : {});
+  const selected = config || getBridgeConfig();
+  const state = getState();
+  const fingerprint = `${APP_VERSION}\u0000${state.revision}\u0000${String(selected.url || '').replace(/\/+$/, '')}`;
+  if (canUpload && !notify && !force && localStorage.getItem(MIRROR_CONTEXT_SYNC_KEY) === fingerprint) return null;
+  const context = await buildMirrorContext(state);
+  if (canUpload) {
+    await uploadMirrorContext(context, config ? { config } : {});
+    localStorage.setItem(MIRROR_CONTEXT_SYNC_KEY, fingerprint);
+  }
   if (notify) showToast(canUpload ? 'Mirror Context 已同步' : 'Mirror Context 已生成');
   return context;
 }
@@ -2003,13 +2021,14 @@ async function receiveMirrorInbox({ notify = false } = {}) {
   if (!bridgeConfigured()) return [];
   const payload = await getMirrorInbox();
   const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-  for (const run of runs) await savePendingMirrorResult(run.result);
-  const pending = await listPendingMirrorResults();
-  const previous = mirrorPendingCount;
-  mirrorPendingCount = pending.length;
+  const previousIds = new Set(mirrorNotices.map((item) => item.runId));
+  mirrorNotices = runs.filter((run) => run?.runId);
+  const cachedByRun = new Map(mirrorRemoteFilesCache.map((item) => [item.runId, item]));
+  for (const run of mirrorNotices) cachedByRun.set(run.runId, { ...cachedByRun.get(run.runId), ...run });
+  mirrorRemoteFilesCache = [...cachedByRun.values()];
   renderMirrorStatusBanner();
-  if (notify && mirrorPendingCount > previous) showToast('收到新的 Mirror');
-  return pending;
+  if (notify && mirrorNotices.some((item) => !previousIds.has(item.runId))) showToast('收到新的 Mirror 文件');
+  return mirrorNotices;
 }
 
 function scheduleMirrorContextSync() {
@@ -2027,96 +2046,10 @@ function scheduleMirrorInboxPoll(delay = 45000) {
   }, delay);
 }
 
-function openMirrorRequestCreator() {
-  const label = el('input', { type: 'text', maxlength: 160, placeholder: '材料标题', autocomplete: 'off' });
-  openDialog({
-    title: 'Mirror 请求', body: [field('材料标题', label)], submitText: '下载',
-    onSubmit: async () => {
-      const context = await synchronizeMirrorContext();
-      const request = createMirrorRequestFile(context, label.value);
-      downloadText(`VIX-Mirror-Request-${Date.now()}.json`, JSON.stringify(request, null, 2), 'application/json;charset=utf-8');
-      showToast('Mirror 请求已下载');
-    },
-  });
-}
-
 function mirrorCandidateLetter(candidate) {
   const value = normalizeEnglish(candidate.text);
   const letter = value.charAt(0).toUpperCase();
   return /^[A-Z]$/.test(letter) ? letter : '#';
-}
-
-function openMirrorCandidateReviewLegacy(prepared, { bridgeRun = false } = {}) {
-  const candidates = prepared.candidates.filter((item) => item.valid);
-  const selected = new Set(candidates.map((item) => item.candidateId));
-  const root = el('div', { className: 'mirror-candidate-tree' });
-  const titleInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: candidates.length > 0, disabled: !candidates.length, dataset: { scope: 'all' } });
-  const title = el('label', { className: 'mirror-candidate-heading' }, [titleInput, el('strong', { text: prepared.mirrorRecord.materialLabel || '临时词表' }), el('span', { text: String(candidates.length) })]);
-  root.append(title);
-  const byLetter = new Map();
-  for (const candidate of candidates) {
-    const letter = mirrorCandidateLetter(candidate);
-    if (!byLetter.has(letter)) byLetter.set(letter, []);
-    byLetter.get(letter).push(candidate);
-  }
-  for (const [letter, items] of [...byLetter].sort(([a], [b]) => a.localeCompare(b))) {
-    const section = el('section', { className: 'mirror-candidate-letter', dataset: { letter } });
-    const letterInput = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { scope: 'letter', letter } });
-    section.append(el('label', { className: 'mirror-candidate-heading' }, [letterInput, el('strong', { text: letter }), el('span', { text: String(items.length) })]));
-    for (const candidate of items.sort((a, b) => a.text.localeCompare(b.text))) {
-      const input = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: true, dataset: { scope: 'candidate', candidateId: candidate.candidateId } });
-      const collections = candidate.collectionKeys.map((id) => getState().collectionById.get(id)?.name).filter(Boolean).join(' · ');
-      section.append(el('label', { className: 'mirror-candidate-row' }, [
-        input,
-        el('span', { className: 'mirror-candidate-copy' }, [el('strong', { text: candidate.text }), candidate.glossHant || candidate.glossHans ? el('span', { text: candidate.glossHant || candidate.glossHans }) : null]),
-        el('span', { className: 'mirror-candidate-target', text: collections }),
-      ]));
-    }
-    root.append(section);
-  }
-  const syncParents = () => {
-    for (const section of root.querySelectorAll('.mirror-candidate-letter')) {
-      const leaves = [...section.querySelectorAll('input[data-scope="candidate"]')];
-      const parent = section.querySelector('input[data-scope="letter"]');
-      const count = leaves.filter((input) => input.checked).length;
-      parent.checked = count === leaves.length && leaves.length > 0;
-      parent.indeterminate = count > 0 && count < leaves.length;
-    }
-    const leaves = [...root.querySelectorAll('input[data-scope="candidate"]')];
-    const count = leaves.filter((input) => input.checked).length;
-    titleInput.checked = count === leaves.length && leaves.length > 0;
-    titleInput.indeterminate = count > 0 && count < leaves.length;
-  };
-  root.addEventListener('change', (event) => {
-    const input = event.target.closest('input[type="checkbox"]');
-    if (!input) return;
-    if (input.dataset.scope === 'all') {
-      for (const leaf of root.querySelectorAll('input[data-scope="candidate"]')) leaf.checked = input.checked;
-    } else if (input.dataset.scope === 'letter') {
-      const section = input.closest('.mirror-candidate-letter');
-      for (const leaf of section.querySelectorAll('input[data-scope="candidate"]')) leaf.checked = input.checked;
-    }
-    selected.clear();
-    for (const leaf of root.querySelectorAll('input[data-scope="candidate"]:checked')) selected.add(leaf.dataset.candidateId);
-    syncParents();
-  });
-  openDialog({
-    title: '确认 Mirror', body: [root], variant: 'management', showCancel: true, cancelText: '取消', submitText: '提交',
-    onSubmit: async () => {
-      const imported = await importMirrorCandidates(candidates, selected);
-      const relatedEntryIds = candidates.filter((candidate) => selected.has(candidate.candidateId))
-        .flatMap((candidate) => candidate.relatedEntryIds || []);
-      const mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, [
-        ...prepared.mirrorRecord.entryIds, ...relatedEntryIds, ...imported.entryIds,
-      ]);
-      await installMirrorCurrent(mirrorRecord);
-      if (bridgeRun) await acknowledgeMirrorRun(prepared.runId);
-      await removePendingMirrorResult(prepared.runId);
-      mirrorPendingCount = (await listPendingMirrorResults()).length;
-      renderApp();
-      showToast(`Mirror 已提交 · 新增 ${imported.created} 条`);
-    },
-  });
 }
 
 function mirrorClassLabel(value) {
@@ -2306,67 +2239,14 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
         entryIds: [...selectedExisting.map((item) => item.entryId), ...candidateImports.map((item) => item.entryId)],
       });
       await installMirrorCurrent(mirrorRecord);
-      if (bridgeRun) await acknowledgeMirrorRun(prepared.runId);
-      await removePendingMirrorResult(prepared.runId);
-      mirrorPendingCount = (await listPendingMirrorResults()).length;
-      renderApp();
+      if (bridgeRun) {
+        await saveMirrorFileRecord(prepared.runId, mirrorRecord);
+        await acknowledgeMirrorRun(prepared.runId);
+      }
+      mirrorNotices = mirrorNotices.filter((item) => item.runId !== prepared.runId);
+      renderMirrorStatusBanner();
       showToast('Mirror 已保存 · ' + selectedExisting.length + ' 条已有 · ' + imported.created + ' 条新增');
     },
-  });
-}
-
-async function importMirrorResultFile(file) {
-  if (!file) throw new Error('请选择 Mirror Result JSON');
-  if (file.size > 3 * 1024 * 1024) throw new Error('Mirror Result 文件过大');
-  let payload;
-  try { payload = JSON.parse(await file.text()); } catch { throw new Error('Mirror Result 不是有效 JSON'); }
-  const prepared = await savePendingMirrorResult(payload);
-  mirrorPendingCount = (await listPendingMirrorResults()).length;
-  openMirrorCandidateReview(prepared);
-}
-
-async function openMirrorDialogLegacy() {
-  const status = el('div', { className: 'mirror-management-status' });
-  const toggle = button('开启 Mirror', 'primary-button', async () => {
-    const before = getMirrorState();
-    await setMirrorEnabled(!before.enabled);
-    refresh();
-    showToast(before.enabled ? 'Mirror 已关闭' : 'Mirror 已开启');
-  });
-  const create = button('下载请求', 'secondary-button', openMirrorRequestCreator);
-  const sync = button('同步 Bridge', 'secondary-button', async () => { await synchronizeMirrorContext({ notify: true }); await receiveMirrorInbox({ notify: true }); refresh(); });
-  const file = el('input', { type: 'file', className: 'mirror-file-input', accept: '.json,application/json' });
-  const fileName = el('span', { className: 'mirror-file-name', text: '未选择文件' });
-  const importButton = button('导入', 'secondary-button', () => importMirrorResultFile(file.files?.[0]), { disabled: true });
-  const chooseFile = button('选择结果文件', 'secondary-button', () => file.click());
-  file.addEventListener('change', () => {
-    fileName.textContent = file.files?.[0]?.name || '未选择文件';
-    importButton.disabled = !file.files?.length;
-  });
-  const pendingHost = el('div', { className: 'mirror-pending-list' });
-  const refresh = async () => {
-    const snapshot = getMirrorState();
-    status.replaceChildren(el('strong', { text: mirrorStatusText(snapshot) }));
-    toggle.textContent = snapshot.enabled ? '关闭 Mirror' : '开启 Mirror';
-    toggle.disabled = !snapshot.enabled && !snapshot.current;
-    const pending = await listPendingMirrorResults();
-    mirrorPendingCount = pending.length;
-    pendingHost.replaceChildren(...pending.map((item) => button(item.raw?.materialLabel || item.runId, 'mirror-pending-button', async () => {
-      openMirrorCandidateReview(await prepareMirrorResult(item.raw), { bridgeRun: true });
-    })));
-    renderMirrorStatusBanner();
-  };
-  await refresh();
-  openDialog({
-    title: 'Mirror',
-    body: [
-      status,
-      el('div', { className: 'settings-row mirror-action-row' }, [toggle, create, ...(bridgeConfigured() ? [sync] : [])]),
-      pendingHost,
-      file,
-      el('div', { className: 'mirror-import-row' }, [chooseFile, importButton, fileName]),
-    ],
-    variant: 'management', showCancel: false, onRestore: refresh,
   });
 }
 
@@ -2420,120 +2300,165 @@ function openMirrorRecordDetail(record) {
   });
 }
 
+function localMirrorForRun(runId, snapshot = getMirrorState()) {
+  return (snapshot.library || []).find((item) => {
+    const recordRunId = item.record?.runId || String(item.record?.mirrorId || '').replace(/^mirror_/, '');
+    return recordRunId === runId;
+  }) || null;
+}
+
 async function openMirrorDialog() {
   const status = el('div', { className: 'mirror-management-status' });
-  const libraryHost = el('div', { className: 'mirror-library' });
-  const pendingHost = el('div', { className: 'mirror-pending-list' });
-  const recoveryHost = el('div', { className: 'mirror-pending-list' });
-  const sync = bridgeConfigured() ? button('同步 Bridge', 'secondary-button', async () => {
-    await synchronizeMirrorContext({ notify: true });
-    await receiveMirrorInbox({ notify: true });
-    await refresh();
-  }) : null;
-  const create = button('下载请求', 'secondary-button', openMirrorRequestCreator);
-  const file = el('input', { type: 'file', className: 'mirror-file-input', accept: '.json,application/json' });
-  const fileName = el('span', { className: 'mirror-file-name', text: '未选择文件' });
-  const importButton = button('导入结果', 'secondary-button', () => importMirrorResultFile(file.files?.[0]), { disabled: true });
-  const chooseFile = button('选择文件', 'secondary-button', () => file.click());
-  file.addEventListener('change', () => {
-    fileName.textContent = file.files?.[0]?.name || '未选择文件';
-    importButton.disabled = !file.files?.length;
-  });
+  const fileHost = el('div', { className: 'mirror-library', 'aria-live': 'polite' });
+  let requestSequence = 0;
+  let disposed = false;
 
-  async function refresh() {
+  const renderStatus = () => {
     const snapshot = getMirrorState();
+    const currentLabel = snapshot.current?.material?.label || snapshot.current?.materialLabel || '';
     status.replaceChildren(
-      el('strong', { text: snapshot.active ? '正在使用 ' + (snapshot.active.material?.label || snapshot.active.materialLabel || 'Mirror') : '未开启材料 Mirror' }),
-      el('p', { text: (snapshot.library?.length || 0) + ' 份材料 · ' + mirrorPendingCount + ' 份待审核' }),
+      el('strong', { text: currentLabel ? `已选择 · ${currentLabel}` : '尚未选择 Mirror 文件' }),
+      el('p', { text: snapshot.active ? 'Mirror 模式已开启' : 'Mirror 模式已关闭' }),
     );
-    const records = snapshot.library || [];
-    libraryHost.replaceChildren();
-    if (!records.length) libraryHost.append(el('p', { className: 'mirror-review-empty', text: '尚无已审核材料' }));
-    for (const item of records) {
-      const record = item.record;
-      const counts = mirrorRecordClassCounts(record);
-      const active = snapshot.active?.mirrorId === record.mirrorId;
-      const card = el('article', { className: 'mirror-library-card', dataset: { status: item.status } });
-      const open = button(record.material?.label || record.materialLabel || '未命名材料', 'mirror-library-open', () => openMirrorRecordDetail(record));
-      open.append(el('span', { text: counts.vocabulary + ' 词汇 · ' + counts.phrase + ' 短语 · ' + counts.usage + ' 用法' }));
-      const toggle = button(active ? '关闭' : '打开', active ? 'primary-button compact-button' : 'secondary-button compact-button', async () => {
-        if (active) await setMirrorEnabled(false);
-        else {
-          if (item.status === 'archived') await restoreMirror(record.mirrorId);
-          await setMirrorEnabled(true, record.mirrorId);
+  };
+
+  const localFileMetadata = () => (getMirrorState().library || []).map((item) => {
+    const counts = mirrorRecordClassCounts(item.record);
+    return {
+      runId: item.record.runId || String(item.record.mirrorId || '').replace(/^mirror_/, ''),
+      materialLabel: item.record.material?.label || item.record.materialLabel || '',
+      reviewed: true,
+      existingCount: counts.vocabulary + counts.phrase + counts.usage,
+      candidateCount: item.record.candidateImports?.length || 0,
+      isNew: false,
+    };
+  }).filter((item) => item.runId);
+
+  const immediateFiles = () => {
+    const byRun = new Map(localFileMetadata().map((item) => [item.runId, item]));
+    for (const item of mirrorRemoteFilesCache) byRun.set(item.runId, { ...byRun.get(item.runId), ...item });
+    return [...byRun.values()];
+  };
+
+  const selectFile = async (file, control) => {
+    control.disabled = true;
+    const oldText = control.textContent;
+    control.textContent = '正在选择…';
+    try {
+      const local = localMirrorForRun(file.runId);
+      if (local) {
+        await selectMirror(local.record.mirrorId);
+        renderStatus();
+        renderFiles(immediateFiles());
+        showToast('已选择 Mirror 文件');
+        return;
+      }
+      const payload = await getMirrorFile(file.runId);
+      if (payload?.record) {
+        try {
+          await installMirrorCurrent(payload.record);
+          await acknowledgeMirrorRun(file.runId);
+          mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
+          mirrorRemoteFilesCache = mirrorRemoteFilesCache.map((item) => item.runId === file.runId ? { ...item, reviewed: true, isNew: false } : item);
+          renderMirrorStatusBanner();
+          renderStatus();
+          renderFiles(immediateFiles());
+          showToast('Mirror 文件已载入');
+          return;
+        } catch {
+          // A record created against a different local library falls back to source review.
         }
-        renderApp();
-        await refresh();
-      });
-      const archive = button(item.status === 'archived' ? '恢复' : '归档', 'secondary-button compact-button', async () => {
-        if (item.status === 'archived') await restoreMirror(record.mirrorId);
-        else await archiveMirror(record.mirrorId);
-        renderApp();
-        await refresh();
-      });
-      card.append(open, el('div', { className: 'mirror-library-actions' }, [
-        el('span', { className: 'mirror-library-state', text: active ? '使用中' : item.status === 'archived' ? '已归档' : '可用' }),
-        toggle, archive,
-      ]));
-      libraryHost.append(card);
-    }
-    const pending = await listPendingMirrorResults();
-    mirrorPendingCount = pending.length;
-    pendingHost.replaceChildren(...pending.map((item) => button(item.raw?.materialLabel || item.runId, 'mirror-pending-button', async () => {
-      openMirrorCandidateReview(await prepareMirrorResult(item.raw), { bridgeRun: true });
-    })));
-    recoveryHost.replaceChildren();
-    if (bridgeConfigured()) {
-      const localRunIds = new Set([
-        ...records.map((item) => item.record?.runId || String(item.record?.mirrorId || '').replace(/^mirror_/, '')),
-        ...pending.map((item) => item.runId),
-      ].filter(Boolean));
-      try {
-        const history = await getMirrorHistory();
-        const recoverable = (history?.runs || []).filter((run) => run.recoverable && !localRunIds.has(run.runId));
-        recoveryHost.replaceChildren(...recoverable.map((run) => button(
-          run.materialLabel || run.runId,
-          'mirror-pending-button',
-          async () => {
-            const recovered = await recoverMirrorResult(run.runId);
-            const prepared = await savePendingMirrorResult(recovered.result);
-            mirrorPendingCount = (await listPendingMirrorResults()).length;
-            openMirrorCandidateReview(prepared, { bridgeRun: true });
-          },
-        )));
-      } catch {
-        recoveryHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: 'Bridge 历史暂不可用' }));
+      }
+      const prepared = await prepareMirrorResult(payload?.result);
+      openMirrorCandidateReview(prepared, { bridgeRun: true });
+    } finally {
+      if (control.isConnected) {
+        control.disabled = false;
+        control.textContent = oldText;
       }
     }
-    renderMirrorStatusBanner();
+  };
+
+  const confirmDeleteFile = (file) => {
+    openConfirmDialog({
+      title: '删除 Mirror 文件',
+      description: file.materialLabel || file.runId,
+      body: el('div', { className: 'warning-box', text: '该文件将从 Bridge 永久删除；当前设备缓存的对应 Mirror 也会删除。' }),
+      submitText: '确认删除',
+      onSubmit: async () => {
+        await deleteMirrorFile(file.runId);
+        const local = localMirrorForRun(file.runId);
+        if (local) await deleteMirror(local.record.mirrorId);
+        mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
+        mirrorRemoteFilesCache = mirrorRemoteFilesCache.filter((item) => item.runId !== file.runId);
+        renderMirrorStatusBanner();
+        renderStatus();
+        renderFiles(immediateFiles());
+        showToast('Mirror 文件已删除');
+      },
+    });
+  };
+
+  function renderFiles(files) {
+    if (!files.length) {
+      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: 'Bridge 中还没有 Mirror 文件' }));
+      return;
+    }
+    const snapshot = getMirrorState();
+    const cards = files.map((file) => {
+      const local = localMirrorForRun(file.runId, snapshot);
+      const selected = snapshot.current?.mirrorId === local?.record?.mirrorId;
+      const active = snapshot.active?.mirrorId === local?.record?.mirrorId;
+      const title = file.materialLabel || file.runId;
+      const open = button(title, 'mirror-library-open', (event) => {
+        if (local) openMirrorRecordDetail(local.record);
+        else selectFile(file, event.currentTarget).catch(displayError);
+      });
+      open.append(el('span', { text: `${Number(file.existingCount || 0)} 已有项 · ${Number(file.candidateCount || 0)} 个候选${file.reviewed ? ' · 已审核' : ''}` }));
+      const choose = button(selected ? '已选择' : '选择', selected ? 'primary-button compact-button' : 'secondary-button compact-button', (event) => {
+        selectFile(file, event.currentTarget).catch(displayError);
+      }, { disabled: selected });
+      const remove = button('删除', 'danger-button compact-button', () => confirmDeleteFile(file));
+      const stateLabel = active ? '使用中' : selected ? '已选择' : file.isNew ? '新文件' : 'Bridge';
+      return el('article', { className: 'mirror-library-card', dataset: { status: selected ? 'selected' : 'ready' } }, [
+        open,
+        el('div', { className: 'mirror-library-actions' }, [
+          el('span', { className: 'mirror-library-state', text: stateLabel }), choose, remove,
+        ]),
+      ]);
+    });
+    fileHost.replaceChildren(...cards);
   }
 
-  await refresh();
-  openDialog({
-    title: 'Mirror',
-    body: [
-      status,
-      el('section', { className: 'mirror-management-section' }, [
-        el('h3', { text: '材料' }),
-        libraryHost,
-      ]),
-      el('section', { className: 'mirror-management-section' }, [
-        el('h3', { text: '待审核' }),
-        pendingHost,
-      ]),
-      el('section', { className: 'mirror-management-section' }, [
-        el('h3', { text: '可恢复' }),
-        recoveryHost,
-      ]),
-      el('section', { className: 'mirror-management-section' }, [
-        el('h3', { text: '接收' }),
-        el('div', { className: 'settings-row mirror-action-row' }, [sync, create].filter(Boolean)),
-        file,
-        el('div', { className: 'mirror-import-row' }, [chooseFile, importButton, fileName]),
-      ]),
-    ],
+  async function refresh({ fetchRemote = true } = {}) {
+    const sequence = ++requestSequence;
+    renderStatus();
+    if (!bridgeConfigured()) {
+      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: '请先在 Bridge 页面完成配置' }));
+      return;
+    }
+    const cached = immediateFiles();
+    if (cached.length) renderFiles(cached);
+    else fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: '正在读取 Bridge 文件夹…' }));
+    if (!fetchRemote) return;
+    try {
+      const payload = await listMirrorFiles();
+      if (disposed || sequence !== requestSequence) return;
+      mirrorRemoteFilesCache = Array.isArray(payload?.files) ? payload.files : [];
+      renderFiles(immediateFiles());
+    } catch (error) {
+      if (disposed || sequence !== requestSequence || cached.length) return;
+      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: error?.message || '无法读取 Bridge 文件夹' }));
+    }
+  }
+
+  const frame = openDialog({
+    title: 'Mirror 文件',
+    body: [status, el('section', { className: 'mirror-management-section' }, [fileHost])],
     variant: 'management', showCancel: false, onRestore: refresh,
   });
+  frame.onDispose = () => { disposed = true; requestSequence += 1; };
+  refresh().catch(displayError);
 }
 
 async function switchHomeGlobalMode(sourceButton = null) {
@@ -2566,6 +2491,23 @@ async function switchHomeGlobalMode(sourceButton = null) {
   }
 }
 
+async function toggleHomeMirror(sourceButton) {
+  const before = getMirrorState();
+  if (!before.current || sourceButton?.dataset.committing === 'true') return;
+  sourceButton.dataset.committing = 'true';
+  sourceButton.disabled = true;
+  sourceButton.textContent = before.enabled ? '正在关闭…' : '正在开启…';
+  try {
+    await setMirrorEnabled(!before.enabled);
+    showToast(before.enabled ? 'Mirror 已关闭' : 'Mirror 已开启');
+  } finally {
+    if (sourceButton.isConnected) {
+      sourceButton.disabled = false;
+      delete sourceButton.dataset.committing;
+    }
+  }
+}
+
 function renderHome(token = renderRevision) {
   const state = getState();
   currentCollectionId = '';
@@ -2586,8 +2528,12 @@ function renderHome(token = renderRevision) {
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
+  const mirrorSnapshot = getMirrorState();
   const homeActions = [
-    button('Mirror', getMirrorState().enabled ? 'primary-button compact-button' : 'secondary-button compact-button', openMirrorDialog),
+    button('Mirror', mirrorSnapshot.enabled ? 'primary-button compact-button' : 'secondary-button compact-button', (event) => toggleHomeMirror(event.currentTarget), {
+      disabled: !mirrorSnapshot.current,
+      title: mirrorSnapshot.current ? (mirrorSnapshot.enabled ? '关闭当前 Mirror' : '开启当前 Mirror') : '请先在设置中选择 Mirror 文件',
+    }),
     button('管理', 'secondary-button compact-button', openLibraryManager),
   ];
   const toggleGlobal = el('button', {
@@ -6201,7 +6147,7 @@ function openBridgeDialog({ onConfigured = null } = {}) {
         ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
         : [];
       status.textContent = '正在同步 Mirror…';
-      await synchronizeMirrorContext({ config: nextConfig });
+      await synchronizeMirrorContext({ config: nextConfig, force: true });
       setBridgeConfig(nextConfig);
       if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
       onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
@@ -6536,12 +6482,10 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
     receiveMirrorInbox({ notify: true }).catch(() => {}).finally(() => scheduleMirrorInboxPoll());
   });
   Promise.resolve().then(async () => {
-    mirrorPendingCount = (await listPendingMirrorResults()).length;
-    renderMirrorStatusBanner();
     if (!bridgeConfigured()) return;
-    await synchronizeMirrorContext();
     await receiveMirrorInbox({ notify: true });
     scheduleMirrorInboxPoll();
+    synchronizeMirrorContext().catch(() => {});
   }).catch(() => {});
   setTimeout(showMigrationNotice, 60);
 }

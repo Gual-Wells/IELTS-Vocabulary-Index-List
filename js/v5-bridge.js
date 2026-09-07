@@ -116,12 +116,20 @@ export function getMirrorInbox(options = {}) {
   return bridgeRequest('/v1/inbox', options);
 }
 
-export function getMirrorHistory(options = {}) {
-  return bridgeRequest('/v1/history', options);
+export function listMirrorFiles(options = {}) {
+  return bridgeRequest('/v1/files', options);
 }
 
-export function recoverMirrorResult(runId, options = {}) {
-  return bridgeRequest('/v1/runs/' + encodeURIComponent(runId) + '/result', options);
+export function getMirrorFile(runId, options = {}) {
+  return bridgeRequest('/v1/files/' + encodeURIComponent(runId), options);
+}
+
+export function deleteMirrorFile(runId, options = {}) {
+  return bridgeRequest('/v1/files/' + encodeURIComponent(runId), { ...options, method: 'DELETE' });
+}
+
+export function saveMirrorFileRecord(runId, record, options = {}) {
+  return bridgeRequest('/v1/files/' + encodeURIComponent(runId) + '/record', { ...options, method: 'PUT', body: record });
 }
 
 export function acknowledgeMirrorRun(runId, options = {}) {

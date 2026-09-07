@@ -8,8 +8,8 @@ import {
   replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings, undo as dbUndo,
 } from './v3-db.js';
 import {
-  activateMirror, archiveMirrorRecord, commitMirrorCurrent, deactivateMirror, effectiveEntryAllowed, effectiveProjectionFromMirror,
-  getMirrorSnapshot, initializeMirrorRuntime, restoreMirrorRecord, selectMirrorCurrent,
+  activateMirror, commitMirrorCurrent, deactivateMirror, deleteMirrorRecord, effectiveEntryAllowed, effectiveProjectionFromMirror,
+  getMirrorSnapshot, initializeMirrorRuntime, selectMirrorCurrent,
 } from './v5-mirror-runtime.js';
 import { APP_VERSION } from './v5-version.js';
 
@@ -99,6 +99,8 @@ function buildState(snapshot) {
   const effectiveAdjacency = new Map();
   const rawRelationsByEntry = new Map();
   const relatedEntriesByEntry = new Map();
+  const structuralEffectiveAdjacency = new Map();
+  const structuralRelatedEntriesByEntry = new Map();
   const edgeSuppressed = (left, right) => relationEdgeSuppressed(left, right, {
     domainById, lowLevelLexemes: lowLevelRelationLexemes, closeLowLevelRelations: closeLow,
   });
@@ -106,8 +108,11 @@ function buildState(snapshot) {
     const raw = [...(rawAdjacency.get(entry.id) || [])].map((id) => entryById.get(id)).filter(Boolean)
       .sort((a,b) => a.normalizedText.localeCompare(b.normalizedText,'en') || a.id.localeCompare(b.id));
     rawRelationsByEntry.set(entry.id, raw);
+    const structuralRelations = raw.filter((target) => !edgeSuppressed(entry, target));
+    structuralEffectiveAdjacency.set(entry.id, new Set(structuralRelations.map((target) => target.id)));
+    structuralRelatedEntriesByEntry.set(entry.id, structuralRelations);
     const effective = effectiveEntryIds.has(entry.id)
-      ? raw.filter((target) => effectiveEntryIds.has(target.id) && !edgeSuppressed(entry, target))
+      ? structuralRelations.filter((target) => effectiveEntryIds.has(target.id))
       : [];
     effectiveAdjacency.set(entry.id, new Set(effective.map((target) => target.id)));
     relatedEntriesByEntry.set(entry.id, effective);
@@ -131,6 +136,8 @@ function buildState(snapshot) {
     for (const [kind, kindEntries] of byKind) if (new Set(kindEntries.map((entry)=>entry.domainId)).size > 1) globalConflictKeys.add(`${kind}\u0000${normalizedText}`);
   }
   const projectionUniqueCounts = new Map([...projection.entries()].map(([collectionId, list]) => [collectionId, uniqueProjectionCount(list)]));
+  const structuralProjectionUniqueCounts = new Map([...structuralProjection.entries()].map(([collectionId, list]) => [collectionId, uniqueProjectionCount(list)]));
+  const structuralRelatedPhrasesByEntry = new Map(backup.entries.map((entry) => [entry.id, (structuralRelatedEntriesByEntry.get(entry.id) || []).filter((target) => target.kind === 'phrase')]));
   return {
     ...backup, domains, collections,
     structuralProjection, effectiveProjection: projection, projection,
@@ -140,10 +147,11 @@ function buildState(snapshot) {
     suppressionRevision: getMirrorSnapshot().suppressionRevision,
     domainById, collectionById, entryById, entriesByNormalizedText,
     wordsByNormalizedText, phrasesByNormalizedText, contentByNormalizedText,
-    globalConflictKeys, projectionUniqueCounts,
+    globalConflictKeys, projectionUniqueCounts, structuralProjectionUniqueCounts,
     lowLevelRelationLexemes: new Set(lowLevelRelationLexemes),
     relationComponentsByEntry: componentsByEntry,
     rawRelationsByEntry, relatedEntriesByEntry, effectiveAdjacency,
+    structuralRelatedEntriesByEntry, structuralEffectiveAdjacency, structuralRelatedPhrasesByEntry,
     // Compatibility views used by older call sites while UI is migrated to generic relations.
     relatedPhrasesByEntry: new Map(backup.entries.map((entry) => [entry.id, (relatedEntriesByEntry.get(entry.id) || []).filter((target) => target.kind === 'phrase')])),
     phraseComponentsByEntry: componentsByEntry,
@@ -1218,28 +1226,77 @@ export function getMirrorState() {
   return getMirrorSnapshot();
 }
 
+function refreshMirrorSnapshotState(snapshot = getMirrorSnapshot()) {
+  state.mirror = snapshot;
+  state.suppressionRevision = snapshot.suppressionRevision;
+}
+
+function refreshMirrorProjectionState() {
+  const snapshot = getMirrorSnapshot();
+  if (!snapshot.active) {
+    state.effectiveProjection = state.structuralProjection;
+    state.projection = state.structuralProjection;
+    state.effectiveEntryIds = state.structuralEntryIds;
+    state.visibleEntryIdsByCollection = state.structuralEntryIdsByCollection;
+    state.projectionUniqueCounts = state.structuralProjectionUniqueCounts;
+    state.effectiveAdjacency = state.structuralEffectiveAdjacency;
+    state.relatedEntriesByEntry = state.structuralRelatedEntriesByEntry;
+    state.relatedPhrasesByEntry = state.structuralRelatedPhrasesByEntry;
+    refreshMirrorSnapshotState(snapshot);
+    return;
+  }
+
+  const allowed = new Set(snapshot.active.entryIds.filter((id) => state.structuralEntryIds.has(id)));
+  const projection = new Map([...state.structuralProjection.entries()]
+    .map(([collectionId, entries]) => [collectionId, entries.filter((entry) => allowed.has(entry.id))]));
+  const visibleEntryIdsByCollection = new Map([...projection.entries()]
+    .map(([collectionId, entries]) => [collectionId, new Set(entries.map((entry) => entry.id))]));
+  const projectionUniqueCounts = new Map([...projection.entries()]
+    .map(([collectionId, entries]) => [collectionId, uniqueProjectionCount(entries)]));
+  const effectiveAdjacency = new Map();
+  const relatedEntriesByEntry = new Map();
+  const relatedPhrasesByEntry = new Map();
+  for (const entryId of allowed) {
+    const relations = (state.structuralRelatedEntriesByEntry.get(entryId) || [])
+      .filter((target) => allowed.has(target.id));
+    effectiveAdjacency.set(entryId, new Set(relations.map((target) => target.id)));
+    relatedEntriesByEntry.set(entryId, relations);
+    relatedPhrasesByEntry.set(entryId, relations.filter((target) => target.kind === 'phrase'));
+  }
+  state.effectiveProjection = projection;
+  state.projection = projection;
+  state.effectiveEntryIds = allowed;
+  state.visibleEntryIdsByCollection = visibleEntryIdsByCollection;
+  state.projectionUniqueCounts = projectionUniqueCounts;
+  state.effectiveAdjacency = effectiveAdjacency;
+  state.relatedEntriesByEntry = relatedEntriesByEntry;
+  state.relatedPhrasesByEntry = relatedPhrasesByEntry;
+  refreshMirrorSnapshotState(snapshot);
+}
+
 export async function setMirrorEnabled(enabled, mirrorId = '') {
   if (enabled) await activateMirror(state.entries.map((entry) => entry.id), mirrorId);
   else deactivateMirror();
-  await reloadStore(enabled ? 'mirror-on' : 'mirror-off');
+  refreshMirrorProjectionState();
+  emit(enabled ? 'mirror-on' : 'mirror-off');
   return getMirrorSnapshot();
 }
 
 export async function selectMirror(mirrorId) {
+  const before = getMirrorSnapshot();
   await selectMirrorCurrent(mirrorId);
-  await reloadStore('mirror-selected');
+  if (before.enabled && !getMirrorSnapshot().enabled) refreshMirrorProjectionState();
+  else refreshMirrorSnapshotState();
+  emit('mirror-selected');
   return getMirrorSnapshot();
 }
 
-export async function archiveMirror(mirrorId) {
-  await archiveMirrorRecord(mirrorId);
-  await reloadStore('mirror-archived');
-  return getMirrorSnapshot();
-}
-
-export async function restoreMirror(mirrorId) {
-  await restoreMirrorRecord(mirrorId);
-  await reloadStore('mirror-restored');
+export async function deleteMirror(mirrorId) {
+  const before = getMirrorSnapshot();
+  await deleteMirrorRecord(mirrorId);
+  if (before.active?.mirrorId === mirrorId) refreshMirrorProjectionState();
+  else refreshMirrorSnapshotState();
+  emit('mirror-deleted');
   return getMirrorSnapshot();
 }
 

@@ -24,8 +24,8 @@ import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, seman
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  acknowledgeMirrorRun, bridgeConfigured, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
-  getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
+  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
+  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -83,8 +83,9 @@ let pendingPageSnapshot = null;
 let mirrorBridgeTimer = 0;
 let mirrorInboxTimer = 0;
 let mirrorNotices = [];
-let mirrorNoticeBusy = false;
 let mirrorRemoteFilesCache = [];
+let mirrorRemoteInstanceId = '';
+let mirrorRemoteCatalogRevision = 0;
 const MIRROR_CONTEXT_SYNC_KEY = 'gualVocabulary.mirrorContextSync';
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
@@ -1969,7 +1970,7 @@ function renderHomeAnnotationBanner() {
 function renderMirrorStatusBanner() {
   const banner = elements['mirror-status-banner'];
   if (!banner) return;
-  if (currentCollectionId || !mirrorNotices.length) {
+  if (!mirrorNotices.length) {
     banner.classList.add('hidden');
     return;
   }
@@ -1978,20 +1979,17 @@ function renderMirrorStatusBanner() {
   elements['mirror-status-text'].textContent = `新 Mirror 文件 · ${label}`;
   const action = elements['mirror-status-action'];
   action.textContent = mirrorNotices.length > 1 ? `知道了 · 还有 ${mirrorNotices.length - 1} 个` : '知道了';
-  action.disabled = mirrorNoticeBusy;
+  action.disabled = false;
   action.onclick = async () => {
-    if (mirrorNoticeBusy) return;
-    mirrorNoticeBusy = true;
-    action.disabled = true;
+    const dismissed = notice;
+    mirrorNotices = mirrorNotices.filter((item) => item.runId !== dismissed.runId);
+    renderMirrorStatusBanner();
     try {
-      await acknowledgeMirrorRun(notice.runId);
-      mirrorNotices = mirrorNotices.filter((item) => item.runId !== notice.runId);
-      renderMirrorStatusBanner();
+      await acknowledgeMirrorRun(dismissed.runId);
     } catch (error) {
+      if (!mirrorNotices.some((item) => item.runId === dismissed.runId)) mirrorNotices.unshift(dismissed);
+      renderMirrorStatusBanner();
       displayError(error);
-    } finally {
-      mirrorNoticeBusy = false;
-      if (action.isConnected) action.disabled = false;
     }
   };
   banner.onclick = (event) => {
@@ -2021,11 +2019,19 @@ async function receiveMirrorInbox({ notify = false } = {}) {
   if (!bridgeConfigured()) return [];
   const payload = await getMirrorInbox();
   const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+  if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) mirrorRemoteFilesCache = [];
+  mirrorRemoteInstanceId = String(payload?.instanceId || mirrorRemoteInstanceId || '');
+  mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || mirrorRemoteCatalogRevision || 0);
   const previousIds = new Set(mirrorNotices.map((item) => item.runId));
   mirrorNotices = runs.filter((run) => run?.runId);
   const cachedByRun = new Map(mirrorRemoteFilesCache.map((item) => [item.runId, item]));
   for (const run of mirrorNotices) cachedByRun.set(run.runId, { ...cachedByRun.get(run.runId), ...run });
   mirrorRemoteFilesCache = [...cachedByRun.values()];
+  cacheMirrorFileCatalog({
+    instanceId: mirrorRemoteInstanceId,
+    catalogRevision: mirrorRemoteCatalogRevision,
+    files: mirrorRemoteFilesCache,
+  });
   renderMirrorStatusBanner();
   if (notify && mirrorNotices.some((item) => !previousIds.has(item.runId))) showToast('收到新的 Mirror 文件');
   return mirrorNotices;
@@ -2242,6 +2248,14 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
       if (bridgeRun) {
         await saveMirrorFileRecord(prepared.runId, mirrorRecord);
         await acknowledgeMirrorRun(prepared.runId);
+        mirrorRemoteFilesCache = mirrorRemoteFilesCache.map((item) => item.runId === prepared.runId
+          ? { ...item, reviewed: true, isNew: false, acknowledgedAt: new Date().toISOString() }
+          : item);
+        cacheMirrorFileCatalog({
+          instanceId: mirrorRemoteInstanceId,
+          catalogRevision: mirrorRemoteCatalogRevision,
+          files: mirrorRemoteFilesCache,
+        });
       }
       mirrorNotices = mirrorNotices.filter((item) => item.runId !== prepared.runId);
       renderMirrorStatusBanner();
@@ -2310,6 +2324,22 @@ function localMirrorForRun(runId, snapshot = getMirrorState()) {
 async function openMirrorDialog() {
   const status = el('div', { className: 'mirror-management-status' });
   const fileHost = el('div', { className: 'mirror-library', 'aria-live': 'polite' });
+  const searchFiles = el('input', {
+    type: 'search',
+    className: 'mirror-explorer-search',
+    placeholder: '搜索 Bridge 文件',
+    autocomplete: 'off',
+    spellcheck: false,
+  });
+  const explorerToolbar = el('div', { className: 'mirror-explorer-toolbar' }, [
+    el('div', { className: 'mirror-explorer-path', 'aria-label': '当前位置' }, [
+      el('span', { text: 'Bridge' }), el('span', { text: '›' }), el('strong', { text: 'Mirror' }),
+    ]),
+    searchFiles,
+  ]);
+  const explorerHeading = el('div', { className: 'mirror-explorer-heading', 'aria-hidden': 'true' }, [
+    el('span', { text: '名称' }), el('span', { text: '状态与操作' }),
+  ]);
   let requestSequence = 0;
   let disposed = false;
 
@@ -2322,23 +2352,7 @@ async function openMirrorDialog() {
     );
   };
 
-  const localFileMetadata = () => (getMirrorState().library || []).map((item) => {
-    const counts = mirrorRecordClassCounts(item.record);
-    return {
-      runId: item.record.runId || String(item.record.mirrorId || '').replace(/^mirror_/, ''),
-      materialLabel: item.record.material?.label || item.record.materialLabel || '',
-      reviewed: true,
-      existingCount: counts.vocabulary + counts.phrase + counts.usage,
-      candidateCount: item.record.candidateImports?.length || 0,
-      isNew: false,
-    };
-  }).filter((item) => item.runId);
-
-  const immediateFiles = () => {
-    const byRun = new Map(localFileMetadata().map((item) => [item.runId, item]));
-    for (const item of mirrorRemoteFilesCache) byRun.set(item.runId, { ...byRun.get(item.runId), ...item });
-    return [...byRun.values()];
-  };
+  const immediateFiles = () => [...mirrorRemoteFilesCache];
 
   const selectFile = async (file, control) => {
     control.disabled = true;
@@ -2400,8 +2414,13 @@ async function openMirrorDialog() {
   };
 
   function renderFiles(files) {
+    const query = normalizeEnglish(searchFiles.value || '');
+    files = files
+      .filter((file) => !query || normalizeEnglish(file.materialLabel || file.runId).includes(query))
+      .sort((left, right) => String(right.updatedAt || right.readyAt || right.createdAt || '')
+        .localeCompare(String(left.updatedAt || left.readyAt || left.createdAt || '')));
     if (!files.length) {
-      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: 'Bridge 中还没有 Mirror 文件' }));
+      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: query ? '没有匹配的 Bridge 文件' : 'Bridge 中还没有 Mirror 文件' }));
       return;
     }
     const snapshot = getMirrorState();
@@ -2415,6 +2434,11 @@ async function openMirrorDialog() {
         else selectFile(file, event.currentTarget).catch(displayError);
       });
       open.append(el('span', { text: `${Number(file.existingCount || 0)} 已有项 · ${Number(file.candidateCount || 0)} 个候选${file.reviewed ? ' · 已审核' : ''}` }));
+      const updatedValue = file.updatedAt || file.readyAt || file.createdAt || '';
+      const updatedLabel = updatedValue
+        ? String(updatedValue).replace('T', ' ').replace(/:\d{2}(?:\.\d+)?Z$/, '').slice(0, 16)
+        : '未知时间';
+      open.append(el('span', { className: 'mirror-library-modified', text: `更新 ${updatedLabel}` }));
       const choose = button(selected ? '已选择' : '选择', selected ? 'primary-button compact-button' : 'secondary-button compact-button', (event) => {
         selectFile(file, event.currentTarget).catch(displayError);
       }, { disabled: selected });
@@ -2444,6 +2468,9 @@ async function openMirrorDialog() {
     try {
       const payload = await listMirrorFiles();
       if (disposed || sequence !== requestSequence) return;
+      if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) mirrorRemoteFilesCache = [];
+      mirrorRemoteInstanceId = String(payload?.instanceId || '');
+      mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || 0);
       mirrorRemoteFilesCache = Array.isArray(payload?.files) ? payload.files : [];
       renderFiles(immediateFiles());
     } catch (error) {
@@ -2453,11 +2480,18 @@ async function openMirrorDialog() {
   }
 
   const frame = openDialog({
-    title: 'Mirror 文件',
-    body: [status, el('section', { className: 'mirror-management-section' }, [fileHost])],
-    variant: 'management', showCancel: false, onRestore: refresh,
+    title: '选择 Mirror 文件',
+    body: [status, el('section', { className: 'mirror-management-section mirror-explorer' }, [explorerToolbar, explorerHeading, fileHost])],
+    variant: 'file-picker', showCancel: false, onRestore: refresh,
   });
   frame.onDispose = () => { disposed = true; requestSequence += 1; };
+  searchFiles.addEventListener('input', () => renderFiles(immediateFiles()));
+  const cachedCatalog = getCachedMirrorFileCatalog();
+  if (cachedCatalog) {
+    mirrorRemoteInstanceId = cachedCatalog.instanceId;
+    mirrorRemoteCatalogRevision = cachedCatalog.catalogRevision;
+    mirrorRemoteFilesCache = cachedCatalog.files;
+  }
   refresh().catch(displayError);
 }
 
@@ -2583,7 +2617,6 @@ function renderHome(token = renderRevision) {
 }
 
 function renderCollection(token = renderRevision) {
-  elements['mirror-status-banner']?.classList.add('hidden');
   const state = getState();
   const collection = state.collectionById.get(currentCollectionId);
   if (!collection) { goHome(); return; }
@@ -4437,8 +4470,12 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
 function displayGlossForEntry(entry, collection, domain) {
   const state = getState();
   const entryDomain = state.domainById.get(entry.domainId);
-  if (isGlobalCollection(collection)) return entryDomain?.glossEnabled ? entry.glossHant || '' : '';
-  return domain?.glossEnabled ? entry.glossHant || '' : '';
+  const raw = String(entry.glossHant || '');
+  const questionCount = (raw.match(/[?？]/g) || []).length;
+  const nonQuestionContent = raw.replace(/[\s?？,.;:!，。；：！、()[\]{}'"“”‘’·—_-]/g, '');
+  const gloss = /\uFFFD/.test(raw) || (questionCount >= 2 && !nonQuestionContent) ? '' : raw;
+  if (isGlobalCollection(collection)) return entryDomain?.glossEnabled ? gloss : '';
+  return domain?.glossEnabled ? gloss : '';
 }
 
 async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
@@ -6063,9 +6100,22 @@ function openSearchDialog() {
 
 function openBridgeDialog({ onConfigured = null } = {}) {
   const saved = getBridgeConfig();
-  const url = el('input', { type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev', autocomplete: 'url', spellcheck: 'false' });
-  const token = el('input', { type: 'password', value: saved.deviceToken, placeholder: 'Device Token', autocomplete: 'off', spellcheck: 'false' });
-  const groqKey = el('input', { type: 'password', value: '', placeholder: 'Groq API Key', autocomplete: 'new-password', spellcheck: 'false' });
+  const url = el('input', {
+    type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev',
+    autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+  });
+  const token = el('input', {
+    type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token',
+    name: 'vix-opaque-credential', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+  });
+  const groqKey = el('input', {
+    type: 'text', className: 'credential-input', value: '', placeholder: 'Groq API Key',
+    name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+  });
   const status = el('p', { className: 'provider-settings-status', role: 'status', 'aria-live': 'polite' });
   const reflectGroqState = (result, { announce = false } = {}) => {
     if (result?.groq) {
@@ -6119,15 +6169,18 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     token.value = '';
     status.textContent = '本机配置已清除';
   });
-  const functionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
-  const instructionLink = el('a', { className: 'secondary-button bridge-download', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
+  const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
+  const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
   openDialog({
     title: 'Bridge', variant: 'management', submitText: '保存',
     body: [
       field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
       status,
       el('div', { className: 'settings-row' }, [test, removeKey, clear]),
-      el('div', { className: 'settings-row bridge-download-row' }, [functionLink, instructionLink]),
+      el('section', { className: 'bridge-integration-resources' }, [
+        el('h3', { text: '集成资源' }),
+        el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
+      ]),
     ],
     onSubmit: async () => {
       const nextConfig = { url: url.value, deviceToken: token.value };
@@ -6198,6 +6251,10 @@ function openSettingsDialog() {
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
       field('查询模型', model), refresh, groqSettingsStatus]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }),
       el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog({
         onConfigured: ({ groqReady }) => {
@@ -6206,11 +6263,7 @@ function openSettingsDialog() {
         },
       }))])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
-      el('div', { className: 'settings-row' }, [button('管理 Mirror', 'secondary-button', openMirrorDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
+      el('div', { className: 'settings-row' }, [button('选择文件', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {

@@ -13,6 +13,17 @@ const memoryStores = { [CONTEXTS]: new Map() };
 
 function clone(value) { return value == null ? value : structuredClone(value); }
 function clean(value, max = 240) { return String(value ?? '').trim().slice(0, max); }
+function cleanGloss(value) {
+  const result = clean(value, 160);
+  const questionCount = (result.match(/[?？]/g) || []).length;
+  const nonQuestionContent = result.replace(/[\s?？,.;:!，。；：！、()[\]{}'"“”‘’·—_-]/g, '');
+  return /\uFFFD/.test(result) || (questionCount >= 2 && !nonQuestionContent) ? '' : result;
+}
+function cleanGlossPair(hans, hant) {
+  const nextHans = cleanGloss(hans);
+  const nextHant = cleanGloss(hant);
+  return { glossHans: nextHans || nextHant, glossHant: nextHant || nextHans };
+}
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== 'object') return value;
@@ -183,6 +194,7 @@ function validateExistingMatch(value) {
   if (!Number.isSafeInteger(slot) || slot < 1) throw new Error('已有词匹配 slot 无效');
   const evidence = validateEvidence(value.evidence);
   if (!evidence.length) throw new Error('已有词匹配必须提供原文证据');
+  const glosses = cleanGlossPair(value.glossHans, value.glossHant);
   return {
     slot,
     mirrorClass: mirrorClass(value.mirrorClass),
@@ -190,8 +202,7 @@ function validateExistingMatch(value) {
     surfaceForm: clean(value.surfaceForm, 160),
     lemma: clean(value.lemma, 160),
     importance: importance(value.importance),
-    glossHans: clean(value.glossHans, 160),
-    glossHant: clean(value.glossHant, 160),
+    ...glosses,
     evidence,
   };
 }
@@ -204,6 +215,7 @@ function validateCandidate(value) {
   const collectionKeys = Array.isArray(value.collectionKeys)
     ? [...new Set(value.collectionKeys.map((item) => clean(item, 180)).filter(Boolean))].slice(0, 16) : [];
   const evidence = validateEvidence(value.evidence);
+  const glosses = cleanGlossPair(value.glossHans, value.glossHant);
   return {
     candidateId, text, normalizedText: clean(value.normalizedText, 160), kind,
     mirrorClass: mirrorClass(value.mirrorClass, kind === 'phrase' ? 'phrase' : kind === 'content' ? 'usage' : 'vocabulary'),
@@ -211,7 +223,7 @@ function validateCandidate(value) {
     importance: importance(value.importance),
     confidence: Number.isFinite(Number(value.confidence)) ? Math.max(0, Math.min(1, Number(value.confidence))) : null,
     partsOfSpeech: Array.isArray(value.partsOfSpeech) ? [...new Set(value.partsOfSpeech.map((item) => clean(item, 40)).filter(Boolean))].slice(0, 8) : [],
-    glossHans: clean(value.glossHans, 160), glossHant: clean(value.glossHant, 160),
+    ...glosses,
     domainKey: clean(value.domainKey, 180), collectionKeys, evidence,
     relatedExistingSlots: Array.isArray(value.relatedExistingSlots)
       ? [...new Set(value.relatedExistingSlots.filter((slot) => Number.isSafeInteger(slot) && slot > 0))].slice(0, 32) : [],

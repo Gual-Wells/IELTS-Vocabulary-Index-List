@@ -29,7 +29,12 @@ function Read-Config {
 
 function Invoke-Bridge($Method, $Path, $Body = $null, $IdempotencyKey = '') {
   $config = Read-Config
-  $headers = @{ Authorization = 'Bearer ' + $config.token; Accept = 'application/json' }
+  $headers = @{
+    Authorization = 'Bearer ' + $config.token
+    'X-VIX-Device-Token' = $config.token
+    'X-VIX-Client' = 'vix-function'
+    Accept = 'application/json'
+  }
   if ($IdempotencyKey) { $headers['Idempotency-Key'] = $IdempotencyKey }
   $parameters = @{ Method = $Method; Uri = $config.url + $Path; Headers = $headers; UseBasicParsing = $true }
   if ($null -ne $Body) {

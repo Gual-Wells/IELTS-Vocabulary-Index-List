@@ -3,7 +3,7 @@
   position: fixed;
   top: calc(var(--topbar-height, 64px) + 12px);
   right: max(14px, env(safe-area-inset-right));
-  z-index: 78;
+  z-index: 260;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -19,6 +19,7 @@
   font-size: 14px;
   font-weight: 650;
   cursor: pointer;
+  isolation: isolate;
 }
 .mirror-status-banner::before,
 .mirror-status-banner::after {
@@ -59,14 +60,6 @@
 @media (prefers-reduced-motion: reduce) {
   .mirror-status-banner { scroll-behavior: auto; }
 }
-.mirror-pending-list:empty::before {
-  content: "无待审核材料";
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-}
-.mirror-pending-list { display: grid; gap: 8px; }
-.mirror-pending-button { min-height: 44px; text-align: left; }
 .mirror-candidate-tree { display: grid; gap: 12px; }
 .mirror-candidate-heading,
 .mirror-candidate-row {
@@ -82,19 +75,44 @@
 .mirror-candidate-copy > span,
 .mirror-candidate-target { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .mirror-candidate-target { max-width: 132px; text-align: right; }
-.bridge-download,
-.bridge-download:visited {
+.credential-input {
+  -webkit-text-security: disc;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: .04em;
+}
+.bridge-integration-resources {
+  display: grid;
+  gap: 9px;
+  margin-top: 3px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.bridge-integration-resources > h3 {
+  margin: 0;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .04em;
+}
+.bridge-download-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.integration-resource-link,
+.integration-resource-link:visited {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text) !important;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--accent) !important;
+  font-size: 13px;
+  font-weight: 700;
   text-decoration: none;
 }
-.bridge-download-row { flex-wrap: wrap; }
-.mirror-file-input { display: none !important; }
-.mirror-import-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.mirror-file-name { min-width: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-
+.integration-resource-link::before { content: "↓"; font-size: 15px; }
+.integration-resource-link:active { opacity: .66; }
 /* Retained parent layers remain visually unchanged and non-interactive. */
 .modal-layer[inert] {
   pointer-events: none;
@@ -110,8 +128,18 @@
   max-height: min(calc(var(--visual-height, 100dvh) - 40px), 820px);
 }
 .modal-card-action {
-  max-height: min(calc(var(--visual-height, 100dvh) - 48px), 780px);
+  max-height: min(calc(var(--visual-height, 100dvh) - 72px), 640px);
 }
+.modal-card-file-picker {
+  width: min(860px, calc(var(--visual-width, 100vw) - 36px));
+  max-width: min(860px, calc(var(--visual-width, 100vw) - 36px));
+  height: min(76dvh, 720px);
+  max-height: calc(var(--visual-height, 100dvh) - 40px);
+  border-radius: 18px;
+}
+.modal-card-file-picker .dialog-header { min-height: 58px !important; padding: 14px 18px 12px !important; }
+.modal-card-file-picker .dialog-body { padding: 0 !important; gap: 0 !important; }
+.modal-card-file-picker .dialog-actions { padding: 10px 16px calc(10px + var(--safe-bottom)) !important; }
 .modal-card-management .dialog-header,
 .modal-card-action .dialog-header {
   min-height: 58px !important;
@@ -251,13 +279,22 @@
 .mirror-management-section:last-child { border-bottom: 0; padding-bottom: 0; }
 .mirror-library {
   display: grid;
-  gap: 10px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 13px 13px;
+  overflow: hidden;
 }
 .mirror-library-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
 }
+.mirror-library-card:last-child { border-bottom: 0; }
 .mirror-library-card[data-status="selected"] {
-  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .mirror-library-open {
   appearance: none;
@@ -266,7 +303,7 @@
   min-height: 58px;
   padding: 11px 14px;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 0;
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -283,9 +320,54 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  min-width: 214px;
   padding: 8px 10px;
 }
 .mirror-library-state { margin-right: auto; }
+.mirror-explorer {
+  min-height: 100%;
+  padding: 14px 16px 16px;
+  gap: 0;
+  border-bottom: 0;
+  background: var(--surface);
+}
+.mirror-explorer-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.mirror-explorer-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--muted);
+  background: var(--surface);
+}
+.mirror-explorer-path strong { color: var(--text); }
+.mirror-explorer-search { min-height: 42px !important; border-radius: 11px !important; }
+.mirror-explorer-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 214px;
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+body > .toast-region {
+  z-index: 270;
+  pointer-events: none;
+}
 
 /* Only the providers that still exist own columns in the query chooser. */
 .query-menu {
@@ -305,4 +387,17 @@
     grid-column: 2;
     justify-self: start;
   }
+  .modal-card-file-picker {
+    width: calc(var(--visual-width, 100vw) - 20px);
+    max-width: calc(var(--visual-width, 100vw) - 20px);
+    height: min(calc(var(--visual-height, 100dvh) - 24px), 760px);
+    max-height: calc(var(--visual-height, 100dvh) - 20px);
+  }
+  .mirror-explorer { padding: 12px 10px 14px; }
+  .mirror-explorer-toolbar { grid-template-columns: 1fr; gap: 8px; }
+  .mirror-explorer-heading { display: none; }
+  .mirror-library { border-top: 1px solid var(--line); border-radius: 13px; }
+  .mirror-library-card { grid-template-columns: 1fr; }
+  .mirror-library-actions { min-width: 0; border-top: 1px solid var(--line); }
+  .bridge-download-row { gap: 10px 18px; }
 }

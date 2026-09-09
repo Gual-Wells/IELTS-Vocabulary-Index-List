@@ -5,7 +5,7 @@ import { reconcileSeedUpgrade } from './v5-seed-migration.js';
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
 export const HISTORY_LIMIT = 100;
-export const BUILTIN_SEED_REVISION = 7;
+export const BUILTIN_SEED_REVISION = 8;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
 const SEED_MIGRATION_BACKUP_STORE = 'snapshots';
@@ -435,6 +435,15 @@ async function loadSeedMigrationBase() {
   return canonicalizeBackup(raw);
 }
 
+async function loadSeedFieldBaseline(revision) {
+  if (revision !== 7) return null;
+  const raw = await loadSeedFile('seed-baselines/seed-7-glosses.json');
+  if (raw?.protocol !== 'vix-seed-field-baseline/1' || Number(raw.seedRevision) !== revision || !Array.isArray(raw.entries)) {
+    throw new Error('Seed 7 gloss baseline is invalid');
+  }
+  return raw;
+}
+
 export function mergeBuiltInDomainBackup(_baseBackup, seedBackup) {
   // 4.0.0 is a content-generation break. Built-in seed updates are full
   // replacements and never perform the old add-only merge.
@@ -447,10 +456,13 @@ async function ensureBuiltInSeedRevision(db) {
   return enqueueWrite(async () => {
     const current = await readCurrentSnapshot(db);
     if (!current) throw new Error('Cannot reconcile Seed5 because the current device snapshot is unavailable');
-    const [base, seed] = await Promise.all([loadSeedMigrationBase(), loadCanonicalSeed()]);
+    const [base, seed, fieldBaseline] = await Promise.all([
+      loadSeedMigrationBase(), loadCanonicalSeed(), loadSeedFieldBaseline(applied),
+    ]);
     const { backup, report } = reconcileSeedUpgrade(base, current, seed, {
       toRevision: BUILTIN_SEED_REVISION,
       appliedAt: new Date().toISOString(),
+      fieldBaseline,
     });
     const backupId = await persistSeedMigrationBackup(current, applied, BUILTIN_SEED_REVISION);
     const revision = Math.max(Date.now(), Number(current.settings?.dataRevision || 0) + 1);

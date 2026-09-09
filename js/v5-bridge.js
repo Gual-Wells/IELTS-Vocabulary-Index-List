@@ -62,9 +62,12 @@ export function setBridgeConfig({ url, deviceToken }) {
   const nextToken = String(deviceToken || '').trim();
   if (!nextUrl || !nextToken) throw new BridgeError('configuration', '请填写 Bridge 地址和 Device Token');
   const previousUrl = localStorage.getItem(URL_KEY) || '';
+  const previousToken = localStorage.getItem(DEVICE_TOKEN_KEY) || '';
   localStorage.setItem(URL_KEY, nextUrl);
   localStorage.setItem(DEVICE_TOKEN_KEY, nextToken);
-  if (previousUrl && previousUrl !== nextUrl) localStorage.removeItem(FILE_CATALOG_KEY);
+  if ((previousUrl && previousUrl !== nextUrl) || (previousToken && previousToken !== nextToken)) {
+    localStorage.removeItem(FILE_CATALOG_KEY);
+  }
   return getBridgeConfig();
 }
 
@@ -151,7 +154,7 @@ export function testBridge(options = {}) {
   return bridgeRequest('/v1/status', options);
 }
 
-export async function testBridgeConfig(config, options = {}) {
+async function testBridgeConfigOnce(config, options = {}) {
   const { probeGroq = true, ...requestOptions } = options;
   const status = await bridgeRequest('/v1/status', { ...requestOptions, config });
   if (probeGroq && status?.groqState === 'master_key_mismatch') {
@@ -160,10 +163,34 @@ export async function testBridgeConfig(config, options = {}) {
   if (probeGroq && status?.groqState === 'unreadable') {
     throw new BridgeError('groq_secret_unreadable', 'Groq Key 无法解密，请在 Bridge 中重新保存', 409);
   }
+  if (status?.ttsState === 'master_key_mismatch') {
+    throw new BridgeError('master_key_mismatch', 'Bridge Master Key 已变更并与保存的 Google TTS Key 不匹配，请重新保存语音 Key', 409);
+  }
+  if (status?.ttsState === 'unreadable') {
+    throw new BridgeError('tts_secret_unreadable', 'Google TTS Key 无法解密，请在 Bridge 中重新保存', 409);
+  }
   if (!probeGroq || !status?.groq) return status;
   const models = await bridgeRequest('/v1/groq/models', { ...requestOptions, config });
   const groqModels = Array.isArray(models?.data) ? models.data : [];
   return { ...status, groqReachable: true, groqModelCount: groqModels.length, groqModels };
+}
+
+function iosSchemeCredentialRecoveryCandidate(value) {
+  const token = String(value || '').trim();
+  if (!/^[a-z]:/.test(token)) return '';
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
+
+export async function testBridgeConfig(config, options = {}) {
+  try {
+    return await testBridgeConfigOnce(config, options);
+  } catch (error) {
+    const recoveredDeviceToken = iosSchemeCredentialRecoveryCandidate(config?.deviceToken);
+    if (!(error instanceof BridgeError) || error.status !== 401 || !recoveredDeviceToken) throw error;
+    const recoveredConfig = { ...config, deviceToken: recoveredDeviceToken };
+    const result = await testBridgeConfigOnce(recoveredConfig, options);
+    return { ...result, recoveredDeviceToken };
+  }
 }
 
 export function uploadMirrorContext(context, options = {}) {
@@ -213,6 +240,28 @@ export function validateGroqSecret(apiKey, options = {}) {
 
 export function deleteGroqSecret(options = {}) {
   return bridgeRequest('/v1/settings/groq', { ...options, method: 'DELETE' });
+}
+
+export function saveTtsSecret(apiKey, options = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new BridgeError('configuration', '请填写 Google Cloud TTS API Key');
+  return bridgeRequest('/v1/settings/tts', { ...options, method: 'PUT', body: { apiKey: key } });
+}
+
+export function validateTtsSecret(apiKey, options = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new BridgeError('configuration', '请填写 Google Cloud TTS API Key');
+  return bridgeRequest('/v1/settings/tts/validate', { ...options, method: 'POST', body: { apiKey: key } });
+}
+
+export function deleteTtsSecret(options = {}) {
+  return bridgeRequest('/v1/settings/tts', { ...options, method: 'DELETE' });
+}
+
+export function requestSpeech(text, options = {}) {
+  const value = String(text || '').trim();
+  if (!value) throw new BridgeError('configuration', '发音文本为空');
+  return bridgeRequest('/v1/tts/synthesize', { ...options, method: 'POST', body: { text: value } });
 }
 
 export function getGroqModels(options = {}) {

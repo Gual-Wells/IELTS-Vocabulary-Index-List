@@ -682,8 +682,10 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds, s
   const repairMatches = Array.isArray(selectedExistingMatches) ? selectedExistingMatches : [];
   if (!selected.size && !repairMatches.length) return summary;
   const corruptedGloss = (value) => {
-    const compact = String(value || '').replace(/[\s,.;:!?，。；：！？、()[\]{}'"“”‘’·—_-]/g, '');
-    return compact.length > 0 && /^\?+$/.test(compact);
+    const result = String(value || '').trim();
+    const questionCount = (result.match(/[?？]/g) || []).length;
+    const nonQuestionContent = result.replace(/[\s?？,.;:!，。；：！、()[\]{}'"“”‘’·—_-]/g, '');
+    return /\uFFFD/.test(result) || (questionCount >= 2 && !nonQuestionContent);
   };
   await mutate('导入 Mirror 候选词', (draft) => {
     const domainById = new Map(draft.domains.map((item) => [item.id, item]));

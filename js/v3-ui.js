@@ -24,8 +24,8 @@ import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, seman
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
-  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
+  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, deleteTtsSecret, getBridgeConfig,
+  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, requestSpeech, saveGroqSecret, saveMirrorFileRecord, saveTtsSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret, validateTtsSecret,
 } from './v5-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
@@ -74,6 +74,7 @@ let alphabetResizeObserver = null;
 let cachedChromeBottom = 0;
 let openModalCount = 0;
 let modalTouchY = 0;
+let modalTouchFrame = null;
 let appNavigationDepth = 0;
 const navigationStack = [];
 let navigationRuntimeId = '';
@@ -266,6 +267,7 @@ const ICONS = {
   switchParallel: '<path d="M5 8h12.2M14.4 5.2 17.2 8l-2.8 2.8"></path><path d="M19 16H6.8M9.6 13.2 6.8 16l2.8 2.8"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
+  file: '<path d="M6 3.8h7.4l4.6 4.6v11.8H6z"></path><path d="M13.4 3.8v4.6H18M8.8 12h6.4M8.8 15.4h6.4"></path>',
   clear: '<path d="M5.2 6.6h13.6M9.1 6.6V4.4h5.8v2.2M7.2 6.6l.8 13h8l.8-13"></path><path d="M10.1 10.1v5.8M13.9 10.1v5.8"></path>',
   close: '<path d="m7.35 7.35 9.3 9.3M16.65 7.35l-9.3 9.3"></path>',
   grip: '<circle cx="8" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="7" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="12" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="8" cy="17" r="1.15" fill="currentColor" stroke="none"></circle><circle cx="16" cy="17" r="1.15" fill="currentColor" stroke="none"></circle>',
@@ -472,26 +474,50 @@ function unlockPageForModal() {
 }
 
 function modalScrollableTarget(target) {
+  const frame = dialogStack.at(-1);
+  if (!frame || !(target instanceof Element) || !frame.layer.contains(target)) return null;
   const node = target instanceof Element ? target.closest('.dialog-body') : null;
-  if (!node) return null;
+  if (!node || node !== frame.body) return null;
   return node.scrollHeight > node.clientHeight + 1 ? node : null;
+}
+
+function modalScrollWouldEscape(scroller, deltaY) {
+  if (!scroller || !deltaY) return !scroller;
+  const atTop = scroller.scrollTop <= 0;
+  const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+  return (atTop && deltaY < 0) || (atBottom && deltaY > 0);
 }
 
 function handleModalTouchStart(event) {
   if (!openModalCount || !event.touches?.length) return;
+  const frame = dialogStack.at(-1) || null;
+  modalTouchFrame = frame && event.target instanceof Element && frame.layer.contains(event.target) ? frame : null;
   modalTouchY = event.touches[0].clientY;
 }
 
 function handleModalTouchMove(event) {
   if (!openModalCount || !event.touches?.length) return;
+  const frame = dialogStack.at(-1) || null;
+  if (!frame || modalTouchFrame !== frame || !(event.target instanceof Element) || !frame.layer.contains(event.target)) {
+    event.preventDefault();
+    return;
+  }
   const scroller = modalScrollableTarget(event.target);
   if (!scroller) { event.preventDefault(); return; }
   const nextY = event.touches[0].clientY;
-  const delta = nextY - modalTouchY;
+  const deltaY = modalTouchY - nextY;
   modalTouchY = nextY;
-  const atTop = scroller.scrollTop <= 0;
-  const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
-  if ((atTop && delta > 0) || (atBottom && delta < 0)) event.preventDefault();
+  if (modalScrollWouldEscape(scroller, deltaY)) event.preventDefault();
+}
+
+function handleModalTouchEnd() {
+  modalTouchFrame = null;
+}
+
+function handleModalWheel(event) {
+  if (!openModalCount) return;
+  const scroller = modalScrollableTarget(event.target);
+  if (!scroller || modalScrollWouldEscape(scroller, event.deltaY)) event.preventDefault();
 }
 
 function focusableModalNodes(form) {
@@ -2037,10 +2063,31 @@ async function receiveMirrorInbox({ notify = false } = {}) {
   return mirrorNotices;
 }
 
-function scheduleMirrorContextSync() {
+function applyMirrorRemoteCatalog(payload) {
+  if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) {
+    mirrorRemoteFilesCache = [];
+  }
+  mirrorRemoteInstanceId = String(payload?.instanceId || '');
+  mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || 0);
+  mirrorRemoteFilesCache = Array.isArray(payload?.files) ? payload.files : [];
+  return mirrorRemoteFilesCache;
+}
+
+async function warmMirrorRemoteCatalog() {
+  if (!bridgeConfigured()) return [];
+  try {
+    return applyMirrorRemoteCatalog(await listMirrorFiles());
+  } catch {
+    return mirrorRemoteFilesCache;
+  }
+}
+
+function scheduleMirrorContextSync({ notifyFailure = false } = {}) {
   if (!bridgeConfigured()) return;
   clearTimeout(mirrorBridgeTimer);
-  mirrorBridgeTimer = window.setTimeout(() => synchronizeMirrorContext().catch(() => {}), 1200);
+  mirrorBridgeTimer = window.setTimeout(() => synchronizeMirrorContext().catch((error) => {
+    if (notifyFailure) displayError(error);
+  }), 1200);
 }
 
 function scheduleMirrorInboxPoll(delay = 45000) {
@@ -2322,7 +2369,6 @@ function localMirrorForRun(runId, snapshot = getMirrorState()) {
 }
 
 async function openMirrorDialog() {
-  const status = el('div', { className: 'mirror-management-status' });
   const fileHost = el('div', { className: 'mirror-library', 'aria-live': 'polite' });
   const searchFiles = el('input', {
     type: 'search',
@@ -2343,15 +2389,6 @@ async function openMirrorDialog() {
   let requestSequence = 0;
   let disposed = false;
 
-  const renderStatus = () => {
-    const snapshot = getMirrorState();
-    const currentLabel = snapshot.current?.material?.label || snapshot.current?.materialLabel || '';
-    status.replaceChildren(
-      el('strong', { text: currentLabel ? `已选择 · ${currentLabel}` : '尚未选择 Mirror 文件' }),
-      el('p', { text: snapshot.active ? 'Mirror 模式已开启' : 'Mirror 模式已关闭' }),
-    );
-  };
-
   const immediateFiles = () => [...mirrorRemoteFilesCache];
 
   const selectFile = async (file, control) => {
@@ -2362,7 +2399,6 @@ async function openMirrorDialog() {
       const local = localMirrorForRun(file.runId);
       if (local) {
         await selectMirror(local.record.mirrorId);
-        renderStatus();
         renderFiles(immediateFiles());
         showToast('已选择 Mirror 文件');
         return;
@@ -2375,7 +2411,6 @@ async function openMirrorDialog() {
           mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
           mirrorRemoteFilesCache = mirrorRemoteFilesCache.map((item) => item.runId === file.runId ? { ...item, reviewed: true, isNew: false } : item);
           renderMirrorStatusBanner();
-          renderStatus();
           renderFiles(immediateFiles());
           showToast('Mirror 文件已载入');
           return;
@@ -2406,7 +2441,6 @@ async function openMirrorDialog() {
         mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
         mirrorRemoteFilesCache = mirrorRemoteFilesCache.filter((item) => item.runId !== file.runId);
         renderMirrorStatusBanner();
-        renderStatus();
         renderFiles(immediateFiles());
         showToast('Mirror 文件已删除');
       },
@@ -2420,7 +2454,7 @@ async function openMirrorDialog() {
       .sort((left, right) => String(right.updatedAt || right.readyAt || right.createdAt || '')
         .localeCompare(String(left.updatedAt || left.readyAt || left.createdAt || '')));
     if (!files.length) {
-      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: query ? '没有匹配的 Bridge 文件' : 'Bridge 中还没有 Mirror 文件' }));
+      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: query ? '没有匹配的文件' : 'Bridge 中还没有 Mirror 文件' }));
       return;
     }
     const snapshot = getMirrorState();
@@ -2429,16 +2463,22 @@ async function openMirrorDialog() {
       const selected = snapshot.current?.mirrorId === local?.record?.mirrorId;
       const active = snapshot.active?.mirrorId === local?.record?.mirrorId;
       const title = file.materialLabel || file.runId;
-      const open = button(title, 'mirror-library-open', (event) => {
-        if (local) openMirrorRecordDetail(local.record);
+      const open = button('', 'mirror-library-open', (event) => {
+        if (selected && local) openMirrorRecordDetail(local.record);
         else selectFile(file, event.currentTarget).catch(displayError);
       });
-      open.append(el('span', { text: `${Number(file.existingCount || 0)} 已有项 · ${Number(file.candidateCount || 0)} 个候选${file.reviewed ? ' · 已审核' : ''}` }));
       const updatedValue = file.updatedAt || file.readyAt || file.createdAt || '';
       const updatedLabel = updatedValue
         ? String(updatedValue).replace('T', ' ').replace(/:\d{2}(?:\.\d+)?Z$/, '').slice(0, 16)
         : '未知时间';
-      open.append(el('span', { className: 'mirror-library-modified', text: `更新 ${updatedLabel}` }));
+      open.append(
+        el('span', { className: 'mirror-file-icon' }, [svgIcon('file')]),
+        el('span', { className: 'mirror-file-copy' }, [
+          el('strong', { text: title }),
+          el('span', { text: `${Number(file.existingCount || 0)} 已有项 · ${Number(file.candidateCount || 0)} 个候选` }),
+          el('span', { className: 'mirror-library-modified', text: updatedLabel }),
+        ]),
+      );
       const choose = button(selected ? '已选择' : '选择', selected ? 'primary-button compact-button' : 'secondary-button compact-button', (event) => {
         selectFile(file, event.currentTarget).catch(displayError);
       }, { disabled: selected });
@@ -2456,32 +2496,33 @@ async function openMirrorDialog() {
 
   async function refresh({ fetchRemote = true } = {}) {
     const sequence = ++requestSequence;
-    renderStatus();
     if (!bridgeConfigured()) {
-      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: '请先在 Bridge 页面完成配置' }));
+      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '请先配置 Bridge' }));
       return;
     }
     const cached = immediateFiles();
     if (cached.length) renderFiles(cached);
-    else fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: '正在读取 Bridge 文件夹…' }));
+    else fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '正在读取…' }));
     if (!fetchRemote) return;
     try {
       const payload = await listMirrorFiles();
       if (disposed || sequence !== requestSequence) return;
-      if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) mirrorRemoteFilesCache = [];
-      mirrorRemoteInstanceId = String(payload?.instanceId || '');
-      mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || 0);
-      mirrorRemoteFilesCache = Array.isArray(payload?.files) ? payload.files : [];
+      applyMirrorRemoteCatalog(payload);
       renderFiles(immediateFiles());
     } catch (error) {
-      if (disposed || sequence !== requestSequence || cached.length) return;
-      fileHost.replaceChildren(el('p', { className: 'mirror-review-empty', text: error?.message || '无法读取 Bridge 文件夹' }));
+      if (disposed || sequence !== requestSequence) return;
+      if (cached.length) {
+        showToast('未能刷新 Bridge 文件夹，当前显示本机快照', 'error');
+        return;
+      }
+      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '无法读取 Bridge 文件夹' }));
+      displayError(error);
     }
   }
 
   const frame = openDialog({
     title: '选择 Mirror 文件',
-    body: [status, el('section', { className: 'mirror-management-section mirror-explorer' }, [explorerToolbar, explorerHeading, fileHost])],
+    body: [el('section', { className: 'mirror-management-section mirror-explorer' }, [explorerToolbar, explorerHeading, fileHost])],
     variant: 'file-picker', showCancel: false, onRestore: refresh,
   });
   frame.onDispose = () => { disposed = true; requestSequence += 1; };
@@ -4539,6 +4580,78 @@ function providerResultBody(provider, entry, statusText = '准备查询') {
   ];
 }
 
+function createLazySpeechSession() {
+  const controller = new AbortController();
+  const buffers = new Map();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  let context = null;
+  let source = null;
+  let activeControl = null;
+
+  const resetControl = () => {
+    if (activeControl) {
+      activeControl.disabled = false;
+      activeControl.dataset.state = '';
+    }
+    activeControl = null;
+  };
+  const stop = () => {
+    if (source) {
+      try { source.stop(); } catch {}
+      source.disconnect();
+      source = null;
+    }
+    resetControl();
+  };
+  const speak = async (text, control) => {
+    if (!AudioContextClass) throw new Error('当前浏览器不支持音频播放');
+    stop();
+    activeControl = control;
+    control.disabled = true;
+    control.dataset.state = 'loading';
+    context ||= new AudioContextClass();
+    // Start/resume inside the click activation; generation itself stays lazy.
+    await context.resume();
+    let buffer = buffers.get(text);
+    if (!buffer) {
+      const payload = await requestSpeech(text, { signal: controller.signal });
+      const binary = atob(String(payload?.audioContent || ''));
+      if (!binary) throw new Error('Bridge 返回的发音为空');
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      buffer = await context.decodeAudioData(bytes.buffer.slice(0));
+      buffers.set(text, buffer);
+    }
+    if (controller.signal.aborted || activeControl !== control) return;
+    source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    control.disabled = false;
+    control.dataset.state = 'playing';
+    source.addEventListener('ended', () => {
+      source?.disconnect();
+      source = null;
+      resetControl();
+    }, { once: true });
+    source.start();
+  };
+  return {
+    speak: async (text, control) => {
+      try { await speak(text, control); }
+      catch (error) {
+        resetControl();
+        if (error?.name !== 'AbortError' && error?.code !== 'cancelled') displayError(error);
+      }
+    },
+    dispose: () => {
+      controller.abort();
+      stop();
+      buffers.clear();
+      context?.close().catch(() => undefined);
+      context = null;
+    },
+  };
+}
+
 async function startProviderQuery(provider, entry, collection) {
   if (activeProviderQuery) {
     activeProviderQuery.controller.abort();
@@ -4553,10 +4666,13 @@ async function startProviderQuery(provider, entry, collection) {
   const modes = card.querySelector('.provider-mode-controls');
   let mode = 'lookup';
   let session = null;
+  let speechSession = null;
   const modeButtons = [];
   const setModes = () => modeButtons.forEach(([value, control]) => control.setAttribute('aria-pressed', String(mode === value)));
   const runQuery = async () => {
     session?.dispose();
+    speechSession?.dispose();
+    speechSession = null;
     const sequence = ++providerQuerySequence;
     const requestModel = provider === 'Groq' ? getSelectedModel() : '';
     content.replaceChildren();
@@ -4581,7 +4697,9 @@ async function startProviderQuery(provider, entry, collection) {
       const rendered = await session.run(async (signal, onState) => {
         const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION });
         if (mode === 'verification') return renderGroqVerification(await verifyVocabularyEntry(context, { signal, onState }));
-        return renderGroqLookup(await queryVocabularyEntry(context, { signal, onState }));
+        const result = await queryVocabularyEntry(context, { signal, onState });
+        speechSession = createLazySpeechSession();
+        return renderGroqLookup(result, { onSpeak: speechSession.speak });
       });
       if (!providerQueryIsCurrent(sequence)) return;
       content.replaceChildren(rendered);
@@ -4606,6 +4724,7 @@ async function startProviderQuery(provider, entry, collection) {
   } else { modes.hidden = true; }
   queryFrame.onDispose = () => {
     session?.dispose();
+    speechSession?.dispose();
     content.replaceChildren(); // dictionary results never survive their presentation frame
     if (activeProviderQuery?.frame === queryFrame) activeProviderQuery = null;
   };
@@ -5502,7 +5621,7 @@ function openAddRelatedPhraseDialog(entryId) {
   const entry = getState().entryById.get(entryId);
   const domain = getState().domainById.get(entry.domainId);
   const text = el('input', { required: true, maxlength: 160, placeholder: `必须包含词元 “${entry.text}”` });
-  const gloss = el('input', { maxlength: 120, placeholder: '可输入简体或繁体' });
+  const gloss = el('input', { maxlength: 240, placeholder: '可输入简体或繁体' });
   const body = [field('英文短语', text)];
   if (domain.glossEnabled) body.push(field('繁体释义', gloss));
   openDialog({ title: '添加短语', body, onSubmit: async () => { await addPhraseForWord(entryId, text.value, { gloss: gloss.value }, getState().collectionById.get(currentCollectionId)?.type === 'normal' ? currentCollectionId : ''); } });
@@ -5516,7 +5635,7 @@ function openEditEntryDialog(entryId, collectionId = currentCollectionId) {
   if (!entry || !collection) return;
   const membership = (state.membershipsByEntry.get(entry.id) || []).find((item) => item.collectionId === collectionId);
   const text = el('input', { required: true, maxlength: 160, value: entry.text, autocomplete: 'off', spellcheck: false });
-  const gloss = el('input', { maxlength: 120, value: entry.glossHant || '', placeholder: '可输入简体或繁体' });
+  const gloss = el('input', { maxlength: 240, value: entry.glossHant || '', placeholder: '可输入简体或繁体' });
   const body = [field(entry.kind === 'phrase' ? '短语' : entry.kind === 'content' ? '内容' : '词汇', text)];
   if (domain?.glossEnabled) body.push(field('繁体释义', gloss));
   openDialog({
@@ -6098,76 +6217,91 @@ function openSearchDialog() {
   });
 }
 
+function syncCredentialMask(input) {
+  input.dataset.hasValue = input.value ? 'true' : 'false';
+}
+
+function bindCredentialMask(input) {
+  syncCredentialMask(input);
+  input.addEventListener('input', () => syncCredentialMask(input));
+  return input;
+}
+
+function applyRecoveredBridgeCredential(config, result, tokenInput) {
+  if (!result?.recoveredDeviceToken) return config;
+  const recovered = { ...config, deviceToken: result.recoveredDeviceToken };
+  tokenInput.value = recovered.deviceToken;
+  syncCredentialMask(tokenInput);
+  return recovered;
+}
+
 function openBridgeDialog({ onConfigured = null } = {}) {
   const saved = getBridgeConfig();
   const url = el('input', {
     type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev',
     autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
   });
-  const token = el('input', {
+  const token = bindCredentialMask(el('input', {
     type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token',
     name: 'vix-opaque-credential', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  });
-  const groqKey = el('input', {
+  }));
+  const groqKey = bindCredentialMask(el('input', {
     type: 'text', className: 'credential-input', value: '', placeholder: 'Groq API Key',
     name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  });
-  const status = el('p', { className: 'provider-settings-status', role: 'status', 'aria-live': 'polite' });
-  const reflectGroqState = (result, { announce = false } = {}) => {
-    if (result?.groq) {
-      groqKey.placeholder = '已保存在 Bridge；留空不变';
-      if (announce) status.textContent = 'Groq Key 已保存在 Bridge';
-      return;
-    }
-    groqKey.placeholder = result?.groqState === 'master_key_mismatch' || result?.groqState === 'unreadable'
-      ? '请重新输入 Groq API Key' : 'Groq API Key';
-  };
-  if (saved.url && saved.deviceToken) {
-    queueMicrotask(async () => {
-      try { reflectGroqState(await testBridgeConfig(saved, { probeGroq: false }), { announce: true }); }
-      catch { /* The explicit Test/Save actions report connection errors. */ }
-    });
-  }
+  }));
+  const ttsKey = bindCredentialMask(el('input', {
+    type: 'text', className: 'credential-input', value: '', placeholder: 'Google Cloud TTS API Key',
+    name: 'vix-tts-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+  }));
   const test = button('测试', 'secondary-button', async () => {
     test.disabled = true;
-    status.textContent = '正在测试 Bridge…';
+    const oldText = test.textContent;
+    test.textContent = '测试中…';
     try {
-      const config = { url: url.value, deviceToken: token.value };
+      let config = { url: url.value, deviceToken: token.value };
       const candidateKey = groqKey.value.trim();
+      const candidateTtsKey = ttsKey.value.trim();
       let result = await testBridgeConfig(config, { probeGroq: false });
+      config = applyRecoveredBridgeCredential(config, result, token);
       if (candidateKey) {
-        status.textContent = '正在测试当前 Groq Key…';
         const validated = await validateGroqSecret(candidateKey, { config });
         const groqModels = Array.isArray(validated?.models) ? validated.models : [];
         result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
-        status.textContent = '当前 Groq Key 可用 · 尚未保存';
-        showToast('Groq Key 可用');
-      } else {
-        result = await testBridgeConfig(config);
-        reflectGroqState(result);
-        status.textContent = result?.groqReachable ? 'Bridge 与 Groq 正常' : 'Bridge 正常 · Groq 未配置';
-        showToast('Bridge 正常');
       }
-    } catch (error) {
-      status.textContent = `Bridge 测试失败：${error?.message || String(error)}`;
-      throw error;
+      if (candidateTtsKey) await validateTtsSecret(candidateTtsKey, { config });
+      if (!candidateKey && !candidateTtsKey) {
+        result = await testBridgeConfig(config);
+      }
+      showToast('Bridge 配置可用');
     } finally {
       test.disabled = false;
+      test.textContent = oldText;
     }
   });
   const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
-    await deleteGroqSecret();
-    status.textContent = 'Groq Key 已删除';
+    await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } });
+    groqKey.value = '';
+    syncCredentialMask(groqKey);
+    showToast('Groq Key 已删除');
+  });
+  const removeTtsKey = button('删除语音 Key', 'secondary-button', async () => {
+    await deleteTtsSecret({ config: { url: url.value, deviceToken: token.value } });
+    ttsKey.value = '';
+    syncCredentialMask(ttsKey);
+    showToast('语音 Key 已删除');
   });
   const clear = button('清除配置', 'secondary-button', () => {
     clearBridgeConfig();
     url.value = '';
     token.value = '';
-    status.textContent = '本机配置已清除';
+    syncCredentialMask(token);
+    showToast('本机 Bridge 配置已清除');
   });
   const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
   const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
@@ -6175,36 +6309,43 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     title: 'Bridge', variant: 'management', submitText: '保存',
     body: [
       field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
-      status,
-      el('div', { className: 'settings-row' }, [test, removeKey, clear]),
+      field('Google Cloud TTS API Key', ttsKey),
+      el('div', { className: 'settings-row' }, [test, removeKey, removeTtsKey, clear]),
       el('section', { className: 'bridge-integration-resources' }, [
         el('h3', { text: '集成资源' }),
         el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
       ]),
     ],
     onSubmit: async () => {
-      const nextConfig = { url: url.value, deviceToken: token.value };
-      status.textContent = '正在验证 Bridge…';
+      let nextConfig = { url: url.value, deviceToken: token.value };
       let result = await testBridgeConfig(nextConfig, { probeGroq: false });
+      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
       if (groqKey.value.trim()) {
-        status.textContent = '正在保存 Groq Key…';
         try {
           await saveGroqSecret(groqKey.value, { config: nextConfig });
           groqKey.value = '';
-          groqKey.placeholder = '已保存在 Bridge；留空不变';
+          syncCredentialMask(groqKey);
         }
         catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
       }
+      if (ttsKey.value.trim()) {
+        try {
+          await saveTtsSecret(ttsKey.value, { config: nextConfig });
+          ttsKey.value = '';
+          syncCredentialMask(ttsKey);
+        }
+        catch (error) { throw new Error(`语音 Key 保存失败：${error?.message || String(error)}`); }
+      }
       result = await testBridgeConfig(nextConfig);
+      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
       const activeModelIds = Array.isArray(result?.groqModels)
         ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
         : [];
-      status.textContent = '正在同步 Mirror…';
-      await synchronizeMirrorContext({ config: nextConfig, force: true });
       setBridgeConfig(nextConfig);
       if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
       onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
-      status.textContent = 'Bridge 已保存';
+      scheduleMirrorContextSync({ notifyFailure: true });
+      warmMirrorRemoteCatalog();
       scheduleMirrorInboxPoll();
       showToast('Bridge 已保存');
     },
@@ -6214,7 +6355,6 @@ function openBridgeDialog({ onConfigured = null } = {}) {
 function openSettingsDialog() {
   const state = getState();
   const settingsController = new AbortController();
-  const groqSettingsStatus = el('p', { className: 'provider-settings-status', role: 'status', 'aria-label': 'Groq 连接状态', 'aria-live': 'polite' });
   let modelRequest = null;
   const model = el('select');
   let draftModel = getSelectedModel();
@@ -6238,29 +6378,33 @@ function openSettingsDialog() {
     const request = modelRequest = new AbortController();
     try {
       refresh.disabled = true;
-      groqSettingsStatus.textContent = '正在获取 Groq 模型目录…';
+      refresh.dataset.oldText = refresh.textContent || '';
+      refresh.textContent = '刷新中…';
       const result = await refreshModels({ signal: request.signal, persist: false });
       if (settingsController.signal.aborted || request.signal.aborted || modelRequest !== request) return;
       refreshedIds = result.filter((item) => item.active).map((item) => item.id);
       renderModels(result);
-      groqSettingsStatus.textContent = '模型目录已更新';
+      showToast('模型目录已更新');
     } catch (error) {
-      if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) groqSettingsStatus.textContent = error.message;
-    } finally { if (modelRequest === request) { refresh.disabled = false; modelRequest = null; } }
+      if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) displayError(error);
+    } finally {
+      if (modelRequest === request) {
+        refresh.disabled = false;
+        refresh.textContent = refresh.dataset.oldText || '刷新模型目录';
+        modelRequest = null;
+      }
+    }
   });
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
-      field('查询模型', model), refresh, groqSettingsStatus]),
+      field('查询模型', model), refresh]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }),
       el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog({
-        onConfigured: ({ groqReady }) => {
-          renderModels();
-          groqSettingsStatus.textContent = groqReady ? 'Bridge 与 Groq 已连接' : 'Bridge 已连接 · Groq 未配置';
-        },
+        onConfigured: () => renderModels(),
       }))])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
       el('div', { className: 'settings-row' }, [button('选择文件', 'secondary-button', openMirrorDialog)])]),
@@ -6522,6 +6666,9 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   document.addEventListener('touchcancel', handleRootUserTouchEnd, { passive: true, capture: true });
   document.addEventListener('touchstart', handleModalTouchStart, { passive: true, capture: true });
   document.addEventListener('touchmove', handleModalTouchMove, { passive: false, capture: true });
+  document.addEventListener('touchend', handleModalTouchEnd, { passive: true, capture: true });
+  document.addEventListener('touchcancel', handleModalTouchEnd, { passive: true, capture: true });
+  document.addEventListener('wheel', handleModalWheel, { passive: false, capture: true });
   if ('onscrollend' in window) window.addEventListener('scrollend', handleRootScrollEnd, { passive: true });
   subscribe(handleStoreEvent);
   await initializeStore({ onProgress });
@@ -6532,11 +6679,12 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   renderApp();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') { clearTimeout(mirrorInboxTimer); return; }
-    receiveMirrorInbox({ notify: true }).catch(() => {}).finally(() => scheduleMirrorInboxPoll());
+    Promise.all([receiveMirrorInbox({ notify: true }), warmMirrorRemoteCatalog()])
+      .catch(() => {}).finally(() => scheduleMirrorInboxPoll());
   });
   Promise.resolve().then(async () => {
     if (!bridgeConfigured()) return;
-    await receiveMirrorInbox({ notify: true });
+    await Promise.all([receiveMirrorInbox({ notify: true }), warmMirrorRemoteCatalog()]);
     scheduleMirrorInboxPoll();
     synchronizeMirrorContext().catch(() => {});
   }).catch(() => {});

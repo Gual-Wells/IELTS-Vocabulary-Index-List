@@ -11,9 +11,25 @@ function section(label, text, className = '') {
   return container;
 }
 
-export function renderGroqLookup(result) {
+function speechButton(text, onSpeak) {
+  const control = node('button', 'provider-speech-button');
+  control.type = 'button';
+  control.setAttribute('aria-label', `播放发音：${text}`);
+  control.title = '播放发音';
+  control.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 9.2h3.5l4.2-3.5v12.6l-4.2-3.5H5z"></path><path d="M16 9a4.2 4.2 0 0 1 0 6M18.5 6.8a7.2 7.2 0 0 1 0 10.4"></path></svg>';
+  control.addEventListener('click', () => {
+    if (control.disabled) return;
+    Promise.resolve(onSpeak(text, control)).catch(() => undefined);
+  });
+  return control;
+}
+
+export function renderGroqLookup(result, { onSpeak = null } = {}) {
   const body = node('div', 'provider-lookup');
-  body.append(node('h3', 'provider-headword', result.headword));
+  const headword = node('div', 'provider-headword-row');
+  headword.append(node('h3', 'provider-headword', result.headword));
+  if (onSpeak) headword.append(speechButton(result.headword, onSpeak));
+  body.append(headword);
   if (result.partOfSpeech) body.append(node('p', 'provider-lexical-meta', result.partOfSpeech));
   if (result.memoryCue) body.append(section('提示', result.memoryCue));
   body.append(section('含义', result.meaning));
@@ -31,7 +47,10 @@ export function renderGroqLookup(result) {
     examples.append(node('h4', 'provider-section-label', '例句'));
     for (const item of result.examples) {
       const example = node('div', 'provider-example');
-      example.append(node('p', 'provider-example-english', item.english));
+      const english = node('div', 'provider-example-english-row');
+      english.append(node('p', 'provider-example-english', item.english));
+      if (onSpeak) english.append(speechButton(item.english, onSpeak));
+      example.append(english);
       if (item.translation) example.append(node('p', 'provider-example-translation', item.translation));
       examples.append(example);
     }

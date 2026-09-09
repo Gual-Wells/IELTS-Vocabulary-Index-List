@@ -90,18 +90,20 @@ export async function buildMirrorContext(state) {
     id: entry.id, normalizedText: entry.normalizedText, kind: entry.kind, domainId: entry.domainId,
     collections: (state.membershipsByEntry.get(entry.id) || []).map((item) => item.collectionId).filter((id) => collectionIds.has(id)).sort(),
   }));
-  const corpus = entries.map((entry, index) => ({
-    slot: index + 1,
-    text: entry.text,
-    normalizedText: entry.normalizedText,
-    kind: entry.kind,
-    domainKey: entry.domainId,
-    collectionKeys: privateRows[index].collections,
-    partsOfSpeech: Array.isArray(entry.partsOfSpeech) ? entry.partsOfSpeech.slice(0, 8) : [],
-    glossHans: clean(entry.glossHans, 160),
-    glossHant: clean(entry.glossHant, 160),
-    relationNoise: entry.kind === 'word' && Boolean(state.lowLevelRelationLexemes?.has(entry.normalizedText)),
-  }));
+  const corpus = entries.map((entry, index) => {
+    const glosses = cleanGlossPair(entry.glossHans, entry.glossHant);
+    return {
+      slot: index + 1,
+      text: entry.text,
+      normalizedText: entry.normalizedText,
+      kind: entry.kind,
+      domainKey: entry.domainId,
+      collectionKeys: privateRows[index].collections,
+      partsOfSpeech: Array.isArray(entry.partsOfSpeech) ? entry.partsOfSpeech.slice(0, 8) : [],
+      ...glosses,
+      relationNoise: entry.kind === 'word' && Boolean(state.lowLevelRelationLexemes?.has(entry.normalizedText)),
+    };
+  });
   const catalog = {
     domains: [...state.domains].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || a.id.localeCompare(b.id))
       .map((item) => ({ key: item.id, name: item.name, contentMode: item.contentMode || 'structured', glossEnabled: Boolean(item.glossEnabled) })),
@@ -279,7 +281,8 @@ export async function prepareMirrorResult(raw) {
     const domain = domainByKey.get(candidate.domainKey);
     const collections = candidate.collectionKeys.filter((key) => collectionByKey.get(key)?.domainKey === candidate.domainKey);
     const kindMatchesDomain = domain?.contentMode === 'nonStructured' ? candidate.kind === 'content' : candidate.kind !== 'content';
-    const valid = Boolean(domain) && kindMatchesDomain && collections.length > 0 && candidate.evidence.length > 0;
+    const hasRequiredGloss = !domain?.glossEnabled || Boolean(candidate.glossHant || candidate.glossHans);
+    const valid = Boolean(domain) && kindMatchesDomain && collections.length > 0 && candidate.evidence.length > 0 && hasRequiredGloss;
     const relatedEntryIds = candidate.relatedExistingSlots.map((slot) => session.slotEntryIds[slot - 1]);
     const relationNoise = candidate.kind === 'word' && relationNoiseLexemes.has(candidate.normalizedText);
     return {

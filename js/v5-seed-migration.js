@@ -26,15 +26,42 @@ function changedFromBase(kind, current, base) {
   return ENTITY_FIELDS[kind].some((field) => !same(current[field], base[field]));
 }
 
-function mergeRecord(kind, base, current, target) {
+function mergeRecord(kind, base, current, target, fieldBaseline = null, report = null) {
   if (!current) return clone(target);
-  if (!base) return clone(current);
+  if (!base) {
+    if (kind === 'entries' && fieldBaseline) {
+      const [baselineHans, baselineHant, baselineSource] = fieldBaseline;
+      const glossWasBuiltIn = current.glossHans === baselineHans
+        && current.glossHant === baselineHant && current.glossSource === baselineSource;
+      if (glossWasBuiltIn) {
+        if (!same([baselineHans, baselineHant, baselineSource], [target.glossHans, target.glossHant, target.glossSource])) {
+          report.seedFieldRepairs += 1;
+        }
+        return { ...clone(current), glossHans: target.glossHans, glossHant: target.glossHant,
+          glossSource: target.glossSource, updatedAt: target.updatedAt };
+      }
+    }
+    return clone(current);
+  }
   const next = { ...clone(target), id: current.id, createdAt: current.createdAt || target.createdAt };
   let userChanged = false;
   for (const field of ENTITY_FIELDS[kind]) {
     if (!same(current[field], base[field])) {
       next[field] = clone(current[field]);
       userChanged = true;
+    }
+  }
+  if (kind === 'entries' && fieldBaseline) {
+    const [baselineHans, baselineHant, baselineSource] = fieldBaseline;
+    const glossWasBuiltIn = current.glossHans === baselineHans
+      && current.glossHant === baselineHant && current.glossSource === baselineSource;
+    if (glossWasBuiltIn) {
+      next.glossHans = target.glossHans;
+      next.glossHant = target.glossHant;
+      next.glossSource = target.glossSource;
+      if (!same([baselineHans, baselineHant, baselineSource], [target.glossHans, target.glossHant, target.glossSource])) {
+        report.seedFieldRepairs += 1;
+      }
     }
   }
   next.updatedAt = userChanged ? current.updatedAt : target.updatedAt;
@@ -87,7 +114,7 @@ function alignTargetIds(base, current, target) {
   return aligned;
 }
 
-function mergeById(kind, baseItems, currentItems, targetItems, forcePreserve, report) {
+function mergeById(kind, baseItems, currentItems, targetItems, forcePreserve, report, fieldBaselines = null) {
   const baseById = new Map(baseItems.map((item) => [item.id, item]));
   const currentById = new Map(currentItems.map((item) => [item.id, item]));
   const targetById = new Map(targetItems.map((item) => [item.id, item]));
@@ -105,7 +132,7 @@ function mergeById(kind, baseItems, currentItems, targetItems, forcePreserve, re
       report.seedRecordsAdded += 1;
       continue;
     }
-    const merged = mergeRecord(kind, base, current, target);
+    const merged = mergeRecord(kind, base, current, target, fieldBaselines?.get(target.id) || null, report);
     if (base && changedFromBase(kind, current, base)) report.userEditsPreserved += 1;
     else if (!base) report.userRecordsPreserved += 1;
     result.push(merged);
@@ -186,7 +213,9 @@ function mergeContentSources(currentSources, targetSources) {
  * explicit deletions win. Target IDs are aligned to existing device IDs so
  * pins, annotations and saved positions never need a lossy rewrite.
  */
-export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, { toRevision = 7, appliedAt = new Date().toISOString() } = {}) {
+export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, {
+  toRevision = 8, appliedAt = new Date().toISOString(), fieldBaseline = null,
+} = {}) {
   const base = canonicalizeBackup(baseInput);
   const current = canonicalizeBackup(currentInput);
   const target = alignTargetIds(base, current, canonicalizeBackup(targetInput));
@@ -201,7 +230,11 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, { toR
     userRecordsPreserved: 0,
     userEditsPreserved: 0,
     userDeletionsPreserved: 0,
+    seedFieldRepairs: 0,
   };
+  const entryFieldBaselines = fieldBaseline?.protocol === 'vix-seed-field-baseline/1'
+    ? new Map(fieldBaseline.entries.map(([id, glossHans = '', glossHant = '', glossSource = '']) => [id, [glossHans, glossHant, glossSource]]))
+    : null;
 
   const baseDomainIds = new Set(base.domains.map((item) => item.id));
   const baseCollectionById = new Map(base.collections.map((item) => [item.id, item]));
@@ -255,7 +288,7 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, { toR
   const collections = mergeById('collections', base.collections, current.collections, target.collections, forceCollectionIds, report)
     .filter((item) => domainIds.has(item.domainId));
   const collectionIds = new Set(collections.map((item) => item.id));
-  const entries = mergeById('entries', base.entries, current.entries, target.entries, forceEntryIds, report)
+  const entries = mergeById('entries', base.entries, current.entries, target.entries, forceEntryIds, report, entryFieldBaselines)
     .filter((item) => domainIds.has(item.domainId));
   const entryIds = new Set(entries.map((item) => item.id));
   const memberships = mergeMemberships(base.memberships, current.memberships, target.memberships,

@@ -1,0 +1,5254 @@
+{
+  "version": "3.1.0",
+  "generatedAt": "2026-08-02T01:51:00.000Z",
+  "computerPhraseCount": 577,
+  "computerCounts": {
+    "人工智能": 51,
+    "计算机基础与系统": 139,
+    "网络、云与安全": 165,
+    "软件开发与数据": 222
+  },
+  "generalPhraseCounts": {
+    "A1": 5,
+    "A2": 5
+  },
+  "constraints": {
+    "computerEveryPhraseExactlyOneVisibleNormalCollection": true,
+    "systemPhraseTotalsRemainDerived": true,
+    "entryDuplication": false
+  },
+  "decisions": [
+    {
+      "entryId": "entry_domain_computer_terms_abstract_b_19445pefiq57i",
+      "text": "abstract base class",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_abstract_d_af5gpd1ibfuol",
+      "text": "abstract data type",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data ",
+        "keyword:abstract data type"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_acceptance_3n19fom52p1k",
+      "text": "acceptance test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:acceptance test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_access_con_1rqdcf0a9agps",
+      "text": "access control",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:access control"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_access_tok_4o1a7c166y678",
+      "text": "access token",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_accessibil_11jxjczmd7niv",
+      "text": "accessibility tree",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_accessible_uespo881lcp0",
+      "text": "accessible name",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_accuracy_m_1de2hjm1lbqnf2",
+      "text": "accuracy metric",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:accuracy metric"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_acid_trans_1g9k5he1ixs0dy",
+      "text": "acid transaction",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:transaction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_address_bu_15scvvn187y8pb",
+      "text": "address bus",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_address_sp_fk63zzp9q2vv",
+      "text": "address space",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_adjacency__13cfk3d45ohk5",
+      "text": "adjacency list",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:adjacency"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_adjacency__1evrvzoz351uo",
+      "text": "adjacency matrix",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:adjacency"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_admission__13p89n4w95zjw",
+      "text": "admission controller",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:admission controller"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_adversaria_15rcmbd243emt",
+      "text": "adversarial example",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:adversarial example"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_amortized__1anxmgg1v91898",
+      "text": "amortized analysis",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:amortized analysis"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_analytical_1h1fit61bo5szi",
+      "text": "analytical database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_api_server_1dfxweo1qbiafw",
+      "text": "api server",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:api "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_applicatio_1xy8caa1e8pn66",
+      "text": "application layer",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:application layer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_applicatio_hgzwqt1avbp6h",
+      "text": "application programming interface",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming",
+        "keyword:interface",
+        "keyword:application programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_approximat_1ma0ayr19tnra7",
+      "text": "approximation algorithm",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:algorithm"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_artifact_r_1dzp6cb1f6rvzj",
+      "text": "artifact repository",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:repository"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_artificial_17bob5q19f9l96",
+      "text": "artificial intelligence",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:artificial intelligence"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_artificial_1tr8w5o1xns72w",
+      "text": "artificial neural network",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:neural",
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_aspect_rat_1qphi4c54b7mo",
+      "text": "aspect ratio",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:aspect ratio"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_asymptotic_1dwbtgqn3mzku",
+      "text": "asymptotic complexity",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:asymptotic"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_asynchrono_103c5wbro97rj",
+      "text": "asynchronous context manager",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:asynchronous"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_asynchrono_1fvrn3m1oho60e",
+      "text": "asynchronous generator",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:asynchronous"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_asynchrono_189t933hedfib",
+      "text": "asynchronous iterator",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:asynchronous"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_attack_sur_1tfnkzs7xk5j8",
+      "text": "attack surface",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:attack"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_attention__1c38w9yr1389m",
+      "text": "attention mechanism",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:attention mechanism"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_audit_log_pnpflwynhsxs",
+      "text": "audit log",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:audit log"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_availabili_ck069m1m1y7im",
+      "text": "availability zone",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:availability zone"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_average_ca_13w0l5iw5x6q",
+      "text": "average case",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:average case"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_avl_tree_163w5vgvc2i88",
+      "text": "AVL tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_b_plus_tre_1rfl61j16kwk1n",
+      "text": "B plus tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_b_tree_jkyc4xxug4vx",
+      "text": "B tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_back_forwa_3lsze71dl1gpn",
+      "text": "back forward cache",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_backtracki_1hvwkwf1xfrl3f",
+      "text": "backtracking search",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_balance_fa_1pzw84s15kr8wg",
+      "text": "balance factor",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:balance factor"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_balanced_t_m8miulb8ysdd",
+      "text": "balanced tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_base_branc_82i37myb3pce",
+      "text": "base branch",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:branch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_batch_proc_1dvu2ekh301mg",
+      "text": "batch processing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_best_case_2ir803eb4dzb",
+      "text": "best case",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:best case"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_bias_mitig_1d80aut1dxuqc1",
+      "text": "bias mitigation",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:bias mitigation"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_big_o_nota_15dowa81xbxm8k",
+      "text": "big O notation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:big o notation"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_binary_sea_10750uafuagq6",
+      "text": "binary search",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:binary",
+        "keyword:binary search"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_binary_sea_oqdynegfgtt2",
+      "text": "binary search tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:binary",
+        "keyword:binary search",
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_bitwise_op_gteydr1sppf1n",
+      "text": "bitwise operation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:bitwise operation"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_block_leve_iwtnkf1vtat3n",
+      "text": "block level content",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_blue_green_1l6i4qjxoa7pb",
+      "text": "blue green deployment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_bounding_b_sgpu0y1pg2imm",
+      "text": "bounding box",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:bounding box"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_branch_and_clu9pij86yr6",
+      "text": "branch and bound",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_branch_pro_1c2jhie1dgtzre",
+      "text": "branch protection",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:branch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_breadth_fi_13iu87rfzfqgb",
+      "text": "breadth first search",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:breadth first search"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_browser_en_zuzn6tb6iort",
+      "text": "browser engine",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_browsing_c_1n6xmwh93fgwt",
+      "text": "browsing context",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_bubble_sor_k1kc2z127m4wf",
+      "text": "bubble sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:bubble sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_build_pipe_1qdbeslqvmfzl",
+      "text": "build pipeline",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:build "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cache_cohe_jozn6lzfdsxl",
+      "text": "cache coherence",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:cache"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cache_cont_nv4g4e1kjaxca",
+      "text": "cache control",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cache_line_l1d15z1pshwgr",
+      "text": "cache line",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:cache"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_call_by_re_rmeratun4nr5",
+      "text": "call by reference",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_call_by_va_nd431l1r1dr7p",
+      "text": "call by value",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_call_stack_xa75038sq7cf",
+      "text": "call stack",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_callback_f_1q9cffw1ghej7s",
+      "text": "callback function",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:function"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_canary_dep_1uiunu2tl8swe",
+      "text": "canary deployment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_central_pr_1th21z71bv4nyf",
+      "text": "central processing unit",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:central processing unit"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_certificat_9fgd0nvktwcr",
+      "text": "certificate authority",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:certificate"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_certificat_y0hfj7rdk27",
+      "text": "certificate chain",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:certificate"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_certificat_1jurd0qle7n6u",
+      "text": "certificate revocation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:certificate"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_change_dat_abc607k6sqc3",
+      "text": "change data capture",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_character__wl2pk7hcm4mz",
+      "text": "character encoding",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cipher_sui_1aot6gc1wysjls",
+      "text": "cipher suite",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_circuit_br_1y3i9y1g6p1aa",
+      "text": "circuit breaker",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:circuit breaker"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_circular_b_veuu5o294mvs",
+      "text": "circular buffer",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_circular_l_1xmppmlh1ng8x",
+      "text": "circular linked list",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:linked list"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_classifica_1yxoaxyubxc16",
+      "text": "classification model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:classification model"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_client_sid_1d6qb1v16ttrpr",
+      "text": "client side rendering",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cloud_comp_1bppvb632yytq",
+      "text": "cloud computing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cloud"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cloud_nati_1gryprn1af6jo7",
+      "text": "cloud native",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cloud"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cluster_au_1g70s869qdxya",
+      "text": "cluster autoscaler",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cluster"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cluster_st_5qk3qaww25fq",
+      "text": "cluster state",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cluster"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_code_owner_nwoso119xl4bx",
+      "text": "code owner",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_code_point_1w5jrdc16rdoqs",
+      "text": "code point",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_code_revie_19oqf12iaqdm",
+      "text": "code review",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_code_smell_1f465013wfmgd",
+      "text": "code smell",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_code_split_7oi6yy182ykj2",
+      "text": "code splitting",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_column_sto_pe1x9w1cdrj9k",
+      "text": "column store",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_columnar_f_1b9r7wp1b5zq3x",
+      "text": "columnar format",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_commit_has_fz1i02muuzu6",
+      "text": "commit hash",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:commit"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_commit_his_8amppy1u3vywa",
+      "text": "commit history",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:commit"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_computer_a_1vndos11erni0t",
+      "text": "computer architecture",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:computer architecture"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_computer_v_96sshi136vshe",
+      "text": "computer vision",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:computer vision"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_concurrent_7ui0jn1nwnpp3",
+      "text": "concurrent programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_confidenti_1xqkhzjh1ba2b",
+      "text": "confidential computing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:confidential computing"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_config_map_1f2deabpa2za7",
+      "text": "config map",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:config map"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_configurat_icp9qorxy7pw",
+      "text": "configuration drift",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_confusion__kk46upgogtm",
+      "text": "confusion matrix",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:confusion matrix"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_congestion_gu1lddmj565x",
+      "text": "congestion control",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_connected__96rwxdd8v565",
+      "text": "connected component",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:connected component"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_connection_iw4k7j7eehln",
+      "text": "connection pool",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_container__mpmhqngc3063",
+      "text": "container image",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:container"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_container__jdkg031bedyiv",
+      "text": "container orchestration",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:container"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_container__g94ccyl86ske",
+      "text": "container runtime",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:container",
+        "keyword:runtime"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_content_de_iolw561eriz66",
+      "text": "content delivery network",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network",
+        "keyword:content delivery"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_content_se_15zgbaowp5x5g",
+      "text": "content security policy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_context_ma_1pog30d87kvg1",
+      "text": "context manager",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_context_sw_ns18wm1w0phjm",
+      "text": "context switch",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:context switch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_continuous_18j5xa81rlahho",
+      "text": "continuous delivery",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:continuous delivery"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_continuous_1s4jmfz13crej7",
+      "text": "continuous deployment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:continuous deployment",
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_continuous_pnxwze2hidb2",
+      "text": "continuous integration",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:continuous integration"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_continuous_1bomm48lstkw4",
+      "text": "continuous integration pipeline",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:continuous integration"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_continuous_fib0fgk6wzbk",
+      "text": "continuous testing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_control_lo_3srxdudbo9s6",
+      "text": "control loop",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_control_pl_1qy77z2seniq2",
+      "text": "control plane",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:control plane"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_control_un_zqm9u1kelirq",
+      "text": "control unit",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:control unit"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_copy_on_wr_ep3kvw1vbyxwo",
+      "text": "copy on write",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_counting_s_bgzmbe1sd7j1y",
+      "text": "counting sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:counting sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cpu_schedu_1i5rgwn9cum8j",
+      "text": "cpu scheduling",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:cpu",
+        "keyword:scheduling"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_credential_e017e0cr2ssk",
+      "text": "credential stuffing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_critical_s_2ct1nt1cizdi5",
+      "text": "critical section",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:critical section"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cross_orig_4s33331gj9iaz",
+      "text": "cross origin resource sharing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cross_site_1ez2qpf1m2ui27",
+      "text": "cross site request forgery",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cross site"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cross_site_1urk9zxa5t85t",
+      "text": "cross site scripting",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cross site"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cryptograp_1jhj4h36eszpf",
+      "text": "cryptographic algorithm",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cumulative_fb6rsyeeu96e",
+      "text": "cumulative layout shift",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:cumulative layout shift"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_custom_res_1bs1cwku9my00",
+      "text": "custom resource",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_custom_res_18sdfolj4b4ip",
+      "text": "custom resource definition",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_cybersecur_e051piummzve",
+      "text": "cybersecurity framework",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_daemon_set_k497d3x4x10j",
+      "text": "daemon set",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_augme_1t9a1kp15plt2l",
+      "text": "data augmentation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_breac_1t0b43w6a7d1c",
+      "text": "data breach",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_bus_vqgs51148z4gx",
+      "text": "data bus",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_catal_5kdvjgbehjpc",
+      "text": "data catalog",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_clean_ky45km182403u",
+      "text": "data cleaning",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_consi_yssvfn128cn27",
+      "text": "data consistency",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_encry_g0p12o6eur5w",
+      "text": "data encryption",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:encryption",
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_engin_dvt9s4h1zkbs",
+      "text": "data engineering",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_gover_69ioyl10ceowx",
+      "text": "data governance",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_integ_1551o20sfox9g",
+      "text": "data integrity",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_label_1nfuak71vcyh3v",
+      "text": "data labeling",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "exact:人工智能"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_lake_1yllua2gcl3iu",
+      "text": "data lake",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_lakeh_4vbteyk892w6",
+      "text": "data lakehouse",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_linea_kg0vsa1lealna",
+      "text": "data lineage",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_mart_8dtpg910zhpw5",
+      "text": "data mart",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_mesh_oxf6qgljocdw",
+      "text": "data mesh",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_model_1hgm4k6wzon82",
+      "text": "data model",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_pipel_1dmcedr1f9xvtn",
+      "text": "data pipeline",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_quali_1lva0ya1akgila",
+      "text": "data quality",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_repli_12dgxkln6anb5",
+      "text": "data replication",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_struc_ga9elu1r96rny",
+      "text": "data structure",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_valid_1cplxyu9z7a3m",
+      "text": "data validation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_data_wareh_1lcv48020gaek",
+      "text": "data warehouse",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:data "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_database_i_1nmwlvq1iqmk0q",
+      "text": "database index",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_database_m_frjp5uzwlncm",
+      "text": "database migration",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_database_s_15vqj6l1g0be5t",
+      "text": "database schema",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database",
+        "keyword:schema"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_database_t_100tlv2czlyvm",
+      "text": "database transaction",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database",
+        "keyword:transaction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_deadlock_d_1b25p411ju1w79",
+      "text": "deadlock detection",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:deadlock"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_deadlock_p_ga19em5mxcx6",
+      "text": "deadlock prevention",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:deadlock"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_declarativ_xonceo12ah2bw",
+      "text": "declarative programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_deep_learn_pvpw9h14mlnw1",
+      "text": "deep learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:deep learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_default_br_pjsq9g22bq2o",
+      "text": "default branch",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:branch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_defense_in_1a9mou54ibh41",
+      "text": "defense in depth",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:defense in depth"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_demand_pag_1jefaf013rob3c",
+      "text": "demand paging",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:paging"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_denial_of__4urcbmxyn9y",
+      "text": "denial of service",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_deployment_m0nw9hufymxt",
+      "text": "deployment environment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_deployment_57wedeb3fiem",
+      "text": "deployment pipeline",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_depth_firs_1mfrbbi9d4p0i",
+      "text": "depth first search",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:depth first search"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_descriptor_17c7gj2n0avxe",
+      "text": "descriptor protocol",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_design_pat_cji7237lawhb",
+      "text": "design pattern",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:design pattern"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_desired_st_wb785y1g06xoq",
+      "text": "desired state",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_developer__1379941u8vzek",
+      "text": "developer tools",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:developer tools"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_dictionary_lx4coj1xnzitb",
+      "text": "dictionary comprehension",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_difference_jrmbh56ad3mt",
+      "text": "difference array",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_diffusion__4rr8xv1f0kjav",
+      "text": "diffusion model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:diffusion model"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_digital_ce_1x4ly5ejyofdi",
+      "text": "digital certificate",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:certificate"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_digital_id_15fvegdm2eqyx",
+      "text": "digital identity",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:identity"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_digital_si_zllikno413l7",
+      "text": "digital signature",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_direct_mem_q2rm7d1bpcsil",
+      "text": "direct memory access",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_dirty_read_141ymxjketyff",
+      "text": "dirty read",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_disaster_r_5sxjvz1tye0xv",
+      "text": "disaster recovery",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:disaster recovery"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_discrimina_190rbvzg9cgnv",
+      "text": "discriminative model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_disjoint_s_hna4ery0jtfb",
+      "text": "disjoint set",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_disruption_ncaign1e4i72r",
+      "text": "disruption budget",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_distribute_dci25io0yc42",
+      "text": "distributed computing",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_distribute_bcxmpl1ex3yc5",
+      "text": "distributed database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_distribute_1vd296vm8pui3",
+      "text": "distributed denial of service",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:distributed denial"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_distribute_aqcbimrwbfci",
+      "text": "distributed tracing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_divide_and_1envip6g2hc32",
+      "text": "divide and conquer",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:divide and conquer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_document_d_1x2lv6nwuj52j",
+      "text": "document database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_document_o_eq2vuw7kmku4",
+      "text": "document object model",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:object "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_domain_nam_zdj7k61s7xywa",
+      "text": "domain name",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:domain name"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_domain_nam_1eiivi315q6elb",
+      "text": "domain name system",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:domain name"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_domain_spe_1t1finh1b6nwh",
+      "text": "domain specific language",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_double_end_15tbket1rsh555",
+      "text": "double ended queue",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_doubly_lin_1i6uv8pbb3kod",
+      "text": "doubly linked list",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:linked list"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_dynamic_pr_1qbak3h1drifpt",
+      "text": "dynamic programming",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_dynamic_pr_mbh5xdbkvnd9",
+      "text": "dynamic provisioning",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_dynamic_ty_wnbet71s7o1pb",
+      "text": "dynamic typing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_eager_eval_1azokmt33d4fd",
+      "text": "eager evaluation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_effective__1xn7c1g101aty8",
+      "text": "effective connection type",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_embedded_s_10c07my1vekoxy",
+      "text": "embedded system",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:embedded system"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_embodied_a_167vbsql41bx2",
+      "text": "embodied AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:embodied ai"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_endpoint_s_9dblgsl19bn4",
+      "text": "endpoint security",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_environmen_dhr6hoo2z2u8",
+      "text": "environment variable",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_ephemeral__1g05i6l11o8z95",
+      "text": "ephemeral container",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:container"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_error_hand_16bvxrsr4vutg",
+      "text": "error handling",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_ethical_ai_11xt1rbpdo55v",
+      "text": "ethical AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:ethical ai"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_event_driv_s1541g1phllbk",
+      "text": "event driven architecture",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:event driven"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_event_sour_cch8i9jtlzq5",
+      "text": "event sourcing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_exception__111bg6laoqpn5",
+      "text": "exception handling",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:exception handling"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_expert_sys_cl0vfkx6413w",
+      "text": "expert system",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:expert system"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_explainabl_v25cnskaqwqs",
+      "text": "explainable AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:explainable ai"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_fault_tole_4r6h261nr34tm",
+      "text": "fault tolerance",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_feature_en_1jnzn4w19v5ef8",
+      "text": "feature engineering",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:feature engineering"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_feature_fl_12mu4sn1qh09dn",
+      "text": "feature flag",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_fenwick_tr_8g4go21p8xivy",
+      "text": "Fenwick tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree",
+        "keyword:fenwick"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_field_prog_14zitui1hh7mwe",
+      "text": "field programmable gate array",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_file_descr_1gudqqu1vep0yi",
+      "text": "file descriptor",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_file_permi_bl6zhkzehwr0",
+      "text": "file permission",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_first_cont_1qvfwxp1n7cti1",
+      "text": "first contentful paint",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:first contentful paint"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_first_inpu_nmc8ichu23io",
+      "text": "first input delay",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_fixed_poin_qc482hlc9so5",
+      "text": "fixed point",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:fixed point"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_floating_p_1b5r34r15vn7af",
+      "text": "floating point",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:floating point"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_foreign_ke_dnvviy1o80fuu",
+      "text": "foreign key",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_fork_netwo_16ao5c5dpezwh",
+      "text": "fork network",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_forward_pr_5rcavsu5d65o",
+      "text": "forward proxy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:proxy"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_foundation_sneqyfs6o81f",
+      "text": "foundation model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:foundation model"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_frame_rate_w4ay8af43z12",
+      "text": "frame rate",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:frame rate"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_full_table_9w75wf638u63",
+      "text": "full table scan",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:table "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_fully_qual_dd8u1o75xpag",
+      "text": "fully qualified domain name",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:domain name"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_functional_5tj23v12czt0n",
+      "text": "functional programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming",
+        "keyword:function"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_garbage_co_18avjx61tlrlem",
+      "text": "garbage collection",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_generative_ilrui91oi0qyd",
+      "text": "generative AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:generative"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_generative_1pdotsk17p4220",
+      "text": "generative model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:generative"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_generator__lwukfenu3cbi",
+      "text": "generator expression",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_generic_pr_1tw9ejl1sfti9p",
+      "text": "generic programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_git_object_1n1oh2ggg02c",
+      "text": "git object",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:git "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_github_act_11jncmbyvr3if",
+      "text": "GitHub Actions",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:github"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_global_int_9zwk851ca85q9",
+      "text": "global interpreter lock",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:interpreter"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_global_obj_1c2gn1rg7hsbn",
+      "text": "global object",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_global_sco_hk2flo1jrf0og",
+      "text": "global scope",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_gradient_d_1njn2gd1cjdnpd",
+      "text": "gradient descent",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:gradient descent"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_graph_data_7q4hl21jg0vzu",
+      "text": "graph database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_greedy_alg_1wgizsa14g2j1i",
+      "text": "greedy algorithm",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:algorithm"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_hash_colli_8a73rnak2zun",
+      "text": "hash collision",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_hash_funct_1i8z8x95csrnd",
+      "text": "hash function",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_hash_table_1cjqtib1v4asjz",
+      "text": "hash table",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_health_che_1300k1d1ppg7id",
+      "text": "health check",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:health check"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_heap_sort_vcpnsnkorj57",
+      "text": "heap sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:heap "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_high_avail_1y1tz5q1b2vojm",
+      "text": "high availability",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_high_level_gaqkeej034ia",
+      "text": "high level programming language",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_horizontal_9jlmcv1y5mnu3",
+      "text": "horizontal pod autoscaler",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:pod "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_http_heade_z1dmlo1hq0wjk",
+      "text": "http header",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:http"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_http_metho_12trl0s11u24k0",
+      "text": "http method",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:http",
+        "keyword:method"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_human_in_t_t2pk0afyq50e",
+      "text": "human in the loop",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "exact:人工智能"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_identity_a_1rscqe51kqkh01",
+      "text": "identity and access management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:identity"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_identity_p_1voy23arlfu7e",
+      "text": "identity provider",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:identity"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_image_pull_un1fyn1royamz",
+      "text": "image pull policy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_immutable__n81edgzysae8",
+      "text": "immutable infrastructure",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_imperative_8vp26811ow9ks",
+      "text": "imperative programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_import_pat_rmpq2dc8iyc1",
+      "text": "import path",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_incident_r_1x4ug001u6cz04",
+      "text": "incident response",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_inference__r0jo3gnssiso",
+      "text": "inference engine",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:inference"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_infrastruc_vv5mz11nxxiqp",
+      "text": "infrastructure as code",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:infrastructure as code"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_infrastruc_1xb94vr686g0z",
+      "text": "infrastructure automation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:infrastructure automation"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_ingress_co_52bmled6j2l2",
+      "text": "ingress controller",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_init_conta_v5eggy1juszim",
+      "text": "init container",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:container"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_input_meth_r6dyt31h0mtar",
+      "text": "input method editor",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:method"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_insertion__12hmn0w1ohxkcc",
+      "text": "insertion sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:insertion sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_instructio_1rl53hly3yth",
+      "text": "instruction set",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:instruction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_instructio_1jd1z1416nwt78",
+      "text": "instruction set architecture",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:instruction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_integer_ov_1gkyqh31f2w6dn",
+      "text": "integer overflow",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_integratio_i9uu5ttcu0k5",
+      "text": "integration test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:integration test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_inter_proc_kgsno21g6hv1i",
+      "text": "inter process communication",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:process "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_interactio_1xxihx71q8qzjj",
+      "text": "interaction to next paint",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:interaction to next paint"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_internet_p_ug90x61jke0ha",
+      "text": "internet protocol",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:internet"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_internet_s_1hw4e7madbwti",
+      "text": "internet service provider",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:internet"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_interprete_kgt2jvztgj73",
+      "text": "interpreter shutdown",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:interpreter"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_interrupt__1svcfm16vbgra",
+      "text": "interrupt handler",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:interrupt"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_interrupt__39r2vb1rv2e5n",
+      "text": "interrupt request",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:interrupt"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_intrusion__1vjgih31d22cvn",
+      "text": "intrusion detection",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:intrusion detection"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_intrusion__jgtygw1ns3lzo",
+      "text": "intrusion prevention",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:intrusion prevention"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_ip_address_1bpzmx21j66ag2",
+      "text": "ip address",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:ip "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_ip_routing_10fqor419mllos",
+      "text": "ip routing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:ip ",
+        "keyword:routing"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_iterator_p_9zzv731g2rfqr",
+      "text": "iterator protocol",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_just_in_ti_zu6deq1jev3k6",
+      "text": "just in time compilation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_kernel_mod_1utfrg5ljkd7l",
+      "text": "kernel mode",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:kernel"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_key_deriva_ys30eb10ayz1b",
+      "text": "key derivation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_key_exchan_1nqon32ap957",
+      "text": "key exchange",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_key_manage_taohmd1jp11zl",
+      "text": "key management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_key_value__51oh1yxp02mq",
+      "text": "key value store",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_keyword_ar_117ao6d1s79s9",
+      "text": "keyword argument",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_kube_proxy_15m0zra17r669u",
+      "text": "kube proxy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:proxy"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_label_sele_x00blcvy5pok",
+      "text": "label selector",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_large_lang_19mimtx1cg18jd",
+      "text": "large language model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:language model",
+        "keyword:large language"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_largest_co_nszohf12b9pov",
+      "text": "largest contentful paint",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:largest contentful paint"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_lazy_evalu_1wl19hdy3fu2l",
+      "text": "lazy evaluation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_lazy_loadi_1ofe5bx10z6bep",
+      "text": "lazy loading",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:lazy loading"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_linear_sea_18ysirm7nybam",
+      "text": "linear search",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:linear search"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_link_layer_eqaq921d2pil6",
+      "text": "link layer",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:link layer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_linked_lis_cm7kouyg6n7e",
+      "text": "linked list",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:linked list"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_list_compr_vn7ixfzjqyz3",
+      "text": "list comprehension",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_liveness_p_19cuupo3ebzk8",
+      "text": "liveness probe",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:liveness probe"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_load_balan_66qi2v1rsqpb7",
+      "text": "load balancer",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:load balanc"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_load_balan_hhtv4o1rylrs4",
+      "text": "load balancing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:load balanc"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_load_test_10rp38h19bv32l",
+      "text": "load test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_local_stor_1ux7dyrbzj4wn",
+      "text": "local storage",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_log_aggreg_fg0nmx1vm792d",
+      "text": "log aggregation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_loop_invar_beh6a9rkq2xp",
+      "text": "loop invariant",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_machine_le_15xbyvu1j7azb2",
+      "text": "machine learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:machine learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_machine_le_175fjy3185p8wn",
+      "text": "machine learning model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:machine learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_main_threa_23ssaqbo9pdy",
+      "text": "main thread",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_malware_an_187k410xp4oo8",
+      "text": "malware analysis",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:malware"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_materializ_o0ffj51q9mkmt",
+      "text": "materialized view",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:materialized view"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_maximum_fl_1pnix951052sal",
+      "text": "maximum flow",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_media_quer_5wql5xb6b5k9",
+      "text": "media query",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:query"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memoized_r_libfgjk2rehj",
+      "text": "memoized recursion",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_all_rhsinmf9m36m",
+      "text": "memory allocation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_hie_17i8w5z19l223n",
+      "text": "memory hierarchy",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_lea_1j8s5yz1sjh05j",
+      "text": "memory leak",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_man_2unf73137eznf",
+      "text": "memory management",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_map_4zrn2zoerqov",
+      "text": "memory mapped file",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory",
+        "keyword:memory mapped"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_map_k9wzft1fkxfvx",
+      "text": "memory mapped IO",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory",
+        "keyword:memory mapped"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_memory_pro_3xtjlb1n8ozez",
+      "text": "memory protection",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_merge_conf_1rhpzqx2wl8h1",
+      "text": "merge conflict",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_merge_queu_s01hrm12lyvbi",
+      "text": "merge queue",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_merge_sort_1chqmy3y8eqpb",
+      "text": "merge sort",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_method_res_g6z6vo1uatvig",
+      "text": "method resolution order",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:method"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_metrics_co_1cq1i0g1d2sxas",
+      "text": "metrics collection",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_microservi_jizj7ftaxquf",
+      "text": "microservice architecture",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:microservice"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_mime_type_1a6c8c91hpk2jh",
+      "text": "mime type",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_minimum_cu_10r8b911263ull",
+      "text": "minimum cut",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:minimum cut"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_minimum_sp_bd379j1c6nzab",
+      "text": "minimum spanning tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree",
+        "keyword:minimum spanning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_mobile_fir_rubntn1a9pjxr",
+      "text": "mobile first",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:mobile first"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_card_v9oylq1xhumv6",
+      "text": "model card",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:model card"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_drif_ttllyz1o0wg13",
+      "text": "model drift",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_eval_1xmm2he129xqkm",
+      "text": "model evaluation",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_gove_e7h5sc1m42wsw",
+      "text": "model governance",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_moni_52imsq2c8w66",
+      "text": "model monitoring",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_model_trai_1tnlhj2sl3062",
+      "text": "model training",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_monotonic__1hrcpii1sxts3i",
+      "text": "monotonic queue",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_monotonic__pfub3hdismp5",
+      "text": "monotonic stack",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_multi_clou_18g44s510xecs1",
+      "text": "multi cloud",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cloud"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_multi_fact_c266sxyjew39",
+      "text": "multi factor authentication",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:authentication"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_mutual_exc_v3sluz1r2yxyn",
+      "text": "mutual exclusion",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:mutual exclusion"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_namespace__9z5aza1m9v1je",
+      "text": "namespace isolation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_namespace__4tmos21txhwwe",
+      "text": "namespace package",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:package"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_natural_la_1pgziol14fba2p",
+      "text": "natural language processing",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:natural language"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_ad_1j2hz4ktvhkz4",
+      "text": "network address translation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_la_3m6c6y18go47i",
+      "text": "network layer",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_po_6g5rmj101u26f",
+      "text": "network policy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_pr_yzvpxl1l0wdjx",
+      "text": "network protocol",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_se_fndybv813qrz",
+      "text": "network segmentation",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_network_th_1ynv0dm1sl1f9q",
+      "text": "network throttling",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_neural_net_36jdmqch57da",
+      "text": "neural network",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:neural",
+        "keyword:network"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_node_affin_r69rwtowkrzt",
+      "text": "node affinity",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_non_volati_sl1yq9pnared",
+      "text": "non volatile memory",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory",
+        "keyword:non volatile"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_normal_for_q5bn5e1as11o6",
+      "text": "normal form",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:normal form"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_normalizat_1a0ogiinttvr2",
+      "text": "normalization form",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_object_ori_17s8r91vi7e7t",
+      "text": "object oriented programming",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:programming",
+        "keyword:object "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_object_ref_1aqvp1xq6uyjl",
+      "text": "object reference",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:object "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_object_rel_1rayiknuh1o0z",
+      "text": "object relational mapping",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:object "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_observabil_p5g780zj19e4",
+      "text": "observability stack",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_offline_al_1udfykr1ehpe7j",
+      "text": "offline algorithm",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:algorithm"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_online_alg_1w8tqrd1q0wu99",
+      "text": "online algorithm",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:algorithm"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_online_ana_xjro6l1hfq3c9",
+      "text": "online analytical processing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:analytical processing"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_online_tra_rgr9svpb2svf",
+      "text": "online transaction processing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:transaction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_open_addre_1t7xbotbiyomh",
+      "text": "open addressing",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_operating__kfxico1ltlqhw",
+      "text": "operating frequency",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:operating frequency"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_optimistic_8dprfj7kp38z",
+      "text": "optimistic locking",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:optimistic locking"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_packet_los_bkrfsys9dwse",
+      "text": "packet loss",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_page_fault_1n5u570122odnk",
+      "text": "page fault",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_page_load__4wo6xp1ce4ic1",
+      "text": "page load time",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_page_repla_zrtexwo2u8gw",
+      "text": "page replacement",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_parallel_c_1lb7khy1c6c25m",
+      "text": "parallel computing",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:parallel computing"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_penetratio_1m0d4rc1uv5kk4",
+      "text": "penetration testing",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_percent_en_ba5wxp1s7dtpd",
+      "text": "percent encoding",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_performanc_1da3uy51umn2ih",
+      "text": "performance test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:performance test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_persistent_ho8ebw19q72gg",
+      "text": "persistent volume",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_persistent_10zgf0o1klli24",
+      "text": "persistent volume claim",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_personal_d_kjd0kp1706jid",
+      "text": "personal data",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_personally_1sakqhy1pywkq2",
+      "text": "personally identifiable information",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:personally identifiable"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pessimisti_1bnk8q9nng49h",
+      "text": "pessimistic locking",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:pessimistic locking"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pod_affini_dshhuu1cnulp6",
+      "text": "pod affinity",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:pod "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pod_anti_a_1cjpow61wd8roy",
+      "text": "pod anti affinity",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:pod "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pod_disrup_1u40zco1o98ask",
+      "text": "pod disruption budget",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:pod "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_port_forwa_h6mi7r1x0kk37",
+      "text": "port forwarding",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_positional_1yysetw3j6p5k",
+      "text": "positional argument",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_power_mana_k7zl2vzqkuxv",
+      "text": "power management",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:power management"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_prefix_sum_1wf55hkw47ejg",
+      "text": "prefix sum",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:prefix sum"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_prefix_tre_1hdh0ad30cas9",
+      "text": "prefix tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_preflight__6z68rf1lsxgrz",
+      "text": "preflight request",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_primary_ke_c20npc1xmxnjg",
+      "text": "primary key",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_principle__1x3sdi41i7kd4",
+      "text": "principle of least privilege",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:principle of least privilege"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_priority_q_h1ng0c9jiao0",
+      "text": "priority queue",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_process_is_19ktsyw1aa4bcs",
+      "text": "process isolation",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:process "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_process_sc_qghou6mfuf4i",
+      "text": "process scheduling",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:process ",
+        "keyword:scheduling"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_process_st_btpjbxfrbs2p",
+      "text": "process state",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:process "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_producer_c_151xw73my0lo3",
+      "text": "producer consumer",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:producer consumer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_progressiv_qjlnmk13trfn4",
+      "text": "progressive enhancement",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:progressive enhancement"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_progressiv_1dx295itqkviy",
+      "text": "progressive web application",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:web application"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_prompt_eng_1m7ekwy12o18q6",
+      "text": "prompt engineering",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:prompt"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_property_b_zjg2vx12rffgx",
+      "text": "property based testing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_protected__1d8yzs9k40jv9",
+      "text": "protected branch",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:branch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_protocol_c_1sl16rzxt39yb",
+      "text": "protocol class",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pruning_st_pq36vb129fqgr",
+      "text": "pruning strategy",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:pruning strategy"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_public_key_1yv6lnd1pu0z85",
+      "text": "public key cryptography",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:cryptograph"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_public_key_cjun4oiqu00k",
+      "text": "public key infrastructure",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pull_reque_12fxmy5ic9ll",
+      "text": "pull request",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:pull request"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_pull_reque_2fgrxr1utnfgj",
+      "text": "pull request review",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:pull request"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_query_opti_f1p3r69rt2q6",
+      "text": "query optimizer",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:query"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_quick_sort_zoat2a875qji",
+      "text": "quick sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:quick sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_race_condi_1xx5t2n1l7nm3",
+      "text": "race condition",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:race condition"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_radix_sort_7rrazd1u49qn9",
+      "text": "radix sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:radix sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_randomized_9pn34f10nobwr",
+      "text": "randomized algorithm",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:algorithm"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_rate_limit_16wm2a2c67vny",
+      "text": "rate limiting",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:rate limiting"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_read_commi_g7t8m1l9vlw5",
+      "text": "read committed",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:commit"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_read_repli_nc4ep3ehkty3",
+      "text": "read replica",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:read replica"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reader_wri_akmis614cmr1m",
+      "text": "reader writer lock",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_readiness__1g67jx3ui2exv",
+      "text": "readiness probe",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:readiness probe"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_real_time__1pe44g19x7gn0",
+      "text": "real time operating system",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:operating system"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_real_user__1bp3v2g1d35evo",
+      "text": "real user monitoring",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:real user monitoring"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_red_black__xuk29r9rrpgj",
+      "text": "red black tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reduced_in_1l2w2fst5pn0c",
+      "text": "reduced instruction set computer",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:instruction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reference__3bm7ht5aaj2t",
+      "text": "reference counting",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reference__195r7yuw6nkua",
+      "text": "reference cycle",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_regression_1a8zgim19xenju",
+      "text": "regression test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:regression test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_regular_ex_153akwxd6uvgl",
+      "text": "regular expression",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:regular expression"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reinforcem_43f1eis4jyem",
+      "text": "reinforcement learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:reinforcement learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_relational_8pa14v3x93kj",
+      "text": "relational database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_release_au_193bzsf1jei5d7",
+      "text": "release automation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_release_br_18ykfgwe48pr0",
+      "text": "release branch",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:branch"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_release_ca_1skqk3xjd3db5",
+      "text": "release candidate",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_release_ma_1oi500rdqi5gf",
+      "text": "release management",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_render_blo_1yfotm61490c7e",
+      "text": "render blocking",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:render blocking"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_repeatable_b1m3ag1hp1nfw",
+      "text": "repeatable read",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:table "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_replay_att_1plf6c0rmwap8",
+      "text": "replay attack",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:attack"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_replica_se_veq38919fd485",
+      "text": "replica set",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_repository_19p32phct9o49",
+      "text": "repository visibility",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:repository"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_resource_l_m6g48muhky",
+      "text": "resource leak",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_resource_l_5h8y5o1rb1xa0",
+      "text": "resource limit",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_resource_m_bhs6am1vli84a",
+      "text": "resource management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_resource_r_1ik2qayc0gh9q",
+      "text": "resource request",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_responsibl_ltsvrlv6mopp",
+      "text": "responsible AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:responsible ai"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_responsive_xzk5f14dhljb",
+      "text": "responsive web design",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_retrieval__1fbnqrn1rbv8br",
+      "text": "retrieval augmented generation",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:retrieval augmented"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_reverse_pr_dbnvfv1yzyma7",
+      "text": "reverse proxy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:proxy"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_risk_asses_1lnskli19de00q",
+      "text": "risk assessment",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_risk_manag_hde4tztt0tgz",
+      "text": "risk management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_role_based_11h3llzhpuvcb",
+      "text": "role based access control",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:access control"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_rollback_s_boz0o4gxeqi0",
+      "text": "rollback strategy",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_rolling_de_1hz960b14siinr",
+      "text": "rolling deployment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_rolling_up_1qsrf391gdimp",
+      "text": "rolling update",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:rolling update"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_round_trip_1v1yamlgvbedl",
+      "text": "round trip time",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:ip "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_routing_ta_ua9s4bqq9cyv",
+      "text": "routing table",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:routing"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_runtime_cl_1be8knlmfvcul",
+      "text": "runtime class",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:runtime"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_same_origi_19ke7nx1o09i0p",
+      "text": "same origin policy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_schema_evo_17tit8u9w8p",
+      "text": "schema evolution",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:schema"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_search_spa_1egsrm914ans9x",
+      "text": "search space",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:search space"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_secret_man_k9qhmcldntq",
+      "text": "secret management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_secret_sca_1tc1s6q147hoom",
+      "text": "secret scanning",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_secure_boo_x848w217nanni",
+      "text": "secure boot",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:secure",
+        "keyword:boot"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_secure_she_6m1x4o73kcjw",
+      "text": "secure shell",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:secure"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_security_c_fj99281gh45no",
+      "text": "security control",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_security_i_1ibogyt1ehovht",
+      "text": "security incident",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_security_p_afnaypy8slc5",
+      "text": "security policy",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_security_p_wuqx6l1cujnqx",
+      "text": "security posture",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_security_t_11ep8tgtu8xeo",
+      "text": "security token",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_segment_tr_j7i9ac9ahmc0",
+      "text": "segment tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_selection__nhwl7l1dl5nkl",
+      "text": "selection sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:selection sort"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_self_super_jsktdx1f63jk1",
+      "text": "self supervised learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:supervised learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_separate_c_jiqnl5z98amt",
+      "text": "separate chaining",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:separate chaining"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_serializab_1vnrdzcnitvys",
+      "text": "serializable isolation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_server_sid_eaqoxzc0o6sb",
+      "text": "server side rendering",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_service_ac_1ucho0dn4pdr5",
+      "text": "service account",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_service_di_192vllwntm5zs",
+      "text": "service discovery",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_service_me_1vuxjmz1mvrf3b",
+      "text": "service mesh",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:service mesh"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_session_la_3zovuw94am98",
+      "text": "session layer",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_set_compre_xemxr1ditmw1",
+      "text": "set comprehension",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_shared_mem_5l64rd1iv2fqt",
+      "text": "shared memory",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_short_circ_uzwc0y2tmuoe",
+      "text": "short circuit evaluation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_shortest_p_1feubzszcuj9o",
+      "text": "shortest path",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_single_pag_fp5ib0x29r08",
+      "text": "single page application",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_singly_lin_3jgg6oft873g",
+      "text": "singly linked list",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:linked list"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_site_relia_tfalvfq5cbjj",
+      "text": "site reliability engineering",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:site reliability"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_sliding_wi_13szia5ehzj5l",
+      "text": "sliding window",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:sliding window"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_slow_query_f47zsq50lgty",
+      "text": "slow query",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:query"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_smoke_test_1ixzo1klrdcd8",
+      "text": "smoke test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:smoke test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_socket_add_110uhwe125qxea",
+      "text": "socket address",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:socket"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_software_a_12cvhupc0tx7h",
+      "text": "software architecture",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:software"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_software_b_pxjqfa1fz4qxu",
+      "text": "software bill of materials",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:software"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_software_c_1699jw7bsb2gb",
+      "text": "software configuration management",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:software"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_software_d_1b3y7ow1r4nnc4",
+      "text": "software design",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:software"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_software_s_quwb3o13llru8",
+      "text": "software supply chain",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:software"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_source_cod_1t807lp9eoa35",
+      "text": "source code repository",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:source code",
+        "keyword:repository"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_source_con_1rk9vzbj2wcij",
+      "text": "source control",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_source_map_ytfixodnue0g",
+      "text": "source map",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_space_comp_11p6zshjxmsl",
+      "text": "space complexity",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_sparse_mat_1837yac1small4",
+      "text": "sparse matrix",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_stable_sor_1e1cs8odoloek",
+      "text": "stable sort",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:table "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_stack_over_1lee6k51k6fqi1",
+      "text": "stack overflow",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:stack "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_startup_pr_15mwtamxi1foi",
+      "text": "startup probe",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:startup probe"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_state_tran_bajcon1mznz8r",
+      "text": "state transition",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_storage_cl_1mhzgm0137th7g",
+      "text": "storage class",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:storage"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_stream_pro_1xd5hkyagabhy",
+      "text": "stream processing",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_stress_tes_1dy2t6h1cmxhm5",
+      "text": "stress test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test",
+        "keyword:stress test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_strongly_c_12aflw31awwk6n",
+      "text": "strongly connected component",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:connected component"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_structural_qqizuh1ovy6tp",
+      "text": "structural pattern matching",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_structured_bqhv1d1v1dgqt",
+      "text": "structured clone",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_subnet_mas_12oqgum1hjwdpu",
+      "text": "subnet mask",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_supervised_1s2f0951z12jad",
+      "text": "supervised learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:supervised learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_supply_cha_148mp7fh7lrtr",
+      "text": "supply chain attack",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:attack"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_symmetric__zdr5sv16hah17",
+      "text": "symmetric encryption",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:encryption"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_system_cal_34jdyqbc3sra",
+      "text": "system call",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:system call"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_system_on__upawen1wo3xrv",
+      "text": "system on chip",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_system_tes_1bydxqukp0lsi",
+      "text": "system test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_taint_and__1frfpg91qxofgd",
+      "text": "taint and toleration",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_technical__1rvaw4j14vxwzj",
+      "text": "technical debt",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_test_cover_1487ybfa6ufjr",
+      "text": "test coverage",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_thread_poo_7m0f8n1wdwwv7",
+      "text": "thread pool",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:thread "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_threat_int_365l2ee4gmwi",
+      "text": "threat intelligence",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:threat"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_threat_mod_zgtt7qus883u",
+      "text": "threat model",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:threat"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_time_compl_1fr5dhq1o4gv16",
+      "text": "time complexity",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_time_serie_1jls3ck5kfq4",
+      "text": "time series database",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_topologica_d75xd61sr4k9i",
+      "text": "topological sort",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_traffic_sh_2ar10uuhp52q",
+      "text": "traffic shaping",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_training_d_1ck593b7k345f",
+      "text": "training data",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:training data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transactio_kdxxl1vk8h7l",
+      "text": "transaction isolation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:transaction"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transforme_1q3gl0fpfawgj",
+      "text": "transformer model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:transformer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transport__119avy913gznv1",
+      "text": "transport encryption",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:encryption"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transport__157a7kd1pglp1l",
+      "text": "transport layer",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:transport layer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transport__1cnm5hdnvn7gt",
+      "text": "transport layer security",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:security",
+        "keyword:transport layer"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_transport__yglpl8rd8s48",
+      "text": "transport protocol",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_trie_tree_1o3qrg11izo2lx",
+      "text": "trie tree",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:tree"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_trunk_base_gqyyblvvr8lh",
+      "text": "trunk based development",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_trust_boun_4o74nb1rzx2zn",
+      "text": "trust boundary",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_trusted_ex_19ww741mrr20t",
+      "text": "trusted execution environment",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "exact:网络、云与安全"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_trustworth_p38z1ar1obaa",
+      "text": "trustworthy AI",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "exact:人工智能"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_two_pointe_1hvbtl3lxno83",
+      "text": "two pointers",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_type_annot_1an9dt8o2vrtc",
+      "text": "type annotation",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_type_check_2w0bidpvmerd",
+      "text": "type checking",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_type_erasu_68gqa41wwtw7c",
+      "text": "type erasure",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_type_infer_1vsco201g41v5o",
+      "text": "type inference",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:inference"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_type_safet_9gcwez7x7mbj",
+      "text": "type safety",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_union_find_61veg1ozjdgt",
+      "text": "union find",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_unit_test_xedg5bx9a6gb",
+      "text": "unit test",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:test"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_unsupervis_17qfhlg2i66lc",
+      "text": "unsupervised learning",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:supervised learning",
+        "keyword:unsupervised learning"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_user_agent_47ba291srp3yt",
+      "text": "user agent",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_user_mode_a6q3wj1f9hjvj",
+      "text": "user mode",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "exact:计算机基础与系统"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_variadic_a_16f3emh1s4bif9",
+      "text": "variadic argument",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_vector_dat_i97t8dx3kk5t",
+      "text": "vector database",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:vector database",
+        "keyword:database"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_version_co_qmb4hk10t5dp8",
+      "text": "version control",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:version control"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_version_pi_r9pmt42dqplg",
+      "text": "version pinning",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_vertical_p_13ucm3lxmxf39",
+      "text": "vertical pod autoscaler",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:pod "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_virtual_en_1y6r35b12he1mr",
+      "text": "virtual environment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_virtual_fi_7jfmgl1m3918h",
+      "text": "virtual file system",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:file system"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_virtual_me_gevqgto90w81",
+      "text": "virtual memory",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:memory",
+        "keyword:virtual memory"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_virtual_pr_1kx042z1b36auv",
+      "text": "virtual private network",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:network",
+        "keyword:virtual private"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_vision_lan_3e56x21af2vvm",
+      "text": "vision language model",
+      "collectionId": "collection_computer_artificial_intelligence",
+      "collectionName": "人工智能",
+      "reasons": [
+        "keyword:language model"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_volume_mou_r821cw19b1pd8",
+      "text": "volume mount",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_vulnerabil_1tdh9gr1yi9tfz",
+      "text": "vulnerability assessment",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:vulnerability"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_vulnerabil_1xjvy16otmjp2",
+      "text": "vulnerability management",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:vulnerability"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_web_applic_yk4b891dqbmb9",
+      "text": "web application",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:web application"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_web_compon_2oqe4sadc50w",
+      "text": "web component",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_web_perfor_di6hqxbwu6xh",
+      "text": "web performance",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_web_standa_1lhnvw418spc9k",
+      "text": "web standard",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "fallback:software-data"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_wheel_dist_1sqxhkspz7ro0",
+      "text": "wheel distribution",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_workflow_r_i5nvxjnm9vl7",
+      "text": "workflow run",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "component-word-majority"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_working_tr_1tp5may2ynveu",
+      "text": "working tree",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_worst_case_1pxnr9qrvvjuq",
+      "text": "worst case",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "keyword:worst case"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_write_ahea_1df6noxk7hvgd",
+      "text": "write ahead log",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "exact:软件开发与数据"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_zero_downt_98dvu583fqbd",
+      "text": "zero downtime deployment",
+      "collectionId": "collection_computer_software_data",
+      "collectionName": "软件开发与数据",
+      "reasons": [
+        "keyword:deployment"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_zero_round_7sqnep1aih9ph",
+      "text": "zero round trip time",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:ip "
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_zero_trust_n5mpn7179nc1b",
+      "text": "zero trust",
+      "collectionId": "collection_computer_network_cloud_security",
+      "collectionName": "网络、云与安全",
+      "reasons": [
+        "keyword:zero trust"
+      ]
+    },
+    {
+      "entryId": "entry_domain_computer_terms_zombie_pro_8a8pmwod78zo",
+      "text": "zombie process",
+      "collectionId": "collection_computer_foundations_systems",
+      "collectionName": "计算机基础与系统",
+      "reasons": [
+        "component-word-majority"
+      ]
+    }
+  ]
+}

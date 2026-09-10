@@ -143,7 +143,7 @@ export function createCollection({ id = null, domainId, name, label = '', type =
   };
 }
 
-export function createEntry({ id = null, domainId, text, kind = '', contentType = '', partsOfSpeech = [], glossHans = '', glossHant = '', glossSource = '', timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
+export function createEntry({ id = null, domainId, text, kind = '', contentType = '', partsOfSpeech = [], gloss = '', glossHans = '', glossHant = '', timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
   const cleanText = normalizeDisplayText(text);
   const normalizedText = normalizeEnglish(cleanText);
   if (!domainId) throw new Error('内容缺少词域');
@@ -151,7 +151,7 @@ export function createEntry({ id = null, domainId, text, kind = '', contentType 
   if (cleanText.length > MAX_ENTRY_TEXT) throw new Error(`内容不能超过 ${MAX_ENTRY_TEXT} 个字符`);
   const cleanKind = ['word', 'phrase', 'content'].includes(kind) ? kind : (isPhraseText(cleanText) ? 'phrase' : 'word');
   if (cleanKind === 'word' && isPhraseText(cleanText)) throw new Error('多词文本不能标记为普通词');
-  const normalizedGloss = normalizeGlossHant(glossHant);
+  const normalizedGloss = normalizeGlossHant(gloss || glossHant || (glossHans ? toTraditional(glossHans) : ''));
   const cleanPos = [...new Set((Array.isArray(partsOfSpeech) ? partsOfSpeech : String(partsOfSpeech || '').split(/[;,/]/))
     .map((item) => normalizeDisplayText(item)).filter(Boolean))].slice(0, 16);
   return {
@@ -162,24 +162,19 @@ export function createEntry({ id = null, domainId, text, kind = '', contentType 
     partsOfSpeech: cleanPos,
     text: cleanText,
     normalizedText,
-    glossHans: normalizeDisplayText(glossHans),
-    glossHant: normalizedGloss,
-    glossSource: (normalizedGloss || glossHans) ? normalizeDisplayText(glossSource || 'manual') : '',
+    gloss: normalizedGloss,
     createdAt: String(createdAt || timestamp),
     updatedAt: String(updatedAt || createdAt || timestamp),
   };
 }
 
-export function createMembership({ id = null, entryId, collectionId, sourceLabel = '', sourceOrder = 0, timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
+export function createMembership({ id = null, entryId, collectionId, order = null, sourceOrder = order, timestamp = nowIso(), createdAt = timestamp, updatedAt = timestamp }) {
   if (!entryId || !collectionId) throw new Error('来源关系缺少关联 ID');
-  const normalizedLabel = normalizeDisplayText(sourceLabel);
-  if (normalizedLabel.length > MAX_SOURCE_LABEL) throw new Error(`来源标签不能超过 ${MAX_SOURCE_LABEL} 个字符`);
   return {
     id: id || safeId('membership', `${entryId}:${collectionId}`),
     entryId,
     collectionId,
-    sourceLabel: normalizedLabel,
-    sourceOrder: Number.isFinite(sourceOrder) ? sourceOrder : 0,
+    order: Number.isFinite(order) ? order : (Number.isFinite(sourceOrder) ? sourceOrder : 0),
     createdAt: String(createdAt || timestamp),
     updatedAt: String(updatedAt || createdAt || timestamp),
   };
@@ -1678,7 +1673,9 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
     annotations,
     settings: {
       numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
-    closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
+      closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
+      speechModel: 'canopylabs/orpheus-v1-english',
+      speechVoice: 'autumn',
       lastPositions,
       migrationComplete: true,
       migrationSource: input?.appVersion || '2.x',
@@ -1691,16 +1688,24 @@ export function canonicalizeBackup(input) {
   const domains = array(input?.domains).map((item, index) => createDomain({ ...item, order: item?.order ?? index, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
   const collections = array(input?.collections).map((item, index) => createCollection({ ...item, order: item?.order ?? index, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
   const entries = array(input?.entries).map((item) => createEntry({ ...item, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
-  const memberships = array(input?.memberships).map((item) => createMembership({ ...item, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
+  const rawMemberships = array(input?.memberships);
+  const memberships = rawMemberships.map((item) => createMembership({ ...item, order: item?.order ?? item?.sourceOrder, timestamp, createdAt: item?.createdAt || timestamp, updatedAt: item?.updatedAt || item?.createdAt || timestamp }));
+  const entryByIdForMembershipMigration = new Map(entries.map((entry) => [entry.id, entry]));
+  rawMemberships.forEach((item) => {
+    const entry = entryByIdForMembershipMigration.get(item?.entryId);
+    if (!entry || !item?.sourceLabel) return;
+    entry.partsOfSpeech = [...new Set([...entry.partsOfSpeech,
+      ...String(item.sourceLabel).split(/[;,/]+/).map(normalizeDisplayText).filter(Boolean),
+    ])].slice(0, 16);
+  });
   domains.sort((a, b) => a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
   collections.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.order - b.order || normalizeEnglish(a.name).localeCompare(normalizeEnglish(b.name), 'en'));
   entries.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'));
-  memberships.sort((a, b) => a.collectionId.localeCompare(b.collectionId) || a.sourceOrder - b.sourceOrder || a.entryId.localeCompare(b.entryId));
+  memberships.sort((a, b) => a.collectionId.localeCompare(b.collectionId) || a.order - b.order || a.entryId.localeCompare(b.entryId));
   const rebuiltComponents = buildRelationComponentsForEntries(entries);
   const pins = array(input?.pins).map((item, index) => ({
     id: item?.id || safeId('pin', item?.entryId),
     entryId: String(item?.entryId || ''),
-    domainId: String(item?.domainId || ''),
     contextCollectionId: String(item?.contextCollectionId || ''),
     order: Number.isFinite(item?.order) ? item.order : index,
     createdAt: item?.createdAt || timestamp,
@@ -1718,7 +1723,7 @@ export function canonicalizeBackup(input) {
   })).filter((item) => item.spelling.incorrect || item.reason);
   const migratedStudy = migrateStudyStampsToEntries(input?.studyStamps, entries, domains);
   const studyStamps = migratedStudy.stamps;
-  pins.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.contextCollectionId.localeCompare(b.contextCollectionId) || a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.entryId.localeCompare(b.entryId));
+  pins.sort((a, b) => a.contextCollectionId.localeCompare(b.contextCollectionId) || a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.entryId.localeCompare(b.entryId));
   annotations.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
   studyStamps.sort((a, b) => a.key.localeCompare(b.key));
 
@@ -1728,6 +1733,10 @@ export function canonicalizeBackup(input) {
   const settings = {
     numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
     closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
+    speechModel: settingsInput.speechModel === 'canopylabs/orpheus-v1-english'
+      ? settingsInput.speechModel : 'canopylabs/orpheus-v1-english',
+    speechVoice: ['autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy'].includes(settingsInput.speechVoice)
+      ? settingsInput.speechVoice : 'autumn',
     lastPositions,
     viewModes: Object.fromEntries(Object.entries(object(settingsInput.viewModes)).filter(([, value]) => ['alphabet', 'date'].includes(value))),
     calendarMonths: Object.fromEntries(Object.entries(object(settingsInput.calendarMonths)).filter(([, value]) => /^\d{4}-\d{2}$/.test(String(value)))),
@@ -1740,16 +1749,6 @@ export function canonicalizeBackup(input) {
     seedMigrationReport: settingsInput.seedMigrationReport && typeof settingsInput.seedMigrationReport === 'object'
       ? JSON.parse(JSON.stringify(settingsInput.seedMigrationReport))
       : null,
-    contentSources: array(settingsInput.contentSources).map((item) => ({
-      key: normalizeDisplayText(item?.key || item?.id || ''),
-      title: normalizeDisplayText(item?.title || ''),
-      publisher: normalizeDisplayText(item?.publisher || ''),
-      url: normalizeDisplayText(item?.url || ''),
-      retrievedAt: normalizeDisplayText(item?.retrievedAt || ''),
-      authority: normalizeDisplayText(item?.authority || ''),
-      license: normalizeDisplayText(item?.license || ''),
-      sha256: normalizeDisplayText(item?.sha256 || '').toLowerCase(),
-    })).filter((item) => item.key && item.title),
   };
   const backup = {
     schemaVersion: SCHEMA_VERSION,
@@ -1852,7 +1851,7 @@ export function validateBackup(backup, { relationComponentsAlreadyBuilt = false,
     const domain = domains.find((item) => item.id === entry.domainId);
     if (domain?.contentMode === 'nonStructured' && entry.kind !== 'content') throw new Error('非结构词域只能包含 content Entry');
     if (domain?.contentMode === 'structured' && entry.kind === 'content') throw new Error('结构化词域不能包含 content Entry');
-    if (entry.glossHant !== normalizeGlossHant(entry.glossHant)) throw new Error('释义不是规范繁体');
+    if (entry.gloss !== normalizeGlossHant(entry.gloss)) throw new Error('释义不是规范繁体');
     if (['word', 'phrase', 'content'].includes(entry.kind)) {
       const hasNormalMembership = (membershipByEntry.get(entry.id) || [])
         .some((item) => collectionById.get(item.collectionId)?.type === 'normal');
@@ -1869,7 +1868,7 @@ export function validateBackup(backup, { relationComponentsAlreadyBuilt = false,
     const collection = collectionById.get(pin.contextCollectionId);
     const domainTotalId = entry ? systemDomainWordsCollectionId(entry.domainId) : '';
     const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID || pin.contextCollectionId === domainTotalId || pin.contextCollectionId === systemDomainContentCollectionId(entry?.domainId || '');
-    if (!entry || pin.domainId !== entry.domainId || (!virtualValid && (!collection || collection.domainId !== entry.domainId))) {
+    if (!entry || (!virtualValid && (!collection || collection.domainId !== entry.domainId))) {
       throw new Error('PIN 关联无效');
     }
     if (!Number.isFinite(pin.order) || pin.order < 0) throw new Error('PIN 顺序无效');
@@ -1925,7 +1924,7 @@ export function buildProjection(backup) {
       .map((membership) => ({ membership, collection: collectionById.get(membership.collectionId) }))
       .filter((item) => item.collection?.type === 'normal' && !item.collection.hidden)
       .sort((a, b) => a.collection.order - b.collection.order
-        || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
+        || Number(a.membership.order || 0) - Number(b.membership.order || 0)
         || a.collection.name.localeCompare(b.collection.name));
 
     if (entry.kind === 'content' || domain?.contentMode === 'nonStructured') {
@@ -2041,7 +2040,7 @@ export function searchBackup(backup, query, { domainId = null, limit = 100 } = {
       if (qEn && entry.normalizedText === qEn) score = 100;
       else if (qEn && entry.normalizedText.startsWith(qEn)) score = 90;
       else if (qEn && entry.normalizedText.includes(qEn)) score = 80;
-      else if (entry.glossHant && qHant && entry.glossHant.includes(qHant)) score = 85;
+      else if (entry.gloss && qHant && entry.gloss.includes(qHant)) score = 85;
       else if (qEn && qEn.length >= 2 && isSubsequence(entry.normalizedText, qEn)) score = 65 - Math.min(20, entry.normalizedText.length - qEn.length);
       else if (qEn && qEn.length >= 4) {
         const threshold = Math.max(1, Math.min(3, Math.floor(qEn.length * 0.24)));

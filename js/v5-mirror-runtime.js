@@ -104,8 +104,7 @@ function validateExistingMatch(item) {
     surfaceForm: String(item.surfaceForm || '').slice(0, 160),
     lemma: String(item.lemma || '').slice(0, 160),
     importance: ['core', 'related', 'context'].includes(item.importance) ? item.importance : 'related',
-    glossHans: String(item.glossHans || '').slice(0, 160),
-    glossHant: String(item.glossHant || '').slice(0, 160),
+    gloss: String(item.gloss || item.glossHant || item.glossHans || '').slice(0, 160),
     evidence: validateEvidence(item.evidence),
     relationNoise: Boolean(item.relationNoise),
   });

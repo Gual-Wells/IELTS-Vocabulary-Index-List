@@ -1,18 +1,14 @@
-# Local VIX function
+# VIX Function
 
-Run once in Windows PowerShell:
+VIX Function is a local, version-independent sidecar for exact `VIX:` / `VIX：` routing. It reads the latest hidden Personal Mirror snapshot and submits a validated two-layer `vix-mirror-file/1` document to the Mirror Site.
 
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\VIX-Function.ps1 -Action Configure
-```
+The function no longer depends on Bridge runs, WebMCP, a VIX release number, or a seed generation. Compatibility is negotiated through `vix-function/1`, `vix-data-exchange/1`, `vix-mirror-service/1`, and advertised capabilities.
 
-The script installs itself under `%LOCALAPPDATA%\VIX\function` and stores the Agent Token encrypted with Windows DPAPI for the current Windows user. Personalized instructions contain no secret.
-
-Automation commands:
+Install and configure it locally:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\VIX\function\VIX-Function.ps1" -Action Start -MaterialLabel "Paper" -SourceDigest "sha256:..."
-powershell.exe -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\VIX\function\VIX-Function.ps1" -Action Submit -RunId "vmr_..." -File ".\mirror-result.json"
+.\VIX-Function.ps1 -Action Install
+.\VIX-Function.ps1 -Action Configure
 ```
 
-`Start` prints a compact descriptor and writes the frozen Context to its `contextFile`. Process that file locally; do not print the complete corpus into a chat or terminal transcript. A successful `Submit` removes the temporary Context file.
+Configuration stores the Site URL and a protocol-scoped Mirror write token. The token is encrypted with the current Windows user profile and is never placed in prompt instructions.

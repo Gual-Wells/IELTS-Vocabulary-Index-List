@@ -12,6 +12,7 @@ import {
   getMirrorSnapshot, initializeMirrorRuntime, selectMirrorCurrent,
 } from './v5-mirror-runtime.js';
 import { APP_VERSION } from './v5-version.js';
+import { planVixImport } from './v3-exchange.js';
 
 const listeners = new Set();
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('gual-vocabulary-index-v3') : null;
@@ -234,25 +235,25 @@ function jsonEqual(a, b) {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-function sourceLabelParts(value) {
-  return normalizeDisplayText(value)
-    .split(/\s*(?:,|\/|;|，|、)\s*/)
+function partsOfSpeechList(value) {
+  return (Array.isArray(value) ? value : [value])
+    .flatMap((item) => normalizeDisplayText(item).split(/\s*(?:,|\/|;|，|、)\s*/))
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-function mergeSourceLabels(...values) {
+function mergePartsOfSpeech(...values) {
   const result = [];
   const seen = new Set();
   for (const value of values) {
-    for (const part of sourceLabelParts(value)) {
+    for (const part of partsOfSpeechList(value)) {
       const key = part.toLocaleLowerCase('en');
       if (seen.has(key)) continue;
       seen.add(key);
       result.push(part);
     }
   }
-  return result.join(', ');
+  return result;
 }
 
 function diffArray(store, beforeItems, afterItems, key = 'id') {
@@ -324,7 +325,7 @@ function normalizeSoftReferences(backup) {
       collectionId = candidates[0]?.id || '';
     }
     if (!collectionId) return [];
-    return [{ ...pin, id: safeId('pin', entry.id), entryId: entry.id, domainId: entry.domainId, contextCollectionId: collectionId }];
+    return [{ ...pin, id: safeId('pin', entry.id), entryId: entry.id, contextCollectionId: collectionId }];
   });
 
   const lastPositions = { ...(backup.settings?.lastPositions || {}) };
@@ -423,6 +424,17 @@ export async function setLowLevelRelationsClosed(enabled) {
   await reloadStore('relation-filter');
   broadcast(state.revision);
   return state;
+}
+
+export async function setSpeechPreferences(model, voice) {
+  const supportedModel = 'canopylabs/orpheus-v1-english';
+  const supportedVoices = new Set(['autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy']);
+  if (model !== supportedModel || !supportedVoices.has(voice)) throw new Error('无效的 Groq 语音设置');
+  if (state.settings.speechModel === model && state.settings.speechVoice === voice) return false;
+  const revision = await setSettings({ speechModel: model, speechVoice: voice }, { expectedRevision: state.revision, bumpRevision: true });
+  await reloadStore('speech-settings');
+  broadcast(revision);
+  return true;
 }
 
 export async function addCollection(domainId, name, label = '') {
@@ -596,32 +608,28 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
       kind: desiredKind,
       contentType: desiredKind === 'content' ? (item?.contentType || collection.label || collection.name || 'general') : '',
       partsOfSpeech: item?.partsOfSpeech || item?.pos || item?.sourceLabel || [],
-      glossHans: item?.glossHans || '',
-      glossHant: domain?.glossEnabled ? normalizeGlossHant(item?.glossHant || item?.gloss || '') : '',
-      glossSource: item?.glossSource || 'import',
+      gloss: domain?.glossEnabled ? normalizeGlossHant(item?.gloss || item?.glossHant || item?.glossHans || '') : '',
     });
     draft.entries.push(entry);
-  } else if (domain?.glossEnabled && (item?.glossHant || item?.gloss)) {
-    entry.glossHant = normalizeGlossHant(item.glossHant || item.gloss);
-    entry.glossSource = normalizeDisplayText(item?.glossSource || 'import');
+  } else if (domain?.glossEnabled && (item?.gloss || item?.glossHant || item?.glossHans)) {
+    entry.gloss = normalizeGlossHant(item.gloss || item.glossHant || item.glossHans);
     entry.updatedAt = new Date().toISOString();
   }
+  const incomingParts = partsOfSpeechList(item?.partsOfSpeech || item?.pos || item?.sourceLabel || '');
+  if (incomingParts.length) entry.partsOfSpeech = [...new Set([...(entry.partsOfSpeech || []), ...incomingParts])].slice(0, 16);
   if (collection.type === 'normal') {
     let membership = draft.memberships.find((candidate) => candidate.entryId === entry.id && candidate.collectionId === collection.id);
     if (!membership) {
       membership = createMembership({
         entryId: entry.id,
         collectionId: collection.id,
-        sourceLabel: item?.sourceLabel || item?.pos || '',
-        sourceOrder,
+        order: sourceOrder,
       });
       draft.memberships.push(membership);
     } else {
-      const nextLabel = normalizeDisplayText(item?.sourceLabel || item?.pos || '');
       const updated = createMembership({
         ...membership,
-        sourceLabel: mergeSourceLabels(membership.sourceLabel, nextLabel),
-        sourceOrder,
+        order: sourceOrder,
         updatedAt: new Date().toISOString(),
       });
       Object.assign(membership, updated);
@@ -663,12 +671,16 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
       if (!normalized) continue;
       const previous = mergedItems.get(normalized);
       if (!previous) {
-        mergedItems.set(normalized, { ...item, sourceLabel: item?.sourceLabel || item?.pos || '' });
+        mergedItems.set(normalized, {
+          ...item,
+          partsOfSpeech: partsOfSpeechList(item?.partsOfSpeech || item?.pos || item?.sourceLabel || ''),
+        });
         continue;
       }
       mergedItems.set(normalized, {
         ...previous,
-        sourceLabel: mergeSourceLabels(previous?.sourceLabel || previous?.pos || '', item?.sourceLabel || item?.pos || ''),
+        partsOfSpeech: mergePartsOfSpeech(previous?.partsOfSpeech || previous?.pos || previous?.sourceLabel || '',
+          item?.partsOfSpeech || item?.pos || item?.sourceLabel || ''),
         gloss: previous?.gloss || previous?.glossHant || item?.gloss || item?.glossHant || '',
       });
     }
@@ -677,6 +689,100 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
 }
 
 export async function importMirrorCandidates(candidates, selectedCandidateIds, selectedExistingMatches = []) {
+  const selected = new Set(selectedCandidateIds || []);
+  const beforeEntries = new Map(state.entries.map((entry) => [`${entry.domainId}\u0000${entry.normalizedText}`, entry]));
+  const beforeMemberships = new Set(state.memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
+  const corruptedGloss = (value) => {
+    const result = String(value || '').trim();
+    const questionCount = (result.match(/[?？]/g) || []).length;
+    const content = result.replace(/[\s?？,.;:!，。；：！（）()[\]{}'"“”‘’、_-]/g, '');
+    return /\uFFFD/.test(result) || (questionCount >= 2 && !content);
+  };
+  const domainIds = new Set();
+  const collectionIds = new Set();
+  const entries = [];
+  const memberships = [];
+  const entryKeyByCandidateId = {};
+  let unassigned = 0;
+  let repairedGlosses = 0;
+
+  for (const match of Array.isArray(selectedExistingMatches) ? selectedExistingMatches : []) {
+    const current = state.entryById.get(match?.entryId);
+    const incomingGloss = match?.gloss || match?.glossHant || match?.glossHans || '';
+    if (!current || !incomingGloss || (current.gloss && !corruptedGloss(current.gloss))) continue;
+    domainIds.add(current.domainId);
+    entries.push({
+      key: `mirror-existing:${current.id}`, domainKey: current.domainId, text: current.text,
+      kind: current.kind, contentType: current.contentType, partsOfSpeech: current.partsOfSpeech,
+      gloss: incomingGloss,
+    });
+    repairedGlosses += 1;
+  }
+
+  for (const candidate of candidates || []) {
+    if (!selected.has(candidate?.candidateId)) continue;
+    const domain = state.domainById.get(candidate.domainKey);
+    const targets = [...new Set(candidate.collectionKeys || [])]
+      .map((id) => state.collectionById.get(id))
+      .filter((item) => item?.type === 'normal' && item.domainId === candidate.domainKey);
+    const normalized = normalizeEnglish(candidate.text);
+    if (!domain || !targets.length || !normalized) { unassigned += 1; continue; }
+    const current = beforeEntries.get(`${domain.id}\u0000${normalized}`);
+    const key = `mirror-candidate:${candidate.candidateId}`;
+    const kind = ['word', 'phrase', 'content'].includes(candidate.kind)
+      ? candidate.kind : (domain.contentMode === 'nonStructured' ? 'content' : (isPhraseText(candidate.text) ? 'phrase' : 'word'));
+    const incomingGloss = candidate.gloss || candidate.glossHant || candidate.glossHans || '';
+    entries.push({
+      key, domainKey: domain.id, text: candidate.text, kind,
+      contentType: kind === 'content' ? (candidate.contentType || 'mirror') : '',
+      partsOfSpeech: [...new Set([...(current?.partsOfSpeech || []), ...(candidate.partsOfSpeech || [])])],
+      gloss: !current?.gloss || corruptedGloss(current.gloss) ? incomingGloss : '',
+    });
+    domainIds.add(domain.id);
+    entryKeyByCandidateId[candidate.candidateId] = key;
+    for (const collection of targets) {
+      collectionIds.add(collection.id);
+      memberships.push({ entryKey: key, collectionKey: collection.id, order: Number.MAX_SAFE_INTEGER });
+    }
+  }
+
+  if (!entries.length) return {
+    created: 0, merged: 0, memberships: 0, repairedGlosses: 0,
+    skipped: Math.max(0, selected.size - unassigned), unassigned, entryIds: [], entryIdByCandidateId: {},
+  };
+  const rawPackage = {
+    protocol: 'vix-data-exchange/1', format: 'vix-json', version: 2, kind: 'increment', mode: 'merge',
+    target: { scope: 'global', domainKey: '', collectionKey: '' },
+    data: {
+      domains: state.domains.filter((item) => domainIds.has(item.id)).map((item) => ({ ...item, key: item.id })),
+      collections: state.collections.filter((item) => collectionIds.has(item.id)).map((item) => ({ ...item, key: item.id, domainKey: item.domainId })),
+      entries,
+      memberships,
+    },
+  };
+  const plan = await applyVixIncrement(rawPackage, { scope: 'global', mode: 'merge', targetMode: 'file' }, 'import');
+  const entryIds = [];
+  const entryIdByCandidateId = {};
+  let created = 0;
+  let merged = 0;
+  for (const candidate of candidates || []) {
+    if (!selected.has(candidate?.candidateId) || !entryKeyByCandidateId[candidate.candidateId]) continue;
+    const entry = state.entries.find((item) => item.domainId === candidate.domainKey && item.normalizedText === normalizeEnglish(candidate.text));
+    if (!entry) continue;
+    entryIdByCandidateId[candidate.candidateId] = entry.id;
+    if (!entryIds.includes(entry.id)) entryIds.push(entry.id);
+    if (beforeEntries.has(`${entry.domainId}\u0000${entry.normalizedText}`)) merged += 1;
+    else created += 1;
+  }
+  const addedMemberships = state.memberships.filter((item) => !beforeMemberships.has(`${item.entryId}\u0000${item.collectionId}`)).length;
+  return {
+    created, merged, memberships: addedMemberships, repairedGlosses,
+    skipped: Math.max(0, selected.size - created - merged - unassigned), unassigned,
+    entryIds, entryIdByCandidateId, protocol: plan.package.protocol,
+  };
+}
+
+async function importMirrorCandidatesLegacy(candidates, selectedCandidateIds, selectedExistingMatches = []) {
   const selected = new Set(selectedCandidateIds || []);
   const summary = { created: 0, merged: 0, memberships: 0, repairedGlosses: 0, skipped: 0, unassigned: 0, entryIds: [], entryIdByCandidateId: {} };
   const repairMatches = Array.isArray(selectedExistingMatches) ? selectedExistingMatches : [];
@@ -694,11 +800,9 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds, s
     for (const match of repairMatches) {
       const entry = draft.entries.find((item) => item.id === match?.entryId);
       const domain = entry ? domainById.get(entry.domainId) : null;
-      if (!entry || !domain?.glossEnabled || (!match?.glossHant && !match?.glossHans)) continue;
-      if (!entry.glossHant || corruptedGloss(entry.glossHant)) {
-        entry.glossHans = normalizeDisplayText(match.glossHans || entry.glossHans || '');
-        entry.glossHant = normalizeGlossHant(match.glossHant || match.glossHans);
-        entry.glossSource = 'mirror';
+      if (!entry || !domain?.glossEnabled || (!match?.gloss && !match?.glossHant && !match?.glossHans)) continue;
+      if (!entry.gloss || corruptedGloss(entry.gloss)) {
+        entry.gloss = normalizeGlossHant(match.gloss || match.glossHant || match.glossHans);
         entry.updatedAt = new Date().toISOString();
         summary.repairedGlosses += 1;
       }
@@ -720,18 +824,14 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds, s
           kind: requestedKind,
           contentType: requestedKind === 'content' ? 'mirror' : '',
           partsOfSpeech: candidate.partsOfSpeech || [],
-          glossHans: domain.glossEnabled ? (candidate.glossHans || '') : '',
-          glossHant: domain.glossEnabled ? (candidate.glossHant || candidate.glossHans || '') : '',
-          glossSource: domain.glossEnabled && (candidate.glossHant || candidate.glossHans) ? 'mirror' : '',
+          gloss: domain.glossEnabled ? (candidate.gloss || candidate.glossHant || candidate.glossHans || '') : '',
         });
         draft.entries.push(entry);
         summary.created += 1;
       } else {
         summary.merged += 1;
-        if (domain.glossEnabled && (!entry.glossHant || corruptedGloss(entry.glossHant)) && (candidate.glossHant || candidate.glossHans)) {
-          entry.glossHans = normalizeDisplayText(candidate.glossHans || entry.glossHans || '');
-          entry.glossHant = normalizeGlossHant(candidate.glossHant || candidate.glossHans);
-          entry.glossSource = 'mirror';
+        if (domain.glossEnabled && (!entry.gloss || corruptedGloss(entry.gloss)) && (candidate.gloss || candidate.glossHant || candidate.glossHans)) {
+          entry.gloss = normalizeGlossHant(candidate.gloss || candidate.glossHant || candidate.glossHans);
           entry.updatedAt = new Date().toISOString();
           summary.repairedGlosses += 1;
         }
@@ -744,8 +844,7 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds, s
         draft.memberships.push(createMembership({
           entryId: entry.id,
           collectionId: collection.id,
-          sourceLabel: (candidate.partsOfSpeech || []).join(', '),
-          sourceOrder: nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id)),
+          order: nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id)),
         }));
         membershipSet.add(key);
         summary.memberships += 1;
@@ -756,7 +855,7 @@ export async function importMirrorCandidates(candidates, selectedCandidateIds, s
   return summary;
 }
 
-export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '', glossSource = 'manual', contentType = '' } = {}) {
+export async function addEntry(collectionId, text, { partsOfSpeech = [], gloss = '', contentType = '' } = {}) {
   let resultingId = null;
   await mutate('新增内容', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
@@ -773,24 +872,22 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
         text,
         kind: desiredKind,
         contentType: desiredKind === 'content' ? normalizeDisplayText(contentType || collection.label || collection.name || 'general') : '',
-        partsOfSpeech: sourceLabelParts(sourceLabel),
-        glossHant: domain?.glossEnabled ? normalizeGlossHant(gloss) : '',
-        glossSource,
+        partsOfSpeech: partsOfSpeechList(partsOfSpeech),
+        gloss: domain?.glossEnabled ? normalizeGlossHant(gloss) : '',
       });
       draft.entries.push(entry);
-    } else if (domain?.glossEnabled && gloss && !entry.glossHant) {
-      entry.glossHant = normalizeGlossHant(gloss);
-      entry.glossSource = normalizeDisplayText(glossSource || 'manual');
+    } else if (domain?.glossEnabled && gloss && !entry.gloss) {
+      entry.gloss = normalizeGlossHant(gloss);
       entry.updatedAt = new Date().toISOString();
     }
     resultingId = entry.id;
     if (collection.type === 'normal') {
       const existing = draft.memberships.find((item) => item.entryId === entry.id && item.collectionId === collection.id);
       if (!existing) {
-        const sourceOrder = nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id));
-        draft.memberships.push(createMembership({ entryId: entry.id, collectionId: collection.id, sourceLabel, sourceOrder }));
-      } else if (sourceLabel) {
-        existing.sourceLabel = mergeSourceLabels(existing.sourceLabel, sourceLabel);
+        const order = nextOrder(draft.memberships.filter((item) => item.collectionId === collection.id));
+        draft.memberships.push(createMembership({ entryId: entry.id, collectionId: collection.id, order }));
+      } else if (partsOfSpeechList(partsOfSpeech).length) {
+        entry.partsOfSpeech = [...new Set([...(entry.partsOfSpeech || []), ...partsOfSpeechList(partsOfSpeech)])].slice(0, 16);
         existing.updatedAt = new Date().toISOString();
       }
     }
@@ -814,7 +911,7 @@ export async function addPhraseForWord(entryId, phraseText, options = {}, collec
       .map((membership) => ({ membership, collection: current.collectionById.get(membership.collectionId) }))
       .filter((item) => item.collection?.type === 'normal' && item.collection.domainId === word.domainId && !item.collection.hidden)
       .sort((a, b) => a.collection.order - b.collection.order
-        || Number(a.membership.sourceOrder || 0) - Number(b.membership.sourceOrder || 0)
+        || Number(a.membership.order || 0) - Number(b.membership.order || 0)
         || a.collection.name.localeCompare(b.collection.name));
     targetCollection = candidates[0]?.collection || null;
   }
@@ -828,12 +925,11 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
     if (!entry) throw new Error('内容不存在');
     if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('内容已在其他实例更新，请重新打开后再编辑');
     const domain = draft.domains.find((item) => item.id === entry.domainId);
-    const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.glossHant) : entry.glossHant;
+    const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.gloss) : entry.gloss;
     const candidate = createEntry({
       ...entry,
       text: updates.text ?? entry.text,
-      glossHant: nextGloss,
-      glossSource: nextGloss ? normalizeDisplayText(updates.glossSource || entry.glossSource || 'manual') : '',
+      gloss: nextGloss,
       updatedAt: new Date().toISOString(),
     });
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
@@ -856,12 +952,11 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
     if (entry.domainId !== collection.domainId) throw new Error('内容与词表不属于同一词域');
     if (expectedUpdatedAt && entry.updatedAt !== expectedUpdatedAt) throw new Error('内容已在其他实例更新，请重新打开后再编辑');
     const domain = draft.domains.find((item) => item.id === entry.domainId);
-    const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.glossHant) : entry.glossHant;
+    const nextGloss = domain?.glossEnabled ? normalizeGlossHant(updates.gloss ?? entry.gloss) : entry.gloss;
     const candidate = createEntry({
       ...entry,
       text: updates.text ?? entry.text,
-      glossHant: nextGloss,
-      glossSource: nextGloss ? normalizeDisplayText(updates.glossSource || entry.glossSource || 'manual') : '',
+      gloss: nextGloss,
       updatedAt: new Date().toISOString(),
     });
     const collision = draft.entries.find((item) => item.id !== entry.id && item.domainId === entry.domainId && item.normalizedText === candidate.normalizedText);
@@ -872,7 +967,7 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
     if (collection.type === 'normal') {
       const membership = draft.memberships.find((item) => item.entryId === entryId && item.collectionId === collectionId);
       if (!membership) throw new Error('当前词表没有该内容的来源关系');
-      membership.sourceLabel = normalizeDisplayText(updates.sourceLabel ?? membership.sourceLabel);
+      if (updates.partsOfSpeech !== undefined) entry.partsOfSpeech = partsOfSpeechList(updates.partsOfSpeech);
       membership.updatedAt = new Date().toISOString();
     }
     if (entry.kind === 'word') removeOrphanWord(draft, entry.id);
@@ -908,7 +1003,7 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
   if (!existing) {
     const siblingPins = state.pins.filter((item) => item.contextCollectionId === contextCollectionId);
     after = {
-      id: safeId('pin', entryId), entryId, domainId: entry.domainId, contextCollectionId,
+      id: safeId('pin', entryId), entryId, contextCollectionId,
       order: siblingPins.length ? Math.max(...siblingPins.map((item) => Number(item.order || 0))) + 1 : 0,
       createdAt: new Date().toISOString(),
     };
@@ -1315,6 +1410,18 @@ export async function restoreBackup(input) {
   broadcast(revision);
 }
 
+export async function applyVixIncrement(rawPackage, selection = {}, conflictPolicy = 'current', expectedRevision = null) {
+  const baseRevision = state.revision;
+  if (expectedRevision != null && Number(expectedRevision) !== Number(baseRevision)) {
+    throw new Error('数据已变化，请重新生成导入预览');
+  }
+  const plan = planVixImport(backupFromState(), rawPackage, selection, conflictPolicy);
+  const revision = await replaceWithBackup(plan.nextBackup, { expectedRevision: baseRevision });
+  await reloadStore('vix-increment');
+  broadcast(revision);
+  return { ...plan, baseRevision, revision };
+}
+
 export async function resetToSeed() {
   const revision = await replaceWithCanonicalSeed({ expectedRevision: state.revision });
   await reloadStore('reset-seed');
@@ -1326,19 +1433,11 @@ export async function exportFullBackup() {
 }
 
 export async function undo() {
-  const result = await dbUndo(state.revision);
-  if (!result) return false;
-  await reloadStore('undo');
-  broadcast(result.revision);
-  return true;
+  return false;
 }
 
 export async function redo() {
-  const result = await dbRedo(state.revision);
-  if (!result) return false;
-  await reloadStore('redo');
-  broadcast(result.revision);
-  return true;
+  return false;
 }
 
 export async function acknowledgeMigrationNotice() {

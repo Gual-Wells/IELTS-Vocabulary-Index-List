@@ -19,10 +19,8 @@ function cleanGloss(value) {
   const nonQuestionContent = result.replace(/[\s?？,.;:!，。；：！、()[\]{}'"“”‘’·—_-]/g, '');
   return /\uFFFD/.test(result) || (questionCount >= 2 && !nonQuestionContent) ? '' : result;
 }
-function cleanGlossPair(hans, hant) {
-  const nextHans = cleanGloss(hans);
-  const nextHant = cleanGloss(hant);
-  return { glossHans: nextHans || nextHant, glossHant: nextHant || nextHans };
+function normalizedGloss(value, legacyHant = '', legacyHans = '') {
+  return cleanGloss(value || legacyHant || legacyHans);
 }
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -91,7 +89,6 @@ export async function buildMirrorContext(state) {
     collections: (state.membershipsByEntry.get(entry.id) || []).map((item) => item.collectionId).filter((id) => collectionIds.has(id)).sort(),
   }));
   const corpus = entries.map((entry, index) => {
-    const glosses = cleanGlossPair(entry.glossHans, entry.glossHant);
     return {
       slot: index + 1,
       text: entry.text,
@@ -100,7 +97,7 @@ export async function buildMirrorContext(state) {
       domainKey: entry.domainId,
       collectionKeys: privateRows[index].collections,
       partsOfSpeech: Array.isArray(entry.partsOfSpeech) ? entry.partsOfSpeech.slice(0, 8) : [],
-      ...glosses,
+      gloss: cleanGloss(entry.gloss),
       relationNoise: entry.kind === 'word' && Boolean(state.lowLevelRelationLexemes?.has(entry.normalizedText)),
     };
   });
@@ -144,13 +141,13 @@ export async function buildMirrorContext(state) {
         mirrorClass: 'vocabulary, phrase, or usage; all three classes have equal priority',
         matchType: 'exact, inflection, phrase, usage, or semantic',
         importance: 'core, related, or context',
-        glossRepair: 'optional glossHans/glossHant only when the frozen corpus gloss is missing or visibly corrupted',
+        glossRepair: 'optional Traditional Chinese gloss only when the frozen corpus gloss is missing or visibly corrupted',
         lowLevelPolicy: 'corpus relationNoise only deprioritizes a standalone vocabulary component; never suppress a phrase or usage',
         evidence: 'array of {quote, location}; at least one short source excerpt',
       },
       candidate: {
         required: [
-          'candidateId', 'text', 'normalizedText', 'kind', 'mirrorClass', 'partsOfSpeech', 'glossHans', 'glossHant',
+          'candidateId', 'text', 'normalizedText', 'kind', 'mirrorClass', 'partsOfSpeech', 'gloss',
           'domainKey', 'collectionKeys', 'evidence', 'relatedExistingSlots',
         ],
         mirrorClass: 'vocabulary, phrase, or usage; independent from storage kind',
@@ -196,7 +193,6 @@ function validateExistingMatch(value) {
   if (!Number.isSafeInteger(slot) || slot < 1) throw new Error('已有词匹配 slot 无效');
   const evidence = validateEvidence(value.evidence);
   if (!evidence.length) throw new Error('已有词匹配必须提供原文证据');
-  const glosses = cleanGlossPair(value.glossHans, value.glossHant);
   return {
     slot,
     mirrorClass: mirrorClass(value.mirrorClass),
@@ -204,7 +200,7 @@ function validateExistingMatch(value) {
     surfaceForm: clean(value.surfaceForm, 160),
     lemma: clean(value.lemma, 160),
     importance: importance(value.importance),
-    ...glosses,
+    gloss: normalizedGloss(value.gloss, value.glossHant, value.glossHans),
     evidence,
   };
 }
@@ -217,7 +213,6 @@ function validateCandidate(value) {
   const collectionKeys = Array.isArray(value.collectionKeys)
     ? [...new Set(value.collectionKeys.map((item) => clean(item, 180)).filter(Boolean))].slice(0, 16) : [];
   const evidence = validateEvidence(value.evidence);
-  const glosses = cleanGlossPair(value.glossHans, value.glossHant);
   return {
     candidateId, text, normalizedText: clean(value.normalizedText, 160), kind,
     mirrorClass: mirrorClass(value.mirrorClass, kind === 'phrase' ? 'phrase' : kind === 'content' ? 'usage' : 'vocabulary'),
@@ -225,7 +220,7 @@ function validateCandidate(value) {
     importance: importance(value.importance),
     confidence: Number.isFinite(Number(value.confidence)) ? Math.max(0, Math.min(1, Number(value.confidence))) : null,
     partsOfSpeech: Array.isArray(value.partsOfSpeech) ? [...new Set(value.partsOfSpeech.map((item) => clean(item, 40)).filter(Boolean))].slice(0, 8) : [],
-    ...glosses,
+    gloss: normalizedGloss(value.gloss, value.glossHant, value.glossHans),
     domainKey: clean(value.domainKey, 180), collectionKeys, evidence,
     relatedExistingSlots: Array.isArray(value.relatedExistingSlots)
       ? [...new Set(value.relatedExistingSlots.filter((slot) => Number.isSafeInteger(slot) && slot > 0))].slice(0, 32) : [],
@@ -281,7 +276,7 @@ export async function prepareMirrorResult(raw) {
     const domain = domainByKey.get(candidate.domainKey);
     const collections = candidate.collectionKeys.filter((key) => collectionByKey.get(key)?.domainKey === candidate.domainKey);
     const kindMatchesDomain = domain?.contentMode === 'nonStructured' ? candidate.kind === 'content' : candidate.kind !== 'content';
-    const hasRequiredGloss = !domain?.glossEnabled || Boolean(candidate.glossHant || candidate.glossHans);
+    const hasRequiredGloss = !domain?.glossEnabled || Boolean(candidate.gloss);
     const valid = Boolean(domain) && kindMatchesDomain && collections.length > 0 && candidate.evidence.length > 0 && hasRequiredGloss;
     const relatedEntryIds = candidate.relatedExistingSlots.map((slot) => session.slotEntryIds[slot - 1]);
     const relationNoise = candidate.kind === 'word' && relationNoiseLexemes.has(candidate.normalizedText);

@@ -1,4 +1,4 @@
-export const APP_VERSION = '5.0.0-alpha.14';
+export const APP_VERSION = '5.1.0';
 export const BACKUP_SCHEMA_VERSION = 6;
 export const INDEXED_DB_VERSION = 5;
 export const VIX_DATA_FORMAT_VERSION = 2;
@@ -10,6 +10,5 @@ export const GENERATION = Object.freeze({
   app: APP_VERSION,
   schema: BACKUP_SCHEMA_VERSION,
   database: INDEXED_DB_VERSION,
-  exchange: VIX_DATA_FORMAT_VERSION,
   navigation: NAVIGATION_MODEL,
 });

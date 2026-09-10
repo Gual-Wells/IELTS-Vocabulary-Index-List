@@ -104,19 +104,19 @@ function downloadJsonFile(filename, value) {
 async function handleGenerationUpgradeIfNeeded() {
   const status = await getGenerationUpgradeStatus();
   if (!status.required) return;
-  const choice = await bootChoice('Vocabulary Index 4.7.3', '检测到 3.5.x 内容世代。4.7.3 继续使用 Schema 6、关系模型与 Seed rev 4，旧内容和内容绑定状态不会迁移。你可以先下载完整旧版备份。', [
-    { label: '先下载备份', value: 'backup', primary: true },
-    { label: '不备份继续', value: 'continue', primary: false },
+  const choice = await bootChoice('Vocabulary Index 5.1.0', '检测到旧内容世代。5.1.0 会用当前完整 Seed 独立替换，不构造跨世代增量迁移。你可以先导出一份只供旧版本读取的旧世代归档。', [
+    { label: '导出旧世代归档', value: 'backup', primary: true },
+    { label: '直接继续', value: 'continue', primary: false },
   ]);
   if (choice === 'backup') {
     const backup = await exportLegacyGenerationBackup();
-    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || '3.5.2'}-Pre-4.7.3-Backup.json`, backup);
+    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || 'legacy'}-Pre-5.1.0-Backup.json`, backup);
   }
-  const confirm = await bootChoice('确认替换内容世代', '将清除旧 Seed、用户自建内容、PIN、学习日期、标注、浏览状态与撤销历史；Bridge 配置、模型选择和一般显示偏好不属于旧内容数据。此操作不能由 4.7.3 撤销。', [
+  const confirm = await bootChoice('确认替换内容世代', '将以当前完整 Seed 世代替换旧内容数据库。旧世代归档不会作为 5.1.0 导入格式；个人最新数据库以 Personal Mirror 同步为准。', [
     { label: '取消启动', value: 'cancel', primary: false },
-    { label: '替换并进入 4.7.3', value: 'replace', primary: true },
+    { label: '替换并进入 5.1.0', value: 'replace', primary: true },
   ]);
-  if (confirm !== 'replace') throw new Error('已取消 4.7.3 内容世代替换。旧数据保持不变。');
+  if (confirm !== 'replace') throw new Error('已取消 5.1.0 内容世代替换。旧数据保持不变。');
   await replaceLegacyGenerationWithSeed();
 }
 

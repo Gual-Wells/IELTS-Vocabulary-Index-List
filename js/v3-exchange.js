@@ -5,6 +5,7 @@ import {
   toTraditional,
 } from './v3-model.js';
 import { APP_VERSION } from './v5-version.js';
+import { VIX_EXCHANGE_CAPABILITIES, VIX_EXCHANGE_PROTOCOL } from './vix-protocols.js';
 
 export const VIX_FORMAT = 'vix-json';
 export const VIX_VERSION = 2;
@@ -50,7 +51,7 @@ function packageEntry(item, index) {
   const normalizedText = normalizeEnglish(text);
   if (!normalizedText) throw new Error(`内容 JSON 第 ${index + 1} 个词条缺少英文`);
   const domainKey = normalizeDisplayText(item?.domainKey || item?.domainId || '');
-  const glossHant = normalizeGlossHant(item?.glossHant || (item?.glossHans ? toTraditional(item.glossHans) : '') || item?.gloss || '');
+  const gloss = normalizeGlossHant(item?.gloss || item?.glossHant || (item?.glossHans ? toTraditional(item.glossHans) : ''));
   return {
     key: normalizeDisplayText(item?.key || item?.id || entryPackageKey(domainKey || 'target', normalizedText)),
     domainKey,
@@ -59,10 +60,7 @@ function packageEntry(item, index) {
     kind: ['word', 'phrase', 'content'].includes(item?.kind) ? item.kind : (isPhraseText(text) ? 'phrase' : 'word'),
     contentType: normalizeDisplayText(item?.contentType || ''),
     partsOfSpeech: array(item?.partsOfSpeech || item?.pos).flatMap((value) => String(value || '').split(/[;,/]+/)).map(normalizeDisplayText).filter(Boolean),
-    glossHant,
-    glossHans: normalizeDisplayText(item?.glossHans || ''),
-    glossSource: normalizeDisplayText(item?.glossSource || array(item?.sourceRefs).join(', ') || ''),
-    sourceRefs: array(item?.sourceRefs).map(normalizeDisplayText).filter(Boolean),
+    gloss,
   };
 }
 
@@ -71,13 +69,15 @@ function packageMembership(item) {
     entryKey: normalizeDisplayText(item?.entryKey || item?.entryId || ''),
     entryText: normalizeDisplayText(item?.entryText || item?.text || ''),
     collectionKey: normalizeDisplayText(item?.collectionKey || item?.collectionId || ''),
-    sourceLabel: normalizeDisplayText(item?.sourceLabel || ''),
-    sourceOrder: Number.isFinite(item?.sourceOrder) ? item.sourceOrder : 0,
+    legacyPartsOfSpeech: normalizeDisplayText(item?.sourceLabel || ''),
+    order: Number.isFinite(item?.order) ? item.order : (Number.isFinite(item?.sourceOrder) ? item.sourceOrder : 0),
   };
 }
 
 export function isVixContentPackage(value) {
-  return object(value).format === VIX_FORMAT && Number(value.version) === VIX_VERSION;
+  const raw = object(value);
+  const protocolCompatible = !raw.protocol || raw.protocol === VIX_EXCHANGE_PROTOCOL;
+  return protocolCompatible && raw.format === VIX_FORMAT && Number(raw.version) === VIX_VERSION;
 }
 
 export function normalizeVixPackage(value) {
@@ -91,17 +91,25 @@ export function normalizeVixPackage(value) {
   const collections = array(data.collections).map(packageCollection);
   const entries = array(data.entries).map(packageEntry);
   const memberships = array(data.memberships).map(packageMembership);
-  const sources = array(raw.sources).map((item) => ({
-    key: normalizeDisplayText(item?.key || item?.id || ''),
-    title: normalizeDisplayText(item?.title || ''),
-    publisher: normalizeDisplayText(item?.publisher || ''),
-    url: normalizeDisplayText(item?.url || ''),
-    retrievedAt: normalizeDisplayText(item?.retrievedAt || ''),
-  })).filter((item) => item.key && item.title);
+  for (const membership of memberships) {
+    if (membership.legacyPartsOfSpeech) {
+      const entry = entries.find((item) => item.key === membership.entryKey)
+        || entries.find((item) => item.normalizedText === normalizeEnglish(membership.entryText));
+      if (entry) {
+        entry.partsOfSpeech = [...new Set([...entry.partsOfSpeech,
+          ...membership.legacyPartsOfSpeech.split(/[;,/]+/).map(normalizeDisplayText).filter(Boolean),
+        ])].slice(0, 16);
+      }
+    }
+    delete membership.legacyPartsOfSpeech;
+  }
   if (scope !== 'global' && !domains.length && !target.domainKey && !target.domainId) {
     throw new Error('局部内容 JSON 缺少词域信息');
   }
   return {
+    protocol: VIX_EXCHANGE_PROTOCOL,
+    kind: 'increment',
+    capabilities: VIX_EXCHANGE_CAPABILITIES,
     format: VIX_FORMAT,
     version: VIX_VERSION,
     exportedAt: normalizeDisplayText(raw.exportedAt || ''),
@@ -112,7 +120,6 @@ export function normalizeVixPackage(value) {
     },
     mode,
     data: { domains, collections, entries, memberships },
-    sources,
   };
 }
 
@@ -167,6 +174,9 @@ export function createVixPackage(input, selection = { scope: 'global' }) {
   const entryKeys = new Map(entries.map((item) => [item.id, entryPackageKey(item.domainId, item.normalizedText)]));
   const includedCollectionIds = new Set(collections.filter((item) => item.type === 'normal').map((item) => item.id));
   return {
+    protocol: VIX_EXCHANGE_PROTOCOL,
+    kind: 'increment',
+    capabilities: VIX_EXCHANGE_CAPABILITIES,
     format: VIX_FORMAT,
     version: VIX_VERSION,
     exportedAt: new Date().toISOString(),
@@ -181,15 +191,13 @@ export function createVixPackage(input, selection = { scope: 'global' }) {
       entries: entries.map((item) => ({
         key: entryKeys.get(item.id), domainKey: item.domainId, text: item.text,
         kind: item.kind, contentType: item.contentType || '', partsOfSpeech: item.partsOfSpeech || [],
-        glossHans: item.glossHans || '', glossHant: item.glossHant, glossSource: item.glossSource,
-        sourceRefs: item.glossSource ? item.glossSource.split(/\s*,\s*/).filter(Boolean) : [],
+        gloss: item.gloss || '',
       })),
       memberships: memberships.filter((item) => includedCollectionIds.has(item.collectionId)).map((item) => ({
         entryKey: entryKeys.get(item.entryId), collectionKey: item.collectionId,
-        sourceLabel: item.sourceLabel, sourceOrder: item.sourceOrder,
+        order: item.order,
       })),
     },
-    sources: array(backup.settings?.contentSources),
     context,
   };
 }
@@ -222,7 +230,7 @@ function summaryBetween(before, after, conflicts, skippedDuplicates = 0, members
   const beforeMemberships = new Set(before.memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
   const afterMemberships = new Set(after.memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
   let updatedGlosses = 0;
-  for (const [id, item] of aEntries) if (bEntries.has(id) && (bEntries.get(id).glossHant !== item.glossHant || bEntries.get(id).glossSource !== item.glossSource)) updatedGlosses += 1;
+  for (const [id, item] of aEntries) if (bEntries.has(id) && bEntries.get(id).gloss !== item.gloss) updatedGlosses += 1;
   return {
     addedDomains: [...aDomains.keys()].filter((id) => !bDomains.has(id)).length,
     removedDomains: [...bDomains.keys()].filter((id) => !aDomains.has(id)).length,
@@ -272,8 +280,6 @@ function normalizePersonalReferences(backup) {
   const calendarMonths = Object.fromEntries(Object.entries(object(backup.settings?.calendarMonths))
     .filter(([key]) => validCollectionIds.has(key.slice(0, key.lastIndexOf(':')))));
   backup.settings = { ...backup.settings, lastPositions, viewModes, calendarMonths };
-  // Remove source records no longer referenced only when they are malformed; valid catalog records remain useful audit metadata.
-  backup.settings.contentSources = array(backup.settings.contentSources).filter((item) => item?.key && item?.title);
   return backup;
 }
 
@@ -448,18 +454,17 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     const identity = contentIdentity(domainId, incoming.normalizedText);
     let entry = entryByIdentity.get(identity);
     if (!entry) {
-      entry = createEntry({ id: stableId('entry', `${domainId}:${incoming.normalizedText}`), domainId, text: incoming.text, kind: incoming.kind, contentType: incoming.contentType, partsOfSpeech: incoming.partsOfSpeech, glossHans: incoming.glossHans, glossHant: incoming.glossHant, glossSource: incoming.glossSource, timestamp });
+      entry = createEntry({ id: stableId('entry', `${domainId}:${incoming.normalizedText}`), domainId, text: incoming.text, kind: incoming.kind, contentType: incoming.contentType, partsOfSpeech: incoming.partsOfSpeech, gloss: incoming.gloss, timestamp });
       entries.push(entry);
       entryIndexById.set(entry.id, entries.length - 1);
       entryByIdentity.set(identity, entry);
     } else {
-      let glossHant = entry.glossHant;
-      let glossSource = entry.glossSource;
-      if (incoming.glossHant && incoming.glossHant !== entry.glossHant) {
-        if (entry.glossHant) conflicts.push({ type: 'gloss', text: entry.text, current: entry.glossHant, incoming: incoming.glossHant });
-        if (!entry.glossHant || conflictPolicy === 'import') { glossHant = incoming.glossHant; glossSource = incoming.glossSource || entry.glossSource; }
+      let gloss = entry.gloss;
+      if (incoming.gloss && incoming.gloss !== entry.gloss) {
+        if (entry.gloss) conflicts.push({ type: 'gloss', text: entry.text, current: entry.gloss, incoming: incoming.gloss });
+        if (!entry.gloss || conflictPolicy === 'import') gloss = incoming.gloss;
       }
-      const updated = createEntry({ ...entry, text: incoming.text || entry.text, kind: incoming.kind || entry.kind, contentType: incoming.contentType || entry.contentType, partsOfSpeech: incoming.partsOfSpeech?.length ? incoming.partsOfSpeech : entry.partsOfSpeech, glossHans: incoming.glossHans || entry.glossHans, glossHant, glossSource, updatedAt: timestamp, timestamp });
+      const updated = createEntry({ ...entry, text: incoming.text || entry.text, kind: incoming.kind || entry.kind, contentType: incoming.contentType || entry.contentType, partsOfSpeech: incoming.partsOfSpeech?.length ? incoming.partsOfSpeech : entry.partsOfSpeech, gloss, updatedAt: timestamp, timestamp });
       entries[entryIndexById.get(entry.id)] = updated;
       entry = updated;
       entryByIdentity.set(identity, updated);
@@ -474,12 +479,12 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
   }
 
   const membershipSet = new Set(memberships.map((item) => `${item.entryId}\u0000${item.collectionId}`));
-  const addMembership = (entry, collectionId, sourceLabel = '', sourceOrder = 0) => {
+  const addMembership = (entry, collectionId, order = 0) => {
     const collection = collections.find((item) => item.id === collectionId);
     if (!entry || !collection || collection.type !== 'normal') return;
     const key = `${entry.id}\u0000${collectionId}`;
     if (membershipSet.has(key)) { skippedDuplicates += 1; return; }
-    memberships.push(createMembership({ entryId: entry.id, collectionId, sourceLabel, sourceOrder, timestamp }));
+    memberships.push(createMembership({ entryId: entry.id, collectionId, order, timestamp }));
     membershipSet.add(key);
   };
 
@@ -556,14 +561,14 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
       });
       continue;
     }
-    addMembership(entry, collectionId, incoming.sourceLabel, incoming.sourceOrder);
+    addMembership(entry, collectionId, incoming.order);
   }
 
   if (target.scope === 'collection' && targetCollection?.type === 'normal') {
     let order = 0;
     for (const incoming of pkg.data.entries) {
       const entry = entryByPackageKey.get(incoming.key);
-      if (entry) addMembership(entry, targetCollection.id, incoming.glossSource, order++);
+      if (entry) addMembership(entry, targetCollection.id, order++);
     }
   }
 
@@ -580,7 +585,7 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
         hidden = createCollection({ id: hiddenId, domainId, name: '导入来源', label: '', type: 'normal', order: 1000, hidden: true, timestamp });
         collections.push(hidden);
       }
-      missing.forEach((entry, index) => addMembership(entry, hidden.id, 'VIX', index));
+      missing.forEach((entry, index) => addMembership(entry, hidden.id, index));
     }
   }
 
@@ -592,8 +597,6 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     memberships = memberships.filter((item) => validEntryIds.has(item.entryId));
   }
 
-  const sourceMap = new Map(array(draft.settings?.contentSources).map((item) => [item.key, item]));
-  for (const source of pkg.sources) sourceMap.set(source.key, source);
   const nextRaw = normalizePersonalReferences({
     ...draft,
     appVersion: APP_VERSION,
@@ -602,11 +605,9 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     collections,
     entries,
     memberships,
-    settings: { ...draft.settings, contentSources: [...sourceMap.values()] },
+    settings: { ...draft.settings },
   });
   const nextBackup = canonicalizeBackup(nextRaw);
-  // canonicalizeBackup intentionally keeps a compact settings whitelist; restore the validated source catalog.
-  nextBackup.settings.contentSources = [...sourceMap.values()];
   const summary = summaryBetween(before, nextBackup, conflicts, skippedDuplicates, membershipIssues);
   return { package: pkg, target, mismatch, conflicts, membershipIssues, conflictPolicy, summary, nextBackup };
 }

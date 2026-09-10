@@ -1,6 +1,5 @@
 import { canonicalizeBackup, SCHEMA_VERSION, validateBackup } from './v3-model.js';
 import { APP_VERSION } from './v5-version.js';
-import { reconcileSeedUpgrade } from './v5-seed-migration.js';
 
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
@@ -454,51 +453,54 @@ async function ensureBuiltInSeedRevision(db) {
   const applied = Number(await getSetting('builtInSeedRevision', 0));
   if (applied >= BUILTIN_SEED_REVISION) return { builtInMerged: false };
   return enqueueWrite(async () => {
-    const current = await readCurrentSnapshot(db);
-    if (!current) throw new Error('Cannot reconcile Seed5 because the current device snapshot is unavailable');
-    const [base, seed, fieldBaseline] = await Promise.all([
-      loadSeedMigrationBase(), loadCanonicalSeed(), loadSeedFieldBaseline(applied),
-    ]);
-    const { backup, report } = reconcileSeedUpgrade(base, current, seed, {
-      toRevision: BUILTIN_SEED_REVISION,
-      appliedAt: new Date().toISOString(),
-      fieldBaseline,
+    // Seed generations are complete and independent. A generation boundary is
+    // a replacement, never a three-way field migration. Personal Mirror is the
+    // pre-publication basis for any user data that belongs in the next Seed.
+    const seed = await loadCanonicalSeed();
+    const revision = Date.now();
+    const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
+    const tx = db.transaction(writeStores, 'readwrite');
+    const completion = transactionPromise(tx);
+    putBackupIntoTransaction(tx, seed, {
+      dataRevision: revision,
+      builtInSeedRevision: BUILTIN_SEED_REVISION,
     });
-    const backupId = await persistSeedMigrationBackup(current, applied, BUILTIN_SEED_REVISION);
-    const revision = Math.max(Date.now(), Number(current.settings?.dataRevision || 0) + 1);
-    try {
-      const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
-      const tx = db.transaction(writeStores, 'readwrite');
-      const completion = transactionPromise(tx);
-      putBackupIntoTransaction(tx, backup, {
-        dataRevision: revision,
-        historyPointer: 0,
-        historySequence: 0,
-        builtInSeedRevision: BUILTIN_SEED_REVISION,
-        seedMigrationBackupId: backupId,
-        seedMigrationReport: report,
-      });
-      tx.objectStore(STORES.history).clear();
-      await completion;
-    } catch (error) {
-      await markSeedMigrationBackup(backupId, 'rolled-back', error?.message || error).catch(() => undefined);
-      throw error;
-    }
-    await markSeedMigrationBackup(backupId, 'committed').catch(() => undefined);
-    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION, seedMigrationReport: report };
+    tx.objectStore(STORES.history).clear();
+    await completion;
+    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION, generationReplaced: true };
+  });
+}
+
+async function retireLegacyRuntimeData(db) {
+  if (await getSetting('retiredRuntimeFeaturesV51', false)) return false;
+  return enqueueWrite(async () => {
+    const stores = [STORES.settings, STORES.history, STORES.annotations]
+      .filter((name) => db.objectStoreNames.contains(name));
+    const tx = db.transaction(stores, 'readwrite');
+    const completion = transactionPromise(tx);
+    tx.objectStore(STORES.history).clear();
+    tx.objectStore(STORES.annotations).clear();
+    const settings = tx.objectStore(STORES.settings);
+    for (const key of ['historyPointer', 'historySequence', 'contentSources', 'annotationTask', 'verification']) settings.delete(key);
+    settings.put({ key: 'retiredRuntimeFeaturesV51', value: true });
+    await completion;
+    return true;
   });
 }
 
 export async function initializeDatabase({ onProgress = () => {} } = {}) {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
-  if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+  if (Number(existing) === SCHEMA_VERSION) {
+    const result = { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+    await retireLegacyRuntimeData(db);
+    return result;
+  }
   if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
 
-  return enqueueWrite(async () => {
-    const fresh = await importFreshSeed(db, { onProgress });
-    return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
-  });
+  const fresh = await enqueueWrite(() => importFreshSeed(db, { onProgress }));
+  await retireLegacyRuntimeData(db);
+  return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
 }
 
 export async function getGenerationUpgradeStatus() {
@@ -709,7 +711,7 @@ function clone(value) {
   return value == null ? null : structuredClone(value);
 }
 
-export async function commitChanges(changes, { label = '修改', recordHistory = true, expectedRevision = null } = {}) {
+export async function commitChanges(changes, { label = '修改', recordHistory = false, expectedRevision = null } = {}) {
   if (!Array.isArray(changes) || !changes.length) return Number(await getSetting('dataRevision', 0));
   return enqueueWrite(async () => {
     const db = await openDatabase();

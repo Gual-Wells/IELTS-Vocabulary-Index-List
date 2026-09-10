@@ -1,0 +1,32 @@
+{
+  "name": "gual-vocabulary-index",
+  "private": true,
+  "version": "5.1.0",
+  "type": "module",
+  "scripts": {
+    "seed:fetch": "node tools/fetch-seed-5-sources.mjs",
+    "seed:build": "node tools/build-seed-5.mjs && node tools/build-low-level-lexemes.mjs && node tools/build-seed-runtime.mjs && node tools/report-seed.mjs",
+    "seed:finalize-next": "node tools/finalize-next-seed.mjs",
+    "seed:validate-next": "node tools/validate-next-seed.mjs",
+    "build": "node tools/build-dist.mjs",
+    "deploy": "npm run build",
+    "release:manifest": "node tools/build-release-manifest.mjs",
+    "test": "node tests/run-tests.mjs",
+    "test:static": "node tests/static-tests.mjs",
+    "test:stress": "node tests/stress-tests.mjs",
+    "test:all": "npm test && npm run test:static && npm run test:runtime && npm run test:behavior && npm run test:stress && npm run test:integrations && npm run test:providers && npm run test:mirror && npm run test:seed && npm run test:performance && npm run test:layout",
+    "test:providers": "node --test tests/provider-tests.mjs",
+    "test:mirror": "node --test tests/mirror-session-tests.mjs",
+    "test:mirror-performance": "node tests/mirror-performance-tests.mjs",
+    "test:seed": "node --test tests/seed-generation-tests.mjs tests/seed-runtime-tests.mjs",
+    "test:performance": "node tests/performance-tests.mjs",
+    "test:integrations": "node tests/integration-tests.mjs",
+    "test:runtime": "node tests/runtime-symbol-tests.mjs",
+    "test:layout": "node tests/layout-contract-check.mjs",
+    "test:cold-start": "node tests/cold-start-browser.mjs",
+    "test:behavior": "node tests/runtime-behavior-tests.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

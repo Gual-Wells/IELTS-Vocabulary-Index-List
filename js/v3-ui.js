@@ -1,43 +1,42 @@
 import {
-  acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
-  clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
+  acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord, applyVixIncrement,
+  deleteCollection, deleteDomain, deleteEntry,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getRelationComponents, getRelatedEntries, getState,
-  getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
-  refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
+  getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, resetToSeed,
+  refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setSpeechPreferences, setViewMode, subscribe, togglePin,
   deleteMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, selectMirror, setMirrorEnabled,
 } from './v3-store.js';
 import {
-  AiCheckController, checkEntries, createAiCheckBatches, getModelCatalog,
-  getSelectedModel, queryVocabularyEntry, verifyVocabularyEntry, refreshModels, saveModelCatalog, selectModel, suggestEntries, suggestSearchTerms,
+  getModelCatalog, getSelectedModel, queryVocabularyEntry, refreshModels,
+  saveModelCatalog, selectModel, suggestEntries, suggestSearchTerms,
 } from './v3-ai.js';
-import {
-  downloadText, entriesToCsv, readImportFile,
-} from './v3-import.js';
+import { downloadText } from './vix-download.js';
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 import { createProviderSession } from './v3-provider-runtime.js';
-import { renderGroqLookup, renderGroqVerification } from './v3-provider-views.js';
+import { renderGroqLookup } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
-import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
-import {
-  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, deleteTtsSecret, getBridgeConfig,
-  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, requestSpeech, saveGroqSecret, saveMirrorFileRecord, saveTtsSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret, validateTtsSecret,
-} from './v5-bridge.js';
+import { extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
+import { MIRROR_PROTOCOL } from './v5-mirror-runtime.js';
+import { deleteGroqSecret, requestSpeech, saveGroqSecret, validateGroqSecret } from './vix-provider-site.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
+import {
+  disconnectMirrorSite, getMirrorConnection, openMirrorSitePicker, pairMirrorSite,
+  synchronizeAfterMirrorCommit, synchronizePersonalMirror,
+} from './vix-mirror-site.js';
 
 /** @type {Record<string, any>} */
 const elements = Object.fromEntries([
   'boot-screen', 'app', 'back-button', 'home-button', 'page-title', 'page-subtitle', 'search-button', 'settings-button',
   'main-content', 'large-title', 'large-title-eyebrow', 'large-title-heading', 'large-title-subtitle',
-  'home-annotation-banner', 'home-annotation-icon', 'home-annotation-text', 'clear-all-annotations', 'mirror-status-banner', 'mirror-status-text', 'mirror-status-action', 'query-menu', 'relation-target-menu',
-  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'annotation-review-bar', 'letter-nav', 'entry-list',
-  'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'task-capsule', 'task-panel', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
+  'query-menu', 'relation-target-menu',
+  'home-view', 'collection-view', 'collection-toolbar', 'pin-bar', 'letter-nav', 'entry-list',
+  'bottom-toolbar', 'bottom-last-position', 'back-to-top', 'bottom-mode', 'bottom-view-switch', 'bottom-search', 'toast-region', 'update-banner', 'update-now-button', 'update-later-button',
   'app-dialog',
-  'hidden-file-input',
 ].map((id) => [id, document.getElementById(id)]));
 
 let currentCollectionId = '';
@@ -52,14 +51,11 @@ let pendingJumpReason = 'jump';
 let persistentJumpEntryId = '';
 let pinIndex = 0;
 let pinCollectionId = '';
-let activeTask = null;
-let review = { ids: [], index: 0, collectionId: '', viewKind: '' };
 let activeSearchFrame = null;
 let activeConfirmFrame = null;
 let collectionRenderContext = null;
 let scrollPersistenceTimer = 0;
 let suppressScrollPersistenceUntil = 0;
-let taskPanelExpanded = true;
 let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
 let activeSection = 'main';
@@ -81,13 +77,6 @@ let navigationRuntimeId = '';
 let navigationRootToken = '';
 let navigationTraversalInProgress = false;
 let pendingPageSnapshot = null;
-let mirrorBridgeTimer = 0;
-let mirrorInboxTimer = 0;
-let mirrorNotices = [];
-let mirrorRemoteFilesCache = [];
-let mirrorRemoteInstanceId = '';
-let mirrorRemoteCatalogRevision = 0;
-const MIRROR_CONTEXT_SYNC_KEY = 'gualVocabulary.mirrorContextSync';
 let suppressPostRenderSnapshotRestore = false;
 let presentationMutationInProgress = 0;
 let activePageTransition = null;
@@ -384,7 +373,7 @@ function updateVisualViewportVars({ immediate = false } = {}) {
 
 function topChromeBottom({ includeLetterNav = true } = {}) {
   const viewportTop = window.visualViewport?.offsetTop || 0;
-  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner, .home-annotation-banner')]
+  const topSurfaces = [...document.querySelectorAll('.topbar, .update-banner')]
     .filter((node) => !node.classList.contains('hidden'))
     .map((node) => node.getBoundingClientRect())
     .filter((rect) => rect.height > 0 && rect.bottom > viewportTop && rect.top < viewportTop + 320)
@@ -891,7 +880,7 @@ function prepareTargetExpansion(collection, entry, viewKind, reason) {
     clearExpandedRelationsForView(collection.id, viewKind);
     return;
   }
-  if (entry && ['search', 'relation', 'route', 'annotation', 'pin', 'last'].includes(reason)) {
+  if (entry && ['search', 'relation', 'route', 'pin', 'last'].includes(reason)) {
     clearExpandedRelationsForView(collection.id, viewKind);
     expanded.clear();
     if (getViewMode(collection.id) === 'alphabet') expanded.add(letterForEntry(entry));
@@ -1325,20 +1314,6 @@ function relationExpansionKey(collectionId, entryId, viewKind = currentViewKind)
   return `${collectionId}\u0000${viewKind}\u0000${entryId}`;
 }
 
-function annotationRecordForEntry(entry, collection) {
-  const state = getState();
-  if (!entry) return null;
-  const annotation = state.annotationByEntry.get(entry.id);
-  return annotation ? { annotation, sourceEntryId: entry.id } : null;
-}
-
-function reviewDisplayEntryId(entryId, collectionId) {
-  const state = getState();
-  const entry = state.entryById.get(entryId);
-  if (!entry) return '';
-  return getState().visibleEntryIdsByCollection.get(collectionId)?.has(entryId) ? entryId : '';
-}
-
 function entriesForCollectionView(collectionId, viewKind = '') {
   const state = getState();
   const collection = state.collectionById.get(collectionId);
@@ -1349,17 +1324,6 @@ function entriesForCollectionView(collectionId, viewKind = '') {
   const kind = ['word', 'phrase'].includes(viewKind) ? viewKind : (['word', 'phrase'].includes(currentViewKind) ? currentViewKind : 'word');
   return entries.filter((entry) => entry.kind === kind);
 }
-
-function entryIdsForCollectionView(collectionId, viewKind = '') {
-  return entriesForCollectionView(collectionId, viewKind).map((entry) => entry.id);
-}
-
-function annotationCountForCollection(collectionId, viewKind = '') {
-  const state = getState();
-  const visible = new Set(entryIdsForCollectionView(collectionId, viewKind));
-  return state.annotations.filter((item) => visible.has(item.entryId)).length;
-}
-
 
 function expandedLettersFor(collectionId, section = 'main') {
   const key = `${collectionId}:${section}`;
@@ -1381,13 +1345,14 @@ function mergedSourceLabel(entryId) {
     const a = state.collectionById.get(left.collectionId);
     const b = state.collectionById.get(right.collectionId);
     return Number(a?.order || 0) - Number(b?.order || 0)
-      || Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
+      || Number(left.order || 0) - Number(right.order || 0)
       || left.collectionId.localeCompare(right.collectionId);
   });
   const seen = new Set();
   const labels = [];
   for (const membership of memberships) {
-    for (const part of splitSourceLabel(membership.sourceLabel)) {
+    const entry = state.entryById.get(membership.entryId);
+    for (const part of entry?.partsOfSpeech || []) {
       const key = part.toLocaleLowerCase('en');
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1395,12 +1360,6 @@ function mergedSourceLabel(entryId) {
     }
   }
   return labels.join(', ');
-}
-
-function sourceLabelForCollection(entryId, collectionId) {
-  const state = getState();
-  const membership = (state.membershipsByEntry.get(entryId) || []).find((item) => item.collectionId === collectionId);
-  return membership?.sourceLabel || '';
 }
 
 function isChineseQuery(value) {
@@ -1649,32 +1608,26 @@ function openLibraryManager() {
   });
 }
 
-async function exportBackupNow() {
+async function downloadRecoveryPackage(prefix = 'recovery') {
   const backup = await exportFullBackup();
-  downloadText(`vocabulary-index-${APP_VERSION}-${new Date().toISOString().slice(0, 10)}.json`, `${JSON.stringify(backup, null, 2)}\n`);
-  showToast('完整备份已导出');
-}
-
-async function downloadRecoveryBackup(prefix = 'recovery') {
-  const backup = await exportFullBackup();
+  const pkg = createVixPackage(backup, { scope: 'global' });
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
-  downloadText(`vocabulary-index-${prefix}-${APP_VERSION}-${stamp}.json`, `${JSON.stringify(backup, null, 2)}\n`);
-  showToast('完整备份下载已发起');
+  downloadText(`vix-${prefix}-${stamp}.json`, `${JSON.stringify(pkg, null, 2)}\n`);
+  showToast('VIX 恢复文件下载已发起');
 }
 
-function offerOptionalBackup(onContinue, { title = '是否下载完整备份？', description = '本次操作会修改或覆盖数据。是否先下载当前完整备份？' } = {}) {
+function offerOptionalBackup(onContinue, { title = '是否下载 VIX 恢复文件？', description = '本次操作会修改或覆盖内容。是否先按 VIX 协议导出当前内容？' } = {}) {
   const advance = async () => {
-    await cancelActiveTaskForDataChange();
     requestAnimationFrame(() => onContinue());
   };
   openConfirmDialog({
     title,
     description,
-    body: el('p', { className: 'help-text', text: '此选择只决定是否下载备份；无论选择哪一项，操作都会继续。' }),
-    submitText: '下载备份',
+    body: el('p', { className: 'help-text', text: '恢复文件只包含 VIX 内容，不包含 PIN、位置或显示设置；无论选择哪一项，操作都会继续。' }),
+    submitText: '下载 VIX 文件',
     cancelText: '不下载',
     onSubmit: async () => {
-      try { await downloadRecoveryBackup('recovery-before-change'); }
+      try { await downloadRecoveryPackage('recovery-before-change'); }
       catch (error) { displayError(error); }
       finally { await advance(); }
     },
@@ -1725,7 +1678,7 @@ function dataExchangeFilename(scope, domainId = '', collectionId = '') {
   const clean = (value) => String(value || '').replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '') || 'content';
   if (scope === 'domain') return `vix-domain-${clean(state.domainById.get(domainId)?.name || domainId)}.json`;
   if (scope === 'collection') return `vix-collection-${clean(state.collectionById.get(collectionId)?.name || collectionId)}.json`;
-  return `vix-global-${APP_VERSION}.json`;
+  return 'vix-global.json';
 }
 
 function dataExchangeSummary(plan) {
@@ -1787,7 +1740,7 @@ function openDataExchangePreview(file, selection, initialPlan) {
   openDialog({
     title: '导入预检',
     description: selection.mode === 'replace'
-      ? '确认后先选择是否下载当前完整备份，再以单次事务替换所选范围。'
+      ? '确认后可先下载当前 VIX 恢复文件，再以单次事务替换所选范围。'
       : '确认后以单次事务合并所选内容。',
     body,
     submitText: selection.mode === 'replace' && selection.scope === 'global' ? '继续替换全局内容' : '继续导入',
@@ -1808,8 +1761,8 @@ function openDataExchangePreview(file, selection, initialPlan) {
               showToast('数据已变化，已重新生成导入预检');
               return;
             }
-            await cancelActiveTaskForDataChange();
-            await restoreBackup(finalPlan.nextBackup);
+            await applyVixIncrement(finalPlan.package, finalSelection,
+              initialPlan.conflicts?.length ? conflictPolicy.value : 'current', finalPlan.baseRevision);
             goHome();
             showToast('内容 JSON 已替换');
           },
@@ -1822,8 +1775,8 @@ function openDataExchangePreview(file, selection, initialPlan) {
         showToast('数据已变化，已重新生成导入预检');
         return;
       }
-      await cancelActiveTaskForDataChange();
-      await restoreBackup(finalPlan.nextBackup);
+      await applyVixIncrement(finalPlan.package, finalSelection,
+        initialPlan.conflicts?.length ? conflictPolicy.value : 'current', finalPlan.baseRevision);
       goHome();
       showToast('内容 JSON 已导入');
     },
@@ -1835,8 +1788,6 @@ function openDataExchangeDialog() {
   const operation = el('select', {}, [
     el('option', { value: 'import-content', text: '导入内容' }),
     el('option', { value: 'export-content', text: '导出内容' }),
-    el('option', { value: 'export-backup', text: '导出完整备份' }),
-    el('option', { value: 'restore-backup', text: '恢复完整备份' }),
     el('option', { value: 'reset-seed', text: '还原到 Seed' }),
   ]);
   const scope = el('select', {}, [
@@ -1883,12 +1834,10 @@ function openDataExchangeDialog() {
     domainField.classList.toggle('hidden', !contentOperation || scope.value === 'global');
     collectionField.classList.toggle('hidden', !contentOperation || scope.value !== 'collection');
     modeField.classList.toggle('hidden', !importing);
-    fileField.classList.toggle('hidden', !importing && operation.value !== 'restore-backup');
-    if (operation.value === 'export-backup') status.textContent = '包含内容、PIN、位置、标注和设置。';
-    else if (operation.value === 'restore-backup') status.textContent = '恢复会整体替换当前应用状态。';
-    else if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置、标注与显示设置；执行前可选择是否下载完整备份。';
+    fileField.classList.toggle('hidden', !importing);
+    if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置与显示设置；执行前可选择是否下载 VIX 恢复文件。';
     else if (operation.value === 'export-content') status.textContent = '内容 JSON 不包含 PIN、位置、标注和应用设置。';
-    else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并先生成恢复备份。';
+    else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并可先导出 VIX 恢复文件。';
     fillDomains();
   };
   operation.addEventListener('change', refresh);
@@ -1902,7 +1851,6 @@ function openDataExchangeDialog() {
     body: [el('div', { className: 'data-exchange-form' }, [field('功能', operation), scopeField, domainField, collectionField, modeField, fileField, status])],
     submitText: '执行',
     onSubmit: async () => {
-      if (operation.value === 'export-backup') { await exportBackupNow(); return; }
       if (operation.value === 'reset-seed') {
         closeDialog({ all: true });
         requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
@@ -1914,23 +1862,7 @@ function openDataExchangeDialog() {
             goHome();
             showToast('已还原到当前版本 Seed');
           },
-        }), { title: '还原前是否下载备份？' }));
-        return;
-      }
-      if (operation.value === 'restore-backup') {
-        const parsed = await readImportFile(file.files?.[0]);
-        if (parsed.kind !== 'backup') throw new Error('该文件不是完整备份');
-        closeDialog({ all: true });
-        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
-          title: '确认恢复完整备份',
-          description: '确认后将整体替换本机应用状态。',
-          submitText: '确认恢复',
-          onSubmit: async () => {
-            await restoreBackup(parsed.backup);
-            goHome();
-            showToast('完整备份已恢复');
-          },
-        }), { title: '恢复前是否下载当前备份？' }));
+        }), { title: '还原前是否下载 VIX 恢复文件？' }));
         return;
       }
       const selection = {
@@ -1954,149 +1886,12 @@ function openDataExchangeDialog() {
   });
 }
 
-async function performUndo() {
-  try { await cancelActiveTaskForDataChange(); if (!(await undo())) showToast('没有可撤销操作'); }
-  catch (error) { displayError(error); }
-}
-
-async function performRedo() {
-  try { await cancelActiveTaskForDataChange(); if (!(await redo())) showToast('没有可重做操作'); }
-  catch (error) { displayError(error); }
-}
-
 function renderLargeTitle({ eyebrow = '', title = '', subtitle = '' } = {}) {
   elements['large-title-eyebrow'].textContent = eyebrow;
   elements['large-title-eyebrow'].classList.toggle('hidden', !eyebrow);
   elements['large-title-heading'].textContent = title;
   elements['large-title-subtitle'].textContent = subtitle;
   elements['large-title-subtitle'].classList.toggle('hidden', !subtitle);
-}
-
-async function clearAllAnnotationsFromHome() {
-  await cancelActiveTaskForDataChange();
-  await clearAllAnnotations();
-  showToast('全部标注已撤销');
-}
-
-function renderHomeAnnotationBanner() {
-  const state = getState();
-  const total = state.annotations.filter((item) => state.effectiveEntryIds.has(item.entryId)).length;
-  if (!total || currentCollectionId) {
-    elements['home-annotation-banner'].classList.add('hidden');
-    updateOverlayLayout();
-    return;
-  }
-  elements['home-annotation-icon'].replaceChildren(svgIcon('warning'));
-  elements['home-annotation-text'].textContent = `${total.toLocaleString()} 条待处理标注`;
-  elements['clear-all-annotations'].replaceChildren(svgIcon('clear'), el('span', { text: '全部撤销' }));
-  elements['home-annotation-banner'].classList.remove('hidden');
-  updateOverlayLayout();
-}
-
-function renderMirrorStatusBanner() {
-  const banner = elements['mirror-status-banner'];
-  if (!banner) return;
-  if (!mirrorNotices.length) {
-    banner.classList.add('hidden');
-    return;
-  }
-  const notice = mirrorNotices[0];
-  const label = notice.materialLabel || notice.runId || '未命名材料';
-  elements['mirror-status-text'].textContent = `新 Mirror 文件 · ${label}`;
-  const action = elements['mirror-status-action'];
-  action.textContent = mirrorNotices.length > 1 ? `知道了 · 还有 ${mirrorNotices.length - 1} 个` : '知道了';
-  action.disabled = false;
-  action.onclick = async () => {
-    const dismissed = notice;
-    mirrorNotices = mirrorNotices.filter((item) => item.runId !== dismissed.runId);
-    renderMirrorStatusBanner();
-    try {
-      await acknowledgeMirrorRun(dismissed.runId);
-    } catch (error) {
-      if (!mirrorNotices.some((item) => item.runId === dismissed.runId)) mirrorNotices.unshift(dismissed);
-      renderMirrorStatusBanner();
-      displayError(error);
-    }
-  };
-  banner.onclick = (event) => {
-    if (event.target instanceof Element && event.target.closest('button')) return;
-    action.click();
-  };
-  banner.dataset.stack = String(Math.min(3, mirrorNotices.length));
-  banner.classList.remove('hidden');
-}
-
-async function synchronizeMirrorContext({ notify = false, config = null, force = false } = {}) {
-  const canUpload = config ? Boolean(config.url && config.deviceToken) : bridgeConfigured();
-  const selected = config || getBridgeConfig();
-  const state = getState();
-  const fingerprint = `${APP_VERSION}\u0000${state.revision}\u0000${String(selected.url || '').replace(/\/+$/, '')}`;
-  if (canUpload && !notify && !force && localStorage.getItem(MIRROR_CONTEXT_SYNC_KEY) === fingerprint) return null;
-  const context = await buildMirrorContext(state);
-  if (canUpload) {
-    await uploadMirrorContext(context, config ? { config } : {});
-    localStorage.setItem(MIRROR_CONTEXT_SYNC_KEY, fingerprint);
-  }
-  if (notify) showToast(canUpload ? 'Mirror Context 已同步' : 'Mirror Context 已生成');
-  return context;
-}
-
-async function receiveMirrorInbox({ notify = false } = {}) {
-  if (!bridgeConfigured()) return [];
-  const payload = await getMirrorInbox();
-  const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-  if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) mirrorRemoteFilesCache = [];
-  mirrorRemoteInstanceId = String(payload?.instanceId || mirrorRemoteInstanceId || '');
-  mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || mirrorRemoteCatalogRevision || 0);
-  const previousIds = new Set(mirrorNotices.map((item) => item.runId));
-  mirrorNotices = runs.filter((run) => run?.runId);
-  const cachedByRun = new Map(mirrorRemoteFilesCache.map((item) => [item.runId, item]));
-  for (const run of mirrorNotices) cachedByRun.set(run.runId, { ...cachedByRun.get(run.runId), ...run });
-  mirrorRemoteFilesCache = [...cachedByRun.values()];
-  cacheMirrorFileCatalog({
-    instanceId: mirrorRemoteInstanceId,
-    catalogRevision: mirrorRemoteCatalogRevision,
-    files: mirrorRemoteFilesCache,
-  });
-  renderMirrorStatusBanner();
-  if (notify && mirrorNotices.some((item) => !previousIds.has(item.runId))) showToast('收到新的 Mirror 文件');
-  return mirrorNotices;
-}
-
-function applyMirrorRemoteCatalog(payload) {
-  if (payload?.instanceId && mirrorRemoteInstanceId && payload.instanceId !== mirrorRemoteInstanceId) {
-    mirrorRemoteFilesCache = [];
-  }
-  mirrorRemoteInstanceId = String(payload?.instanceId || '');
-  mirrorRemoteCatalogRevision = Number(payload?.catalogRevision || 0);
-  mirrorRemoteFilesCache = Array.isArray(payload?.files) ? payload.files : [];
-  return mirrorRemoteFilesCache;
-}
-
-async function warmMirrorRemoteCatalog() {
-  if (!bridgeConfigured()) return [];
-  try {
-    return applyMirrorRemoteCatalog(await listMirrorFiles());
-  } catch {
-    return mirrorRemoteFilesCache;
-  }
-}
-
-function scheduleMirrorContextSync({ notifyFailure = false } = {}) {
-  if (!bridgeConfigured()) return;
-  clearTimeout(mirrorBridgeTimer);
-  mirrorBridgeTimer = window.setTimeout(() => synchronizeMirrorContext().catch((error) => {
-    if (notifyFailure) displayError(error);
-  }), 1200);
-}
-
-function scheduleMirrorInboxPoll(delay = 45000) {
-  clearTimeout(mirrorInboxTimer);
-  if (!bridgeConfigured()) return;
-  mirrorInboxTimer = window.setTimeout(async () => {
-    try { await receiveMirrorInbox({ notify: true }); } catch {}
-    finally { if (document.visibilityState === 'visible') scheduleMirrorInboxPoll(); }
-  }, delay);
 }
 
 function mirrorCandidateLetter(candidate) {
@@ -2144,7 +1939,7 @@ function syncMirrorReviewChecks(root) {
   }
 }
 
-function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
+function openMirrorCandidateReview(prepared) {
   const existingMatches = (prepared.existingMatches || []).filter((item) => item.valid);
   const candidates = prepared.candidates.filter((item) => item.valid);
   const root = el('div', { className: 'mirror-review' });
@@ -2196,8 +1991,8 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
         input,
         el('span', { className: 'mirror-review-copy' }, [
           el('strong', { text: match.entryText || match.lemma || match.surfaceForm }),
-          match.glossHant || match.glossHans ? el('span', { className: 'mirror-review-gloss', text: match.glossHant || match.glossHans }) : null,
-          el('span', { className: 'mirror-review-meta', text: [match.surfaceForm && match.surfaceForm !== match.entryText ? match.surfaceForm : '', mirrorImportanceLabel(match.importance), match.glossHant || match.glossHans ? '释义修复' : '', match.relationNoise ? '低级组件' : ''].filter(Boolean).join(' · ') }),
+          match.gloss ? el('span', { className: 'mirror-review-gloss', text: match.gloss }) : null,
+          el('span', { className: 'mirror-review-meta', text: [match.surfaceForm && match.surfaceForm !== match.entryText ? match.surfaceForm : '', mirrorImportanceLabel(match.importance), match.gloss ? '释义修复' : '', match.relationNoise ? '低级组件' : ''].filter(Boolean).join(' · ') }),
           evidence ? el('span', { className: 'mirror-review-evidence', text: evidence }) : null,
         ]),
         el('span', { className: 'mirror-class-badge', text: mirrorClassLabel(match.mirrorClass) }),
@@ -2240,7 +2035,7 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
         input,
         el('span', { className: 'mirror-review-copy' }, [
           el('strong', { text: candidate.text }),
-          candidate.glossHant || candidate.glossHans ? el('span', { className: 'mirror-review-gloss', text: candidate.glossHant || candidate.glossHans }) : null,
+          candidate.gloss ? el('span', { className: 'mirror-review-gloss', text: candidate.gloss }) : null,
           el('span', { className: 'mirror-review-meta', text: [mirrorImportanceLabel(candidate.importance), collections].filter(Boolean).join(' · ') }),
           el('span', { className: 'mirror-review-evidence', text: mirrorEvidenceText(candidate.evidence) }),
         ]),
@@ -2292,248 +2087,29 @@ function openMirrorCandidateReview(prepared, { bridgeRun = false } = {}) {
         entryIds: [...selectedExisting.map((item) => item.entryId), ...candidateImports.map((item) => item.entryId)],
       });
       await installMirrorCurrent(mirrorRecord);
-      if (bridgeRun) {
-        await saveMirrorFileRecord(prepared.runId, mirrorRecord);
-        await acknowledgeMirrorRun(prepared.runId);
-        mirrorRemoteFilesCache = mirrorRemoteFilesCache.map((item) => item.runId === prepared.runId
-          ? { ...item, reviewed: true, isNew: false, acknowledgedAt: new Date().toISOString() }
-          : item);
-        cacheMirrorFileCatalog({
-          instanceId: mirrorRemoteInstanceId,
-          catalogRevision: mirrorRemoteCatalogRevision,
-          files: mirrorRemoteFilesCache,
-        });
+      if (prepared.siteNodeId && prepared.siteDocument) {
+        const updatedDocument = {
+          ...prepared.siteDocument,
+          processing: {
+            status: 'committed',
+            committedAt: new Date().toISOString(),
+            selectedExistingEntryIds: selectedExisting.map((item) => item.entryId),
+            selectedCandidateIds: [...selectedCandidateIds],
+            entryIdByCandidateId: imported.entryIdByCandidateId,
+          },
+        };
+        try {
+          await synchronizeAfterMirrorCommit({ nodeId: prepared.siteNodeId, document: updatedDocument });
+        } catch {
+          showToast('VIX 已提交；Personal Mirror 尚未同步，可在设置中重试');
+        }
+      } else if (getMirrorConnection().paired) {
+        try { await synchronizePersonalMirror({ reason: 'mirror-layer2-commit' }); }
+        catch { showToast('VIX 已提交；Personal Mirror 尚未同步，可在设置中重试'); }
       }
-      mirrorNotices = mirrorNotices.filter((item) => item.runId !== prepared.runId);
-      renderMirrorStatusBanner();
       showToast('Mirror 已保存 · ' + selectedExisting.length + ' 条已有 · ' + imported.created + ' 条新增');
     },
   });
-}
-
-function mirrorRecordClassCounts(record) {
-  const counts = { vocabulary: 0, phrase: 0, usage: 0 };
-  for (const item of [...(record.existingMatches || []), ...(record.candidateImports || [])]) {
-    const key = ['vocabulary', 'phrase', 'usage'].includes(item.mirrorClass) ? item.mirrorClass : 'vocabulary';
-    counts[key] += 1;
-  }
-  if (!Object.values(counts).some(Boolean)) counts.vocabulary = record.entryIds?.length || 0;
-  return counts;
-}
-
-function mirrorReadOnlyLayer(title, subtitle, items) {
-  const section = el('section', { className: 'mirror-review-layer mirror-record-layer' }, [
-    el('header', { className: 'mirror-review-layer-heading' }, [
-      el('span', { className: 'mirror-layer-mark', text: String(items.length) }),
-      el('span', {}, [el('strong', { text: title }), el('small', { text: subtitle })]),
-      el('span', { className: 'mirror-review-count', text: String(items.length) }),
-    ]),
-  ]);
-  if (!items.length) {
-    section.append(el('p', { className: 'mirror-review-empty', text: '无' }));
-    return section;
-  }
-  for (const item of items) {
-    section.append(el('div', { className: 'mirror-review-row mirror-record-row' }, [
-      el('span', { className: 'mirror-layer-mark', text: mirrorClassLabel(item.mirrorClass).slice(0, 1) }),
-      el('span', { className: 'mirror-review-copy' }, [
-        el('strong', { text: item.entryText || item.text || item.lemma || item.surfaceForm }),
-        el('span', { className: 'mirror-review-meta', text: [item.surfaceForm && item.surfaceForm !== item.entryText ? item.surfaceForm : '', mirrorImportanceLabel(item.importance)].filter(Boolean).join(' · ') }),
-        mirrorEvidenceText(item.evidence) ? el('span', { className: 'mirror-review-evidence', text: mirrorEvidenceText(item.evidence) }) : null,
-      ]),
-      el('span', { className: 'mirror-class-badge', text: mirrorClassLabel(item.mirrorClass) }),
-    ]));
-  }
-  return section;
-}
-
-function openMirrorRecordDetail(record) {
-  const counts = mirrorRecordClassCounts(record);
-  openDialog({
-    title: record.material?.label || record.materialLabel || 'Mirror 材料',
-    description: counts.vocabulary + ' 词汇 · ' + counts.phrase + ' 短语 · ' + counts.usage + ' 用法',
-    body: [
-      mirrorReadOnlyLayer('已有 VIX 词汇', '来自材料的现有匹配', record.existingMatches || []),
-      mirrorReadOnlyLayer('VIX 外新词', '审核后已写入词库的候选', record.candidateImports || []),
-    ],
-    variant: 'management',
-    showCancel: false,
-  });
-}
-
-function localMirrorForRun(runId, snapshot = getMirrorState()) {
-  return (snapshot.library || []).find((item) => {
-    const recordRunId = item.record?.runId || String(item.record?.mirrorId || '').replace(/^mirror_/, '');
-    return recordRunId === runId;
-  }) || null;
-}
-
-async function openMirrorDialog() {
-  const fileHost = el('div', { className: 'mirror-library', 'aria-live': 'polite' });
-  const searchFiles = el('input', {
-    type: 'search',
-    className: 'mirror-explorer-search',
-    placeholder: '搜索 Bridge 文件',
-    autocomplete: 'off',
-    spellcheck: false,
-  });
-  const explorerToolbar = el('div', { className: 'mirror-explorer-toolbar' }, [
-    el('div', { className: 'mirror-explorer-path', 'aria-label': '当前位置' }, [
-      el('span', { text: 'Bridge' }), el('span', { text: '›' }), el('strong', { text: 'Mirror' }),
-    ]),
-    searchFiles,
-  ]);
-  const explorerHeading = el('div', { className: 'mirror-explorer-heading', 'aria-hidden': 'true' }, [
-    el('span', { text: '名称' }), el('span', { text: '状态与操作' }),
-  ]);
-  let requestSequence = 0;
-  let disposed = false;
-
-  const immediateFiles = () => [...mirrorRemoteFilesCache];
-
-  const selectFile = async (file, control) => {
-    control.disabled = true;
-    const oldText = control.textContent;
-    control.textContent = '正在选择…';
-    try {
-      const local = localMirrorForRun(file.runId);
-      if (local) {
-        await selectMirror(local.record.mirrorId);
-        renderFiles(immediateFiles());
-        showToast('已选择 Mirror 文件');
-        return;
-      }
-      const payload = await getMirrorFile(file.runId);
-      if (payload?.record) {
-        try {
-          await installMirrorCurrent(payload.record);
-          await acknowledgeMirrorRun(file.runId);
-          mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
-          mirrorRemoteFilesCache = mirrorRemoteFilesCache.map((item) => item.runId === file.runId ? { ...item, reviewed: true, isNew: false } : item);
-          renderMirrorStatusBanner();
-          renderFiles(immediateFiles());
-          showToast('Mirror 文件已载入');
-          return;
-        } catch {
-          // A record created against a different local library falls back to source review.
-        }
-      }
-      const prepared = await prepareMirrorResult(payload?.result);
-      openMirrorCandidateReview(prepared, { bridgeRun: true });
-    } finally {
-      if (control.isConnected) {
-        control.disabled = false;
-        control.textContent = oldText;
-      }
-    }
-  };
-
-  const confirmDeleteFile = (file) => {
-    openConfirmDialog({
-      title: '删除 Mirror 文件',
-      description: file.materialLabel || file.runId,
-      body: el('div', { className: 'warning-box', text: '该文件将从 Bridge 永久删除；当前设备缓存的对应 Mirror 也会删除。' }),
-      submitText: '确认删除',
-      onSubmit: async () => {
-        await deleteMirrorFile(file.runId);
-        const local = localMirrorForRun(file.runId);
-        if (local) await deleteMirror(local.record.mirrorId);
-        mirrorNotices = mirrorNotices.filter((item) => item.runId !== file.runId);
-        mirrorRemoteFilesCache = mirrorRemoteFilesCache.filter((item) => item.runId !== file.runId);
-        renderMirrorStatusBanner();
-        renderFiles(immediateFiles());
-        showToast('Mirror 文件已删除');
-      },
-    });
-  };
-
-  function renderFiles(files) {
-    const query = normalizeEnglish(searchFiles.value || '');
-    files = files
-      .filter((file) => !query || normalizeEnglish(file.materialLabel || file.runId).includes(query))
-      .sort((left, right) => String(right.updatedAt || right.readyAt || right.createdAt || '')
-        .localeCompare(String(left.updatedAt || left.readyAt || left.createdAt || '')));
-    if (!files.length) {
-      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: query ? '没有匹配的文件' : 'Bridge 中还没有 Mirror 文件' }));
-      return;
-    }
-    const snapshot = getMirrorState();
-    const cards = files.map((file) => {
-      const local = localMirrorForRun(file.runId, snapshot);
-      const selected = snapshot.current?.mirrorId === local?.record?.mirrorId;
-      const active = snapshot.active?.mirrorId === local?.record?.mirrorId;
-      const title = file.materialLabel || file.runId;
-      const open = button('', 'mirror-library-open', (event) => {
-        if (selected && local) openMirrorRecordDetail(local.record);
-        else selectFile(file, event.currentTarget).catch(displayError);
-      });
-      const updatedValue = file.updatedAt || file.readyAt || file.createdAt || '';
-      const updatedLabel = updatedValue
-        ? String(updatedValue).replace('T', ' ').replace(/:\d{2}(?:\.\d+)?Z$/, '').slice(0, 16)
-        : '未知时间';
-      open.append(
-        el('span', { className: 'mirror-file-icon' }, [svgIcon('file')]),
-        el('span', { className: 'mirror-file-copy' }, [
-          el('strong', { text: title }),
-          el('span', { text: `${Number(file.existingCount || 0)} 已有项 · ${Number(file.candidateCount || 0)} 个候选` }),
-          el('span', { className: 'mirror-library-modified', text: updatedLabel }),
-        ]),
-      );
-      const choose = button(selected ? '已选择' : '选择', selected ? 'primary-button compact-button' : 'secondary-button compact-button', (event) => {
-        selectFile(file, event.currentTarget).catch(displayError);
-      }, { disabled: selected });
-      const remove = button('删除', 'danger-button compact-button', () => confirmDeleteFile(file));
-      const stateLabel = active ? '使用中' : selected ? '已选择' : file.isNew ? '新文件' : 'Bridge';
-      return el('article', { className: 'mirror-library-card', dataset: { status: selected ? 'selected' : 'ready' } }, [
-        open,
-        el('div', { className: 'mirror-library-actions' }, [
-          el('span', { className: 'mirror-library-state', text: stateLabel }), choose, remove,
-        ]),
-      ]);
-    });
-    fileHost.replaceChildren(...cards);
-  }
-
-  async function refresh({ fetchRemote = true } = {}) {
-    const sequence = ++requestSequence;
-    if (!bridgeConfigured()) {
-      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '请先配置 Bridge' }));
-      return;
-    }
-    const cached = immediateFiles();
-    if (cached.length) renderFiles(cached);
-    else fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '正在读取…' }));
-    if (!fetchRemote) return;
-    try {
-      const payload = await listMirrorFiles();
-      if (disposed || sequence !== requestSequence) return;
-      applyMirrorRemoteCatalog(payload);
-      renderFiles(immediateFiles());
-    } catch (error) {
-      if (disposed || sequence !== requestSequence) return;
-      if (cached.length) {
-        showToast('未能刷新 Bridge 文件夹，当前显示本机快照', 'error');
-        return;
-      }
-      fileHost.replaceChildren(el('p', { className: 'mirror-explorer-empty', text: '无法读取 Bridge 文件夹' }));
-      displayError(error);
-    }
-  }
-
-  const frame = openDialog({
-    title: '选择 Mirror 文件',
-    body: [el('section', { className: 'mirror-management-section mirror-explorer' }, [explorerToolbar, explorerHeading, fileHost])],
-    variant: 'file-picker', showCancel: false, onRestore: refresh,
-  });
-  frame.onDispose = () => { disposed = true; requestSequence += 1; };
-  searchFiles.addEventListener('input', () => renderFiles(immediateFiles()));
-  const cachedCatalog = getCachedMirrorFileCatalog();
-  if (cachedCatalog) {
-    mirrorRemoteInstanceId = cachedCatalog.instanceId;
-    mirrorRemoteCatalogRevision = cachedCatalog.catalogRevision;
-    mirrorRemoteFilesCache = cachedCatalog.files;
-  }
-  refresh().catch(displayError);
 }
 
 async function switchHomeGlobalMode(sourceButton = null) {
@@ -2643,8 +2219,6 @@ function renderHome(token = renderRevision) {
     ]));
   }
   elements['home-view'].replaceChildren(...sections);
-  renderHomeAnnotationBanner();
-  renderMirrorStatusBanner();
   if (restoreHomeScrollPending) {
     restoreHomeScrollPending = false;
     const transaction = beginRootScrollTransaction('home-restore', { kind: 'scroll', scrollYFallback: homeScrollY });
@@ -2686,7 +2260,6 @@ function renderCollection(token = renderRevision) {
   elements['collection-view'].classList.remove('hidden');
   elements['back-button'].classList.remove('hidden');
   elements['home-button'].classList.toggle('hidden', appNavigationDepth < 2);
-  elements['home-annotation-banner'].classList.add('hidden');
   elements['search-button'].classList.add('hidden');
   elements['bottom-toolbar'].classList.remove('hidden');
   const activeMirror = getMirrorState().active;
@@ -2740,15 +2313,24 @@ function renderCollection(token = renderRevision) {
 }
 
 function renderCollectionToolbar(collection) {
-  const annotationCount = annotationCountForCollection(collection.id, currentViewKind);
-  if (annotationCount) {
-    const reviewButton = el('button', {
-      type: 'button', className: 'secondary-button compact-button annotation-count-button',
-      title: '进入当前词表标注审阅', 'aria-label': `当前词表有 ${annotationCount} 条待核查标注`,
-      on: { click: () => startAnnotationReview(collection.id, '', currentViewKind) },
-    }, [svgIcon('warning'), el('span', { text: annotationCount.toLocaleString() })]);
-    elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [reviewButton]));
-  } else elements['collection-toolbar'].replaceChildren();
+  const expandAll = button('全部展开', 'secondary-button compact-button', () => expandAllCurrentGroups());
+  expandAll.title = '展开当前词表的全部字母或日期分组';
+  elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [expandAll]));
+}
+
+function expandAllCurrentGroups() {
+  const context = collectionRenderContext;
+  if (!context || context.collection.id !== currentCollectionId) return;
+  const sectionContext = context.sections.get(currentViewKind);
+  if (!sectionContext) return;
+  collapseTransactionRevision += 1;
+  for (const key of sectionContext.sectionByKey.keys()) {
+    if (context.mode === 'date') setDateSectionOpen(currentViewKind, key, true, { persist: false });
+    else setLetterSectionOpen(currentViewKind, key, true, { persist: false });
+  }
+  persistCurrentHistorySnapshot();
+  scheduleAlphabetSectionMetricsRefresh();
+  showToast('当前词表已全部展开');
 }
 
 function currentMode(collection, section = currentViewKind) {
@@ -3056,7 +2638,7 @@ function renderPinBar(collection) {
     pinCollectionId = collection.id;
     pinIndex = 0;
   }
-  if (review.ids.length || !pins.length) {
+  if (!pins.length) {
     setContextDockVisible(elements['pin-bar'], 'has-pin', false, { clearAfterHide: !pins.length });
     if (!pins.length) pinIndex = 0;
     return;
@@ -4387,8 +3969,8 @@ function displayGlossForRelationItem(item, sourceEntry) {
   const domain = state.domainById.get(sourceEntry?.domainId);
   if (!domain?.glossEnabled) return '';
   const candidates = item.targetEntries || [];
-  return candidates.find((candidate) => candidate.domainId === sourceEntry.domainId && candidate.glossHant)?.glossHant
-    || candidates.find((candidate) => candidate.glossHant)?.glossHant || '';
+  return candidates.find((candidate) => candidate.domainId === sourceEntry.domainId && candidate.gloss)?.gloss
+    || candidates.find((candidate) => candidate.gloss)?.gloss || '';
 }
 
 function renderRelationPanel(entry, items = null) {
@@ -4511,7 +4093,7 @@ async function toggleEntryPin(entry, collection, sourceButton = null) {
 function displayGlossForEntry(entry, collection, domain) {
   const state = getState();
   const entryDomain = state.domainById.get(entry.domainId);
-  const raw = String(entry.glossHant || '');
+  const raw = String(entry.gloss || '');
   const questionCount = (raw.match(/[?？]/g) || []).length;
   const nonQuestionContent = raw.replace(/[\s?？,.;:!，。；：！、()[\]{}'"“”‘’·—_-]/g, '');
   const gloss = /\uFFFD/.test(raw) || (questionCount >= 2 && !nonQuestionContent) ? '' : raw;
@@ -4584,6 +4166,8 @@ function createLazySpeechSession() {
   const controller = new AbortController();
   const buffers = new Map();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let context = null;
   let source = null;
   let activeControl = null;
@@ -4596,6 +4180,7 @@ function createLazySpeechSession() {
     activeControl = null;
   };
   const stop = () => {
+    if (isIos && window.speechSynthesis) window.speechSynthesis.cancel();
     if (source) {
       try { source.stop(); } catch {}
       source.disconnect();
@@ -4603,8 +4188,22 @@ function createLazySpeechSession() {
     }
     resetControl();
   };
+  const speakWithIosFallback = (text, control) => new Promise((resolve, reject) => {
+    if (!isIos || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      reject(new Error('当前环境不支持 iOS 系统发音兜底'));
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.addEventListener('end', () => { resetControl(); resolve(); }, { once: true });
+    utterance.addEventListener('error', () => { resetControl(); reject(new Error('iOS 系统发音失败')); }, { once: true });
+    control.disabled = false;
+    control.dataset.state = 'playing';
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  });
   const speak = async (text, control) => {
-    if (!AudioContextClass) throw new Error('当前浏览器不支持音频播放');
+    if (!AudioContextClass) return speakWithIosFallback(text, control);
     stop();
     activeControl = control;
     control.disabled = true;
@@ -4614,9 +4213,14 @@ function createLazySpeechSession() {
     await context.resume();
     let buffer = buffers.get(text);
     if (!buffer) {
-      const payload = await requestSpeech(text, { signal: controller.signal });
+      const settings = getState().settings;
+      const payload = await requestSpeech(text, {
+        signal: controller.signal,
+        model: settings.speechModel,
+        voice: settings.speechVoice,
+      });
       const binary = atob(String(payload?.audioContent || ''));
-      if (!binary) throw new Error('Bridge 返回的发音为空');
+      if (!binary) throw new Error('Personal Mirror 返回的发音为空');
       const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       buffer = await context.decodeAudioData(bytes.buffer.slice(0));
       buffers.set(text, buffer);
@@ -4639,7 +4243,9 @@ function createLazySpeechSession() {
       try { await speak(text, control); }
       catch (error) {
         resetControl();
-        if (error?.name !== 'AbortError' && error?.code !== 'cancelled') displayError(error);
+        if (error?.name === 'AbortError' || error?.code === 'cancelled') return;
+        try { await speakWithIosFallback(text, control); }
+        catch { displayError(error); }
       }
     },
     dispose: () => {
@@ -4664,11 +4270,9 @@ async function startProviderQuery(provider, entry, collection) {
   const content = card.querySelector('.provider-result-content');
   const actions = card.querySelector('.provider-result-actions');
   const modes = card.querySelector('.provider-mode-controls');
-  let mode = 'lookup';
   let session = null;
   let speechSession = null;
-  const modeButtons = [];
-  const setModes = () => modeButtons.forEach(([value, control]) => control.setAttribute('aria-pressed', String(mode === value)));
+  modes.hidden = true;
   const runQuery = async () => {
     session?.dispose();
     speechSession?.dispose();
@@ -4692,18 +4296,16 @@ async function startProviderQuery(provider, entry, collection) {
       status.textContent = labels[state] || '';
     });
     activeProviderQuery = { provider, entryId: entry.id, sequence, controller: session.controller, session, frame: queryFrame };
-    setModes();
     try {
       const rendered = await session.run(async (signal, onState) => {
         const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION });
-        if (mode === 'verification') return renderGroqVerification(await verifyVocabularyEntry(context, { signal, onState }));
         const result = await queryVocabularyEntry(context, { signal, onState });
         speechSession = createLazySpeechSession();
         return renderGroqLookup(result, { onSpeak: speechSession.speak });
       });
       if (!providerQueryIsCurrent(sequence)) return;
       content.replaceChildren(rendered);
-      if (provider === 'Groq') status.textContent = (mode === 'verification' ? '核查完成' : '查词完成') + ' · ' + requestModel;
+      if (provider === 'Groq') status.textContent = '查词完成 · ' + requestModel;
     } catch (error) {
       if (!providerQueryIsCurrent(sequence)) return;
       if (error?.code === 'cancelled') return;
@@ -4711,17 +4313,6 @@ async function startProviderQuery(provider, entry, collection) {
         text: error?.message || '查询失败，请稍后重试' }));
     }
   };
-  if (provider === 'Groq') {
-    for (const [value, label] of [['lookup', '查词释义'], ['verification', '核查现有内容']]) {
-      const control = button(label, 'provider-mode-button', () => {
-        if (mode === value) return;
-        mode = value;
-        runQuery();
-      });
-      modeButtons.push([value, control]);
-      modes.append(control);
-    }
-  } else { modes.hidden = true; }
   queryFrame.onDispose = () => {
     session?.dispose();
     speechSession?.dispose();
@@ -4761,19 +4352,14 @@ function entryLayoutKind(entry, gloss = '') {
   return 'phrase-extreme';
 }
 
-function handleEntryPrimaryAction(entry, collection, annotationRecord) {
-  if (annotationRecord) startAnnotationReview(collection.id, annotationRecord.sourceEntryId);
-  else copyEntry(entry, collection);
-}
-
-function createTextViewport(entry, collection, gloss, annotationRecord, layoutKind) {
+function createTextViewport(entry, collection, gloss, layoutKind) {
   const isScrollable = entry.kind === 'word' || layoutKind === 'phrase-extreme' || layoutKind === 'content-extreme';
   let pointerStart = null;
   let suppressClick = false;
   const viewport = el('div', {
     className: `entry-text-viewport${isScrollable ? ' horizontally-scrollable' : ''}${gloss ? ' has-gloss' : ' no-gloss'}`,
     role: 'button', tabindex: 0,
-    'aria-label': annotationRecord ? `处理 ${entry.text} 的待核查标注` : `复制 ${entry.text}`,
+    'aria-label': `复制 ${entry.text}`,
   });
   const lexemeStack = el('div', { className: 'entry-lexeme-stack' }, [
     el('span', { className: 'entry-text', text: entry.text, title: entry.text }),
@@ -4812,12 +4398,12 @@ function createTextViewport(entry, collection, gloss, annotationRecord, layoutKi
   }
   viewport.addEventListener('click', () => {
     if (suppressClick) { suppressClick = false; return; }
-    handleEntryPrimaryAction(entry, collection, annotationRecord);
+    copyEntry(entry, collection);
   });
   viewport.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    handleEntryPrimaryAction(entry, collection, annotationRecord);
+    copyEntry(entry, collection);
   });
   return viewport;
 }
@@ -4919,8 +4505,6 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const state = getState();
   const pinRecord = state.pinByEntry.get(entry.id) || null;
   const pinned = Boolean(pinRecord);
-  const annotationRecord = annotationRecordForEntry(entry, collection);
-  const annotation = annotationRecord?.annotation || null;
   const numberMode = state.settings.numberMode || 'global';
   const indexText = numberMode === 'group' ? `${indexes.groupIndex}` : numberMode === 'global' ? `${indexes.globalIndex}` : '';
   const expanded = expandedRelations.has(relationExpansionKey(collection.id, entry.id));
@@ -4931,7 +4515,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const studyStamp = getStudyStamp(entry, collection.id);
   const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
@@ -4945,7 +4529,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     actionItems.push(el('span', { className: 'entry-action-placeholder relation-placeholder', 'aria-hidden': 'true' }));
   }
   actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
-  const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind);
+  const textViewport = createTextViewport(entry, collection, gloss, layoutKind);
   const actionMainChildren = [];
   if (studyStamp) actionMainChildren.push(el('span', {
     className: 'entry-study-date marked',
@@ -4965,13 +4549,6 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const primary = el('div', {
     className: `entry-line${gloss ? ' has-left-meta' : ''}${sourceDomainLabel ? ' has-right-meta' : ''}`,
   }, lineChildren);
-  if (annotationRecord) {
-    primary.addEventListener('click', (event) => {
-      if (event.target.closest('button, .entry-text-viewport')) return;
-      startAnnotationReview(collection.id, annotationRecord.sourceEntryId);
-    });
-    primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
-  }
   const shell = el('div', { className: 'entry-primary-shell' }, [primary]);
   const relationSlot = el('div', {
     className: 'entry-relation-slot',
@@ -4989,11 +4566,9 @@ function openEntryActions(entryId, collectionId) {
   const collection = state.collectionById.get(collectionId);
   if (!entry || !collection) return;
   const memberships = state.membershipsByEntry.get(entry.id) || [];
-  const annotation = state.annotationByEntry.get(entry.id);
   const normalActions = [
     button('编辑', '', () => openEditEntryDialog(entry.id, collection.id)),
     entry.kind === 'word' ? button('添加短语', '', () => openAddRelatedPhraseDialog(entry.id)) : null,
-    annotation ? button('核查标注', '', () => { closeActionDialog(); startAnnotationReview(collection.id, entry.id); }) : null,
   ].filter(Boolean);
   const dangerActions = [];
   if (memberships.some((item) => item.collectionId === collection.id)) {
@@ -5635,7 +5210,7 @@ function openEditEntryDialog(entryId, collectionId = currentCollectionId) {
   if (!entry || !collection) return;
   const membership = (state.membershipsByEntry.get(entry.id) || []).find((item) => item.collectionId === collectionId);
   const text = el('input', { required: true, maxlength: 160, value: entry.text, autocomplete: 'off', spellcheck: false });
-  const gloss = el('input', { maxlength: 240, value: entry.glossHant || '', placeholder: '可输入简体或繁体' });
+  const gloss = el('input', { maxlength: 240, value: entry.gloss || '', placeholder: '保存为繁体释义' });
   const body = [field(entry.kind === 'phrase' ? '短语' : entry.kind === 'content' ? '内容' : '词汇', text)];
   if (domain?.glossEnabled) body.push(field('繁体释义', gloss));
   openDialog({
@@ -5643,7 +5218,7 @@ function openEditEntryDialog(entryId, collectionId = currentCollectionId) {
     body,
     onSubmit: async () => {
       if (entry.kind === 'word' && membership) {
-        await editEntryInCollection(entry.id, collection.id, { text: text.value, sourceLabel: membership.sourceLabel || '', gloss: gloss.value }, entry.updatedAt);
+        await editEntryInCollection(entry.id, collection.id, { text: text.value, partsOfSpeech: entry.partsOfSpeech || [], gloss: gloss.value }, entry.updatedAt);
       } else {
         await editEntry(entry.id, { text: text.value, gloss: gloss.value }, entry.updatedAt);
       }
@@ -5657,8 +5232,6 @@ function handleCollectionAction(action) {
   if (!collection) return;
   if (action === 'add') openAddEntryDialog(collection.id);
   else if (action === 'ai-add') openAiAddDialog(collection.id);
-  else if (action === 'ai-check') openAiCheckDialog(collection.id);
-  else if (action === 'import') openImportDialog(collection.id);
   else if (action === 'more') openCollectionActions(collection.id);
 }
 
@@ -5667,15 +5240,12 @@ function openCollectionActions(collectionId) {
   const collection = state.collectionById.get(collectionId);
   if (!collection) return;
   const domain = collection.domainId ? state.domainById.get(collection.domainId) : null;
-  const entries = entriesForCollectionView(collectionId, currentViewKind);
-  const annotationCount = annotationCountForCollection(collectionId, currentViewKind);
   if (collection.virtual) {
     openActionDialog({ title: collection.name, body: [
       el('div', { className: 'action-list' }, [
-        button('导出 CSV', '', () => { exportCollectionCsv(collection.id); closeActionDialog(); }),
-        annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id, '', currentViewKind); }) : null,
-        button('应用设置与备份', '', () => openSettingsDialog()),
-      ].filter(Boolean)),
+        button('VIX 数据接口', '', () => openDataExchangeDialog()),
+        button('应用设置', '', () => openSettingsDialog()),
+      ]),
     ] });
     return;
   }
@@ -5691,26 +5261,14 @@ function openCollectionActions(collectionId) {
     ]));
   }
   actions.push(el('div', { className: 'action-group' }, [
-    el('p', { className: 'action-group-title', text: 'AI' }),
-    el('div', { className: 'action-list' }, [
-      button('AI 核查', '', () => openAiCheckDialog(collection.id), { disabled: Boolean(activeTask) || !entries.length }),
-      annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id, '', currentViewKind); }) : null,
-    ].filter(Boolean)),
-  ]));
-  actions.push(el('div', { className: 'action-group' }, [
     el('p', { className: 'action-group-title', text: '数据' }),
-    el('div', { className: 'action-list' }, [
-      collection.type === 'normal' ? button('导入', '', () => openImportDialog(collection.id)) : null,
-      button('导出 CSV', '', () => { exportCollectionCsv(collection.id); closeActionDialog(); }),
-      button('撤销', '', async () => { closeActionDialog(); await performUndo(); }),
-      button('重做', '', async () => { closeActionDialog(); await performRedo(); }),
-    ].filter(Boolean)),
+    el('div', { className: 'action-list' }, [button('VIX 数据接口', '', () => openDataExchangeDialog())]),
   ]));
   actions.push(el('div', { className: 'action-group' }, [
     el('p', { className: 'action-group-title', text: '管理' }),
     el('div', { className: 'action-list' }, [
       collection.type === 'normal' ? button('当前词表', '', () => openCollectionMenu(collection.id)) : null,
-      button('应用设置与备份', '', () => openSettingsDialog()),
+      button('应用设置', '', () => openSettingsDialog()),
     ].filter(Boolean)),
   ]));
   openActionDialog({ title: collection.name, body: actions });
@@ -5722,66 +5280,9 @@ function openCollectionMenu(collectionId) {
   if (!collection || collection.type !== 'normal') return;
   const name = el('input', { value: collection.name, required: true, maxlength: 40 });
   const label = el('input', { value: collection.label || '', maxlength: 80 });
-  const body = [field('名称', name), field('副标题', label)];
-  if (annotationCountForCollection(collectionId, currentViewKind)) body.push(button('清空当前视图标注', 'secondary-button', async () => {
-    await clearAnnotationsForEntries(entryIdsForCollectionView(collectionId, currentViewKind));
-  }));
-  body.push(button('删除词表', 'danger-button', () => confirmDeleteCollection(collectionId)));
-  openDialog({ title: collection.name, body, onSubmit: async () => { await renameCollection(collectionId, name.value, label.value); } });
-}
-
-function exportCollectionCsv(collectionId) {
-  const state = getState();
-  const collection = state.collectionById.get(collectionId);
-  const entries = entriesForCollectionView(collectionId, currentViewKind);
-  const memberships = state.membershipsByCollection.get(collectionId) || [];
-  downloadText(`${collection.name}-${new Date().toISOString().slice(0, 10)}.csv`, entriesToCsv(entries, memberships), 'text/csv;charset=utf-8');
-  showToast('CSV 已导出');
-}
-
-function openImportDialog(collectionId) {
-  const fileInput = el('input', { type: 'file', accept: '.json,.csv,.txt,.md,text/plain,application/json,text/csv' });
-  const mode = el('select', {}, [el('option', { value: 'merge', text: '合并到当前词表' }), el('option', { value: 'replace', text: '替换当前词表内容' })]);
-  const preview = el('div', { className: 'preview-list' }, [el('div', { className: 'preview-item muted', text: '选择文件后显示预览。' })]);
-  let parsed = null;
-  fileInput.addEventListener('change', async () => {
-    try {
-      parsed = await readImportFile(fileInput.files?.[0]);
-      if (parsed.kind === 'backup') {
-        preview.replaceChildren(el('div', { className: 'preview-item', text: '检测到完整备份。请在设置中使用“恢复完整备份”。' }));
-        return;
-      }
-      const items = parsed.entries.slice(0, 80).map((item) => el('div', { className: 'preview-item', text: `${item.text}${item.gloss ? ` · ${item.gloss}` : ''}` }));
-      if (parsed.entries.length > 80) items.push(el('div', { className: 'preview-item muted', text: `另有 ${parsed.entries.length - 80} 项未显示` }));
-      if (parsed.errors.length) items.unshift(el('div', { className: 'preview-item danger', text: `${parsed.errors.length} 行存在问题，将跳过无效行。` }));
-      preview.replaceChildren(...items);
-    } catch (error) { parsed = null; preview.replaceChildren(el('div', { className: 'preview-item danger', text: error.message })); }
-  });
-  openDialog({
-    title: '导入',
-    description: '支持 TXT、Markdown、CSV 和 JSON。',
-    body: [field('文件', fileInput), field('导入方式', mode), preview],
-    submitText: '执行导入',
-    onSubmit: async () => {
-      if (!parsed || parsed.kind !== 'entries') throw new Error('请选择有效文件');
-      if (mode.value === 'replace') {
-        const entriesToImport = parsed.entries;
-        closeDialog({ all: true });
-        requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
-          title: '确认替换当前词表',
-          description: '确认后将以导入文件替换当前词表范围。',
-          submitText: '确认替换',
-          onSubmit: async () => {
-            await importEntries(collectionId, entriesToImport, { mode: 'replace' });
-            showToast(`已替换导入 ${entriesToImport.length} 项`);
-          },
-        }), { title: '替换前是否下载备份？' }));
-        return;
-      }
-      await importEntries(collectionId, parsed.entries, { mode: mode.value });
-      showToast(`已导入 ${parsed.entries.length} 项`);
-    },
-  });
+  const cleanBody = [field('名称', name), field('说明', label)];
+  cleanBody.push(button('删除词表', 'danger-button', () => confirmDeleteCollection(collectionId)));
+  openDialog({ title: collection.name, body: cleanBody, onSubmit: async () => { await renameCollection(collectionId, name.value, label.value); } });
 }
 
 function confirmDeleteCollection(collectionId) {
@@ -5790,14 +5291,14 @@ function confirmDeleteCollection(collectionId) {
   requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
       title: '删除词表',
       description: `将删除“${collection.name}”的来源关系；仍有其他来源的词汇会自动回落。`,
-      body: el('div', { className: 'warning-box', text: '确认后执行。该操作仍可通过撤销恢复。' }),
+      body: el('div', { className: 'warning-box', text: '确认后永久删除；如需保留内容，请先下载 VIX 恢复文件。' }),
       submitText: '确认删除',
       onSubmit: async () => {
         await deleteCollection(collectionId);
         if (currentCollectionId === collectionId) { closeActionDialog(); goHome(); }
         else renderApp();
       },
-    }), { title: '删除词表前是否下载备份？' }));
+    }), { title: '删除词表前是否下载 VIX 恢复文件？' }));
 }
 
 function confirmDeleteDomain(domainId) {
@@ -5809,7 +5310,7 @@ function confirmDeleteDomain(domainId) {
       body: el('div', { className: 'warning-box', text: '这是大范围操作。确认后执行。' }),
       submitText: '确认删除词域',
       onSubmit: async () => { await deleteDomain(domainId); goHome(); },
-    }), { title: '删除词域前是否下载备份？' }));
+    }), { title: '删除词域前是否下载 VIX 恢复文件？' }));
 }
 
 function confirmRemoveSource(entryId, collectionId) {
@@ -5821,7 +5322,7 @@ function confirmRemoveSource(entryId, collectionId) {
       body: el('p', { className: 'help-text', text: '若它仍属于其他词表，将自动显示在优先级最高的剩余词表；普通词失去全部来源后会被删除。' }),
       submitText: '移除',
       onSubmit: async () => { await removeEntryFromCollection(entryId, collectionId); },
-    }), { title: '移除前是否下载备份？' }));
+    }), { title: '移除前是否下载 VIX 恢复文件？' }));
 }
 
 function confirmDeleteEntry(entryId) {
@@ -5830,10 +5331,10 @@ function confirmDeleteEntry(entryId) {
   requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
       title: '删除',
       description: `删除 “${entry.text}” 及其全部来源、PIN、标注、学习日期和关系组件。`,
-      body: el('div', { className: 'warning-box', text: '确认后执行。该操作仍可通过撤销恢复。' }),
+      body: el('div', { className: 'warning-box', text: '确认后永久删除；如需保留内容，请先下载 VIX 恢复文件。' }),
       submitText: '彻底删除',
       onSubmit: async () => { await deleteEntry(entryId); },
-    }), { title: '删除内容前是否下载备份？' }));
+    }), { title: '删除内容前是否下载 VIX 恢复文件？' }));
 }
 
 async function openAiAddDialog(collectionId) {
@@ -5863,260 +5364,6 @@ async function openAiAddDialog(collectionId) {
     onSubmit: async () => { if (!candidates.length) throw new Error('请先生成候选'); await importEntries(collectionId, candidates, { mode: 'merge' }); },
   });
 }
-
-function openAiCheckDialog(collectionId) {
-  const state = getState();
-  const collection = state.collectionById.get(collectionId);
-  const viewKind = collection?.type === 'normal' ? currentViewKind : viewKindForCollection(collection);
-  const entries = entriesForCollectionView(collectionId, viewKind).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
-  if (!collection || !entries.length) { showToast('当前词表没有可核查内容'); return; }
-  const batches = createAiCheckBatches(entries);
-  const model = getSelectedModel();
-  const summary = el('div', { className: 'preview-list' }, [
-    el('div', { className: 'preview-item', text: collection.name }),
-    el('div', { className: 'preview-item', text: entries.length.toLocaleString() }),
-    el('div', { className: 'preview-item', text: `${batches.length} 批` }),
-    el('div', { className: `preview-item${model ? '' : ' danger'}`, text: model || '未选择模型' }),
-  ]);
-  openDialog({
-    title: '启动 AI 核查',
-    description: '核查只生成待审阅标注，不会直接修改词汇。每批完成后立即保存，取消时保留已完成结果。',
-    body: [summary, el('p', { className: 'help-text', text: '运行期间可暂停、继续、取消或收起为临时任务胶囊。' })],
-    submitText: '开始核查',
-    onSubmit: async () => {
-      if (!bridgeConfigured()) throw new Error('请先配置 Bridge');
-      if (!getSelectedModel()) throw new Error('请先刷新并选择 Groq 模型');
-      setTimeout(() => startAiCheck(collectionId, viewKind), 0);
-    },
-  });
-}
-
-async function startAiCheck(collectionId, requestedViewKind = currentViewKind) {
-  if (activeTask) return;
-  const collection = getState().collectionById.get(collectionId);
-  const viewKind = collection?.type === 'normal' ? requestedViewKind : viewKindForCollection(collection);
-  const entries = entriesForCollectionView(collectionId, viewKind).map((entry) => ({ ...entry, sourceLabel: sourceLabelForCollection(entry.id, collectionId) }));
-  if (!entries.length) return;
-  const controller = new AiCheckController();
-  const entryIds = entries.map((entry) => entry.id);
-  /** @type {((value?: unknown) => void) | null} */
-  let resolveCompletion = null;
-  const task = {
-    controller, paused: false, completed: 0, total: 1, collectionId, viewKind,
-    status: '准备 AI 核查…', entryIds,
-    aiChanges: new Map(), manualAnnotationEntryIds: new Set(), cancelledForDataChange: false,
-    completion: new Promise((resolve) => { resolveCompletion = resolve; }),
-  };
-  activeTask = task;
-  taskPanelExpanded = true;
-  renderTaskPanel('准备 AI 核查…');
-  try {
-    const result = await checkEntries(entries, {
-      controller,
-      onProgress: (progress) => {
-        if (activeTask !== task) return;
-        task.completed = progress.completed;
-        task.total = progress.total;
-        renderTaskPanel(`批次 ${Math.min(progress.completed + 1, progress.total)} / ${progress.total}`);
-      },
-      onBatch: async (issues, batch) => {
-        if (activeTask !== task || controller.cancelled) return;
-        const eligibleBatch = batch.filter((entry) => !task.manualAnnotationEntryIds.has(entry.id));
-        if (!eligibleBatch.length) return;
-        const eligibleIds = new Set(eligibleBatch.map((entry) => entry.id));
-        const before = new Map(eligibleBatch.map((entry) => [entry.id, structuredClone(getState().annotationByEntry.get(entry.id) || null)]));
-        const expectedRevision = getState().revision;
-        await replaceAnnotations(eligibleBatch.map((entry) => entry.id), issues.filter((item) => eligibleIds.has(item.entryId)), {
-          expectedEntries: eligibleBatch.map((entry) => ({ id: entry.id, updatedAt: entry.updatedAt, normalizedText: entry.normalizedText })),
-          expectedRevision,
-        });
-        for (const entry of eligibleBatch) {
-          const left = before.get(entry.id) || null;
-          const right = structuredClone(getState().annotationByEntry.get(entry.id) || null);
-          if (JSON.stringify(left) === JSON.stringify(right)) continue;
-          const existing = task.aiChanges.get(entry.id);
-          task.aiChanges.set(entry.id, { entryId: entry.id, before: existing?.before ?? left, after: right });
-        }
-      },
-    });
-    await recordAiAnnotationChanges([...task.aiChanges.values()], `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId} · ${viewKind === 'phrase' ? '短语' : '词汇'}`);
-    if (activeTask === task && !task.cancelledForDataChange) showToast(result.cancelled ? '核查已取消；已完成批次可整体撤销' : 'AI 核查完成');
-  } catch (error) {
-    try { await recordAiAnnotationChanges([...task.aiChanges.values()], `AI 核查：${getState().collectionById.get(collectionId)?.name || collectionId} · ${viewKind === 'phrase' ? '短语' : '词汇'}`); } catch {}
-    if (activeTask === task && error?.name !== 'AbortError') displayError(error);
-  }
-  finally {
-    if (activeTask === task) activeTask = null;
-    renderTaskPanel('');
-    if (resolveCompletion) resolveCompletion();
-  }
-}
-
-async function cancelActiveTaskForDataChange() {
-  if (!activeTask) return;
-  const task = activeTask;
-  task.cancelledForDataChange = true;
-  task.controller.cancel();
-  task.status = '正在停止 AI 核查…';
-  renderTaskPanel(task.status);
-  await task.completion;
-  showToast('数据即将变更，AI 核查已取消');
-}
-
-function renderTaskPanel(status) {
-  if (!activeTask) {
-    elements['task-panel'].classList.add('hidden');
-    elements['task-capsule'].classList.add('hidden');
-    return;
-  }
-  activeTask.status = status || activeTask.status || 'AI 核查运行中';
-  const progressText = `${activeTask.status} · ${activeTask.completed}/${activeTask.total}`;
-  elements['task-capsule'].textContent = progressText;
-  elements['task-capsule'].classList.toggle('hidden', taskPanelExpanded);
-  elements['task-panel'].classList.toggle('hidden', !taskPanelExpanded);
-  if (!taskPanelExpanded) return;
-  const progress = el('progress', { max: Math.max(activeTask.total, 1), value: activeTask.completed });
-  const collapse = button('收起', 'secondary-button compact-button', () => { taskPanelExpanded = false; renderTaskPanel(activeTask.status); });
-  const pause = button(activeTask.paused ? '继续' : '暂停', 'secondary-button compact-button', () => {
-    activeTask.paused = !activeTask.paused;
-    if (activeTask.paused) activeTask.controller.pause(); else activeTask.controller.resume();
-    renderTaskPanel(activeTask.paused ? '已暂停，将在当前请求结束后停止推进' : activeTask.status);
-  });
-  const cancel = button('取消', 'danger-button compact-button', () => activeTask.controller.cancel());
-  elements['task-panel'].replaceChildren(el('div', { className: 'task-top' }, [
-    el('div', { className: 'task-copy' }, [el('strong', { text: 'AI 核查' }), el('span', { text: activeTask.status })]),
-    el('div', { className: 'task-actions' }, [collapse, pause, cancel]),
-  ]), progress);
-}
-
-function annotationReviewIds(collectionId = '', viewKind = '') {
-  const state = getState();
-  const annotated = new Set(state.annotations.map((item) => item.entryId));
-  if (collectionId) return entriesForCollectionView(collectionId, viewKind).filter((entry) => annotated.has(entry.id)).map((entry) => entry.id);
-  const domainOrder = new Map(state.domains.map((domain, index) => [domain.id, index]));
-  return [...state.annotations]
-    .map((item) => state.entryById.get(item.entryId))
-    .filter(Boolean)
-    .sort((a, b) => (domainOrder.get(a.domainId) ?? Number.MAX_SAFE_INTEGER) - (domainOrder.get(b.domainId) ?? Number.MAX_SAFE_INTEGER)
-      || a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id))
-    .map((entry) => entry.id);
-}
-
-function startAnnotationReview(collectionId = '', startEntryId = '', requestedViewKind = currentViewKind) {
-  const state = getState();
-  const collection = collectionId ? state.collectionById.get(collectionId) : null;
-  const viewKind = collection?.type === 'normal' ? requestedViewKind : (collection ? viewKindForCollection(collection) : '');
-  const ids = annotationReviewIds(collectionId, viewKind);
-  if (!ids.length) { showToast(collectionId ? '当前词表没有待核查标注' : '没有待核查标注'); return; }
-  const requestedIndex = startEntryId ? ids.indexOf(startEntryId) : 0;
-  review = { ids, index: requestedIndex >= 0 ? requestedIndex : 0, collectionId, viewKind };
-  renderReviewBar();
-  const displayId = reviewDisplayEntryId(review.ids[review.index], collectionId) || review.ids[review.index];
-  jumpToEntry(displayId, { collectionId: collectionId || projectionCollectionForEntry(displayId), reason: 'annotation' });
-}
-
-function syncReview() {
-  const currentId = review.ids[review.index] || '';
-  const ids = annotationReviewIds(review.collectionId, review.viewKind);
-  if (!ids.length) { closeReview(); return false; }
-  const currentIndex = currentId ? ids.indexOf(currentId) : -1;
-  review.index = currentIndex >= 0 ? currentIndex : Math.min(review.index, ids.length - 1);
-  review.ids = ids;
-  return true;
-}
-
-async function clearCurrentReviewAnnotations() {
-  const collectionId = review.collectionId || currentCollectionId;
-  if (!collectionId) return;
-  await cancelActiveTaskForDataChange();
-  await clearAnnotationsForEntries(entryIdsForCollectionView(collectionId, review.viewKind || currentViewKind));
-  review = { ids: [], index: 0, collectionId: '', viewKind: '' };
-  renderReviewBar();
-  showToast('当前词表标注已全部撤销');
-}
-
-function renderReviewBar() {
-  if (!review.ids.length) {
-    setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: true });
-    if (currentCollectionId) {
-      const collection = getState().collectionById.get(currentCollectionId);
-      if (collection) renderPinBar(collection);
-    }
-    updateOverlayLayout();
-    return;
-  }
-  const state = getState();
-  const entryId = review.ids[review.index];
-  const entry = state.entryById.get(entryId);
-  const annotation = state.annotationByEntry.get(entryId);
-  if (!entry || !annotation) { if (syncReview()) renderReviewBar(); return; }
-  const displayEntryId = reviewDisplayEntryId(entryId, review.collectionId) || entryId;
-  const targetCollectionId = review.collectionId || projectionCollectionForEntry(entryId);
-  const reviewDomainLabel = isGlobalCollection(targetCollectionId)
-    && state.globalConflictKeys.has(`${entry.kind}\u0000${entry.normalizedText}`)
-    ? (state.domainById.get(entry.domainId)?.name || entry.domainId)
-    : '';
-  if (targetCollectionId && targetCollectionId !== currentCollectionId) {
-    // Rendering is never allowed to create navigation. User-driven review
-    // commands perform any required Collection PUSH before this renderer runs.
-    setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: false });
-    return;
-  }
-  setContextDockVisible(elements['pin-bar'], 'has-pin', false);
-  const previous = iconButton('chevron', 'review-nav review-prev', '上一个标注', () => navigateReview(-1));
-  const next = iconButton('chevron', 'review-nav review-next', '下一个标注', () => navigateReview(1));
-  const editCollectionId = review.collectionId && !isGlobalCollection(review.collectionId) ? review.collectionId : projectionCollectionForEntry(entryId);
-  const edit = button('编辑', 'review-edit', () => openEditEntryDialog(entryId, editCollectionId));
-  const dismiss = button('撤销此条', 'review-dismiss', () => dismissCurrentReviewAnnotation());
-  const clearCurrent = iconButton('clear', 'review-clear-all', '撤销当前词表全部标注', () => clearCurrentReviewAnnotations().catch(displayError));
-  const close = iconButton('close', 'review-close', '退出审阅', closeReview);
-  elements['annotation-review-bar'].replaceChildren(
-    previous,
-    el('div', { className: 'review-text' }, [
-      el('strong', { text: `${review.index + 1}/${review.ids.length} · ${entry.text}${reviewDomainLabel ? ` · ${reviewDomainLabel}` : ''}` }),
-      el('span', { text: `${annotation.spelling.suggestion ? `建议 ${annotation.spelling.suggestion}` : '需检查'}${annotation.reason ? ` · ${annotation.reason}` : ''}` }),
-    ]),
-    next,
-    el('div', { className: 'review-actions' }, [edit, dismiss, clearCurrent, close]),
-  );
-  setContextDockVisible(elements['annotation-review-bar'], 'has-review', true);
-}
-
-function navigateReview(direction) {
-  if (!review.ids.length) return;
-  review.index = (review.index + direction + review.ids.length) % review.ids.length;
-  const entryId = review.ids[review.index];
-  const displayEntryId = reviewDisplayEntryId(entryId, review.collectionId) || entryId;
-  const targetCollectionId = review.collectionId || projectionCollectionForEntry(entryId);
-  if (targetCollectionId !== currentCollectionId) navigateCollection(targetCollectionId, displayEntryId);
-  else { renderReviewBar(); jumpToEntry(displayEntryId, { collectionId: targetCollectionId, reason: 'annotation' }); }
-}
-
-async function dismissCurrentReviewAnnotation() {
-  const entryId = review.ids[review.index];
-  if (!entryId) return;
-  try {
-    const oldIndex = review.index;
-    await dismissAnnotation(entryId);
-    review.index = oldIndex;
-    if (syncReview()) {
-      renderReviewBar();
-      const nextId = review.ids[review.index];
-      const displayId = reviewDisplayEntryId(nextId, review.collectionId) || nextId;
-      jumpToEntry(displayId, { collectionId: review.collectionId || projectionCollectionForEntry(nextId), reason: 'annotation' });
-    }
-  } catch (error) { displayError(error); }
-}
-
-function closeReview() {
-  review = { ids: [], index: 0, collectionId: '', viewKind: '' };
-  setContextDockVisible(elements['annotation-review-bar'], 'has-review', false, { clearAfterHide: true });
-  if (currentCollectionId) {
-    const collection = getState().collectionById.get(currentCollectionId);
-    if (collection) renderPinBar(collection);
-  }
-}
-
 
 function openSearchDialog() {
   const state = getState();
@@ -6227,127 +5474,76 @@ function bindCredentialMask(input) {
   return input;
 }
 
-function applyRecoveredBridgeCredential(config, result, tokenInput) {
-  if (!result?.recoveredDeviceToken) return config;
-  const recovered = { ...config, deviceToken: result.recoveredDeviceToken };
-  tokenInput.value = recovered.deviceToken;
-  syncCredentialMask(tokenInput);
-  return recovered;
-}
-
-function openBridgeDialog({ onConfigured = null } = {}) {
-  const saved = getBridgeConfig();
-  const url = el('input', {
-    type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev',
-    autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-  });
-  const token = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token',
-    name: 'vix-opaque-credential', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
-    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  }));
+function openGroqSiteDialog({ onConfigured = null } = {}) {
+  if (!getMirrorConnection().paired) throw new Error('请先连接 Personal Mirror');
   const groqKey = bindCredentialMask(el('input', {
     type: 'text', className: 'credential-input', value: '', placeholder: 'Groq API Key',
     name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
   }));
-  const ttsKey = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: '', placeholder: 'Google Cloud TTS API Key',
-    name: 'vix-tts-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
-    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  }));
-  const test = button('测试', 'secondary-button', async () => {
+  const test = button('验证', 'secondary-button', async () => {
+    const key = groqKey.value.trim();
+    if (!key) throw new Error('请填写 Groq API Key');
     test.disabled = true;
-    const oldText = test.textContent;
-    test.textContent = '测试中…';
     try {
-      let config = { url: url.value, deviceToken: token.value };
-      const candidateKey = groqKey.value.trim();
-      const candidateTtsKey = ttsKey.value.trim();
-      let result = await testBridgeConfig(config, { probeGroq: false });
-      config = applyRecoveredBridgeCredential(config, result, token);
-      if (candidateKey) {
-        const validated = await validateGroqSecret(candidateKey, { config });
-        const groqModels = Array.isArray(validated?.models) ? validated.models : [];
-        result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
-      }
-      if (candidateTtsKey) await validateTtsSecret(candidateTtsKey, { config });
-      if (!candidateKey && !candidateTtsKey) {
-        result = await testBridgeConfig(config);
-      }
-      showToast('Bridge 配置可用');
-    } finally {
-      test.disabled = false;
-      test.textContent = oldText;
-    }
+      const result = await validateGroqSecret(key);
+      const ids = Array.isArray(result?.models) ? result.models.map((item) => item?.id).filter(Boolean) : [];
+      showToast(`Groq Key 可用${ids.length ? ` · ${ids.length} 个模型` : ''}`);
+    } finally { test.disabled = false; }
   });
-  const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
-    await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } });
+  const remove = button('删除 Groq Key', 'secondary-button', async () => {
+    await deleteGroqSecret();
     groqKey.value = '';
     syncCredentialMask(groqKey);
     showToast('Groq Key 已删除');
   });
-  const removeTtsKey = button('删除语音 Key', 'secondary-button', async () => {
-    await deleteTtsSecret({ config: { url: url.value, deviceToken: token.value } });
-    ttsKey.value = '';
-    syncCredentialMask(ttsKey);
-    showToast('语音 Key 已删除');
-  });
-  const clear = button('清除配置', 'secondary-button', () => {
-    clearBridgeConfig();
-    url.value = '';
-    token.value = '';
-    syncCredentialMask(token);
-    showToast('本机 Bridge 配置已清除');
-  });
-  const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
-  const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
   openDialog({
-    title: 'Bridge', variant: 'management', submitText: '保存',
-    body: [
-      field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
-      field('Google Cloud TTS API Key', ttsKey),
-      el('div', { className: 'settings-row' }, [test, removeKey, removeTtsKey, clear]),
-      el('section', { className: 'bridge-integration-resources' }, [
-        el('h3', { text: '集成资源' }),
-        el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
-      ]),
-    ],
+    title: 'Groq', variant: 'management', submitText: '保存',
+    description: 'Key 由 Personal Mirror Site 加密保存，查询与语音共用。',
+    body: [field('Groq API Key', groqKey), el('div', { className: 'settings-row' }, [test, remove])],
     onSubmit: async () => {
-      let nextConfig = { url: url.value, deviceToken: token.value };
-      let result = await testBridgeConfig(nextConfig, { probeGroq: false });
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
-      if (groqKey.value.trim()) {
-        try {
-          await saveGroqSecret(groqKey.value, { config: nextConfig });
-          groqKey.value = '';
-          syncCredentialMask(groqKey);
-        }
-        catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
-      }
-      if (ttsKey.value.trim()) {
-        try {
-          await saveTtsSecret(ttsKey.value, { config: nextConfig });
-          ttsKey.value = '';
-          syncCredentialMask(ttsKey);
-        }
-        catch (error) { throw new Error(`语音 Key 保存失败：${error?.message || String(error)}`); }
-      }
-      result = await testBridgeConfig(nextConfig);
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
-      const activeModelIds = Array.isArray(result?.groqModels)
-        ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
-        : [];
-      setBridgeConfig(nextConfig);
-      if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
-      onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
-      scheduleMirrorContextSync({ notifyFailure: true });
-      warmMirrorRemoteCatalog();
-      scheduleMirrorInboxPoll();
-      showToast('Bridge 已保存');
+      const result = await saveGroqSecret(groqKey.value);
+      const activeModelIds = Array.isArray(result?.models)
+        ? result.models.filter((item) => item?.active !== false && item?.id).map((item) => item.id) : [];
+      groqKey.value = '';
+      syncCredentialMask(groqKey);
+      if (activeModelIds.length) saveModelCatalog(activeModelIds);
+      onConfigured?.({ activeModelIds });
+      showToast('Groq Key 已保存到 Personal Mirror');
+    },
+  });
+}
+
+async function openPersonalMirrorFile() {
+  const picked = await openMirrorSitePicker();
+  if (!picked) return;
+  const source = picked.document;
+  const existingMatches = (source.layers?.existing || []).map((item) => ({
+    ...item, valid: Boolean(item.entryId), selectedByDefault: item.selectedByDefault !== false,
+  }));
+  const candidates = (source.layers?.candidates || []).map((item) => ({
+    ...item, valid: Boolean(item.candidateId && item.text && item.domainKey && item.collectionKeys?.length),
+    selectedByDefault: item.selectedByDefault !== false,
+  }));
+  const runId = source.documentId || crypto.randomUUID();
+  openMirrorCandidateReview({
+    runId,
+    existingMatches,
+    candidates,
+    siteNodeId: picked.node.id,
+    siteDocument: source,
+    mirrorRecord: {
+      protocol: MIRROR_PROTOCOL,
+      mirrorId: `mirror_${runId}`,
+      runId,
+      createdAt: source.createdAt || new Date().toISOString(),
+      entryIds: existingMatches.filter((item) => item.selectedByDefault).map((item) => item.entryId),
+      materialLabel: source.title || picked.node.name,
+      material: { label: source.title || picked.node.name, sourceDigest: source.context?.sourceDigest || '' },
+      existingMatches,
+      candidateImports: [],
+      matchMode: 'balanced',
     },
   });
 }
@@ -6359,6 +5555,15 @@ function openSettingsDialog() {
   const model = el('select');
   let draftModel = getSelectedModel();
   let refreshedIds = null;
+  const speechModel = el('select', {}, [
+    el('option', {
+      value: 'canopylabs/orpheus-v1-english',
+      text: 'Orpheus English',
+      selected: state.settings.speechModel === 'canopylabs/orpheus-v1-english',
+    }),
+  ]);
+  const speechVoice = el('select', {}, ['autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy']
+    .map((voice) => el('option', { value: voice, text: voice, selected: state.settings.speechVoice === voice })));
   const numberMode = el('select', {}, [
     el('option', { value: 'none', text: '无序号', selected: state.settings.numberMode === 'none' }),
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
@@ -6395,19 +5600,40 @@ function openSettingsDialog() {
       }
     }
   });
+  const mirrorConnection = getMirrorConnection();
+  const connectMirror = button(mirrorConnection.paired ? '重新连接' : '连接', 'secondary-button', async () => {
+    await pairMirrorSite({ siteOrigin: mirrorConnection.siteOrigin });
+    showToast('Personal Mirror 已连接');
+  });
+  const syncMirror = button('同步到 Mirror', 'secondary-button', async () => {
+    syncMirror.disabled = true;
+    try { await synchronizePersonalMirror({ reason: 'manual' }); showToast('Personal Mirror 已同步'); }
+    finally { syncMirror.disabled = false; }
+  });
+  syncMirror.disabled = !mirrorConnection.paired;
+  const pickMirror = button('选择 Mirror 文件', 'secondary-button', () => openPersonalMirrorFile().catch(displayError));
+  const disconnectMirror = button('断开连接', 'secondary-button', () => {
+    disconnectMirrorSite();
+    showToast('Personal Mirror 已断开');
+  });
+  disconnectMirror.disabled = !mirrorConnection.paired;
   const body = [
+    el('section', { className: 'settings-section' }, [
+      el('h3', { text: 'Personal Mirror' }),
+      el('p', { className: 'help-text', text: mirrorConnection.paired
+        ? `已连接 · ${mirrorConnection.lastSyncedAt ? '最近同步 ' + new Date(mirrorConnection.lastSyncedAt).toLocaleString() : '尚未同步'}`
+        : 'Site 与 VIX 版本、seed 世代相互独立。' }),
+      el('div', { className: 'settings-row' }, [connectMirror, syncMirror, pickMirror, disconnectMirror]),
+    ]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
-      field('查询模型', model), refresh]),
+      field('查询模型', model), refresh,
+      button('配置 API Key', 'secondary-button', () => openGroqSiteDialog({ onConfigured: () => renderModels() })),
+      field('语音模型', speechModel), field('语音音色', speechVoice),
+      el('p', { className: 'help-text', text: '语音主路径由 Groq 提供；iOS 无法播放时使用系统 TTS 兜底。' })]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }),
-      el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog({
-        onConfigured: () => renderModels(),
-      }))])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }),
-      el('div', { className: 'settings-row' }, [button('选择文件', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
   const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
@@ -6415,6 +5641,7 @@ function openSettingsDialog() {
     if (refreshedIds) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
     await setLowLevelRelationsClosed(lowLevelRelations.checked);
+    await setSpeechPreferences(speechModel.value, speechVoice.value);
     showToast('已保存');
   } });
   frame.onDispose = () => {
@@ -6429,7 +5656,7 @@ function showMigrationNotice() {
     title: '数据模型更新完成',
     description: `当前数据库已使用 Schema 6。`,
     body: [
-      el('div', { className: 'warning-box', text: '建议立即导出一份当前版本完整 JSON，并保留升级前备份直到真机验收完成。' }),
+      el('div', { className: 'warning-box', text: '建议立即同步 Personal Mirror，并按 VIX 协议导出一份当前内容用于真机验收。' }),
       el('p', { className: 'help-text', text: '4.0.x 的内容、投影、关系与个人状态都按具体 Entry 语义运行；旧世代文件不做隐式迁移。' }),
     ],
     submitText: '我已了解',
@@ -6469,7 +5696,6 @@ function renderApp() {
   closeQueryMenu();
   closeRelationTargetMenu();
   if (currentCollectionId) renderCollection(token); else renderHome(token);
-  if (review.ids.length) { syncReview(); renderReviewBar(); }
   requestAnimationFrame(() => {
     if (token !== renderRevision) return;
     updateLargeTitleState();
@@ -6486,42 +5712,13 @@ function scheduleRouteRender() {
   });
 }
 
-function refreshVisibleEntryRows(entryIds = []) {
-  if (!currentCollectionId || !collectionRenderContext) return;
-  const changed = new Set(entryIds);
-  const state = getState();
-  for (const row of elements['entry-list'].querySelectorAll('.entry-row[data-entry-id]')) {
-    const entry = state.entryById.get(row.dataset.entryId);
-    if (!entry) continue;
-    const affected = changed.has(entry.id);
-    if (affected) row.replaceWith(renderEntryRow(entry, collectionRenderContext.collection, collectionRenderContext.domain, indexesForRenderedEntry(collectionRenderContext, entry)));
-  }
-}
-
 function handleStoreEvent({ type, detail }) {
-  if ((type === 'mutation' && detail?.mirrorContextChanged)
-    || ['restore', 'reset-seed', 'undo', 'redo', 'external-change', 'sync'].includes(type)) scheduleMirrorContextSync();
   if ((historyRestoreInProgress || presentationMutationInProgress) && ['view-mode', 'calendar-month'].includes(type)) return;
   if (type === 'calendar-month') return;
   if (type === 'mutation' && detail?.kind === 'pin') return;
   if (type === 'mutation' && detail?.kind === 'study-date' && currentCollectionId) {
     const collection = getState().collectionById.get(currentCollectionId);
     if (collection && getViewMode(collection.id) === 'alphabet') return;
-  }
-  if (type === 'annotation-change') {
-    if (activeTask && detail?.kind !== 'batch') {
-      for (const entryId of detail?.entryIds || []) activeTask.manualAnnotationEntryIds?.add(entryId);
-    }
-    refreshVisibleEntryRows(detail?.entryIds || []);
-    if (currentCollectionId) {
-      const collection = getState().collectionById.get(currentCollectionId);
-      if (collection) renderCollectionToolbar(collection);
-    } else renderHomeAnnotationBanner();
-    if (review.ids.length) {
-      syncReview();
-      renderReviewBar();
-    }
-    return;
   }
   renderApp();
 }
@@ -6604,16 +5801,10 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['update-later-button']?.replaceChildren(svgIcon('close'));
   elements['back-button'].addEventListener('click', navigateBack);
   elements['home-button'].addEventListener('click', resetNavigationToHome);
-  elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
   elements['search-button'].addEventListener('click', openSearchDialog);
   elements['settings-button'].addEventListener('click', () => {
     if (currentCollectionId) openCollectionActions(currentCollectionId);
     else openSettingsDialog();
-  });
-  elements['task-capsule'].addEventListener('click', () => {
-    if (!activeTask) return;
-    taskPanelExpanded = true;
-    renderTaskPanel(activeTask.status);
   });
   elements['update-now-button'].addEventListener('click', applyWaitingServiceWorker);
   elements['update-later-button'].addEventListener('click', dismissUpdateBanner);
@@ -6677,16 +5868,5 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');
   renderApp();
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') { clearTimeout(mirrorInboxTimer); return; }
-    Promise.all([receiveMirrorInbox({ notify: true }), warmMirrorRemoteCatalog()])
-      .catch(() => {}).finally(() => scheduleMirrorInboxPoll());
-  });
-  Promise.resolve().then(async () => {
-    if (!bridgeConfigured()) return;
-    await Promise.all([receiveMirrorInbox({ notify: true }), warmMirrorRemoteCatalog()]);
-    scheduleMirrorInboxPoll();
-    synchronizeMirrorContext().catch(() => {});
-  }).catch(() => {});
   setTimeout(showMigrationNotice, 60);
 }

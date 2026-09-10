@@ -8,8 +8,8 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'auto';
 // current unified runtime is not mistaken for an obsolete app shell.
 (() => {
   const CACHE_PREFIX = 'gual-vocabulary-index-';
-  const EXPECTED_CACHE = `${CACHE_PREFIX}v5.0.0-alpha.14-shell-20260908-1`;
-  const SESSION_KEY = 'vocabulary-index:cache-bridge:5.0.0-alpha.14';
+  const EXPECTED_CACHE = `${CACHE_PREFIX}v5.1.0-shell-20260909-1`;
+  const SESSION_KEY = 'vocabulary-index:cache-bridge:5.1.0';
   if (!('caches' in globalThis)) return;
 
   caches.keys().then(async (keys) => {

@@ -1,0 +1,1122 @@
+# english|simplified|source
+abstract base class|抽象基类|PY
+abstract data type|抽象数据类型|CORE
+abstraction|抽象|CORE
+accelerator|加速器|HW
+acceptance test|验收测试|CORE
+access|访问|CORE
+access control|访问控制|NIST
+access token|访问令牌|GH
+accessibility|无障碍|MDN
+accessibility tree|无障碍树|MDN
+accessible name|无障碍名称|MDN
+accountability|可追责性|NIST
+accumulator|累加器|CORE
+accuracy metric|准确率指标|NIST-AI
+acid transaction|ACID 事务|DATA
+activation|激活|CORE
+actuator|执行器|HW
+adapter|适配器|CORE
+addon|附加组件|K8S
+address|地址|CORE
+address bus|地址总线|HW
+address space|地址空间|OS
+addressing|寻址|CORE
+adjacency|邻接|DSA
+adjacency list|邻接表|DSA
+adjacency matrix|邻接矩阵|DSA
+admission|准入|K8S
+admission controller|准入控制器|K8S
+adversarial example|对抗样本|NIST-AI
+adversary|对手|NIST
+agent|智能体|NIST-AI
+aggregation|聚合|DATA
+ajax|Ajax|MDN
+algorithm|算法|CORE
+alias|别名|CORE
+alignment|对齐|NIST-AI
+allocation|分配|CORE
+amortized analysis|摊还分析|CORE
+analytical database|分析型数据库|DATA
+analytics|分析|DATA
+ancestor|祖先节点|DSA
+annotation|注解|PY
+anycast|任播|IETF
+api server|API 服务器|K8S
+application layer|应用层|IETF
+application programming interface|应用程序编程接口|MDN
+approximation algorithm|近似算法|DSA
+argument|实参|PY
+aria|ARIA|MDN
+arithmetic|算术|CORE
+arp|地址解析协议|IETF
+array|数组|MDN
+artifact|制品|CNCF
+artifact repository|制品仓库|DEVOPS
+artificial intelligence|人工智能|NIST-AI
+artificial neural network|人工神经网络|NIST-AI
+ascii|ASCII|MDN
+asic|专用集成电路|HW
+aspect ratio|宽高比|MDN
+assembly|汇编|CORE
+assignee|负责人|GH
+assurance|保障|NIST
+asymptotic complexity|渐近复杂度|CORE
+asymptotics|渐近分析|CORE
+asynchronous|异步|MDN
+asynchronous context manager|异步上下文管理器|PY
+asynchronous generator|异步生成器|PY
+asynchronous iterator|异步迭代器|PY
+atomicity|原子性|CORE
+attack surface|攻击面|NIST
+attention mechanism|注意力机制|NIST-AI
+attribute|属性|MDN
+audit|审计|NIST
+audit log|审计日志|NIST
+authentication|身份验证|NIST
+authorization|授权|NIST
+automation|自动化|CNCF
+availability|可用性|NIST
+availability zone|可用区|CNCF
+average case|平均情况|CORE
+AVL tree|AVL 树|DSA
+awaitable|可等待对象|PY
+B plus tree|B+ 树|DSA
+B tree|B 树|DSA
+back forward cache|前进后退缓存|MDN
+backend|后端|MDN
+backpropagation|反向传播|NIST-AI
+backtracking|回溯|CORE
+backtracking search|回溯搜索|DSA
+balance factor|平衡因子|DSA
+balanced tree|平衡树|DSA
+bandwidth|带宽|IETF
+base branch|基分支|GH
+base64|Base64|MDN
+batch|批处理|CORE
+batch processing|批处理|DATA
+beacon|信标|MDN
+benchmark|基准测试|CORE
+best case|最好情况|CORE
+bgp|边界网关协议|IETF
+bias|偏差|NIST-AI
+bias mitigation|偏差缓解|NIST-AI
+big O notation|大 O 记号|CORE
+big-endian|大端序|CORE
+bigint|大整数|MDN
+binary|二进制|CORE
+binary search|二分查找|DSA
+binary search tree|二叉搜索树|DSA
+binding|绑定|PY
+bios|基本输入输出系统|HW
+bit|比特|CORE
+bitmap|位图|CORE
+bitmask|位掩码|CORE
+bitwise operation|按位运算|CORE
+block|块|CORE
+block level content|块级内容|MDN
+blue green deployment|蓝绿部署|CNCF
+boolean|布尔值|CORE
+bottleneck|瓶颈|CORE
+boundary|边界|CORE
+bounding box|边界框|MDN
+branch|分支|GH
+branch and bound|分支限界|CORE
+branch protection|分支保护|GH
+branching|分支|CORE
+breadcrumb|面包屑导航|MDN
+breadth first search|广度优先搜索|DSA
+broadcast|广播|IETF
+browser|浏览器|MDN
+browser engine|浏览器引擎|MDN
+browsing context|浏览上下文|MDN
+bubble sort|冒泡排序|DSA
+bucket|桶|DSA
+buffer|缓冲区|CORE
+bug|缺陷|CORE
+build|构建|GH
+build pipeline|构建流水线|DEVOPS
+bus|总线|CORE
+byte|字节|CORE
+bytecode|字节码|PY
+cache|缓存|MDN
+cache coherence|缓存一致性|HW
+cache control|缓存控制|MDN
+cache line|缓存行|HW
+call by reference|按引用调用|CORE
+call by value|按值调用|CORE
+call stack|调用栈|MDN
+callable|可调用对象|CORE
+callback|回调|MDN
+callback function|回调函数|MDN
+canary|金丝雀发布|DEVOPS
+canary deployment|金丝雀部署|DEVOPS
+canvas|画布|MDN
+capacity|容量|CORE
+cardinality|基数|CORE
+caret|插入符|MDN
+casting|类型转换|CORE
+catalog|目录|DATA
+cdn|内容分发网络|MDN
+central processing unit|中央处理器|HW
+certificate|证书|NIST
+certificate authority|证书颁发机构|MDN
+certificate chain|证书链|IETF
+certificate revocation|证书吊销|NIST
+change data capture|变更数据捕获|DATA
+character encoding|字符编码|MDN
+checkout|检出|GH
+checkpoint|检查点|CORE
+checksum|校验和|NIST
+cherry-pick|拣选提交|GH
+child|子节点|DSA
+chipset|芯片组|HW
+cidr|无类别域间路由|IETF
+cipher|密码算法|NIST
+cipher suite|密码套件|MDN
+circuit breaker|熔断器|CNCF
+circular buffer|环形缓冲区|DSA
+circular linked list|循环链表|DSA
+class|类|PY
+classification|分类|NIST-AI
+classification model|分类模型|NIST-AI
+client|客户端|MDN
+client side rendering|客户端渲染|MDN
+clock|时钟|HW
+clone|克隆|GH
+closure|闭包|MDN
+cloud computing|云计算|MDN
+cloud native|云原生|CNCF
+cloud-native|云原生|CNCF
+cluster|集群|K8S
+cluster autoscaler|集群自动伸缩器|K8S
+cluster state|集群状态|K8S
+code owner|代码所有者|GH
+code point|码点|MDN
+code review|代码审查|CORE
+code smell|代码异味|CORE
+code splitting|代码拆分|MDN
+codec|编解码器|MDN
+coercion|类型强制转换|CORE
+collaborator|协作者|GH
+collection|集合|CORE
+collision|冲突|CORE
+column|列|DATA
+column store|列式存储|DATA
+columnar format|列式格式|DATA
+commit|提交|GH
+commit hash|提交哈希|GH
+commit history|提交历史|GH
+compiler|编译器|PY
+complexity|复杂度|CORE
+component|组件|CNCF
+composition|组合|CORE
+comprehension|推导式|PY
+compression|压缩|CORE
+computer architecture|计算机体系结构|HW
+computer vision|计算机视觉|NIST-AI
+concurrency|并发|PY
+concurrent programming|并发编程|CORE
+confidential computing|机密计算|NIST
+confidentiality|保密性|NIST
+config map|配置映射|K8S
+configuration|配置|CNCF
+configuration drift|配置漂移|CNCF
+confusion matrix|混淆矩阵|NIST-AI
+congestion|拥塞|IETF
+congestion control|拥塞控制|IETF
+connected component|连通分量|DSA
+connection|连接|IETF
+connection pool|连接池|IETF
+consistency|一致性|CORE
+constant|常量|CORE
+constraint|约束|CORE
+container|容器|CNCF
+container image|容器镜像|K8S
+container orchestration|容器编排|CNCF
+container runtime|容器运行时|K8S
+content delivery network|内容分发网络|MDN
+content security policy|内容安全策略|MDN
+contention|争用|CORE
+context|上下文|PY
+context manager|上下文管理器|PY
+context switch|上下文切换|OS
+continuous delivery|持续交付|DEVOPS
+continuous deployment|持续部署|GH
+continuous integration|持续集成|MDN
+continuous integration pipeline|持续集成流水线|DEVOPS
+continuous testing|持续测试|CORE
+contribution|贡献|GH
+control loop|控制循环|CNCF
+control plane|控制平面|K8S
+control unit|控制单元|HW
+controller|控制器|K8S
+cookie|Cookie|MDN
+copy|复制|CORE
+copy on write|写时复制|CORE
+core|核心|HW
+coroutine|协程|PY
+cors|跨源资源共享|MDN
+counter|计数器|CORE
+countermeasure|对策|NIST
+counting sort|计数排序|DSA
+coupling|耦合|CORE
+cpu|中央处理器|HW
+cpu scheduling|CPU 调度|OS
+crawler|网络爬虫|MDN
+credential|凭据|NIST
+credential stuffing|凭据填充|NIST
+critical section|临界区|CORE
+cross origin resource sharing|跨源资源共享|MDN
+cross site request forgery|跨站请求伪造|MDN
+cross site scripting|跨站脚本|MDN
+cryptographic algorithm|密码算法|NIST
+cryptography|密码学|NIST
+css|CSS|MDN
+cumulative layout shift|累积布局偏移|MDN
+cursor|游标|CORE
+custom resource|自定义资源|K8S
+custom resource definition|自定义资源定义|K8S
+cybersecurity framework|网络安全框架|NIST
+cycle|环|DSA
+daemon|守护进程|OS
+daemon set|守护进程集|K8S
+daemonset|守护进程集|K8S
+dashboard|仪表板|GH
+data|数据|CORE
+data augmentation|数据增强|NIST-AI
+data breach|数据泄露|NIST
+data bus|数据总线|HW
+data catalog|数据目录|DATA
+data cleaning|数据清洗|DATA
+data consistency|数据一致性|DATA
+data encryption|数据加密|NIST
+data engineering|数据工程|DATA
+data governance|数据治理|DATA
+data integrity|数据完整性|NIST
+data labeling|数据标注|NIST-AI
+data lake|数据湖|DATA
+data lakehouse|湖仓一体|DATA
+data lineage|数据血缘|DATA
+data mart|数据集市|DATA
+data mesh|数据网格|DATA
+data model|数据模型|DATA
+data pipeline|数据流水线|DATA
+data quality|数据质量|DATA
+data replication|数据复制|DATA
+data structure|数据结构|MDN
+data validation|数据校验|DATA
+data warehouse|数据仓库|DATA
+database index|数据库索引|DATA
+database migration|数据库迁移|DATA
+database schema|数据库模式|DATA
+database transaction|数据库事务|DATA
+dataframe|数据框|DATA
+datagram|数据报|IETF
+dataset|数据集|DATA
+deadlock|死锁|CORE
+deadlock detection|死锁检测|OS
+deadlock prevention|死锁预防|OS
+debounce|防抖|MDN
+debugger|调试器|PY
+decimal|十进制|CORE
+decision|判定|CORE
+declaration|声明|CORE
+declarative programming|声明式编程|CORE
+decoder|解码器|CORE
+decorator|装饰器|PY
+decryption|解密|MDN
+deduplication|去重|CORE
+deep learning|深度学习|NIST-AI
+default branch|默认分支|GH
+defense in depth|纵深防御|NIST
+definition|定义|CORE
+delegation|委托|CORE
+demand paging|请求分页|OS
+denial of service|拒绝服务|MDN
+dependency|依赖项|CNCF
+deployment|部署|K8S
+deployment environment|部署环境|GH
+deployment pipeline|部署流水线|DEVOPS
+depth first search|深度优先搜索|DSA
+descriptor|描述符|PY
+descriptor protocol|描述符协议|PY
+deserialization|反序列化|MDN
+design pattern|设计模式|CORE
+desired state|期望状态|K8S
+determinism|确定性|CORE
+developer tools|开发者工具|MDN
+dhcp|动态主机配置协议|IETF
+dictionary|字典|PY
+dictionary comprehension|字典推导式|PY
+diff|差异|CORE
+difference array|差分数组|DSA
+diffstat|差异统计|GH
+diffusion model|扩散模型|NIST-AI
+digital certificate|数字证书|MDN
+digital identity|数字身份|NIST
+digital signature|数字签名|MDN
+dimension|维度|DATA
+direct memory access|直接内存访问|HW
+directory|目录|GH
+dirty read|脏读|DATA
+disaster recovery|灾难恢复|NIST
+discovery|发现|CNCF
+discriminative model|判别模型|NIST-AI
+disjoint set|不相交集合|DSA
+dispatch|分派|CORE
+disruption budget|中断预算|K8S
+distributed|分布式|CORE
+distributed computing|分布式计算|CORE
+distributed database|分布式数据库|DATA
+distributed denial of service|分布式拒绝服务|NIST
+distributed tracing|分布式追踪|CNCF
+distribution|分布|CORE
+divide and conquer|分治法|CORE
+dma|直接内存访问|HW
+dns|域名系统|MDN
+docstring|文档字符串|PY
+document database|文档数据库|DATA
+document object model|文档对象模型|MDN
+documentation|文档|GH
+dom|文档对象模型|MDN
+domain|域|MDN
+domain name|域名|MDN
+domain name system|域名系统|IETF
+domain specific language|领域特定语言|MDN
+double ended queue|双端队列|DSA
+doubly linked list|双向链表|DSA
+drift|漂移|DEVOPS
+driver|驱动程序|CORE
+dsp|数字信号处理器|HW
+dunder|双下划线名称|PY
+dynamic|动态|CORE
+dynamic programming|动态规划|CORE
+dynamic provisioning|动态制备|K8S
+dynamic typing|动态类型|MDN
+eager evaluation|立即求值|CORE
+edge|边|DSA
+effective connection type|有效连接类型|MDN
+efficiency|效率|CORE
+element|元素|MDN
+embedded system|嵌入式系统|HW
+embedding|嵌入|NIST-AI
+embodied AI|具身智能|NIST-AI
+encoder|编码器|CORE
+encoding|编码|CORE
+encryption|加密|NIST
+endpoint|端点|CNCF
+endpoint security|端点安全|NIST
+entity|实体|DATA
+entry|条目|CORE
+enumeration|枚举|CORE
+environment|环境|CORE
+environment variable|环境变量|DEVOPS
+ephemeral container|临时容器|K8S
+error|错误|CORE
+error handling|错误处理|CORE
+ethical AI|伦理人工智能|NIST-AI
+evaluation|求值|CORE
+event|事件|MDN
+event driven architecture|事件驱动架构|CNCF
+event sourcing|事件溯源|DATA
+exception|异常|PY
+exception handling|异常处理|CORE
+execution|执行|CORE
+expert system|专家系统|NIST-AI
+explainability|可解释性|NIST-AI
+explainable AI|可解释人工智能|NIST-AI
+exploit|利用|NIST
+expression|表达式|PY
+extension|扩展|MDN
+fact|事实|DATA
+fairness|公平性|NIST-AI
+fault|故障|CORE
+fault tolerance|容错|CNCF
+feature|功能|GH
+feature engineering|特征工程|NIST-AI
+feature flag|功能开关|DEVOPS
+Fenwick tree|树状数组|DSA
+fetch|获取|MDN
+field|字段|CORE
+field programmable gate array|现场可编程门阵列|HW
+file descriptor|文件描述符|OS
+file permission|文件权限|OS
+filesystem|文件系统|CORE
+filter|过滤器|CORE
+fingerprinting|指纹识别|MDN
+firewall|防火墙|MDN
+firmware|固件|NIST
+first contentful paint|首次内容绘制|MDN
+first input delay|首次输入延迟|MDN
+fixed point|定点数|CORE
+flag|标志|CORE
+flexbox|弹性盒布局|MDN
+floating point|浮点数|CORE
+flow|流|CORE
+foreign key|外键|DATA
+forest|森林|DSA
+fork|派生仓库|GH
+fork network|派生网络|GH
+format|格式|CORE
+forward proxy|正向代理|IETF
+foundation model|基础模型|NIST-AI
+fpga|现场可编程门阵列|HW
+fragmentation|碎片化|CORE
+frame rate|帧率|MDN
+framework|框架|CORE
+frontend|前端|MDN
+full table scan|全表扫描|DATA
+fully qualified domain name|完全限定域名|IETF
+function|函数|PY
+functional programming|函数式编程|CORE
+future|Future 对象|PY
+garbage collection|垃圾回收|CORE
+gateway|网关|IETF
+generalization|泛化|NIST-AI
+generative AI|生成式人工智能|NIST-AI
+generative model|生成模型|NIST-AI
+generator|生成器|PY
+generator expression|生成器表达式|PY
+generic|泛型|CORE
+generic programming|泛型编程|CORE
+gist|代码片段|GH
+git object|Git 对象|GH
+GitHub Actions|GitHub Actions|GH
+global interpreter lock|全局解释器锁|PY
+global object|全局对象|MDN
+global scope|全局作用域|MDN
+glossary|术语表|CORE
+glyph|字形|MDN
+gpu|图形处理器|HW
+gradient descent|梯度下降|NIST-AI
+granularity|粒度|CORE
+graph|图|CORE
+graph database|图数据库|DATA
+greedy algorithm|贪心算法|CORE
+grid|网格布局|MDN
+hallucination|幻觉|NIST-AI
+handle|句柄|CORE
+handshake|握手|IETF
+hash|哈希|NIST
+hash collision|哈希冲突|DSA
+hash function|哈希函数|MDN
+hash table|哈希表|DSA
+hashmap|哈希映射|DSA
+header|标头|MDN
+health check|健康检查|CNCF
+heap|堆|CORE
+heap sort|堆排序|DSA
+hexadecimal|十六进制|CORE
+hierarchy|层次结构|CORE
+high availability|高可用性|CNCF
+high level programming language|高级编程语言|MDN
+hmac|基于哈希的消息认证码|MDN
+hoisting|提升|MDN
+hook|钩子|GH
+horizontal pod autoscaler|Pod 水平自动伸缩器|K8S
+host|主机|IETF
+hostname|主机名|IETF
+html|HTML|MDN
+http|HTTP|MDN
+http header|HTTP 标头|MDN
+http method|HTTP 方法|MDN
+https|HTTPS|MDN
+human in the loop|人在回路|NIST-AI
+hyperlink|超链接|MDN
+hypertext|超文本|MDN
+icmp|互联网控制消息协议|IETF
+identifier|标识符|PY
+identity|身份|NIST
+identity and access management|身份与访问管理|NIST
+identity provider|身份提供商|MDN
+image pull policy|镜像拉取策略|K8S
+immutability|不可变性|CORE
+immutable infrastructure|不可变基础设施|CNCF
+imperative programming|命令式编程|CORE
+implementation|实现|CORE
+import path|导入路径|PY
+incident|事件|NIST
+incident response|事件响应|NIST
+index|索引|CORE
+indexeddb|IndexedDB|MDN
+indexing|索引化|DATA
+inference|推理|NIST-AI
+inference engine|推理引擎|NIST-AI
+infrastructure as code|基础设施即代码|CNCF
+infrastructure automation|基础设施自动化|DEVOPS
+ingress|入站|K8S
+ingress controller|入站控制器|K8S
+inheritance|继承|CORE
+init container|初始化容器|K8S
+initialization|初始化|CORE
+input|输入|CORE
+input method editor|输入法编辑器|MDN
+insertion sort|插入排序|DSA
+instance|实例|CORE
+instruction|指令|CORE
+instruction set|指令集|HW
+instruction set architecture|指令集架构|HW
+integer overflow|整数溢出|CORE
+integration test|集成测试|CORE
+integrity|完整性|CORE
+inter process communication|进程间通信|OS
+interaction to next paint|交互到下一次绘制|MDN
+interface|接口|PY
+internationalization|国际化|MDN
+internet protocol|互联网协议|IETF
+internet service provider|互联网服务提供商|IETF
+interoperability|互操作性|CORE
+interpreter|解释器|PY
+interpreter shutdown|解释器关闭|PY
+interrupt|中断|HW
+interrupt handler|中断处理程序|HW
+interrupt request|中断请求|OS
+intrusion detection|入侵检测|NIST
+intrusion prevention|入侵防御|NIST
+invocation|调用|CORE
+ip|互联网协议|IETF
+ip address|IP 地址|MDN
+ip routing|IP 路由|IETF
+ipv4|IPv4|IETF
+ipv6|IPv6|IETF
+isolation|隔离|CORE
+issue|议题|GH
+iteration|迭代|CORE
+iterator|迭代器|PY
+iterator protocol|迭代器协议|PY
+javascript|JavaScript|MDN
+jitter|抖动|MDN
+job|任务|K8S
+join|连接|DATA
+json|JSON|MDN
+just in time compilation|即时编译|MDN
+kernel|内核|CORE
+kernel mode|内核态|OS
+key|键|CORE
+key derivation|密钥派生|NIST
+key exchange|密钥交换|NIST
+key management|密钥管理|NIST
+key value store|键值存储|DATA
+keyword argument|关键字参数|PY
+kube proxy|Kube 代理|K8S
+kubelet|Kubelet|K8S
+label|标签|GH
+label selector|标签选择算符|K8S
+labeling|标注|NIST-AI
+large language model|大语言模型|NIST-AI
+largest contentful paint|最大内容绘制|MDN
+latency|延迟|CNCF
+lazy evaluation|惰性求值|CORE
+lazy loading|延迟加载|MDN
+leaf|叶节点|DSA
+leak|泄漏|CORE
+library|库|CORE
+lifecycle|生命周期|CORE
+linear search|线性查找|DSA
+link layer|链路层|IETF
+linked list|链表|DSA
+linker|链接器|CORE
+list comprehension|列表推导式|PY
+listener|监听器|MDN
+literal|字面值|PY
+little-endian|小端序|CORE
+liveness probe|存活探针|K8S
+load|负载|CNCF
+load balancer|负载均衡器|IETF
+load balancing|负载均衡|CNCF
+load test|负载测试|CORE
+local storage|本地存储|MDN
+locality|局部性|CORE
+localization|本地化|MDN
+lock|锁|PY
+log|日志|CNCF
+log aggregation|日志聚合|DEVOPS
+longtask|长任务|MDN
+loop|循环|CORE
+loop invariant|循环不变量|CORE
+machine learning|机器学习|NIST-AI
+machine learning model|机器学习模型|NIST-AI
+main thread|主线程|MDN
+malware|恶意软件|NIST
+malware analysis|恶意软件分析|NIST
+manifest|清单|K8S
+mapping|映射|CORE
+markup|标记|MDN
+materialized view|物化视图|DATA
+mathml|MathML|MDN
+matrix|矩阵|DSA
+maximum flow|最大流|DSA
+media query|媒体查询|MDN
+memoization|记忆化|CORE
+memoized recursion|记忆化递归|DSA
+memory allocation|内存分配|OS
+memory hierarchy|内存层次结构|HW
+memory leak|内存泄漏|CORE
+memory management|内存管理|CORE
+memory mapped file|内存映射文件|OS
+memory mapped IO|内存映射输入输出|HW
+memory protection|内存保护|OS
+merge|合并|GH
+merge conflict|合并冲突|GH
+merge queue|合并队列|GH
+merge sort|归并排序|DSA
+message|消息|CNCF
+metaclass|元类|PY
+metadata|元数据|CORE
+method|方法|PY
+method resolution order|方法解析顺序|PY
+metrics collection|指标采集|DEVOPS
+microcontroller|微控制器|HW
+microprocessor|微处理器|HW
+microservice architecture|微服务架构|CNCF
+middleware|中间件|MDN
+migration|迁移|CNCF
+milestone|里程碑|GH
+mime|MIME|MDN
+mime type|MIME 类型|MDN
+minification|压缩精简|MDN
+minimum cut|最小割|DSA
+minimum spanning tree|最小生成树|DSA
+mmu|内存管理单元|HW
+mobile first|移动优先|MDN
+model|模型|NIST-AI
+model card|模型卡|NIST-AI
+model drift|模型漂移|NIST-AI
+model evaluation|模型评估|NIST-AI
+model governance|模型治理|NIST-AI
+model monitoring|模型监控|NIST-AI
+model training|模型训练|NIST-AI
+module|模块|PY
+monotonic queue|单调队列|DSA
+monotonic stack|单调栈|DSA
+multi cloud|多云|CNCF
+multi factor authentication|多因素身份验证|MDN
+multicast|组播|IETF
+mutation|变更|CORE
+mutual exclusion|互斥|CORE
+namespace|命名空间|PY
+namespace isolation|命名空间隔离|K8S
+namespace package|命名空间包|PY
+nat|网络地址转换|IETF
+natural language processing|自然语言处理|NIST-AI
+neighbor|邻居节点|DSA
+network address translation|网络地址转换|MDN
+network layer|网络层|IETF
+network policy|网络策略|K8S
+network protocol|网络协议|IETF
+network segmentation|网络分段|NIST
+network throttling|网络限速|MDN
+neural network|神经网络|NIST-AI
+node|节点|K8S
+node affinity|节点亲和性|K8S
+non volatile memory|非易失性存储器|HW
+normal form|范式|DATA
+normalization|规范化|CORE
+normalization form|规范化形式|DATA
+object|对象|PY
+object oriented programming|面向对象编程|CORE
+object reference|对象引用|MDN
+object relational mapping|对象关系映射|DATA
+observability|可观测性|CNCF
+observability stack|可观测性栈|CNCF
+offline algorithm|离线算法|DSA
+online algorithm|在线算法|DSA
+online analytical processing|联机分析处理|DATA
+online transaction processing|联机事务处理|DATA
+open addressing|开放寻址|DSA
+operating frequency|工作频率|HW
+operator|运算符|PY
+optimistic locking|乐观锁|DATA
+optimization|优化|CORE
+orchestration|编排|CNCF
+organization|组织|GH
+origin|源|MDN
+output|输出|CORE
+overflow|溢出|CORE
+overhead|开销|CORE
+package|包|PY
+packet|数据包|IETF
+packet loss|丢包|IETF
+page|页|OS
+page fault|缺页异常|OS
+page load time|页面加载时间|MDN
+page replacement|页面置换|OS
+parallel computing|并行计算|CORE
+parallelism|并行|CORE
+parameter|形参|PY
+parser|解析器|CORE
+partition|分区|CORE
+patch|补丁|GH
+path|路径|DSA
+payload|载荷|NIST
+penetration testing|渗透测试|NIST
+percent encoding|百分号编码|MDN
+performance test|性能测试|CORE
+peripheral|外设|HW
+persistence|持久化|CORE
+persistent volume|持久卷|K8S
+persistent volume claim|持久卷申领|K8S
+personal data|个人数据|NIST
+personally identifiable information|个人可识别信息|NIST
+pessimistic locking|悲观锁|DATA
+pickle|Pickle 序列化|PY
+pipeline|流水线|CNCF
+plugin|插件|CORE
+pod|Pod|K8S
+pod affinity|Pod 亲和性|K8S
+pod anti affinity|Pod 反亲和性|K8S
+pod disruption budget|Pod 中断预算|K8S
+pointer|指针|CORE
+policy|策略|NIST
+polyfill|垫片|MDN
+polymorphism|多态|CORE
+port|端口|IETF
+port forwarding|端口转发|IETF
+positional argument|位置参数|PY
+power management|电源管理|HW
+precedence|优先级|CORE
+precision|精度|CORE
+precondition|前置条件|CORE
+prefix sum|前缀和|DSA
+prefix tree|前缀树|DSA
+preflight request|预检请求|MDN
+primary key|主键|DATA
+primitive|基本类型|CORE
+principle of least privilege|最小权限原则|MDN
+priority|优先级|DSA
+priority queue|优先队列|DSA
+privacy|隐私|NIST
+probability|概率|CORE
+process|进程|CORE
+process isolation|进程隔离|OS
+process scheduling|进程调度|OS
+process state|进程状态|OS
+producer consumer|生产者消费者|CORE
+profile|配置文件|CORE
+progressive enhancement|渐进增强|MDN
+progressive web application|渐进式 Web 应用|MDN
+promise|Promise|MDN
+prompt|提示词|NIST-AI
+prompt engineering|提示词工程|NIST-AI
+property based testing|基于性质的测试|CORE
+protected branch|受保护分支|GH
+protocol|协议|IETF
+protocol class|协议类|PY
+provisioning|制备|DEVOPS
+proxy|代理|MDN
+pruning strategy|剪枝策略|DSA
+pseudoclass|伪类|MDN
+pseudoelement|伪元素|MDN
+public key cryptography|公钥密码学|MDN
+public key infrastructure|公钥基础设施|NIST
+pull request|拉取请求|GH
+pull request review|拉取请求审查|GH
+pwa|渐进式 Web 应用|MDN
+query|查询|DATA
+query optimizer|查询优化器|DATA
+queue|队列|CORE
+quic|QUIC|MDN
+quick sort|快速排序|DSA
+race condition|竞态条件|CORE
+radix sort|基数排序|DSA
+randomized algorithm|随机化算法|DSA
+rate limiting|速率限制|CNCF
+read committed|读已提交|DATA
+read replica|只读副本|DATA
+reader writer lock|读写锁|CORE
+readiness probe|就绪探针|K8S
+real time operating system|实时操作系统|HW
+real user monitoring|真实用户监控|MDN
+record|记录|CORE
+recursion|递归|CORE
+red black tree|红黑树|DSA
+reduced instruction set computer|精简指令集计算机|HW
+redundancy|冗余|CORE
+refactoring|重构|CORE
+reference|引用|PY
+reference counting|引用计数|CORE
+reference cycle|引用环|PY
+reflow|回流|MDN
+register|寄存器|HW
+registry|注册表|CORE
+regression test|回归测试|CORE
+regular expression|正则表达式|MDN
+reinforcement learning|强化学习|NIST-AI
+relation|关系|DATA
+relational database|关系数据库|DATA
+release|发布|GH
+release automation|发布自动化|DEVOPS
+release branch|发布分支|GH
+release candidate|发布候选版本|DEVOPS
+release management|发布管理|DEVOPS
+remote|远程仓库|GH
+render blocking|渲染阻塞|MDN
+repaint|重绘|MDN
+repeatable read|可重复读|DATA
+replay attack|重放攻击|NIST
+replica set|副本集|K8S
+replicaset|副本集|K8S
+replication|复制|CORE
+repository|仓库|GH
+repository visibility|仓库可见性|GH
+representation|表示|CORE
+request|请求|MDN
+resilience|韧性|CNCF
+resolution|解析度|CORE
+resource|资源|K8S
+resource leak|资源泄漏|CORE
+resource limit|资源限制|K8S
+resource management|资源管理|CORE
+resource request|资源请求|K8S
+response|响应|MDN
+responsible AI|负责任人工智能|NIST-AI
+responsive web design|响应式网页设计|MDN
+rest|REST|MDN
+retrieval augmented generation|检索增强生成|NIST-AI
+retry|重试|CORE
+reverse proxy|反向代理|IETF
+review|审查|GH
+risk|风险|NIST
+risk assessment|风险评估|NIST
+risk management|风险管理|NIST
+robustness|鲁棒性|NIST-AI
+role based access control|基于角色的访问控制|NIST
+rollback|回滚|CORE
+rollback strategy|回滚策略|DEVOPS
+rolling deployment|滚动部署|CNCF
+rolling update|滚动更新|K8S
+root|根节点|DSA
+round trip time|往返时间|MDN
+router|路由器|MDN
+routing|路由|IETF
+routing table|路由表|IETF
+row|行|DATA
+runtime|运行时|PY
+runtime class|运行时类|K8S
+same origin policy|同源策略|MDN
+sandbox|沙箱|MDN
+scalability|可伸缩性|CNCF
+scheduler|调度器|CORE
+schema|模式|CORE
+schema evolution|模式演进|DATA
+scope|作用域|PY
+script|脚本|CORE
+search space|搜索空间|DSA
+secret|Secret|K8S
+secret management|机密管理|DEVOPS
+secret scanning|机密扫描|GH
+secure boot|安全启动|HW
+secure shell|安全外壳协议|IETF
+security control|安全控制|NIST
+security incident|安全事件|NIST
+security policy|安全策略|NIST
+security posture|安全态势|NIST
+security token|安全令牌|NIST
+segment tree|线段树|DSA
+selection sort|选择排序|DSA
+selector|选择器|MDN
+self supervised learning|自监督学习|NIST-AI
+semantics|语义|CORE
+semaphore|信号量|OS
+sensor|传感器|HW
+sentinel|哨兵值|PY
+separate chaining|拉链法|DSA
+sequence|序列|CORE
+serializable isolation|可串行化隔离|DATA
+serialization|序列化|CORE
+serializer|序列化器|CORE
+server|服务器|MDN
+server side rendering|服务器端渲染|MDN
+service|服务|K8S
+service account|服务账户|K8S
+service discovery|服务发现|CNCF
+service mesh|服务网格|K8S
+serviceworker|Service Worker|MDN
+session|会话|MDN
+session layer|会话层|IETF
+set|集合|DSA
+set comprehension|集合推导式|PY
+sharding|分片|CORE
+shared memory|共享内存|OS
+shell|命令行外壳|OS
+short circuit evaluation|短路求值|CORE
+shortest path|最短路径|DSA
+side-effect|副作用|CORE
+sidecar|边车|CNCF
+signal|信号|CORE
+signature|签名|CORE
+single page application|单页应用|MDN
+singly linked list|单向链表|DSA
+site reliability engineering|站点可靠性工程|CNCF
+slice|切片|PY
+sliding window|滑动窗口|DSA
+slow query|慢查询|DATA
+smoke test|冒烟测试|CORE
+smtp|简单邮件传输协议|IETF
+snapshot|快照|CNCF
+soc|片上系统|HW
+socket|套接字|IETF
+socket address|套接字地址|IETF
+software architecture|软件架构|CORE
+software bill of materials|软件物料清单|GH
+software configuration management|软件配置管理|DEVOPS
+software design|软件设计|CORE
+software supply chain|软件供应链|NIST
+sorting|排序|CORE
+source|源代码|GH
+source code repository|源代码仓库|DEVOPS
+source control|源代码管理|GH
+source map|源映射|MDN
+space complexity|空间复杂度|CORE
+sparse matrix|稀疏矩阵|DSA
+specification|规范|CORE
+ssh|安全外壳协议|IETF
+stable sort|稳定排序|DSA
+stack|栈|CORE
+stack overflow|栈溢出|CORE
+staging|暂存|GH
+startup probe|启动探针|K8S
+state|状态|CORE
+state transition|状态转移|DSA
+statefulset|有状态副本集|K8S
+statement|语句|PY
+storage|存储|K8S
+storage class|存储类|K8S
+stream|流|CORE
+stream processing|流处理|DATA
+stress test|压力测试|CORE
+string|字符串|PY
+strongly connected component|强连通分量|DSA
+structural pattern matching|结构化模式匹配|PY
+structure|结构|CORE
+structured clone|结构化克隆|MDN
+stylesheet|样式表|MDN
+subgraph|子图|DSA
+subnet|子网|IETF
+subnet mask|子网掩码|IETF
+subroutine|子程序|CORE
+substitution|替换|CORE
+subtree|子树|DSA
+supervised learning|监督学习|NIST-AI
+supply chain attack|供应链攻击|NIST
+svg|SVG|MDN
+symmetric encryption|对称加密|NIST
+synchronization|同步|CORE
+syntax|语法|PY
+system call|系统调用|OS
+system on chip|片上系统|HW
+system test|系统测试|CORE
+table|表|DATA
+tag|标签|GH
+taint|污点|K8S
+taint and toleration|污点和容忍|K8S
+task|任务|PY
+tcp|传输控制协议|IETF
+technical debt|技术债务|CORE
+telemetry|遥测|CNCF
+template|模板|CORE
+test coverage|测试覆盖率|CORE
+thread|线程|PY
+thread pool|线程池|OS
+threat|威胁|NIST
+threat intelligence|威胁情报|NIST
+threat model|威胁模型|NIST
+throttle|节流|MDN
+throughput|吞吐量|CORE
+time complexity|时间复杂度|CORE
+time series database|时序数据库|DATA
+timeout|超时|CORE
+tls|传输层安全协议|MDN
+token|词元|PY
+toleration|容忍|K8S
+topological sort|拓扑排序|DSA
+traceback|回溯信息|PY
+traffic shaping|流量整形|CNCF
+training|训练|NIST-AI
+training data|训练数据|NIST-AI
+transaction|事务|CORE
+transaction isolation|事务隔离|DATA
+transformer model|Transformer 模型|NIST-AI
+transparency|透明度|NIST-AI
+transport encryption|传输加密|NIST
+transport layer|传输层|IETF
+transport layer security|传输层安全协议|MDN
+transport protocol|传输协议|IETF
+traversal|遍历|CORE
+trie tree|字典树|DSA
+trigger|触发器|CORE
+trunk based development|主干开发|DEVOPS
+trust|信任|NIST
+trust boundary|信任边界|NIST
+trusted execution environment|可信执行环境|HW
+trustworthy AI|可信人工智能|NIST-AI
+tuple|元组|PY
+two pointers|双指针|DSA
+type|类型|PY
+type annotation|类型注解|PY
+type checking|类型检查|CORE
+type erasure|类型擦除|CORE
+type inference|类型推断|CORE
+type safety|类型安全|CORE
+uart|通用异步收发器|HW
+udp|用户数据报协议|IETF
+underflow|下溢|CORE
+unicast|单播|IETF
+union find|并查集|DSA
+unit test|单元测试|CORE
+unsupervised learning|无监督学习|NIST-AI
+upstream|上游|GH
+uri|统一资源标识符|MDN
+url|统一资源定位符|MDN
+user agent|用户代理|MDN
+user mode|用户态|OS
+validation|校验|CORE
+variable|变量|PY
+variadic argument|可变参数|PY
+vector|向量|NIST-AI
+vector database|向量数据库|NIST-AI
+version|版本|GH
+version control|版本控制|GH
+version pinning|版本锁定|DEVOPS
+vertex|顶点|DSA
+vertical pod autoscaler|Pod 垂直自动伸缩器|K8S
+viewport|视口|MDN
+virtual environment|虚拟环境|PY
+virtual file system|虚拟文件系统|OS
+virtual memory|虚拟内存|HW
+virtual private network|虚拟专用网络|IETF
+virtualization|虚拟化|CNCF
+visibility|可见性|CORE
+vision language model|视觉语言模型|NIST-AI
+volume|卷|K8S
+volume mount|卷挂载|K8S
+vpn|虚拟专用网络|IETF
+vulnerability|漏洞|NIST
+vulnerability assessment|漏洞评估|NIST
+vulnerability management|漏洞管理|NIST
+warehouse|仓库|DATA
+watchdog|看门狗|HW
+web application|Web 应用|MDN
+web component|Web 组件|MDN
+web performance|Web 性能|MDN
+web standard|Web 标准|MDN
+webassembly|WebAssembly|MDN
+webhook|Webhook|GH
+websocket|WebSocket|MDN
+webworker|Web Worker|MDN
+weight|权重|DSA
+wheel distribution|Wheel 分发包|PY
+widget|小组件|MDN
+worker|工作线程|MDN
+workflow|工作流|GH
+workflow run|工作流运行|GH
+working tree|工作树|GH
+workload|工作负载|CORE
+worst case|最坏情况|CORE
+write ahead log|预写日志|DATA
+xml|XML|MDN
+zero downtime deployment|零停机部署|CNCF
+zero round trip time|零往返时间|IETF
+zero trust|零信任|NIST
+zombie process|僵尸进程|OS

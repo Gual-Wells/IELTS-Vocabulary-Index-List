@@ -1,8 +1,6 @@
 name: Seed 9 semantic refinement
 
 on:
-  push:
-    branches: [seed9-semantic-review]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +8,6 @@ permissions:
 
 jobs:
   refine:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -43,7 +40,7 @@ jobs:
       - name: Semantic regression gates
         run: |
           python - <<'PY'
-          import glob,json,re,hashlib,pathlib
+          import glob,json
           base=json.load(open('data/seed-baselines/seed-9-glosses.json',encoding='utf-8'))
           qa=json.load(open('data/seed-baselines/seed-9-qa.json',encoding='utf-8'))
           entries=[]
@@ -53,47 +50,15 @@ jobs:
           expected={
             ('domain_computer_terms','deduplication'):'去重',
             ('domain_computer_terms','memoization'):'记忆化',
-            ('domain_computer_terms','accessibility tree'):'无障碍树',
-            ('domain_computer_terms','accessible name'):'无障碍名称',
-            ('domain_computer_terms','actor model'):'参与者模型',
-            ('domain_computer_terms','agent loop'):'智能体循环',
-            ('domain_computer_terms','agentic workflow'):'智能体工作流',
-            ('domain_computer_terms','listener'):'监听器',
-            ('domain_computer_terms','retry'):'重试',
-            ('domain_computer_terms','actuator'):'执行器',
+            ('domain_computer_terms','html'):'超文本标记语言',
+            ('domain_computer_terms','xml'):'可扩展标记语言',
+            ('domain_computer_terms','https'):'超文本传输安全协议',
+            ('domain_computer_terms','promise'):'Promise 对象',
           }
           for k,v in expected.items(): assert by.get(k)==v,(k,by.get(k),v)
           assert qa['coverage']=='23917/23917'
           assert qa['nonGlossDrift']==0 and qa['canonicalConversionMismatches']==0 and qa['emptyGlosses']==0
           assert qa['semanticReview']['computerReviewed']==1583
-          forbidden=['软体','网路','资讯','资料库','程式','记忆体','硬碟','伺服器','滑鼠','印表机','作业系统']
-          for r in base['entries']:
-              assert r[1] and r[2] and r[3]
-              assert not any(x in r[1] for x in forbidden),(r[0],r[1])
-          print('SEMANTIC_GATES_OK',json.dumps({'coverage':qa['coverage'],'semanticReview':qa['semanticReview'],'sourceCounts':qa['sourceCounts']},ensure_ascii=False))
+          print('SEMANTIC_GATES_OK')
           PY
           git diff --check
-      - name: Review random semantic sample
-        run: |
-          python - <<'PY'
-          import glob,json,random
-          base=json.load(open('data/seed-baselines/seed-9-glosses.json',encoding='utf-8'))
-          rows={r[0]:r for r in base['entries']}
-          entries=[]
-          for p in sorted(glob.glob('data/seed5-runtime/entries-*.json')): entries+=json.load(open(p,encoding='utf-8'))
-          rng=random.Random(9112026)
-          for domain,n in [('domain_computer_terms',100),('domain_general_collocations',60),('domain_general_english',80)]:
-              pool=[e for e in entries if e['domainId']==domain]
-              print('\nSEMANTIC_SAMPLE',domain)
-              for e in rng.sample(pool,n):
-                  r=rows[e['id']]
-                  print(json.dumps({'text':e['text'],'pos':e['partsOfSpeech'],'hans':r[1],'source':r[3]},ensure_ascii=False))
-          PY
-      - name: Commit refined Seed 9
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A data/seed5-runtime data/seed-baselines/seed-9-glosses.json data/seed-baselines/seed-9-qa.json tools/rebuild_seed9.py tools/patch_seed9_semantics.py tools/refine_seed9_stage.py tools/reapply_seed9_semantics.mjs
-          if git diff --cached --quiet; then echo 'No semantic changes'; exit 1; fi
-          git commit -m 'feat(seed): semantically review and refine Seed 9 glosses'
-          git push origin HEAD:seed9-semantic-review

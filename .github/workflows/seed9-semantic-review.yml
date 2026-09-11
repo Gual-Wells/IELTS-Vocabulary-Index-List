@@ -1,10 +1,6 @@
 name: Seed 9 semantic review export
 
 on:
-  push:
-    branches: [seed9-semantic-review]
-    paths-ignore:
-      - 'data/seed-review/**'
   workflow_dispatch:
 
 permissions:
@@ -20,10 +16,3 @@ jobs:
           python-version: '3.12'
       - name: Export review targets
         run: python tools/export_seed9_semantic_review.py
-      - name: Commit review batches
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/seed-review
-          git commit -m 'chore(seed9): export semantic review targets'
-          git push origin HEAD:seed9-semantic-review

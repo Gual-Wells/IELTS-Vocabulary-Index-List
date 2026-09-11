@@ -134,6 +134,16 @@ TECH_OVERRIDES = {
 }
 
 PHRASE_OVERRIDES = {
+    "a spot on one's fame": "名誉上的污点",
+    "enforce sth. upon sb.": "强迫某人接受某事",
+    "in the presence of ...": "在有……的情况下",
+    "what remains unclear is ...": "尚不清楚的是……",
+    "favor of": "赞同；支持",
+    "succeed in doing": "成功做成某事",
+    "be capable of doing": "有能力做某事",
+    "as an illustration": "作为例证",
+    "be responsible for doing": "负责做某事",
+    "allow someone to do": "允许某人做……",
     "from various circles": "来自各界；来自不同圈子",
     "jeopardize one's reputation": "损害自己的声誉",
     "of the question": "关于该问题；问题的",
@@ -355,7 +365,10 @@ def mainland_normalize(text: str, domain: str):
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^[：:;,；，\s]+|[：:;,；，\s]+$", "", text)
     for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
+        if domain != "domain_computer_terms" and src in {"资料", "档案"}:
+            continue
         text = text.replace(src, dst)
+    text = re.sub(r"…{3,}", "……", text)
     # Keep the gloss compact and remove source-specific metadata remnants.
     text = DOMAIN_TAG_RE.sub("", text)
     text = text.replace("\\n", "；").replace("\n", "；")
@@ -449,6 +462,15 @@ def validate_hans(entry, gloss):
     return ""
 
 
+def mt_source_text(entry):
+    text = entry["text"]
+    if entry["domainId"] != "domain_computer_terms":
+        text = re.sub(r"\bsth\.(?=\s|$)", "something", text, flags=re.I)
+        text = re.sub(r"\bsb\.(?=\s|$)", "someone", text, flags=re.I)
+        text = re.sub(r"\bone's\b", "someone's", text, flags=re.I)
+    return text
+
+
 def main():
     entries = load_entries()
     ecdict = load_ecdict()
@@ -472,7 +494,7 @@ def main():
     def translate_batch(batch):
         if not batch:
             return []
-        tagged = "\n".join(f"<<<VIX:{i:03d}>>>{entry['text']}" for i, entry in enumerate(batch))
+        tagged = "\n".join(f"<<<VIX:{i:03d}>>>{mt_source_text(entry)}" for i, entry in enumerate(batch))
         raw = google_translate(tagged)
         pattern = re.compile(r"<<<VIX:(\d{3})>>>(.*?)(?=(?:\n?<<<VIX:\d{3}>>>)|\Z)", re.S)
         matches = pattern.findall(raw)

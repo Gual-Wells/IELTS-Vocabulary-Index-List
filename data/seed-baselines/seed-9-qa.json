@@ -2,7 +2,7 @@
   "protocol": "vix-seed-qa/1",
   "seedRevision": 9,
   "appVersion": "5.1.1",
-  "generatedAt": "2026-09-11T00:00:00.000Z",
+  "generatedAt": "2026-09-11T14:35:00.000Z",
   "counts": {
     "entries": 23917,
     "memberships": 61905,
@@ -14,13 +14,14 @@
   "canonicalConversionMismatches": 0,
   "emptyGlosses": 0,
   "sourceCounts": {
-    "VIX-9-TECH": 91,
-    "VIX-9-ECDICT": 20089,
-    "VIX-9-PATTERN": 35,
-    "VIX-9-CURATED": 8,
-    "VIX-9-MT": 3694
+    "VIX-9-TECH-REVIEWED": 1528,
+    "VIX-9-TECH": 55,
+    "VIX-9-MT": 2841,
+    "VIX-9-PATTERN": 45,
+    "VIX-9-ECDICT": 19440,
+    "VIX-9-CURATED": 8
   },
-  "fallbackCount": 3694,
+  "fallbackCount": 2841,
   "smoke": [
     {
       "domainId": "domain_computer_terms",
@@ -96,15 +97,15 @@
   "entryChunks": [
     {
       "path": "data/seed5-runtime/entries-000.json",
-      "bytes": 4194117,
-      "sha256": "8f9fe40d5fb690856f17b4bc55ee859d8b1cdf5b3864fd502af86b591bd26670",
-      "count": 13323
+      "bytes": 4194210,
+      "sha256": "0de66b0178720146cfcd030c59d895b950673c70cd77376528ec94a3373b02bc",
+      "count": 13345
     },
     {
       "path": "data/seed5-runtime/entries-001.json",
-      "bytes": 3335011,
-      "sha256": "3c3cee0b23fa2705d5ce4273a0e92c44788923960525775572c1dca65e4ce255",
-      "count": 10594
+      "bytes": 3328675,
+      "sha256": "b8ee252d6a87b82b8ca6d133bb0cfbace635d635472f1c0eb958fd2fa3f96a43",
+      "count": 10572
     }
   ],
   "membershipChunksUnchanged": [
@@ -155,7 +156,13 @@
   ],
   "baseline": {
     "path": "data/seed-baselines/seed-9-glosses.json",
-    "bytes": 3039593,
-    "sha256": "8fbc3126d9954561a9515c57a0b12ca241c6f44e06ebbaf49ca33e380989b5b3"
+    "bytes": 3040164,
+    "sha256": "914d2ea32fbcbe3073fc831f7f211c4079899148d5dc5e8f7ca7ae3a7f2d5591"
+  },
+  "semanticReview": {
+    "computerReviewed": 1583,
+    "computerChanged": 835,
+    "fallbackToNew": 0,
+    "reference": "Seed 8 technical glosses used only as domain-disambiguation cross-check"
   }
 }

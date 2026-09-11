@@ -22,7 +22,8 @@ if old in s:
 
 # Curate high-risk grammatical phrases that isolated MT tends to translate too literally.
 marker='PHRASE_OVERRIDES = {\n'
-extras='''    "enforce sth. upon sb.": "强迫某人接受某事",
+extras='''    "a spot on one's fame": "名誉上的污点",
+    "enforce sth. upon sb.": "强迫某人接受某事",
     "in the presence of ...": "在有……的情况下",
     "what remains unclear is ...": "尚不清楚的是……",
     "favor of": "赞同；支持",
@@ -32,7 +33,7 @@ extras='''    "enforce sth. upon sb.": "强迫某人接受某事",
     "be responsible for doing": "负责做某事",
     "allow someone to do": "允许某人做……",
 '''
-if '"enforce sth. upon sb.":' not in s:
+if '"a spot on one\'s fame":' not in s:
     assert marker in s
     s=s.replace(marker,marker+extras,1)
 

@@ -16,12 +16,12 @@
   "sourceCounts": {
     "VIX-9-TECH-REVIEWED": 1528,
     "VIX-9-TECH": 55,
-    "VIX-9-MT": 2829,
-    "VIX-9-PATTERN": 66,
-    "VIX-9-ECDICT": 19421,
-    "VIX-9-CURATED": 18
+    "VIX-9-MT": 2825,
+    "VIX-9-PATTERN": 72,
+    "VIX-9-ECDICT": 19404,
+    "VIX-9-CURATED": 33
   },
-  "fallbackCount": 2829,
+  "fallbackCount": 2825,
   "smoke": [
     {
       "domainId": "domain_computer_terms",
@@ -97,14 +97,14 @@
   "entryChunks": [
     {
       "path": "data/seed5-runtime/entries-000.json",
-      "bytes": 4194200,
-      "sha256": "b7008044dac1c8408022319d2615af7074a03f4e4a533160e21cacae9db72df3",
+      "bytes": 4194177,
+      "sha256": "4d176c993fdd42efd024fe4efcf0d1347be4b0df03321a56d657664ce2cfedae",
       "count": 13345
     },
     {
       "path": "data/seed5-runtime/entries-001.json",
-      "bytes": 3328618,
-      "sha256": "2008eed1f96fce24e15cf7d03ce6949626df9df48c9ec357c7a3965d303ba7e3",
+      "bytes": 3328550,
+      "sha256": "d1894398f0822fe436ec4dc5c1561c5b61bddaebdb5aabff2f63b3ac59852c78",
       "count": 10572
     }
   ],
@@ -156,12 +156,12 @@
   ],
   "baseline": {
     "path": "data/seed-baselines/seed-9-glosses.json",
-    "bytes": 3040107,
-    "sha256": "018e436497ec8cada9981c5aba2897c922e68e1eb9c572f2caaa4a75b534943a"
+    "bytes": 3039970,
+    "sha256": "ae96fcf2cf3815fdeec0943ee0549fc98a7415bd04ca99183434b033b8167850"
   },
   "semanticReview": {
     "computerReviewed": 1583,
-    "computerChanged": 834,
+    "computerChanged": 833,
     "fallbackToNew": 0,
     "reference": "Seed 8 technical glosses used only as domain-disambiguation cross-check"
   }

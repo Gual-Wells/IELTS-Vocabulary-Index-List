@@ -134,6 +134,11 @@ TECH_OVERRIDES = {
 }
 
 PHRASE_OVERRIDES = {
+    "as": "作为；如同；当……时；因为",
+    "given that ..., ...": "鉴于……，……",
+    "in contrast to ...": "与……相比；与……形成对比",
+    "there are several reasons why ...": "……有若干原因",
+    "analogy between": "……之间的类比",
     "a spot on one's fame": "名誉上的污点",
     "enforce sth. upon sb.": "强迫某人接受某事",
     "in the presence of ...": "在有……的情况下",
@@ -205,6 +210,21 @@ PHRASE_OVERRIDES = {
 }
 
 GENERAL_OVERRIDES = {
+    "plastic": "塑料；塑料制的；可塑的",
+    "publicly": "公开地；公然地",
+    "foster": "培养；促进；收养；养育的",
+    "shortsighted": "近视的；目光短浅的",
+    "under oath": "宣誓后；在誓言约束下",
+    "converge": "汇聚；会聚；趋同",
+    "build on": "以……为基础；在……上发展",
+    "sportsman": "运动员；体育爱好者",
+    "live up to": "达到；不辜负（期望）",
+    "openness": "开放；开放性；坦诚",
+    "reverend": "牧师；教士；可敬的",
+    "unencumbered": "不受束缚的；没有负担的",
+    "filial": "子女的；孝顺的",
+    "stutter": "口吃；结巴；结结巴巴地说",
+    "sphere": "球；球体；天体；范围；领域",
     "preside at": "主持；担任……主席",
     "ye": "你们；你（古语）",
     "fall under sb.'s observation": "引起某人的注意；被某人观察到",

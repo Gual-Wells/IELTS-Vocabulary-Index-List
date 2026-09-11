@@ -1,7 +1,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.1.1-recovery-20260910-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.1.1-cloudflare-mirror-20260911-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   "./js/v3-provider-runtime.js",
@@ -27,6 +27,7 @@ const PRECACHE = [
   "./js/vix-protocols.js",
   "./js/vix-mirror-site.js",
   "./js/vix-provider-site.js",
+  "./js/v5-mirror-ui-runtime.js",
   "./js/v5-suppression-runtime.js",
   "./js/v5-mirror-runtime.js",
   "./js/v5-mirror3.js",
@@ -36,7 +37,8 @@ const PRECACHE = [
   "./assets/icons/vix-icon-180-v4.png",
   "./assets/icons/vix-icon-192-v4.png",
   "./assets/icons/vix-icon-512-v4.png",
-  "./css/vix.css"
+  "./css/vix.css",
+  "./css/v5-mirror-cloudflare.css"
 ];
 
 sw.addEventListener('install', (event) => {
@@ -45,7 +47,6 @@ sw.addEventListener('install', (event) => {
     await cache.addAll(PRECACHE);
   })());
 });
-
 
 sw.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') sw.skipWaiting();
@@ -82,8 +83,6 @@ sw.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== sw.location.origin) return;
-  // API responses and capability-bearing Session traffic must always reach
-  // the network and must never enter Cache Storage.
   if (url.pathname.startsWith('/api/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(appShellFirst(request));

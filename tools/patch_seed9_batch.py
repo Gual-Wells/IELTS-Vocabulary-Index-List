@@ -4,11 +4,12 @@ from pathlib import Path
 p = Path('tools/rebuild_seed9.py')
 s = p.read_text(encoding='utf-8')
 
-# Deterministic edge cases discovered by the first complete batched pass.
+# Deterministic edge cases discovered by complete batched passes.
 phrase_marker = 'PHRASE_OVERRIDES = {\n'
 phrase_extra = '''    "from various circles": "来自各界；来自不同圈子",
     "jeopardize one's reputation": "损害自己的声誉",
     "of the question": "关于该问题；问题的",
+    "to one's knowledge": "据某人所知",
 '''
 if '"from various circles":' not in s:
     assert phrase_marker in s

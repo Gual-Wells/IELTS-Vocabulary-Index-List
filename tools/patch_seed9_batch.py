@@ -4,6 +4,19 @@ from pathlib import Path
 p = Path('tools/rebuild_seed9.py')
 s = p.read_text(encoding='utf-8')
 
+# Mainland terminology is a storage/content invariant for every domain, not only
+# the dedicated computer-term domain. ECDICT can surface Taiwan/HK terminology in
+# ordinary English entries too, so normalize it globally before canonical encoding.
+old_scope = '''    if domain == "domain_computer_terms":
+        for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
+            text = text.replace(src, dst)
+'''
+new_scope = '''    for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+'''
+if old_scope in s:
+    s = s.replace(old_scope, new_scope, 1)
+
 # Deterministic edge cases discovered by complete batched passes.
 phrase_marker = 'PHRASE_OVERRIDES = {\n'
 phrase_extra = '''    "from various circles": "来自各界；来自不同圈子",

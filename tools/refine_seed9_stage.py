@@ -14,6 +14,8 @@ TECH_REPL={
     '软体':'软件','网路':'网络','资讯':'信息','资料库':'数据库','资料':'数据','程式':'程序',
     '记忆体':'内存','硬碟':'硬盘','伺服器':'服务器','滑鼠':'鼠标','印表机':'打印机',
     '作业系统':'操作系统','档案':'文件','二进位':'二进制','函式':'函数','物件':'对象',
+    '超文字':'超文本','协定':'协议','非同步':'异步','可延伸':'可扩展','位元':'比特',
+    '快取':'缓存','预设':'默认','外挂':'插件','资料结构':'数据结构','演算法':'算法',
 }
 
 # High-confidence terminology where an old dictionary, generic MT, or historical
@@ -48,6 +50,8 @@ TECH_EXACT={
     'artifact':'制品',
     'assembly':'汇编',
     'assurance':'保障',
+    'async':'异步',
+    'asynchronous':'异步',
     'authentication':'身份验证',
     'authorization':'授权',
     'backpropagation':'反向传播',
@@ -73,6 +77,9 @@ TECH_EXACT={
     'heap':'堆',
     'host':'主机',
     'hook':'钩子',
+    'html':'超文本标记语言',
+    'http':'超文本传输协议',
+    'https':'超文本传输安全协议',
     'inference':'推理',
     'instance':'实例',
     'interrupt':'中断',
@@ -87,6 +94,7 @@ TECH_EXACT={
     'pipeline':'流水线',
     'port':'端口',
     'process':'进程',
+    'promise':'Promise 对象',
     'proxy':'代理',
     'queue':'队列',
     'repository':'仓库',
@@ -97,11 +105,14 @@ TECH_EXACT={
     'socket':'套接字',
     'stack':'栈',
     'state':'状态',
+    'synchronous':'同步',
     'tag':'标签',
     'thread':'线程',
     'token':'词元',
     'trigger':'触发器',
     'watchdog':'看门狗',
+    'websocket':'WebSocket',
+    'xml':'可扩展标记语言',
 }
 
 DOMAIN_TAG_RE=re.compile(r'\[(?:法|医|化|计|机|電|电|通信|语|经|贸|数|物|生|农|商|测|地|矿|纺|冶|航|建|军)\]\s*')

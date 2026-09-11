@@ -36,7 +36,7 @@ if(byId.size!==23917) throw new Error('semantic stage ID coverage mismatch');
 const baselineRows=[];
 const forbidden=['软体','网路','资讯','资料库','程式','记忆体','硬碟','伺服器','滑鼠','印表机','作业系统'];
 let mismatches=0;
-const rebuilt=original.map((entry,i)=>{
+const rebuilt=original.map((entry)=>{
   const item=byId.get(entry.id);
   if(!item?.hans) throw new Error(`missing/empty gloss ${entry.id}`);
   if(item.hans.length>MAX_GLOSS_TEXT) throw new Error(`gloss too long ${entry.id}`);
@@ -51,13 +51,22 @@ const rebuilt=original.map((entry,i)=>{
 });
 
 function splitChunks(items,maxBytes){
-  const chunks=[];let cur=[];
+  const chunks=[];
+  let current=[];
+  let currentBytes=2; // []
   for(const item of items){
-    const trial=[...cur,item];
-    if(cur.length&&Buffer.byteLength(compact(trial),'utf8')>maxBytes){chunks.push(cur);cur=[item];}
-    else cur=trial;
+    const itemBytes=Buffer.byteLength(compact(item),'utf8');
+    const addition=itemBytes+(current.length?1:0);
+    if(current.length&&currentBytes+addition+1>maxBytes){ // + trailing newline
+      chunks.push(current);
+      current=[item];
+      currentBytes=2+itemBytes;
+    } else {
+      current.push(item);
+      currentBytes+=addition;
+    }
   }
-  if(cur.length)chunks.push(cur);
+  if(current.length)chunks.push(current);
   return chunks;
 }
 for(const p of entryPaths) fs.unlinkSync(p);

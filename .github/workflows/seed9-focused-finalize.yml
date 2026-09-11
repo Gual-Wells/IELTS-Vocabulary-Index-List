@@ -39,6 +39,10 @@ jobs:
         env:
           SEED9_HANS_OUT: /tmp/seed9-hans.json
         run: python tools/refine_seed9_usage_stage.py
+      - name: Normalize final Mainland language
+        env:
+          SEED9_HANS_OUT: /tmp/seed9-hans.json
+        run: python tools/refine_seed9_language_stage.py
       - name: Reapply canonical storage and QA
         env:
           SEED9_HANS_OUT: /tmp/seed9-hans.json
@@ -49,7 +53,7 @@ jobs:
       - name: Focused acceptance gates
         run: |
           python - <<'PY'
-          import glob,json,re
+          import glob,json
           base=json.load(open('data/seed-baselines/seed-9-glosses.json',encoding='utf-8'))
           qa=json.load(open('data/seed-baselines/seed-9-qa.json',encoding='utf-8'))
           entries=[]
@@ -64,6 +68,7 @@ jobs:
           assert review['computerReviewed']==1583
           assert review['generalUsageReviewed']==595
           assert review['generalUsageDecisionCoverage']=='595/595'
+          assert review['languageCleanupChanged']>0
           usage=[e for e in entries if e['domainId']=='domain_general_collocations']
           assert len(usage)==595
           assert all(rows[e['id']][3]=='VIX-9-USAGE-REVIEWED' for e in usage)
@@ -87,6 +92,9 @@ jobs:
             ('domain_general_collocations','what makes [something] [adjective] is ...'):'使[某事物]显得[形容词]的是……',
             ('domain_general_collocations','used to do'):'过去常常做……',
             ('domain_general_collocations','thanks to ...'):'由于；多亏……',
+            ('domain_computer_terms','serviceworker'):'在后台拦截网络请求的浏览器工作线程',
+            ('domain_general_english','hmm'):'嗯；唔（表示思考或犹豫）',
+            ('domain_general_english','imagination'):'想象；想象力',
           }
           for k,v in expected.items(): assert by.get(k)==v,(k,by.get(k),v)
           print('FOCUSED_SEED9_GATES_OK',json.dumps({
@@ -94,6 +102,7 @@ jobs:
               'computerReviewed':review['computerReviewed'],
               'generalUsageReviewed':review['generalUsageReviewed'],
               'generalUsageChanged':review['generalUsageChanged'],
+              'languageCleanupChanged':review['languageCleanupChanged'],
               'focusedBlankLike':len(bad),
           },ensure_ascii=False))
           PY

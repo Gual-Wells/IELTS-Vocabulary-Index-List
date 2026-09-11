@@ -1,5 +1,7 @@
 // Protocol lifecycles are deliberately independent from the VIX app release and
 // from seed generations. Compatibility is negotiated by protocol + capability.
+import { toTraditional } from './v3-model.js';
+
 export const VIX_EXCHANGE_PROTOCOL = 'vix-data-exchange/1';
 export const MIRROR_SERVICE_PROTOCOL = 'vix-mirror-service/1';
 export const MIRROR_FILE_PROTOCOL = 'vix-mirror-file/1';
@@ -13,7 +15,10 @@ export const VIX_EXCHANGE_CAPABILITIES = Object.freeze([
 export function createVixSnapshotEnvelope(backup) {
   const snapshot = structuredClone(backup);
   snapshot.annotations = [];
-  snapshot.entries = (snapshot.entries || []).map((entry) => ({ ...entry, gloss: entry.gloss || '' }));
+  snapshot.entries = (snapshot.entries || []).map((entry) => {
+    const { glossHans = '', glossHant = '', glossSource: _glossSource, ...current } = entry;
+    return { ...current, gloss: current.gloss || glossHant || (glossHans ? toTraditional(glossHans) : '') };
+  });
   snapshot.memberships = (snapshot.memberships || []).map((membership) => {
     const next = { ...membership, order: Number(membership.sourceOrder || membership.order || 0) };
     delete next.sourceLabel;
@@ -33,7 +38,7 @@ export function createVixSnapshotEnvelope(backup) {
     kind: 'snapshot',
     capabilities: VIX_EXCHANGE_CAPABILITIES,
     generatedAt: new Date().toISOString(),
-    seedGeneration: Number(backup?.settings?.seedRevision || 0) || undefined,
+    seedGeneration: Number(backup?.settings?.builtInSeedRevision || 0) || undefined,
     data: snapshot,
   };
 }

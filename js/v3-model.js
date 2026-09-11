@@ -1558,12 +1558,12 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
         if (!collectionId) return;
         const key = `${entry.id}:${collectionId}`;
         const sourceLabel = coercePos(legacyEntry?.manualPos || source?.pos || source?.label || legacyEntry?.pos || legacyEntry?.partOfSpeech);
+        if (sourceLabel) entry.partsOfSpeech = [...new Set([...entry.partsOfSpeech, sourceLabel])].slice(0, 16);
         const existing = membershipsByKey.get(key);
         membershipsByKey.set(key, createMembership({
           id: existing?.id,
           entryId: entry.id,
           collectionId,
-          sourceLabel: existing?.sourceLabel || sourceLabel,
           sourceOrder: Number.isFinite(source?.order) ? source.order : (Number.isFinite(legacyEntry?.order) ? legacyEntry.order : entryIndex + sourceIndex / 1000),
           timestamp: existing?.createdAt || timestamp,
         }));
@@ -1573,10 +1573,11 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
       const collectionId = categoryIdMap.get(oldCategoryId) || collections.find((item) => item.type === 'normal')?.id;
       if (collectionId) {
         const key = `${entry.id}:${collectionId}`;
+        const sourceLabel = coercePos(legacyEntry?.manualPos || legacyEntry?.pos || legacyEntry?.partOfSpeech || legacyEntry?.d);
+        if (sourceLabel) entry.partsOfSpeech = [...new Set([...entry.partsOfSpeech, sourceLabel])].slice(0, 16);
         membershipsByKey.set(key, createMembership({
           entryId: entry.id,
           collectionId,
-          sourceLabel: coercePos(legacyEntry?.manualPos || legacyEntry?.pos || legacyEntry?.partOfSpeech || legacyEntry?.d),
           sourceOrder: Number.isFinite(legacyEntry?.order) ? legacyEntry.order : entryIndex,
           timestamp,
         }));
@@ -1616,29 +1617,6 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
   });
   const pins = [...pinsByEntry.values()];
 
-  const annotations = array(input?.annotations).flatMap((annotation) => {
-    const entryId = legacyEntryIdMap.get(String(annotation?.entryId ?? annotation?.id ?? ''));
-    if (!entryId) return [];
-    const spellingSuggestion = normalizeDisplayText(
-      annotation?.spelling?.suggestion || annotation?.suggestion || annotation?.replacement || '',
-    );
-    const spellingIncorrect = Boolean(annotation?.spelling?.incorrect || annotation?.incorrect || spellingSuggestion);
-    const legacyPosSuggestion = coercePos(annotation?.pos?.suggestion || annotation?.posSuggestion || '');
-    const legacyPosIssue = Boolean(annotation?.pos?.incorrect || legacyPosSuggestion);
-    const reason = normalizeDisplayText(annotation?.reason || (legacyPosIssue
-      ? `旧版词性标注${legacyPosSuggestion ? `：${legacyPosSuggestion}` : '，请人工核对'}`
-      : ''));
-    if (!spellingIncorrect && !reason) return [];
-    return [{
-      entryId,
-      domainId: DEFAULT_DOMAIN_ID,
-      spelling: { incorrect: spellingIncorrect, suggestion: spellingSuggestion },
-      reason,
-      createdAt: annotation?.createdAt || timestamp,
-      updatedAt: annotation?.updatedAt || timestamp,
-    }];
-  });
-
   const settingsInput = object(input?.settings);
   const lastPositions = {};
   const legacyLastPairs = [];
@@ -1670,7 +1648,7 @@ export function migrateLegacyBackup(input, { timestamp = nowIso() } = {}) {
     memberships,
     relationComponents,
     pins,
-    annotations,
+    annotations: [],
     settings: {
       numberMode: ['none', 'group', 'global'].includes(settingsInput.numberMode) ? settingsInput.numberMode : 'global',
       closeLowLevelRelations: settingsInput.closeLowLevelRelations !== false,
@@ -1710,21 +1688,12 @@ export function canonicalizeBackup(input) {
     order: Number.isFinite(item?.order) ? item.order : index,
     createdAt: item?.createdAt || timestamp,
   }));
-  const annotations = array(input?.annotations).map((item) => ({
-    entryId: String(item?.entryId || ''),
-    domainId: String(item?.domainId || ''),
-    spelling: {
-      incorrect: Boolean(item?.spelling?.incorrect),
-      suggestion: normalizeDisplayText(item?.spelling?.suggestion),
-    },
-    reason: normalizeDisplayText(item?.reason),
-    createdAt: item?.createdAt || timestamp,
-    updatedAt: item?.updatedAt || timestamp,
-  })).filter((item) => item.spelling.incorrect || item.reason);
+  // Schema 6 retains an always-empty boundary field so old recovery files can
+  // still be accepted, but the retired AI annotation feature is never revived.
+  const annotations = [];
   const migratedStudy = migrateStudyStampsToEntries(input?.studyStamps, entries, domains);
   const studyStamps = migratedStudy.stamps;
   pins.sort((a, b) => a.contextCollectionId.localeCompare(b.contextCollectionId) || a.order - b.order || a.createdAt.localeCompare(b.createdAt) || a.entryId.localeCompare(b.entryId));
-  annotations.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
   studyStamps.sort((a, b) => a.key.localeCompare(b.key));
 
   const settingsInput = object(input?.settings);

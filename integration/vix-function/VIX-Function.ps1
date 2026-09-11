@@ -38,9 +38,10 @@ function Read-Config {
   @{ url = ([string]$config.siteUrl).TrimEnd('/'); token = $token }
 }
 
-function Invoke-Mirror($Method, $Path, $Body = $null, [string]$ContentType = 'application/json; charset=utf-8') {
+function Invoke-Mirror($Method, $Path, $Body = $null, [string]$ContentType = 'application/json; charset=utf-8', [hashtable]$ExtraHeaders = @{}) {
   $config = Read-Config
   $headers = @{ Authorization = 'Bearer ' + $config.token; Accept = 'application/json' }
+  foreach ($key in $ExtraHeaders.Keys) { $headers[$key] = $ExtraHeaders[$key] }
   $parameters = @{ Method = $Method; Uri = $config.url + $Path; Headers = $headers; UseBasicParsing = $true }
   if ($null -ne $Body) {
     $raw = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 100 -Compress }
@@ -123,17 +124,22 @@ if ($Action -eq 'Submit') {
   $safeName = (([string]$document.title).Trim() -replace '[\\/\x00-\x1f]', '-')
   if (-not $safeName) { $safeName = $RunId }
   if ($safeName.Length -gt 150) { $safeName = $safeName.Substring(0, 150) }
-  $fileName = $safeName + '.vix-mirror.json'
+  $safeRunId = ($RunId -replace '[^A-Za-z0-9_-]', '_')
+  $fileName = $safeName + '-' + $safeRunId.Substring(0, [Math]::Min(12, $safeRunId.Length)) + '.vix-mirror.json'
   $created = $null
   try { $created = Invoke-Mirror 'POST' '/api/mirror/nodes' @{ name = $fileName; kind = 'file'; parentId = '' } }
   catch {
     $catalog = Invoke-Mirror 'GET' ('/api/mirror/nodes?q=' + [Uri]::EscapeDataString($fileName))
     $existing = @($catalog.data.nodes | Where-Object { $_.kind -eq 'file' -and $_.name -eq $fileName }) | Select-Object -First 1
     if ($null -eq $existing) { throw }
+    $existingDocument = Invoke-Mirror 'GET' ('/api/mirror/files/' + [Uri]::EscapeDataString([string]$existing.id))
+    if ([string]$existingDocument.documentId -ne $RunId) { throw 'Mirror filename conflict belongs to a different document.' }
     $created = @{ data = @{ node = $existing } }
   }
   $nodeId = [string]$created.data.node.id
-  $response = Invoke-Mirror 'PUT' ('/api/mirror/files/' + [Uri]::EscapeDataString($nodeId)) $jsonText 'application/vnd.vix-mirror+json'
+  $nodeRevision = [int]$created.data.node.revision
+  if ($nodeRevision -lt 1) { throw 'Mirror node revision is missing.' }
+  $response = Invoke-Mirror 'PUT' ('/api/mirror/files/' + [Uri]::EscapeDataString($nodeId)) $jsonText 'application/vnd.vix-mirror+json' @{ 'If-Match' = [string]$nodeRevision }
   $contextPath = Join-Path $runRoot (($RunId -replace '[^A-Za-z0-9_-]', '_') + '-context.json')
   if (Test-Path -LiteralPath $contextPath) { Remove-Item -LiteralPath $contextPath -Force }
   Write-Json @{ protocol = $functionProtocol; submitted = $true; nodeId = $nodeId; mirror = $response }

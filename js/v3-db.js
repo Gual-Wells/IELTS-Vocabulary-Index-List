@@ -3,7 +3,6 @@ import { APP_VERSION } from './v5-version.js';
 
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
-export const HISTORY_LIMIT = 100;
 export const BUILTIN_SEED_REVISION = 8;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
@@ -20,10 +19,10 @@ export const STORES = Object.freeze({
   phraseTokens: `${PREFIX}PhraseTokens`, // legacy Schema 5 store; never written by 4.0
   relationComponents: `${PREFIX}RelationComponents`,
   pins: `${PREFIX}Pins`,
-  annotations: `${PREFIX}Annotations`,
+  annotations: `${PREFIX}Annotations`, // retired feature store; kept only to clear Schema 5 data without a DB upgrade
   studyStamps: `${PREFIX}StudyStamps`,
   settings: `${PREFIX}Settings`,
-  history: `${PREFIX}History`,
+  history: `${PREFIX}History`, // retired feature store; kept only to clear Schema 5 data without a DB upgrade
 });
 const DATA_STORE_KEYS = ['domains', 'collections', 'entries', 'memberships', 'relationComponents', 'pins', 'annotations', 'studyStamps'];
 let databasePromise = null;
@@ -36,7 +35,6 @@ function requestPromise(request) {
     request.onerror = () => reject(request.error || new Error('IndexedDB 请求失败'));
   });
 }
-
 function transactionPromise(transaction) {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -239,11 +237,12 @@ async function loadSeedRuntimeAsset(descriptor) {
   const response = await fetch(new URL(`../${descriptor.path}`, import.meta.url), { cache: 'default' });
   if (!response.ok) throw new Error(`Cannot load Seed5 runtime asset ${descriptor.path} (HTTP ${response.status})`);
   const text = await response.text();
-  const bytes = new TextEncoder().encode(text).length;
-  if (bytes !== Number(descriptor.bytes) || await sha256Text(text) !== descriptor.sha256) {
+  const canonicalText = text.replace(/\r\n/g, '\n');
+  const bytes = new TextEncoder().encode(canonicalText).length;
+  if (bytes !== Number(descriptor.bytes) || await sha256Text(canonicalText) !== descriptor.sha256) {
     throw new Error(`Seed5 runtime asset integrity check failed: ${descriptor.path}`);
   }
-  return JSON.parse(text);
+  return JSON.parse(canonicalText);
 }
 
 async function loadSeedRuntimeManifest() {
@@ -345,7 +344,7 @@ function reportFreshImport(onProgress, state, label = '正在导入内置词库'
   });
 }
 
-async function importFreshSeed(db, { onProgress = () => {} } = {}) {
+async function importFreshSeed(db, { onProgress = (_progress) => {} } = {}) {
   onProgress({ phase: 'seed-download', label: '正在核验内置词库', percent: 3 });
   const manifest = await loadSeedRuntimeManifest();
   const meta = await loadSeedRuntimeAsset(manifest.meta);
@@ -388,8 +387,6 @@ async function importFreshSeed(db, { onProgress = () => {} } = {}) {
     appVersion: APP_VERSION,
     initialized: true,
     dataRevision: Date.now(),
-    historyPointer: 0,
-    historySequence: 0,
     builtInSeedRevision: BUILTIN_SEED_REVISION,
     migrationNoticePending: false,
   };
@@ -452,23 +449,10 @@ export function mergeBuiltInDomainBackup(_baseBackup, seedBackup) {
 async function ensureBuiltInSeedRevision(db) {
   const applied = Number(await getSetting('builtInSeedRevision', 0));
   if (applied >= BUILTIN_SEED_REVISION) return { builtInMerged: false };
-  return enqueueWrite(async () => {
-    // Seed generations are complete and independent. A generation boundary is
-    // a replacement, never a three-way field migration. Personal Mirror is the
-    // pre-publication basis for any user data that belongs in the next Seed.
-    const seed = await loadCanonicalSeed();
-    const revision = Date.now();
-    const writeStores = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history];
-    const tx = db.transaction(writeStores, 'readwrite');
-    const completion = transactionPromise(tx);
-    putBackupIntoTransaction(tx, seed, {
-      dataRevision: revision,
-      builtInSeedRevision: BUILTIN_SEED_REVISION,
-    });
-    tx.objectStore(STORES.history).clear();
-    await completion;
-    return { builtInMerged: true, builtInSeedRevision: BUILTIN_SEED_REVISION, generationReplaced: true };
-  });
+  // A Seed generation is a complete replacement, so it must never happen as a
+  // side effect of normal initialization. v3-app performs the visible export +
+  // explicit confirmation preflight before calling the replacement function.
+  throw new Error(`Seed 世代 ${applied} 尚未完成升级前置确认，已阻止自动替换为 ${BUILTIN_SEED_REVISION}`);
 }
 
 async function retireLegacyRuntimeData(db) {
@@ -478,6 +462,9 @@ async function retireLegacyRuntimeData(db) {
       .filter((name) => db.objectStoreNames.contains(name));
     const tx = db.transaction(stores, 'readwrite');
     const completion = transactionPromise(tx);
+    // The physical stores remain in DB_VERSION 5 solely so upgrading users do
+    // not pay for a destructive IndexedDB schema bump. No runtime API reads or
+    // writes feature data here; initialization only makes the stores empty.
     tx.objectStore(STORES.history).clear();
     tx.objectStore(STORES.annotations).clear();
     const settings = tx.objectStore(STORES.settings);
@@ -488,7 +475,7 @@ async function retireLegacyRuntimeData(db) {
   });
 }
 
-export async function initializeDatabase({ onProgress = () => {} } = {}) {
+export async function initializeDatabase({ onProgress = (_progress) => {} } = {}) {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
   if (Number(existing) === SCHEMA_VERSION) {
@@ -504,9 +491,17 @@ export async function initializeDatabase({ onProgress = () => {} } = {}) {
 }
 
 export async function getGenerationUpgradeStatus() {
-  const db = await openDatabase();
+  await openDatabase();
   const schema = await getSetting('schemaVersion', null);
-  return { required: schema != null && Number(schema) < SCHEMA_VERSION, fromSchema: Number(schema || 0), toSchema: SCHEMA_VERSION };
+  const seedRevision = await getSetting('builtInSeedRevision', 0);
+  const hasExistingData = schema != null;
+  return {
+    required: hasExistingData && (Number(schema) < SCHEMA_VERSION || Number(seedRevision) < BUILTIN_SEED_REVISION),
+    fromSchema: Number(schema || 0),
+    toSchema: SCHEMA_VERSION,
+    fromSeedRevision: Number(seedRevision || 0),
+    toSeedRevision: BUILTIN_SEED_REVISION,
+  };
 }
 
 export async function exportLegacyGenerationBackup() {
@@ -534,6 +529,13 @@ export async function exportLegacyGenerationBackup() {
 
 export async function replaceLegacyGenerationWithSeed() {
   const db = await openDatabase();
+  const legacySnapshot = await readCurrentSnapshot(db) || await readLegacySnapshot(db);
+  if (!legacySnapshot) throw new Error('无法读取旧世代数据；为避免覆盖，升级已停止。');
+  const backupId = await persistSeedMigrationBackup(
+    legacySnapshot,
+    Number(legacySnapshot.settings?.builtInSeedRevision || 0),
+    BUILTIN_SEED_REVISION,
+  );
   const seed = await loadCanonicalSeed();
   const numberMode = await getSetting('numberMode', 'global');
   const revision = Date.now();
@@ -546,8 +548,6 @@ export async function replaceLegacyGenerationWithSeed() {
       numberMode,
       closeLowLevelRelations: true,
       dataRevision: revision,
-      historyPointer: 0,
-      historySequence: 0,
       builtInSeedRevision: BUILTIN_SEED_REVISION,
       migrationNoticePending: false,
       migrationComplete: true,
@@ -555,8 +555,14 @@ export async function replaceLegacyGenerationWithSeed() {
     });
     tx.objectStore(STORES.history).clear();
     if (tx.objectStoreNames.contains(STORES.phraseTokens)) tx.objectStore(STORES.phraseTokens).clear();
-    await completion;
-    return { replaced: true, revision };
+    try {
+      await completion;
+      await markSeedMigrationBackup(backupId, 'completed');
+      return { replaced: true, revision, backupId };
+    } catch (error) {
+      await markSeedMigrationBackup(backupId, 'failed', error?.message || error);
+      throw error;
+    }
   });
 }
 
@@ -635,17 +641,15 @@ export async function setLastPositionSetting(positionKey, entryId) {
   });
 }
 
-export async function readSnapshot({ includeHistory = false } = {}) {
+export async function readSnapshot() {
   const db = await openDatabase();
   const storeNames = [...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings];
-  if (includeHistory) storeNames.push(STORES.history);
   const tx = db.transaction(storeNames, 'readonly');
   const completion = transactionPromise(tx);
   const result = {};
   await Promise.all(DATA_STORE_KEYS.map(async (key) => { result[key] = await getAllFromTransaction(tx, STORES[key]); }));
   const settingRecords = await getAllFromTransaction(tx, STORES.settings);
   result.settings = Object.fromEntries(settingRecords.map((item) => [item.key, item.value]));
-  if (includeHistory) result.history = await getAllFromTransaction(tx, STORES.history);
   await completion;
   return result;
 }
@@ -686,9 +690,7 @@ export async function replaceWithBackup(input, { migrationNoticePending = false,
             return;
           }
           revision = Math.max(Date.now(), currentRevision + 1);
-          putBackupIntoTransaction(tx, backup, {
-            dataRevision: revision, historyPointer: 0, historySequence: 0, migrationNoticePending,
-          });
+          putBackupIntoTransaction(tx, backup, { dataRevision: revision, migrationNoticePending });
           tx.objectStore(STORES.history).clear();
           queued = true;
         } catch (error) { fail(error); }
@@ -711,23 +713,21 @@ function clone(value) {
   return value == null ? null : structuredClone(value);
 }
 
-export async function commitChanges(changes, { label = '修改', recordHistory = false, expectedRevision = null } = {}) {
+export async function commitChanges(changes, { expectedRevision = null } = {}) {
   if (!Array.isArray(changes) || !changes.length) return Number(await getSetting('dataRevision', 0));
   return enqueueWrite(async () => {
     const db = await openDatabase();
     const affected = new Set(changes.map((change) => logicalStoreName(change.store)));
     affected.add(STORES.settings);
-    if (recordHistory) affected.add(STORES.history);
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction([...affected], 'readwrite');
       const settingsStore = tx.objectStore(STORES.settings);
-      const historyStore = recordHistory ? tx.objectStore(STORES.history) : null;
       let revision = 0;
       let failure = null;
       let applied = false;
-      let pending = recordHistory ? 4 : 1;
-      const values = { revisionRecord: null, pointerRecord: null, sequenceRecord: null, history: [] };
+      let pending = 1;
+      const values = { revisionRecord: null };
 
       const fail = (error) => {
         failure = error instanceof Error ? error : new Error(String(error || 'IndexedDB 读取失败'));
@@ -753,25 +753,6 @@ export async function commitChanges(changes, { label = '修改', recordHistory =
           }
           revision = Math.max(Date.now(), currentRevision + 1);
           settingsStore.put({ key: 'dataRevision', value: revision });
-
-          if (recordHistory) {
-            const pointer = Number(values.pointerRecord?.value || 0);
-            const sequence = Number(values.sequenceRecord?.value || 0) + 1;
-            for (const record of values.history) {
-              if (record.sequence > pointer) historyStore.delete(record.sequence);
-            }
-            historyStore.put({
-              sequence,
-              label,
-              createdAt: new Date().toISOString(),
-              changes: changes.map((change) => ({ ...change, before: clone(change.before), after: clone(change.after) })),
-            });
-            const remaining = values.history.filter((record) => record.sequence <= pointer).sort((a, b) => a.sequence - b.sequence);
-            const excess = Math.max(0, remaining.length + 1 - HISTORY_LIMIT);
-            for (let index = 0; index < excess; index += 1) historyStore.delete(remaining[index].sequence);
-            settingsStore.put({ key: 'historyPointer', value: sequence });
-            settingsStore.put({ key: 'historySequence', value: sequence });
-          }
           applied = true;
         } catch (error) {
           fail(error);
@@ -784,151 +765,10 @@ export async function commitChanges(changes, { label = '修改', recordHistory =
       };
 
       capture(settingsStore.get('dataRevision'), 'revisionRecord');
-      if (recordHistory) {
-        capture(settingsStore.get('historyPointer'), 'pointerRecord');
-        capture(settingsStore.get('historySequence'), 'sequenceRecord');
-        capture(historyStore.getAll(), 'history');
-      }
 
       tx.oncomplete = () => applied ? resolve(revision) : resolve(Number(values.revisionRecord?.value || 0));
       tx.onerror = () => reject(failure || tx.error || new Error('IndexedDB 事务失败'));
       tx.onabort = () => reject(failure || tx.error || new Error('IndexedDB 事务已中止'));
     });
   });
-}
-
-export async function recordHistoryOnly(changes, { label = '修改', expectedRevision = null } = {}) {
-  if (!Array.isArray(changes) || !changes.length) return Number(await getSetting('dataRevision', 0));
-  return enqueueWrite(async () => {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORES.settings, STORES.history], 'readwrite');
-      const settingsStore = tx.objectStore(STORES.settings);
-      const historyStore = tx.objectStore(STORES.history);
-      let failure = null;
-      let revision = 0;
-      let applied = false;
-      let pending = 4;
-      const values = { revisionRecord: null, pointerRecord: null, sequenceRecord: null, history: [] };
-      const fail = (error) => {
-        failure = error instanceof Error ? error : new Error(String(error || '历史写入失败'));
-        try { tx.abort(); } catch {}
-      };
-      const completeRead = () => {
-        pending -= 1;
-        if (pending !== 0 || failure) return;
-        try {
-          const currentRevision = Number(values.revisionRecord?.value || 0);
-          if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
-            fail(new Error('数据已被另一实例修改，AI 核查历史未写入。'));
-            return;
-          }
-          const pointer = Number(values.pointerRecord?.value || 0);
-          const sequence = Number(values.sequenceRecord?.value || 0) + 1;
-          for (const record of values.history) if (record.sequence > pointer) historyStore.delete(record.sequence);
-          historyStore.put({
-            sequence,
-            label,
-            createdAt: new Date().toISOString(),
-            changes: changes.map((change) => ({ ...change, before: clone(change.before), after: clone(change.after) })),
-          });
-          const remaining = values.history.filter((record) => record.sequence <= pointer).sort((a, b) => a.sequence - b.sequence);
-          const excess = Math.max(0, remaining.length + 1 - HISTORY_LIMIT);
-          for (let index = 0; index < excess; index += 1) historyStore.delete(remaining[index].sequence);
-          settingsStore.put({ key: 'historyPointer', value: sequence });
-          settingsStore.put({ key: 'historySequence', value: sequence });
-          revision = Math.max(Date.now(), currentRevision + 1);
-          settingsStore.put({ key: 'dataRevision', value: revision });
-          applied = true;
-        } catch (error) { fail(error); }
-      };
-      const capture = (request, key) => {
-        request.onsuccess = () => { values[key] = request.result; completeRead(); };
-        request.onerror = () => fail(request.error ?? new Error('IndexedDB 读取失败'));
-      };
-      capture(settingsStore.get('dataRevision'), 'revisionRecord');
-      capture(settingsStore.get('historyPointer'), 'pointerRecord');
-      capture(settingsStore.get('historySequence'), 'sequenceRecord');
-      capture(historyStore.getAll(), 'history');
-      tx.oncomplete = () => applied ? resolve(revision) : resolve(Number(values.revisionRecord?.value || 0));
-      tx.onerror = () => reject(failure || tx.error || new Error('历史写入事务失败'));
-      tx.onabort = () => reject(failure || tx.error || new Error('历史写入事务已中止'));
-    });
-  });
-}
-
-function applyHistoryDirection(db, direction, expectedRevision = null) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction([...DATA_STORE_KEYS.map((key) => STORES[key]), STORES.settings, STORES.history], 'readwrite');
-    const settings = tx.objectStore(STORES.settings);
-    const historyStore = tx.objectStore(STORES.history);
-    let pointerRecord = null;
-    let history = null;
-    let revisionRecord = null;
-    let pending = 3;
-    let changed = false;
-    let revision = 0;
-    let appliedRecord = null;
-    let failure = null;
-
-    const fail = (error) => {
-      failure = error instanceof Error ? error : new Error(String(error || '历史读取失败'));
-      try { tx.abort(); } catch {}
-    };
-    const apply = () => {
-      pending -= 1;
-      if (pending !== 0 || failure) return;
-      try {
-        const currentRevision = Number(revisionRecord?.value || 0);
-        if (expectedRevision != null && currentRevision !== Number(expectedRevision)) {
-          fail(new Error('数据已被另一实例修改，撤销或重做已安全取消。请重新载入后重试。'));
-          return;
-        }
-        const pointer = Number(pointerRecord?.value || 0);
-        const record = direction < 0
-          ? history.find((item) => item.sequence === pointer)
-          : history.filter((item) => item.sequence > pointer).sort((a, b) => a.sequence - b.sequence)[0];
-        if (!record) return;
-        appliedRecord = record;
-        const changes = direction < 0 ? [...record.changes].reverse() : record.changes;
-        for (const change of changes) {
-          const store = tx.objectStore(logicalStoreName(change.store));
-          const value = direction < 0 ? change.before : change.after;
-          if (value == null) store.delete(change.key);
-          else store.put(clone(value));
-        }
-        const nextPointer = direction < 0
-          ? (history.filter((item) => item.sequence < pointer).sort((a, b) => b.sequence - a.sequence)[0]?.sequence || 0)
-          : record.sequence;
-        settings.put({ key: 'historyPointer', value: nextPointer });
-        revision = Math.max(Date.now(), currentRevision + 1);
-        settings.put({ key: 'dataRevision', value: revision });
-        changed = true;
-      } catch (error) {
-        fail(error);
-      }
-    };
-
-    const pointerRequest = settings.get('historyPointer');
-    pointerRequest.onsuccess = () => { pointerRecord = pointerRequest.result; apply(); };
-    pointerRequest.onerror = () => fail(pointerRequest.error);
-    const historyRequest = historyStore.getAll();
-    historyRequest.onsuccess = () => { history = historyRequest.result; apply(); };
-    historyRequest.onerror = () => fail(historyRequest.error);
-    const revisionRequest = settings.get('dataRevision');
-    revisionRequest.onsuccess = () => { revisionRecord = revisionRequest.result; apply(); };
-    revisionRequest.onerror = () => fail(revisionRequest.error);
-
-    tx.oncomplete = () => resolve(changed ? { changed: true, revision, record: clone(appliedRecord) } : null);
-    tx.onerror = () => reject(failure || tx.error || new Error('历史事务失败'));
-    tx.onabort = () => reject(failure || tx.error || new Error('历史事务已中止'));
-  });
-}
-
-export async function undo(expectedRevision = null) {
-  return enqueueWrite(async () => applyHistoryDirection(await openDatabase(), -1, expectedRevision));
-}
-
-export async function redo(expectedRevision = null) {
-  return enqueueWrite(async () => applyHistoryDirection(await openDatabase(), 1, expectedRevision));
 }

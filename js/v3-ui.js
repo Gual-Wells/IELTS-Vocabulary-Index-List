@@ -14,19 +14,19 @@ import {
 import { downloadText } from './vix-download.js';
 import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
+import { createVixSnapshotEnvelope } from './vix-protocols.js';
 import { buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 import { createProviderSession } from './v3-provider-runtime.js';
 import { renderGroqLookup } from './v3-provider-views.js';
 import { computeStickyCollapseTarget } from './v3-runtime-geometry.js';
 import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, semanticAnchorError } from './v3-scroll-runtime.js';
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
-import { extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
-import { MIRROR_PROTOCOL } from './v5-mirror-runtime.js';
+import { extendMirrorRecord, prepareMirrorFile, prepareMirrorResult } from './v5-mirror3.js';
 import { deleteGroqSecret, requestSpeech, saveGroqSecret, validateGroqSecret } from './vix-provider-site.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 import {
   disconnectMirrorSite, getMirrorConnection, openMirrorSitePicker, pairMirrorSite,
-  synchronizeAfterMirrorCommit, synchronizePersonalMirror,
+  synchronizeAfterMirrorCommit, synchronizePersonalMirror, verifyMirrorFileReference,
 } from './vix-mirror-site.js';
 
 /** @type {Record<string, any>} */
@@ -933,6 +933,30 @@ function presentationMotionClass(kind) {
   return `vix-motion-${String(kind || 'none').replace(/[^a-z0-9-]/gi, '-')}`;
 }
 
+function safeViewTransitionsAvailable() {
+  const userAgent = String(navigator.userAgent || '');
+  const webKit = /AppleWebKit/i.test(userAgent) && !/(?:Chrome|Chromium|Edg|OPR|CriOS|FxiOS)/i.test(userAgent);
+  return typeof document.startViewTransition === 'function' && !webKit;
+}
+
+async function animatePresentationFallback(kind) {
+  if (prefersReducedMotion()) return;
+  const surface = document.querySelector('#collection-view:not(.hidden), #home-view:not(.hidden)');
+  if (!surface || typeof surface.animate !== 'function') return;
+  const first = kind === 'push'
+    ? { transform: 'translateX(18px)', opacity: .82 }
+    : kind === 'pop'
+      ? { transform: 'translateX(-10px)', opacity: .88 }
+      : kind === 'home'
+        ? { transform: 'scale(1.012)', opacity: .84 }
+        : { opacity: .9 };
+  const animation = surface.animate([first, { transform: 'none', opacity: 1 }], {
+    duration: kind === 'pop' ? 220 : 190,
+    easing: 'cubic-bezier(.22,.72,.2,1)',
+  });
+  await animation.finished.catch(() => {});
+}
+
 async function runPresentationTransition(kind, update) {
   if (activePageTransition?.finished) {
     try { await activePageTransition.finished; } catch { /* prior transition may be skipped by a newer one */ }
@@ -941,14 +965,29 @@ async function runPresentationTransition(kind, update) {
   const className = presentationMotionClass(kind);
   root.classList.add('vix-motion-active', className);
   try {
-    if (typeof document.startViewTransition !== 'function') {
+    if (!safeViewTransitionsAvailable()) {
       await update();
+      await animatePresentationFallback(kind);
       return;
     }
-    const transition = document.startViewTransition(() => Promise.resolve(update()));
+    let updateStarted = false;
+    const runUpdateOnce = async () => {
+      if (updateStarted) return;
+      updateStarted = true;
+      await update();
+    };
+    const transition = document.startViewTransition(runUpdateOnce);
     activePageTransition = transition;
-    await transition.updateCallbackDone;
-    await transition.finished.catch(() => {});
+    const watchdog = (promise, timeout = 1500) => Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => {
+        try { transition.skipTransition?.(); } catch {}
+        resolve();
+      }, timeout)),
+    ]);
+    await watchdog(transition.updateCallbackDone.catch(() => {}));
+    await runUpdateOnce();
+    await watchdog(transition.finished.catch(() => {}));
   } finally {
     root.classList.remove('vix-motion-active', className);
     activePageTransition = null;
@@ -1049,7 +1088,6 @@ function clearRecursivePresentationState() {
 }
 
 function renderCommittedRoot({ resetScroll = false, restoreScroll = false } = {}) {
-  closeReview();
   closeQueryMenu({ immediate: true });
   closeRelationTargetMenu({ immediate: true });
   clearRecursivePresentationState();
@@ -1610,7 +1648,7 @@ function openLibraryManager() {
 
 async function downloadRecoveryPackage(prefix = 'recovery') {
   const backup = await exportFullBackup();
-  const pkg = createVixPackage(backup, { scope: 'global' });
+  const pkg = createVixSnapshotEnvelope(backup);
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
   downloadText(`vix-${prefix}-${stamp}.json`, `${JSON.stringify(pkg, null, 2)}\n`);
   showToast('VIX 恢复文件下载已发起');
@@ -1623,7 +1661,7 @@ function offerOptionalBackup(onContinue, { title = '是否下载 VIX 恢复文�
   openConfirmDialog({
     title,
     description,
-    body: el('p', { className: 'help-text', text: '恢复文件只包含 VIX 内容，不包含 PIN、位置或显示设置；无论选择哪一项，操作都会继续。' }),
+    body: el('p', { className: 'help-text', text: '恢复文件使用统一 VIX 协议，包含内容、PIN、学习日期、位置和显示设置；不包含 Mirror 或 Groq 授权密钥。' }),
     submitText: '下载 VIX 文件',
     cancelText: '不下载',
     onSubmit: async () => {
@@ -1700,6 +1738,10 @@ function dataExchangeSummary(plan) {
 }
 
 function openDataExchangePreview(file, selection, initialPlan) {
+  const recoverySnapshot = initialPlan.package?.kind === 'snapshot';
+  const effectiveSelection = recoverySnapshot
+    ? { scope: 'global', mode: 'replace', domainId: '', collectionId: '', targetMode: 'file' }
+    : selection;
   const conflictPolicy = el('select', {}, [
     el('option', { value: 'current', text: '保留当前释义' }),
     el('option', { value: 'import', text: '使用导入释义' }),
@@ -1709,10 +1751,13 @@ function openDataExchangePreview(file, selection, initialPlan) {
     el('option', { value: 'file', text: '使用文件声明目标' }),
   ]);
   const body = [
-    el('div', { className: 'exchange-target-line', text: `${selection.scope === 'global' ? '全局' : selection.scope === 'domain' ? '独立域' : '词表'} · ${selection.mode === 'replace' ? '完整替换' : '增量合并'}` }),
+    el('div', { className: 'exchange-target-line', text: `${effectiveSelection.scope === 'global' ? '全局' : effectiveSelection.scope === 'domain' ? '独立域' : '词表'} · ${effectiveSelection.mode === 'replace' ? '完整替换' : '增量合并'}` }),
     dataExchangeSummary(initialPlan),
   ];
-  if (initialPlan.mismatch) body.push(el('div', { className: 'warning-box compact-warning', text: initialPlan.mismatch }), field('目标处理', targetMode));
+  if (initialPlan.mismatch) {
+    body.push(el('div', { className: 'warning-box compact-warning', text: initialPlan.mismatch }));
+    if (!recoverySnapshot) body.push(field('目标处理', targetMode));
+  }
   if (initialPlan.conflicts?.length) {
     body.push(field('释义冲突', conflictPolicy));
     body.push(el('div', { className: 'conflict-list' }, initialPlan.conflicts.slice(0, 20).map((item) => el('div', { className: 'conflict-item' }, [
@@ -1739,17 +1784,19 @@ function openDataExchangePreview(file, selection, initialPlan) {
   }
   openDialog({
     title: '导入预检',
-    description: selection.mode === 'replace'
+    description: effectiveSelection.mode === 'replace'
       ? '确认后可先下载当前 VIX 恢复文件，再以单次事务替换所选范围。'
       : '确认后以单次事务合并所选内容。',
     body,
-    submitText: selection.mode === 'replace' && selection.scope === 'global' ? '继续替换全局内容' : '继续导入',
-    destructive: selection.mode === 'replace',
+    submitText: effectiveSelection.mode === 'replace' && effectiveSelection.scope === 'global' ? '完整替换全局数据' : '继续导入',
+    destructive: effectiveSelection.mode === 'replace',
     onSubmit: async () => {
-      const finalSelection = { ...selection, targetMode: initialPlan.mismatch ? targetMode.value : 'current' };
+      const finalSelection = recoverySnapshot
+        ? effectiveSelection
+        : { ...selection, targetMode: initialPlan.mismatch ? targetMode.value : 'current' };
       const finalPlan = await planDataExchangeFile(file, finalSelection, initialPlan.conflicts?.length ? conflictPolicy.value : 'current');
       closeDialog({ all: true });
-      if (selection.mode === 'replace') {
+      if (effectiveSelection.mode === 'replace') {
         requestAnimationFrame(() => offerOptionalBackup(() => openConfirmDialog({
           title: '确认完整替换',
           description: '确认后将替换所选范围。',
@@ -1835,7 +1882,7 @@ function openDataExchangeDialog() {
     collectionField.classList.toggle('hidden', !contentOperation || scope.value !== 'collection');
     modeField.classList.toggle('hidden', !importing);
     fileField.classList.toggle('hidden', !importing);
-    if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、位置与显示设置；执行前可选择是否下载 VIX 恢复文件。';
+    if (operation.value === 'reset-seed') status.textContent = '还原随当前版本发布的初始词域、词表和内容，并重置 PIN、学习日期、位置与显示设置；执行前可下载可完整恢复这些状态的 VIX 文件。';
     else if (operation.value === 'export-content') status.textContent = '内容 JSON 不包含 PIN、位置、标注和应用设置。';
     else status.textContent = mode.value === 'merge' ? '未在文件中出现的旧内容不会删除。' : '只替换当前选择的范围，并可先导出 VIX 恢复文件。';
     fillDomains();
@@ -2081,7 +2128,7 @@ function openMirrorCandidateReview(prepared) {
           collectionKeys: candidate.collectionKeys,
           relatedEntryIds: candidate.relatedEntryIds,
         })).filter((item) => item.entryId);
-      const mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, {
+      let mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, {
         existingMatches: selectedExisting,
         candidateImports,
         entryIds: [...selectedExisting.map((item) => item.entryId), ...candidateImports.map((item) => item.entryId)],
@@ -2099,7 +2146,17 @@ function openMirrorCandidateReview(prepared) {
           },
         };
         try {
-          await synchronizeAfterMirrorCommit({ nodeId: prepared.siteNodeId, document: updatedDocument });
+          const synchronized = await synchronizeAfterMirrorCommit({
+            nodeId: prepared.siteNodeId,
+            document: updatedDocument,
+            expectedRevision: prepared.siteNodeRevision,
+          });
+          if (synchronized.file?.revision && mirrorRecord.remote) {
+            mirrorRecord = await extendMirrorRecord(mirrorRecord, {
+              remote: { ...mirrorRecord.remote, revision: Number(synchronized.file.revision) },
+            });
+            await installMirrorCurrent(mirrorRecord);
+          }
         } catch {
           showToast('VIX 已提交；Personal Mirror 尚未同步，可在设置中重试');
         }
@@ -2149,6 +2206,7 @@ async function toggleHomeMirror(sourceButton) {
   sourceButton.disabled = true;
   sourceButton.textContent = before.enabled ? '正在关闭…' : '正在开启…';
   try {
+    if (!before.enabled && before.current.remote) await verifyMirrorFileReference(before.current.remote);
     await setMirrorEnabled(!before.enabled);
     showToast(before.enabled ? 'Mirror 已关闭' : 'Mirror 已开启');
   } finally {
@@ -2313,24 +2371,47 @@ function renderCollection(token = renderRevision) {
 }
 
 function renderCollectionToolbar(collection) {
-  const expandAll = button('全部展开', 'secondary-button compact-button', () => expandAllCurrentGroups());
-  expandAll.title = '展开当前词表的全部字母或日期分组';
-  elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [expandAll]));
+  const toggleAll = iconButton('chevrons', 'icon-button collection-expand-toggle', '全部展开', () => toggleAllCurrentGroups());
+  elements['collection-toolbar'].replaceChildren(el('div', { className: 'collection-quick-actions' }, [toggleAll]));
+  syncCollectionExpandControl();
 }
 
-function expandAllCurrentGroups() {
+function allCurrentGroupsOpen() {
+  const context = collectionRenderContext;
+  if (!context || context.collection.id !== currentCollectionId) return false;
+  const sectionContext = context.sections.get(currentViewKind);
+  if (!sectionContext) return false;
+  const expanded = expandedLettersFor(currentCollectionId, currentViewKind);
+  const keys = [...sectionContext.sectionByKey.keys()]
+    .map((key) => context.mode === 'date' ? dateExpansionKey(key) : key);
+  return keys.length > 0 && keys.every((key) => expanded.has(key));
+}
+
+function syncCollectionExpandControl() {
+  const control = elements['collection-toolbar']?.querySelector('.collection-expand-toggle');
+  if (!control) return;
+  const collapse = allCurrentGroupsOpen();
+  const label = collapse ? '全部收起' : '全部展开';
+  control.dataset.state = collapse ? 'collapse' : 'expand';
+  control.title = label;
+  control.setAttribute('aria-label', label);
+}
+
+function toggleAllCurrentGroups() {
   const context = collectionRenderContext;
   if (!context || context.collection.id !== currentCollectionId) return;
   const sectionContext = context.sections.get(currentViewKind);
   if (!sectionContext) return;
+  const open = !allCurrentGroupsOpen();
   collapseTransactionRevision += 1;
   for (const key of sectionContext.sectionByKey.keys()) {
-    if (context.mode === 'date') setDateSectionOpen(currentViewKind, key, true, { persist: false });
-    else setLetterSectionOpen(currentViewKind, key, true, { persist: false });
+    if (context.mode === 'date') setDateSectionOpen(currentViewKind, key, open, { persist: false });
+    else setLetterSectionOpen(currentViewKind, key, open, { persist: false });
   }
   persistCurrentHistorySnapshot();
   scheduleAlphabetSectionMetricsRefresh();
-  showToast('当前词表已全部展开');
+  syncCollectionExpandControl();
+  showToast(open ? '当前词表已全部展开' : '当前词表已全部收起');
 }
 
 function currentMode(collection, section = currentViewKind) {
@@ -3382,6 +3463,7 @@ function setDateSectionOpen(section, dateKey, open, { persist = true } = {}) {
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   indicator?.classList.toggle('open', open);
+  syncCollectionExpandControl();
   if (persist) persistCurrentHistorySnapshot();
   return true;
 }
@@ -3448,7 +3530,7 @@ async function runStickyCollapseTransaction({ sectionNode, heading, collapse, tr
     // wait for that programmatic root scroll to settle, then remove the body.
     // This avoids the iOS/WebKit failure shape "layout shrink + scrollTo in the
     // same compositor commit" without introducing a visual animation.
-    if (typeof document.startViewTransition === 'function') {
+    if (safeViewTransitionsAvailable()) {
       root.classList.add('sticky-collapse-transition');
       const transition = document.startViewTransition(async () => {
         if (transaction !== collapseTransactionRevision || !heading.isConnected || !scrollCoordinator.owns(scrollEpoch)) return;
@@ -3540,6 +3622,7 @@ function setLetterSectionOpen(section, letter, open, { persist = true } = {}) {
   }
   heading?.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (indicator) indicator.classList.toggle('open', open);
+  syncCollectionExpandControl();
   scheduleAlphabetSectionMetricsRefresh();
   if (persist) persistCurrentHistorySnapshot();
   return true;
@@ -4165,7 +4248,7 @@ function providerResultBody(provider, entry, statusText = '准备查询') {
 function createLazySpeechSession() {
   const controller = new AbortController();
   const buffers = new Map();
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const AudioContextClass = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let context = null;
@@ -5519,32 +5602,20 @@ async function openPersonalMirrorFile() {
   const picked = await openMirrorSitePicker();
   if (!picked) return;
   const source = picked.document;
-  const existingMatches = (source.layers?.existing || []).map((item) => ({
-    ...item, valid: Boolean(item.entryId), selectedByDefault: item.selectedByDefault !== false,
-  }));
-  const candidates = (source.layers?.candidates || []).map((item) => ({
-    ...item, valid: Boolean(item.candidateId && item.text && item.domainKey && item.collectionKeys?.length),
-    selectedByDefault: item.selectedByDefault !== false,
-  }));
-  const runId = source.documentId || crypto.randomUUID();
-  openMirrorCandidateReview({
-    runId,
-    existingMatches,
-    candidates,
-    siteNodeId: picked.node.id,
-    siteDocument: source,
-    mirrorRecord: {
-      protocol: MIRROR_PROTOCOL,
-      mirrorId: `mirror_${runId}`,
-      runId,
-      createdAt: source.createdAt || new Date().toISOString(),
-      entryIds: existingMatches.filter((item) => item.selectedByDefault).map((item) => item.entryId),
-      materialLabel: source.title || picked.node.name,
-      material: { label: source.title || picked.node.name, sourceDigest: source.context?.sourceDigest || '' },
-      existingMatches,
-      candidateImports: [],
-      matchMode: 'balanced',
+  const prepared = await prepareMirrorFile(source, getState());
+  prepared.mirrorRecord = await extendMirrorRecord(prepared.mirrorRecord, {
+    remote: {
+      siteOrigin: getMirrorConnection().siteOrigin,
+      nodeId: picked.node.id,
+      documentId: source.documentId,
+      revision: Number(picked.node.revision || 0),
     },
+  });
+  openMirrorCandidateReview({
+    ...prepared,
+    siteNodeId: picked.node.id,
+    siteNodeRevision: Number(picked.node.revision || 0),
+    siteDocument: source,
   });
 }
 
@@ -5612,8 +5683,9 @@ function openSettingsDialog() {
   });
   syncMirror.disabled = !mirrorConnection.paired;
   const pickMirror = button('选择 Mirror 文件', 'secondary-button', () => openPersonalMirrorFile().catch(displayError));
-  const disconnectMirror = button('断开连接', 'secondary-button', () => {
-    disconnectMirrorSite();
+  const disconnectMirror = button('断开连接', 'secondary-button', async () => {
+    if (getMirrorState().enabled) await setMirrorEnabled(false);
+    await disconnectMirrorSite();
     showToast('Personal Mirror 已断开');
   });
   disconnectMirror.disabled = !mirrorConnection.paired;
@@ -5868,5 +5940,13 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['boot-screen'].classList.add('hidden');
   elements.app.classList.remove('hidden');
   renderApp();
+  const restoredMirror = getMirrorState();
+  if (restoredMirror.enabled && restoredMirror.active?.remote && getMirrorConnection().paired) {
+    verifyMirrorFileReference(restoredMirror.active.remote).catch(async (error) => {
+      if (!/已删除|已变化|另一个 Personal Mirror Site/.test(error?.message || '')) return;
+      await setMirrorEnabled(false);
+      showToast(`${error.message}；本地 Mirror 已关闭`, 'error');
+    });
+  }
   setTimeout(showMigrationNotice, 60);
 }

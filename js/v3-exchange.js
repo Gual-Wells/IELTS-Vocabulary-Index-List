@@ -80,6 +80,12 @@ export function isVixContentPackage(value) {
   return protocolCompatible && raw.format === VIX_FORMAT && Number(raw.version) === VIX_VERSION;
 }
 
+export function isVixSnapshotPackage(value) {
+  const raw = object(value);
+  return raw.protocol === VIX_EXCHANGE_PROTOCOL && raw.kind === 'snapshot'
+    && raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data);
+}
+
 export function normalizeVixPackage(value) {
   if (!isVixContentPackage(value)) throw new Error('JSON 不是受支持的 VIX 内容文件');
   const raw = object(value);
@@ -265,7 +271,7 @@ function normalizePersonalReferences(backup) {
     if (!(projection.get(fallback) || []).some((item) => item.id === entry.id)) return [];
     return [{ ...pin, domainId: entry.domainId, contextCollectionId: fallback }];
   });
-  backup.annotations = array(backup.annotations).filter((item) => entryById.has(item.entryId));
+  backup.annotations = [];
   cleanStudyStampReferences(backup);
   const lastPositions = { ...object(backup.settings?.lastPositions) };
   for (const [key, entryId] of Object.entries(lastPositions)) {
@@ -305,6 +311,31 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     && Array.isArray(currentInput?.entries) && Array.isArray(currentInput?.memberships)
     && Array.isArray(currentInput?.relationComponents) && currentInput?.settings && typeof currentInput.settings === 'object';
   const before = looksCanonical ? clone(currentInput) : canonicalizeBackup(currentInput);
+  if (isVixSnapshotPackage(rawPackage)) {
+    const timestamp = new Date().toISOString();
+    const nextBackup = canonicalizeBackup({
+      ...clone(rawPackage.data), appVersion: APP_VERSION, exportedAt: timestamp,
+    });
+    const target = { scope: 'global', mode: 'replace', domainId: '', collectionId: '' };
+    const mismatch = selection?.scope !== 'global' || selection?.mode !== 'replace'
+      ? 'VIX 恢复快照固定为全局完整替换，以恢复内容、PIN、学习日期、位置与显示设置。'
+      : null;
+    const conflicts = [];
+    const membershipIssues = [];
+    return {
+      package: {
+        protocol: VIX_EXCHANGE_PROTOCOL,
+        kind: 'snapshot',
+        capabilities: Array.isArray(rawPackage.capabilities) ? [...rawPackage.capabilities] : VIX_EXCHANGE_CAPABILITIES,
+        generatedAt: normalizeDisplayText(rawPackage.generatedAt || timestamp),
+        seedGeneration: Number(rawPackage.seedGeneration || nextBackup.settings.builtInSeedRevision || 0) || undefined,
+        data: nextBackup,
+      },
+      target, mismatch, conflicts, membershipIssues, conflictPolicy,
+      summary: summaryBetween(before, nextBackup, conflicts, 0, membershipIssues),
+      nextBackup,
+    };
+  }
   const pkg = normalizeVixPackage(rawPackage);
   const mismatch = declaredTargetMismatch(pkg, selection);
   const target = buildTargetSelection(pkg, selection, before);

@@ -141,6 +141,12 @@ export function validateMirrorRecord(value) {
   const materialLabel = typeof value.material?.label === 'string'
     ? value.material.label.slice(0, 160)
     : typeof value.materialLabel === 'string' ? value.materialLabel.slice(0, 160) : '';
+  const remote = value.remote && typeof value.remote === 'object' ? Object.freeze({
+    siteOrigin: String(value.remote.siteOrigin || '').slice(0, 240),
+    nodeId: String(value.remote.nodeId || '').slice(0, 180),
+    documentId: String(value.remote.documentId || '').slice(0, 180),
+    revision: Math.max(0, Number(value.remote.revision || 0)),
+  }) : null;
   return Object.freeze({
     protocol: value.protocol,
     mirrorId: value.mirrorId,
@@ -161,6 +167,7 @@ export function validateMirrorRecord(value) {
     existingMatches: Object.freeze(Array.isArray(value.existingMatches) ? value.existingMatches.map(validateExistingMatch) : []),
     candidateImports: Object.freeze(Array.isArray(value.candidateImports) ? value.candidateImports.map(validateCandidateImport) : []),
     matchMode: ['lexical', 'semantic', 'balanced'].includes(value.matchMode) ? value.matchMode : 'lexical',
+    remote,
   });
 }
 
@@ -182,10 +189,12 @@ export async function initializeMirrorRuntime() {
   if (initialized) return getMirrorSnapshot();
   const rows = await readRows();
   let currentId = '';
+  let activeId = '';
   let legacyCurrent = null;
   for (const row of rows) {
     if (row?.key === CURRENT_KEY) {
       if (typeof row.mirrorId === 'string') currentId = row.mirrorId;
+      if (typeof row.activeMirrorId === 'string') activeId = row.activeMirrorId;
       else if (row.value) legacyCurrent = row.value;
       continue;
     }
@@ -208,7 +217,15 @@ export async function initializeMirrorRuntime() {
     } catch {}
   }
   current = library.get(currentId)?.record || null;
+  active = library.get(activeId)?.record || null;
   initialized = true;
+  return getMirrorSnapshot();
+}
+
+/** Rebuild the effective suppression projection after the VIX store is loaded. */
+export function restoreMirrorActivation(structuralEntryIds) {
+  if (active) setMirrorSuppression(suppression, structuralEntryIds, active.entryIds);
+  else setMirrorSuppression(suppression, [], null);
   return getMirrorSnapshot();
 }
 
@@ -239,7 +256,7 @@ export async function commitMirrorCurrent(record, structuralEntryIds) {
   const envelope = { record: validated, reviewedAt };
   library.set(validated.mirrorId, envelope);
   await putRow({ key: RECORD_PREFIX + validated.mirrorId, ...clone(envelope) });
-  await putRow({ key: CURRENT_KEY, mirrorId: validated.mirrorId });
+  await putRow({ key: CURRENT_KEY, mirrorId: validated.mirrorId, activeMirrorId: active?.mirrorId || '' });
   current = validated;
   emit('current');
   return getMirrorSnapshot();
@@ -249,9 +266,9 @@ export async function selectMirrorCurrent(mirrorId) {
   await initializeMirrorRuntime();
   const envelope = library.get(String(mirrorId || ''));
   if (!envelope) throw new Error('Mirror 材料不存在');
-  if (active && active.mirrorId !== envelope.record.mirrorId) deactivateMirror();
+  if (active && active.mirrorId !== envelope.record.mirrorId) await deactivateMirror();
   current = envelope.record;
-  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId });
+  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId, activeMirrorId: active?.mirrorId || '' });
   emit('selected');
   return getMirrorSnapshot();
 }
@@ -263,13 +280,15 @@ export async function activateMirror(structuralEntryIds, mirrorId = '') {
   if (!current) throw new Error('当前设备没有可用 Mirror');
   active = validateMirrorRecord(clone(current));
   setMirrorSuppression(suppression, structuralEntryIds, active.entryIds);
+  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId, activeMirrorId: active.mirrorId });
   emit('active');
   return getMirrorSnapshot();
 }
 
-export function deactivateMirror() {
+export async function deactivateMirror() {
   active = null;
   setMirrorSuppression(suppression, [], null);
+  await putRow({ key: CURRENT_KEY, mirrorId: current?.mirrorId || '', activeMirrorId: '' });
   emit('inactive');
   return getMirrorSnapshot();
 }
@@ -279,12 +298,12 @@ export async function deleteMirrorRecord(mirrorId) {
   const id = String(mirrorId || '');
   const envelope = library.get(id);
   if (!envelope) return getMirrorSnapshot();
-  if (active?.mirrorId === id) deactivateMirror();
+  if (active?.mirrorId === id) await deactivateMirror();
   library.delete(id);
   await deleteRow(RECORD_PREFIX + id);
   if (current?.mirrorId === id) {
     current = null;
-    await deleteRow(CURRENT_KEY);
+    await putRow({ key: CURRENT_KEY, mirrorId: '', activeMirrorId: active?.mirrorId || '' });
   }
   emit('deleted');
   return getMirrorSnapshot();
@@ -301,8 +320,8 @@ export function effectiveEntryAllowed(entryId) {
 
 export async function clearMirrorCurrent() {
   await initializeMirrorRuntime();
-  await deleteRow(CURRENT_KEY);
   current = null;
+  await putRow({ key: CURRENT_KEY, mirrorId: '', activeMirrorId: active?.mirrorId || '' });
   emit(active ? 'current-cleared-active-preserved' : 'current-cleared');
   return getMirrorSnapshot();
 }

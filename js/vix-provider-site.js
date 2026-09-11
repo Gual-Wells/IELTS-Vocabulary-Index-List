@@ -108,6 +108,7 @@ export function requestGroqCompletion(body, options = {}) {
 export function requestSpeech(text, options = {}) {
   const value = String(text || '').trim();
   if (!value) throw new MirrorServiceError('configuration', '发音文本为空');
+  if (value.length > 200) throw new MirrorServiceError('speech-input-too-long', 'Groq Orpheus 单次发音最多 200 个字符');
   const { model, voice, ...requestOptions } = options;
   return request('/api/groq/speech', {
     ...requestOptions,

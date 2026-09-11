@@ -1,16 +1,42 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.1.0-shell-20260909-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.1.1-recovery-20260910-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
-  './css/provider-runtime.css', './css/v5.0.0.css', './css/v5.1.0.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-provider-views.js',
-  './', './index.html', './manifest.webmanifest', './css/v3.css', './css/v3.3.1.css', './css/v3.4.0.css', './css/v4.0.0.css', './css/v4.0.1.css', './css/v4.0.2.css', './css/v4.1.0.css', './css/v4.2.0.css', './css/v4.3.0.css', './css/v4.4.0.css', './css/v4.5.0.css', './css/v4.6.0.css', './css/v4.7.0.css', './css/v4.7.1.css', './css/v4.7.2.css', './css/v4.7.3.css',
-  './js/v3-upgrade.js', './js/v3-app.js', './js/v3-ui.js', './js/v3-scroll-runtime.js', './js/v3-motion-runtime.js', './js/v3-runtime-geometry.js', './js/v3-store.js', './js/v3-db.js',
-  './js/v3-model.js', './js/vix-download.js', './js/v3-ai.js', './js/v3-exchange.js', './js/v3-integrations.js', './js/v3-data-worker.js',
-  './js/v5-version.js', './js/vix-protocols.js', './js/vix-mirror-site.js', './js/vix-provider-site.js', './js/v5-suppression-runtime.js', './js/v5-mirror-runtime.js', './js/v5-mirror3.js',
-  './integration/vix-function/VIX-Function.ps1', './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md',
-  './assets/icons/vix-icon-180-v4.png', './assets/icons/vix-icon-192-v4.png', './assets/icons/vix-icon-512-v4.png',
+  "./js/v3-provider-runtime.js",
+  "./js/v3-groq-contracts.js",
+  "./js/v3-provider-views.js",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./js/v3-upgrade.js",
+  "./js/v3-app.js",
+  "./js/v3-ui.js",
+  "./js/v3-scroll-runtime.js",
+  "./js/v3-motion-runtime.js",
+  "./js/v3-runtime-geometry.js",
+  "./js/v3-store.js",
+  "./js/v3-db.js",
+  "./js/v3-model.js",
+  "./js/vix-download.js",
+  "./js/v3-ai.js",
+  "./js/v3-exchange.js",
+  "./js/v3-integrations.js",
+  "./js/v3-data-worker.js",
+  "./js/v5-version.js",
+  "./js/vix-protocols.js",
+  "./js/vix-mirror-site.js",
+  "./js/vix-provider-site.js",
+  "./js/v5-suppression-runtime.js",
+  "./js/v5-mirror-runtime.js",
+  "./js/v5-mirror3.js",
+  "./integration/vix-function/VIX-Function.ps1",
+  "./integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md",
+  "./data/relation-low-level-lexemes.json",
+  "./assets/icons/vix-icon-180-v4.png",
+  "./assets/icons/vix-icon-192-v4.png",
+  "./assets/icons/vix-icon-512-v4.png",
+  "./css/vix.css"
 ];
 
 sw.addEventListener('install', (event) => {

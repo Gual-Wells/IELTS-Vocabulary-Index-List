@@ -1,4 +1,5 @@
 import { initializeUI, notifyServiceWorkerUpdate, serviceWorkerReloadIsArmed } from './v3-ui.js';
+import { createVixSnapshotEnvelope } from './vix-protocols.js';
 import { exportLegacyGenerationBackup, getGenerationUpgradeStatus, replaceLegacyGenerationWithSeed } from './v3-db.js';
 import { APP_VERSION } from './v5-version.js';
 
@@ -104,19 +105,23 @@ function downloadJsonFile(filename, value) {
 async function handleGenerationUpgradeIfNeeded() {
   const status = await getGenerationUpgradeStatus();
   if (!status.required) return;
-  const choice = await bootChoice('Vocabulary Index 5.1.0', '检测到旧内容世代。5.1.0 会用当前完整 Seed 独立替换，不构造跨世代增量迁移。你可以先导出一份只供旧版本读取的旧世代归档。', [
-    { label: '导出旧世代归档', value: 'backup', primary: true },
-    { label: '直接继续', value: 'continue', primary: false },
+  const oldLabel = status.fromSchema < status.toSchema
+    ? `Schema ${status.fromSchema}`
+    : `Seed 世代 ${status.fromSeedRevision}`;
+  const choice = await bootChoice('Vocabulary Index 5.1.1', `检测到旧内容世代（${oldLabel}）。5.1.1 会用当前完整 Seed 独立替换，不构造跨世代内容增量迁移。个人 Entry 修改应先按 VIX → Personal Mirror 流程同步；这里还会强制导出一份替换前灾难恢复归档。`, [
+    { label: '导出 VIX 恢复快照', value: 'backup', primary: true },
+    { label: '取消升级', value: 'cancel', primary: false },
   ]);
+  if (choice !== 'backup') throw new Error('升级已取消；旧世代数据保持不变。');
   if (choice === 'backup') {
     const backup = await exportLegacyGenerationBackup();
-    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || 'legacy'}-Pre-5.1.0-Backup.json`, backup);
+    downloadJsonFile(`Vocabulary-Index-${backup.appVersion || 'legacy'}-Pre-5.1.1-Recovery.json`, createVixSnapshotEnvelope(backup));
   }
-  const confirm = await bootChoice('确认替换内容世代', '将以当前完整 Seed 世代替换旧内容数据库。旧世代归档不会作为 5.1.0 导入格式；个人最新数据库以 Personal Mirror 同步为准。', [
+  const confirm = await bootChoice('确认替换内容世代', '将以当前完整 Seed 世代替换旧内容数据库。恢复快照用于整库回到替换前状态，不会把个人 Entry 修改自动叠加到新 Seed；只有已同步到 Personal Mirror 的修改才属于下一 Seed 的依据。', [
     { label: '取消启动', value: 'cancel', primary: false },
-    { label: '替换并进入 5.1.0', value: 'replace', primary: true },
+    { label: '已同步，替换并进入 5.1.1', value: 'replace', primary: true },
   ]);
-  if (confirm !== 'replace') throw new Error('已取消 5.1.0 内容世代替换。旧数据保持不变。');
+  if (confirm !== 'replace') throw new Error('已取消 5.1.1 内容世代替换。旧数据保持不变。');
   await replaceLegacyGenerationWithSeed();
 }
 

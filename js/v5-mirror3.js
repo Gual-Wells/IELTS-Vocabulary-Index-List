@@ -328,6 +328,58 @@ export async function prepareMirrorResult(raw) {
   };
 }
 
+/**
+ * Adapt a version-independent vix-mirror-file/1 document to the local
+ * vix-mirror/3 runtime through the same frozen-context validator used by
+ * native VIX Function results. This prevents the picker path from inventing
+ * a partial runtime record that cannot pass validateMirrorRecord().
+ * @param {any} document
+ * @param {any} state
+ */
+export async function prepareMirrorFile(document, state) {
+  if (document?.protocol !== 'vix-mirror-file/1' || !document.layers
+    || !Array.isArray(document.layers.existing) || !Array.isArray(document.layers.candidates)) {
+    throw new Error('Mirror 文件协议不兼容');
+  }
+  const context = await buildMirrorContext(state);
+  const sortedEntries = [...state.entries].sort((left, right) => left.id.localeCompare(right.id));
+  const slotByEntryId = new Map(sortedEntries.map((entry, index) => [entry.id, index + 1]));
+  const existingMatches = document.layers.existing.map((item) => {
+    const slot = slotByEntryId.get(item?.entryId);
+    if (!slot) throw new Error(`Mirror 文件引用了当前词库不存在的 Entry：${item?.entryId || '(empty)'}`);
+    return {
+      slot,
+      mirrorClass: item.mirrorClass,
+      matchType: item.matchType,
+      surfaceForm: item.surfaceForm || item.entryText || sortedEntries[slot - 1]?.text || '',
+      lemma: item.lemma || '',
+      importance: item.importance,
+      gloss: item.gloss || item.glossHant || item.glossHans || '',
+      evidence: item.evidence,
+    };
+  });
+  const candidates = document.layers.candidates.map((item) => ({
+    ...item,
+    relatedExistingSlots: Array.isArray(item.relatedExistingSlots)
+      ? item.relatedExistingSlots
+      : (item.relatedEntryIds || []).map((entryId) => slotByEntryId.get(entryId)).filter(Boolean),
+  }));
+  return prepareMirrorResult({
+    protocol: MIRROR_RESULT_PROTOCOL,
+    kind: 'vix-mirror-result',
+    runId: clean(document.documentId || crypto.randomUUID(), 160),
+    contextRevision: context.revision,
+    sourceCorpusHash: context.sourceCorpusHash,
+    matchCorpusHash: context.matchCorpusHash,
+    collectionCatalogHash: context.collectionCatalogHash,
+    matchPolicyHash: context.matchPolicyHash,
+    materialLabel: clean(document.title, 160),
+    sourceDigest: clean(document.context?.sourceDigest, 180),
+    existingMatches,
+    candidates,
+  });
+}
+
 export async function extendMirrorRecord(record, update) {
   const core = clone(record);
   delete core.mirrorHash;
@@ -336,6 +388,7 @@ export async function extendMirrorRecord(record, update) {
     core.entryIds = [...new Set(update?.entryIds || core.entryIds || [])];
     core.existingMatches = clone(update?.existingMatches || core.existingMatches || []);
     core.candidateImports = clone(update?.candidateImports || core.candidateImports || []);
+    if (update?.remote !== undefined) core.remote = clone(update.remote);
   }
   return { ...core, mirrorHash: await hashJson(core) };
 }

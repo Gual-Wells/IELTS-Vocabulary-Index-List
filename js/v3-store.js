@@ -4,12 +4,13 @@ import {
   relationEdgeSuppressed, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID, tokenizeEnglish, uniqueProjectionCount,
 } from './v3-model.js';
 import {
-  commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, recordHistoryOnly, redo as dbRedo,
-  replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings, undo as dbUndo,
+  commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot,
+  replaceWithBackup, replaceWithCanonicalSeed, setLastPositionSetting, setSettings,
 } from './v3-db.js';
 import {
   activateMirror, commitMirrorCurrent, deactivateMirror, deleteMirrorRecord, effectiveEntryAllowed, effectiveProjectionFromMirror,
   getMirrorSnapshot, initializeMirrorRuntime, selectMirrorCurrent,
+  restoreMirrorActivation,
 } from './v5-mirror-runtime.js';
 import { APP_VERSION } from './v5-version.js';
 import { planVixImport } from './v3-exchange.js';
@@ -48,13 +49,19 @@ let lowLevelLexemeLoadPromise = null;
 async function ensureLowLevelLexemes() {
   if (lowLevelLexemeLoadPromise) return lowLevelLexemeLoadPromise;
   lowLevelLexemeLoadPromise = fetch(new URL('../data/relation-low-level-lexemes.json', import.meta.url), { cache: 'no-store' })
-    .then((response) => response.ok ? response.json() : [])
+    .then((response) => {
+      if (!response.ok) throw new Error(`低层关系词表不可用（HTTP ${response.status}）`);
+      return response.json();
+    })
     .then((items) => {
       lowLevelRelationLexemes = new Set((Array.isArray(items) ? items : items?.items || [])
         .map((item) => normalizeEnglish(typeof item === 'string' ? item : item?.normalizedText || item?.text || '')).filter(Boolean));
       return lowLevelRelationLexemes;
     })
-    .catch(() => lowLevelRelationLexemes);
+    .catch((error) => {
+      lowLevelLexemeLoadPromise = null;
+      throw new Error(`无法安全加载低层关系词表：${error?.message || error}`);
+    });
   return lowLevelLexemeLoadPromise;
 }
 
@@ -159,7 +166,6 @@ function buildState(snapshot) {
     membershipsByEntry: groupBy(backup.memberships, (item) => item.entryId),
     membershipsByCollection: groupBy(backup.memberships, (item) => item.collectionId),
     pinByEntry: new Map(backup.pins.map((item) => [item.entryId, item])),
-    annotationByEntry: new Map(backup.annotations.map((item) => [item.entryId, item])),
     studyStampByKey: new Map(backup.studyStamps.map((item) => [item.key, item])),
   };
 }
@@ -194,6 +200,7 @@ export async function reloadStore(type = 'reload', detail = null) {
   reloadPromise = (async () => {
     await ensureLowLevelLexemes();
     const snapshot = await readSnapshot();
+    restoreMirrorActivation((snapshot.entries || []).map((entry) => entry.id));
     state = buildState(snapshot);
     emit(type, detail);
     return state;
@@ -201,7 +208,7 @@ export async function reloadStore(type = 'reload', detail = null) {
   return reloadPromise;
 }
 
-export async function initializeStore({ onProgress = () => {} } = {}) {
+export async function initializeStore({ onProgress = (_progress) => {} } = {}) {
   onProgress({ phase: 'runtime', label: '正在准备本地状态', percent: 1 });
   await initializeMirrorRuntime();
   const migration = await initializeDatabase({ onProgress });
@@ -290,7 +297,6 @@ function diffBackup(before, after) {
     ...diffArray('memberships', before.memberships, after.memberships),
     ...diffArray('relationComponents', before.relationComponents, after.relationComponents),
     ...diffArray('pins', before.pins, after.pins),
-    ...diffArray('annotations', before.annotations, after.annotations, 'entryId'),
     ...diffArray('studyStamps', before.studyStamps, after.studyStamps, 'key'),
     ...diffSettings(before.settings, after.settings),
   ];
@@ -359,7 +365,7 @@ async function mutate(label, mutator, retry = true) {
   const changes = diffBackup(before, after);
   if (!changes.length) return state;
   try {
-    const revision = await commitChanges(changes, { label, expectedRevision: state.revision });
+    const revision = await commitChanges(changes, { expectedRevision: state.revision });
     const mirrorContextChanged = changes.some((change) => ['domains', 'collections', 'entries', 'memberships'].includes(change.store));
     await reloadStore('mutation', { mirrorContextChanged });
     broadcast(revision);
@@ -572,7 +578,6 @@ function removeOrphanWord(draft, entryId) {
   draft.entries = draft.entries.filter((item) => item.id !== entryId);
   draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
   draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
-  draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
   removeEntryStudyReferences(draft, entry);
 }
 
@@ -587,7 +592,6 @@ export async function deleteDomain(domainId) {
     draft.entries = draft.entries.filter((item) => !entryIds.has(item.id));
     draft.memberships = draft.memberships.filter((item) => !entryIds.has(item.entryId));
     draft.pins = draft.pins.filter((item) => !entryIds.has(item.entryId));
-    draft.annotations = draft.annotations.filter((item) => !entryIds.has(item.entryId));
     draft.studyStamps = draft.studyStamps.filter((item) => item.scope !== 'entry' || !entryIds.has(item.entryId));
     cleanStudyStampReferences(draft);
   });
@@ -660,7 +664,6 @@ export async function importEntries(collectionId, items, { mode = 'merge' } = {}
           .map((item) => item.id));
         draft.entries = draft.entries.filter((item) => !removed.has(item.id));
         draft.pins = draft.pins.filter((item) => !removed.has(item.entryId));
-        draft.annotations = draft.annotations.filter((item) => !removed.has(item.entryId));
         draft.studyStamps = draft.studyStamps.filter((item) => item.scope !== 'entry' || !removed.has(item.entryId));
         cleanStudyStampReferences(draft);
       }
@@ -939,7 +942,6 @@ export async function editEntry(entryId, updates, expectedUpdatedAt) {
       throw new Error('系统短语不能直接改成普通词；请先在普通词表中新增该词。');
     }
     Object.assign(entry, candidate);
-    if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
     if (entry.kind === 'word') removeOrphanWord(draft, entry.id);
   });
 }
@@ -963,7 +965,6 @@ export async function editEntryInCollection(entryId, collectionId, updates, expe
     if (collision) throw new Error('同一词域内已有该内容');
     const textChanged = candidate.normalizedText !== entry.normalizedText;
     Object.assign(entry, candidate);
-    if (textChanged) draft.annotations = draft.annotations.filter((item) => item.entryId !== entry.id);
     if (collection.type === 'normal') {
       const membership = draft.memberships.find((item) => item.entryId === entryId && item.collectionId === collectionId);
       if (!membership) throw new Error('当前词表没有该内容的来源关系');
@@ -989,7 +990,6 @@ export async function deleteEntry(entryId) {
     draft.entries = draft.entries.filter((item) => item.id !== entryId);
     draft.memberships = draft.memberships.filter((item) => item.entryId !== entryId);
     draft.pins = draft.pins.filter((item) => item.entryId !== entryId);
-    draft.annotations = draft.annotations.filter((item) => item.entryId !== entryId);
     removeEntryStudyReferences(draft, entry);
   });
 }
@@ -1011,7 +1011,7 @@ export async function togglePin(entryId, contextCollectionId, retry = true) {
   const key = existing?.id || after.id;
   try {
     const revision = await commitChanges([{ store: 'pins', key, before: existing ? clone(existing) : null, after: after ? clone(after) : null }], {
-      label: '切换 PIN', expectedRevision: state.revision,
+      expectedRevision: state.revision,
     });
     state.pins = existing
       ? (after ? state.pins.map((item) => item.entryId === entryId ? after : item) : state.pins.filter((item) => item.entryId !== entryId))
@@ -1137,7 +1137,7 @@ export async function refreshStudyDate(entryId, collectionId, retry = true) {
   });
   try {
     const revision = await commitChanges([{ store: 'studyStamps', key, before: existing ? clone(existing) : null, after: clone(after) }], {
-      label: '刷新学习日期', expectedRevision: state.revision,
+      expectedRevision: state.revision,
     });
     state.studyStamps = existing
       ? state.studyStamps.map((item) => item.key === key ? after : item)
@@ -1173,122 +1173,6 @@ export async function setNumberMode(mode) {
   await reloadStore('settings');
   broadcast(revision);
   return true;
-}
-
-async function commitAnnotationSet(nextAnnotations, label, detail = {}, retry = true, expectedRevision = null, recordHistory = true) {
-  if (expectedRevision != null && Number(state.revision) !== Number(expectedRevision)) return state;
-  const sanitized = nextAnnotations.filter((item) => {
-    const entry = state.entryById.get(item.entryId);
-    return entry && entry.domainId === item.domainId;
-  });
-  const before = new Map(state.annotations.map((item) => [item.entryId, item]));
-  const after = new Map(sanitized.map((item) => [item.entryId, item]));
-  const ids = new Set([...before.keys(), ...after.keys()]);
-  const changes = [];
-  for (const entryId of ids) {
-    const left = before.get(entryId) || null;
-    const right = after.get(entryId) || null;
-    if (!jsonEqual(left, right)) changes.push({ store: 'annotations', key: entryId, before: left ? clone(left) : null, after: right ? clone(right) : null });
-  }
-  if (!changes.length) return state;
-  try {
-    const revision = await commitChanges(changes, { label, expectedRevision: state.revision, recordHistory });
-    state.annotations = [...after.values()].sort((a, b) => a.domainId.localeCompare(b.domainId) || a.entryId.localeCompare(b.entryId));
-    state.annotationByEntry = new Map(state.annotations.map((item) => [item.entryId, item]));
-    state.revision = revision;
-    state.settings.dataRevision = revision;
-    emit('annotation-change', { ...detail, entryIds: [...ids] });
-    broadcast(revision);
-    return state;
-  } catch (error) {
-    if (retry && String(error?.message || error).includes('另一实例')) {
-      await reloadStore('sync');
-      if (expectedRevision != null && Number(state.revision) !== Number(expectedRevision)) return state;
-      return commitAnnotationSet(nextAnnotations, label, detail, false, expectedRevision, recordHistory);
-    }
-    throw error;
-  }
-}
-
-export async function replaceAnnotations(entryIds, annotations, { expectedEntries = [], expectedRevision = null } = {}) {
-  const target = new Set(entryIds);
-  const expected = new Map(expectedEntries.map((item) => [item.id, item]));
-  const validTarget = new Set();
-  for (const entryId of target) {
-    const entry = state.entryById.get(entryId);
-    const snapshot = expected.get(entryId);
-    if (!entry) continue;
-    if (snapshot && (snapshot.updatedAt !== entry.updatedAt || snapshot.normalizedText !== entry.normalizedText)) continue;
-    validTarget.add(entryId);
-  }
-  const retained = state.annotations.filter((item) => !validTarget.has(item.entryId));
-  const now = new Date().toISOString();
-  const next = [...retained];
-  for (const annotation of annotations) {
-    const entry = state.entryById.get(annotation.entryId);
-    if (!entry || !validTarget.has(entry.id)) continue;
-    const suggestion = normalizeDisplayText(annotation?.spelling?.suggestion || annotation?.suggestion || '');
-    const reason = normalizeDisplayText(annotation?.reason || '');
-    if (!suggestion && !reason) continue;
-    const existing = state.annotationByEntry.get(entry.id);
-    next.push({
-      entryId: entry.id,
-      domainId: entry.domainId,
-      spelling: { incorrect: Boolean(annotation?.spelling?.incorrect ?? suggestion), suggestion },
-      reason,
-      createdAt: existing?.createdAt || now,
-      updatedAt: now,
-    });
-  }
-  return commitAnnotationSet(next, '保存 AI 标注', { kind: 'batch' }, true, expectedRevision, false);
-}
-
-/**
- * Records one aggregate AI undo item without rewriting annotations. Only AI-owned
- * changes that are still present are admitted, so a later manual review is never
- * absorbed into the AI history item.
- * @param {{entryId:string,before:any,after:any}[]} aiChanges
- * @param {string} label
- */
-export async function recordAiAnnotationChanges(aiChanges, label = 'AI 核查') {
-  const changes = [];
-  for (const item of aiChanges || []) {
-    const entryId = String(item?.entryId || '');
-    if (!entryId) continue;
-    const before = item.before || null;
-    const after = item.after || null;
-    const current = state.annotationByEntry.get(entryId) || null;
-    if (!jsonEqual(current, after) || jsonEqual(before, after)) continue;
-    changes.push({
-      store: 'annotations', key: entryId,
-      before: before ? clone(before) : null,
-      after: after ? clone(after) : null,
-    });
-  }
-  if (!changes.length) return false;
-  const revision = await recordHistoryOnly(changes, { label, expectedRevision: state.revision });
-  state.revision = revision;
-  state.settings.dataRevision = revision;
-  broadcast(revision);
-  return true;
-}
-
-export async function dismissAnnotation(entryId) {
-  return commitAnnotationSet(state.annotations.filter((item) => item.entryId !== entryId), '取消 AI 标注', { kind: 'dismiss' });
-}
-
-export async function clearAnnotationsForEntries(entryIds, label = '清空当前视图 AI 标注') {
-  const target = new Set(entryIds || []);
-  if (!target.size) return state;
-  return commitAnnotationSet(
-    state.annotations.filter((item) => !target.has(item.entryId)),
-    label,
-    { kind: 'clear-view', entryIds: [...target] },
-  );
-}
-
-export async function clearAllAnnotations() {
-  return commitAnnotationSet([], '清空全部 AI 标注', { kind: 'clear-all' });
 }
 
 export function getVisibleEntries(collectionId) {
@@ -1373,7 +1257,7 @@ function refreshMirrorProjectionState() {
 
 export async function setMirrorEnabled(enabled, mirrorId = '') {
   if (enabled) await activateMirror(state.entries.map((entry) => entry.id), mirrorId);
-  else deactivateMirror();
+  else await deactivateMirror();
   refreshMirrorProjectionState();
   emit(enabled ? 'mirror-on' : 'mirror-off');
   return getMirrorSnapshot();
@@ -1430,14 +1314,6 @@ export async function resetToSeed() {
 
 export async function exportFullBackup() {
   return exportBackup();
-}
-
-export async function undo() {
-  return false;
-}
-
-export async function redo() {
-  return false;
 }
 
 export async function acknowledgeMigrationNotice() {

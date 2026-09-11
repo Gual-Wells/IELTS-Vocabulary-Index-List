@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 RUNTIME=ROOT/'data'/'seed5-runtime'
 BASE=ROOT/'data'/'seed-baselines'/'seed-9-glosses.json'
 OUT=ROOT/'data'/'seed-review-user-scope'
-SEED8='baf07a50b195d1a0d24d192ceccb47c584d2d25a'
+ORIGINAL_511='aac041c4d3a4d5a3910a2bf492e509090f7a7a21'
 CHUNK=100
 
 
@@ -26,7 +26,7 @@ assert len(rows)==23917
 
 old=[]
 for name in ('entries-000.json','entries-001.json'):
-    old.extend(git_json(SEED8,f'data/seed5-runtime/{name}'))
+    old.extend(git_json(ORIGINAL_511,f'data/seed5-runtime/{name}'))
 assert len(old)==23917
 
 blank_targets=[]
@@ -35,10 +35,9 @@ for e in old:
         continue
     if str(e.get('gloss') or '').strip():
         continue
-    cur=current_by_id[e['id']]
     r=rows[e['id']]
     blank_targets.append({
-        'scope':'seed8-blank',
+        'scope':'original-5.1.1-blank',
         'id':e['id'],
         'domainId':e['domainId'],
         'kind':e.get('kind'),
@@ -64,7 +63,6 @@ for e in entries:
         'source':r[3],
     })
 
-# De-duplicate by entry id in case future schema changes overlap scopes.
 all_targets=[]; seen=set()
 for item in blank_targets+usage_targets:
     if item['id'] in seen: continue
@@ -79,9 +77,10 @@ for i in range(0,len(all_targets),CHUNK):
             f.write(json.dumps(item,ensure_ascii=False,separators=(',',':'))+'\n')
 manifest={
     'protocol':'vix-seed9-user-scope-review/1',
-    'seed8BlankGeneralEnglish':sum(x['domainId']=='domain_general_english' for x in blank_targets),
-    'seed8BlankComputerTerms':sum(x['domainId']=='domain_computer_terms' for x in blank_targets),
-    'seed8BlankTotal':len(blank_targets),
+    'baselineCommit':ORIGINAL_511,
+    'originalBlankGeneralEnglish':sum(x['domainId']=='domain_general_english' for x in blank_targets),
+    'originalBlankComputerTerms':sum(x['domainId']=='domain_computer_terms' for x in blank_targets),
+    'originalBlankTotal':len(blank_targets),
     'generalUsageAll':len(usage_targets),
     'uniqueTargetCount':len(all_targets),
     'chunkSize':CHUNK,

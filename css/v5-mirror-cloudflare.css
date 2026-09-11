@@ -1,0 +1,36 @@
+.mirror-native-picker { overflow: hidden; }
+.mirror-native-picker-shell {
+  height: 100%; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr);
+  background: var(--surface); color: var(--text);
+}
+.mirror-native-picker-header {
+  min-height: 68px; padding: 14px 14px 10px 16px; display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.mirror-native-picker-header > div { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.mirror-native-picker-header strong { font-size: 17px; }
+.mirror-native-picker-header span { color: var(--muted); font-size: 11px; }
+.mirror-native-picker-close {
+  min-height: 40px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface); color: var(--text); font-weight: 650;
+}
+.mirror-native-picker-search {
+  margin: 12px 14px 6px; min-height: 44px; width: calc(100% - 28px); padding: 0 13px;
+  border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface-strong); color: var(--text);
+  font-size: 16px;
+}
+.mirror-native-picker-status { margin: 3px 16px 8px; color: var(--muted); font-size: 12px; }
+.mirror-native-picker-list { min-height: 0; overflow: auto; padding: 0 12px calc(18px + var(--safe-bottom)); }
+.mirror-native-picker-item {
+  width: 100%; min-height: 58px; display: grid; gap: 4px; align-content: center; text-align: left;
+  padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text);
+}
+.mirror-native-picker-item:active { background: var(--accent-soft); }
+.mirror-native-picker-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.mirror-native-picker-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.mirror-native-picker-item[disabled] { opacity: .55; }
+
+@media (max-width: 640px) {
+  .mirror-native-picker-header { padding-top: calc(12px + var(--safe-top)); min-height: calc(68px + var(--safe-top)); }
+  .mirror-native-picker-list { -webkit-overflow-scrolling: touch; }
+}

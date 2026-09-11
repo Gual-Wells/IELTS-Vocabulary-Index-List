@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vix-5-1-mirror-gateway",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-09-11",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "MIRROR_GATEWAY", "class_name": "MirrorGatewayState" }
+    ]
+  },
+  "migrations": [
+    { "tag": "mirror-gateway-v1", "new_sqlite_classes": ["MirrorGatewayState"] }
+  ],
+  "vars": {
+    "ALLOW_UNPROTECTED_LOCAL": "false",
+    "TEAM_DOMAIN": "https://blue-breeze-4dac.cloudflareaccess.com",
+    "POLICY_AUD": "15fef9936b16c8b08ed05b96a146ba6b19acfbd6a0a24c7fac6493fd1b04720d",
+    "MIRROR_UPSTREAM_ORIGIN": "https://vix-personal-mirror.tydw.chatgpt.site"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": false }
+  }
+}

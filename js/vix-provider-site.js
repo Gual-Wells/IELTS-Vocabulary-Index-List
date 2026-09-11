@@ -11,50 +11,31 @@ export class MirrorServiceError extends Error {
   }
 }
 
-function normalizedOrigin(value) {
-  let url;
-  try { url = new URL(String(value || '')); }
-  catch { throw new MirrorServiceError('configuration', 'Personal Mirror 地址无效'); }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
-    throw new MirrorServiceError('configuration', 'Personal Mirror 必须使用 HTTPS');
-  }
-  if (url.username || url.password || url.search || url.hash) {
-    throw new MirrorServiceError('configuration', 'Personal Mirror 地址不能包含凭据或参数');
-  }
-  return url.origin;
-}
-
-function personalMirrorApiConfig() {
+function localMirrorEnabled() {
   try {
     const value = JSON.parse(localStorage.getItem(MIRROR_CONNECTION_KEY) || '{}');
-    const url = normalizedOrigin(value.siteOrigin || 'https://vix-personal-mirror.tydw.chatgpt.site');
-    const token = typeof value.token === 'string' && value.token.startsWith('vixm_') ? value.token : '';
-    if (!token) throw new MirrorServiceError('configuration', '请先连接 Personal Mirror');
-    return { url, token };
-  } catch (error) {
-    if (error instanceof MirrorServiceError) throw error;
-    throw new MirrorServiceError('configuration', 'Personal Mirror 配置无效');
+    return value.disabled !== true;
+  } catch {
+    return true;
   }
 }
 
 async function request(path, { method = 'GET', body = null, signal = null, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
-  const { url, token } = personalMirrorApiConfig();
+  if (!localMirrorEnabled()) throw new MirrorServiceError('configuration', '此设备已断开 Personal Mirror');
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   signal?.addEventListener('abort', onAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${url}${path}`, {
+    const response = await fetch(path, {
       method,
       headers: {
         accept: 'application/json',
-        authorization: `Bearer ${token}`,
         ...(body == null ? {} : { 'content-type': 'application/json' }),
       },
       body: body == null ? null : JSON.stringify(body),
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: 'same-origin',
       redirect: 'error',
       referrerPolicy: 'no-referrer',
       signal: controller.signal,
@@ -62,9 +43,12 @@ async function request(path, { method = 'GET', body = null, signal = null, timeo
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       const upstream = payload?.error;
+      const message = response.status === 401
+        ? 'Cloudflare Access 会话已失效，请重新打开 VIX 完成验证'
+        : upstream?.message || `Personal Mirror 请求失败（HTTP ${response.status}）`;
       throw new MirrorServiceError(
-        upstream?.code || upstream || 'request',
-        upstream?.message || `Personal Mirror 请求失败（HTTP ${response.status}）`,
+        upstream?.code || upstream || (response.status === 401 ? 'access-required' : 'request'),
+        message,
         response.status,
         upstream || null,
       );
@@ -74,7 +58,7 @@ async function request(path, { method = 'GET', body = null, signal = null, timeo
     if (error instanceof MirrorServiceError) throw error;
     if (signal?.aborted) throw new MirrorServiceError('cancelled', '请求已取消');
     if (controller.signal.aborted) throw new MirrorServiceError('timeout', 'Personal Mirror 请求超时');
-    throw new MirrorServiceError('network', '无法连接 Personal Mirror');
+    throw new MirrorServiceError('network', '无法连接 Cloudflare Mirror Gateway');
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);

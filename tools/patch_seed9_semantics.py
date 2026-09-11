@@ -20,7 +20,8 @@ new='''    for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
 if old in s:
     s=s.replace(old,new,1)
 
-# Curate high-risk grammatical phrases that isolated MT tends to translate too literally.
+# Curate phrases/frames where dictionary lookup or isolated MT loses the intended
+# learning pattern. These remain keyed by the exact English seed text.
 marker='PHRASE_OVERRIDES = {\n'
 extras='''    "a spot on one's fame": "名誉上的污点",
     "enforce sth. upon sb.": "强迫某人接受某事",
@@ -32,10 +33,42 @@ extras='''    "a spot on one's fame": "名誉上的污点",
     "as an illustration": "作为例证",
     "be responsible for doing": "负责做某事",
     "allow someone to do": "允许某人做……",
+    "in this case": "在这种情况下",
+    "it is essential that ...": "……是必要的；必须……",
+    "hardly had ... when ...": "刚……就……",
+    "prefer doing to doing": "比起做……更喜欢做……",
+    "hear someone do": "听到某人做……",
+    "by doing": "通过做……",
+    "so that ...": "以便……；使得……",
+    "whereas": "然而；而",
+    "second": "第二；其次",
+    "next": "接下来；其次",
+    "object to doing": "反对做……",
+    "that is": "也就是说",
+    "such as": "例如；诸如",
+    "be resistant to": "抵抗……；对……有抵抗力",
+    "one of the most [adjective] ...": "最[形容词]的……之一",
 '''
-if '"a spot on one\'s fame":' not in s:
+if '"in this case": "在这种情况下"' not in s:
     assert marker in s
     s=s.replace(marker,marker+extras,1)
+
+# Known ordinary-English dictionary failures or strongly outdated/irrelevant senses.
+gmarker='GENERAL_OVERRIDES = {\n'
+gextras='''    "preside at": "主持；担任……主席",
+    "ye": "你们；你（古语）",
+    "fall under sb.'s observation": "引起某人的注意；被某人观察到",
+    "lose one's nerves": "惊慌失措；失去勇气",
+    "be reputed to be sth.": "据称是……；被认为是……",
+    "tolerance for": "对……的容忍度；对……的耐受性",
+    "go ahead": "继续；进行；先走",
+    "transcription": "转录；文字记录；抄写",
+    "artificial": "人工的；人造的；虚假的",
+    "essay": "文章；短文；论文",
+'''
+if '"preside at": "主持；担任……主席"' not in s:
+    assert gmarker in s
+    s=s.replace(gmarker,gmarker+gextras,1)
 
 # Expand textbook abbreviations before MT while preserving the original Entry text.
 main_marker='def main():\n'

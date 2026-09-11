@@ -16,29 +16,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Inspect entry schema
+      - name: Profile entries
         run: |
           python - <<'PY'
-          import json, glob, collections
-          files = sorted(glob.glob('data/seed5-runtime/entries-*.json'))
+          import json, glob, collections, random
           entries=[]
-          for p in files:
-              with open(p,encoding='utf-8') as f:
-                  x=json.load(f)
-              print('FILE',p,'TYPE',type(x).__name__,'LEN',len(x) if hasattr(x,'__len__') else None)
-              if isinstance(x,dict):
-                  print('TOP_KEYS',list(x)[:20])
-                  for k,v in x.items():
-                      if isinstance(v,list): entries.extend(v)
-              elif isinstance(x,list): entries.extend(x)
+          for p in sorted(glob.glob('data/seed5-runtime/entries-*.json')):
+              entries.extend(json.load(open(p,encoding='utf-8')))
           print('TOTAL',len(entries))
-          keys=collections.Counter(k for e in entries if isinstance(e,dict) for k in e)
-          print('KEY_COUNTS',dict(keys))
-          for i,e in enumerate(entries[:8]):
-              print('ENTRY',i,json.dumps(e,ensure_ascii=False,indent=2)[:12000])
-          # summarize strings and empties
-          for k in sorted(keys):
-              vals=[e.get(k) for e in entries if isinstance(e,dict) and k in e]
-              types=collections.Counter(type(v).__name__ for v in vals)
-              print('FIELD',k,'TYPES',dict(types),'SAMPLE',repr(vals[:3])[:1500])
+          print('DOMAINS',collections.Counter(e['domainId'] for e in entries))
+          print('KINDS',collections.Counter((e['domainId'],e['kind']) for e in entries))
+          print('POS_TOP',collections.Counter(x for e in entries for x in e.get('partsOfSpeech',[])).most_common(40))
+          by_text=collections.defaultdict(list)
+          for e in entries: by_text[e['normalizedText']].append(e)
+          dups={k:v for k,v in by_text.items() if len(v)>1}
+          print('DUP_TEXTS',len(dups),'DUP_ENTRIES',sum(len(v) for v in dups.values()))
+          for k,v in list(dups.items())[:20]:
+              print('DUP',k,[(e['domainId'],e['id'],e['gloss']) for e in v])
+          rng=random.Random(51011)
+          for domain in sorted(set(e['domainId'] for e in entries)):
+              pool=[e for e in entries if e['domainId']==domain]
+              print('\n===',domain,len(pool),'===')
+              for e in rng.sample(pool,min(25,len(pool))):
+                  print(json.dumps({k:e[k] for k in ('id','kind','partsOfSpeech','text','gloss')},ensure_ascii=False))
           PY
+      - name: Check runtime converter exports
+        run: |
+          node --input-type=module - <<'JS'
+          import * as m from './js/v3-model.js';
+          console.log(Object.keys(m).filter(k => /traditional|simplified|gloss/i.test(k)).sort());
+          JS

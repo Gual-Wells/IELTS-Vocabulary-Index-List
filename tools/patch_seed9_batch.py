@@ -3,6 +3,31 @@ from pathlib import Path
 
 p = Path('tools/rebuild_seed9.py')
 s = p.read_text(encoding='utf-8')
+
+# Deterministic edge cases discovered by the first complete batched pass.
+phrase_marker = 'PHRASE_OVERRIDES = {\n'
+phrase_extra = '''    "from various circles": "来自各界；来自不同圈子",
+    "jeopardize one's reputation": "损害自己的声誉",
+    "of the question": "关于该问题；问题的",
+'''
+if '"from various circles":' not in s:
+    assert phrase_marker in s
+    s = s.replace(phrase_marker, phrase_marker + phrase_extra, 1)
+
+general_marker = 'GENERAL_OVERRIDES = {\n'
+general_extra = '''    "'m": "是；处于",
+    "overemphasise": "过分强调",
+'''
+if '"overemphasise":' not in s:
+    assert general_marker in s
+    s = s.replace(general_marker, general_marker + general_extra, 1)
+
+# The source entry lives in General English, not the collocation domain.
+s = s.replace(
+    '("domain_general_collocations", "give one\'s attention"): "给予关注；注意",',
+    '("domain_general_english", "give one\'s attention"): "给予关注；注意",',
+)
+
 start_marker = '    # Fallback is used only where the bilingual lexicon / curated context rules do not resolve'
 end_marker = '\n    errors = []'
 start = s.index(start_marker)

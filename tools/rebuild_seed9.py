@@ -134,6 +134,10 @@ TECH_OVERRIDES = {
 }
 
 PHRASE_OVERRIDES = {
+    "from various circles": "来自各界；来自不同圈子",
+    "jeopardize one's reputation": "损害自己的声誉",
+    "of the question": "关于该问题；问题的",
+    "to one's knowledge": "据某人所知",
     "[someone] is capable of [doing] ...": "[某人]有能力[做]……",
     "make it possible to do": "使做……成为可能",
     "there is little evidence that ...": "几乎没有证据表明……",
@@ -166,6 +170,8 @@ PHRASE_OVERRIDES = {
 }
 
 GENERAL_OVERRIDES = {
+    "'m": "是；处于",
+    "overemphasise": "过分强调",
     # Known legacy failures / misleading specialty-only entries.
     "bourbon": "波旁威士忌；波旁王朝成员",
     "compel": "强迫；迫使",
@@ -191,6 +197,7 @@ POS_PREFIXES = {
 
 POS_RE = re.compile(r"^\s*(n|v|vt|vi|a|adj|ad|adv|pron|prep|conj|num|int|interj|det|art)\.\s*", re.I)
 BRACKET_RE = re.compile(r"\[[^\]]{1,12}\]\s*")
+DOMAIN_TAG_RE = re.compile(r"\[(?:法|医|化|计|机|電|电|通信|语|经|贸|数|物|生|农|商|测|地|矿|纺|冶|航|建|军)\]\s*")
 NAME_NOISE_RE = re.compile(r"(?:人名|姓氏|地名|\([A-Z][^)]{0,40}\)人名)")
 SPACE_RE = re.compile(r"\s+")
 
@@ -347,11 +354,10 @@ def mainland_normalize(text: str, domain: str):
     text = re.sub(r"\s*，\s*", "，", text)
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^[：:;,；，\s]+|[：:;,；，\s]+$", "", text)
-    if domain == "domain_computer_terms":
-        for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
-            text = text.replace(src, dst)
+    for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
+        text = text.replace(src, dst)
     # Keep the gloss compact and remove source-specific metadata remnants.
-    text = BRACKET_RE.sub("", text)
+    text = DOMAIN_TAG_RE.sub("", text)
     text = text.replace("\\n", "；").replace("\n", "；")
     text = re.sub(r"；{2,}", "；", text).strip("；。 ")
     return text
@@ -460,19 +466,44 @@ def main():
 
     print(f"PRIMARY {len(results)} FALLBACK {len(pending)}", flush=True)
 
-    # Fallback is used only where the bilingual lexicon / curated context rules do not resolve
-    # the entry. Concurrent requests are retried and every result is validated below.
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        future_to_entry = {pool.submit(google_translate, e["text"]): e for e in pending}
+    # Batch unresolved entries so the public fallback is not rate-limited by thousands
+    # of tiny requests. Strong sentinels preserve one-to-one entry boundaries; any malformed
+    # batch recursively splits until every entry has an individually validated result.
+    def translate_batch(batch):
+        if not batch:
+            return []
+        tagged = "\n".join(f"<<<VIX:{i:03d}>>>{entry['text']}" for i, entry in enumerate(batch))
+        raw = google_translate(tagged)
+        pattern = re.compile(r"<<<VIX:(\d{3})>>>(.*?)(?=(?:\n?<<<VIX:\d{3}>>>)|\Z)", re.S)
+        matches = pattern.findall(raw)
+        parsed = {}
+        for idx, value in matches:
+            parsed[int(idx)] = value.strip()
+        if len(parsed) == len(batch) and all(i in parsed for i in range(len(batch))):
+            return [parsed[i] for i in range(len(batch))]
+        if len(batch) == 1:
+            stripped = re.sub(r"^<<<VIX:\d{3}>>>", "", raw).strip()
+            return [stripped]
+        mid = len(batch) // 2
+        return translate_batch(batch[:mid]) + translate_batch(batch[mid:])
+
+    batch_size = 12
+    batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
+    print(f"FALLBACK_BATCHES {len(batches)} SIZE {batch_size}", flush=True)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        future_to_batch = {pool.submit(translate_batch, batch): batch for batch in batches}
         done = 0
-        for fut in as_completed(future_to_entry):
-            entry = future_to_entry[fut]
-            raw = fut.result()
-            gloss = postprocess_translation(entry, raw)
-            results[entry["id"]] = gloss
-            sources[entry["id"]] = "VIX-9-MT"
-            done += 1
-            if done % 250 == 0:
+        for fut in as_completed(future_to_batch):
+            batch = future_to_batch[fut]
+            translations = fut.result()
+            if len(translations) != len(batch):
+                raise RuntimeError(f"batch translation cardinality mismatch: {len(translations)} != {len(batch)}")
+            for entry, raw in zip(batch, translations):
+                gloss = postprocess_translation(entry, raw)
+                results[entry["id"]] = gloss
+                sources[entry["id"]] = "VIX-9-MT"
+            done += len(batch)
+            if done % 240 < len(batch) or done == len(pending):
                 print(f"FALLBACK_PROGRESS {done}/{len(pending)}", flush=True)
 
     errors = []
@@ -488,7 +519,7 @@ def main():
         ("domain_computer_terms", "base64"): "Base64 编码",
         ("domain_general_english", "compel"): "强迫；迫使",
         ("domain_general_english", "bourbon"): "波旁威士忌；波旁王朝成员",
-        ("domain_general_collocations", "give one's attention"): "给予关注；注意",
+        ("domain_general_english", "give one's attention"): "给予关注；注意",
         ("domain_general_collocations", "require someone to do"): "要求某人做……",
         ("domain_general_collocations", "account for differences"): "解释差异；说明差异",
         ("domain_general_collocations", "be responsible for"): "对……负责；是……的原因",

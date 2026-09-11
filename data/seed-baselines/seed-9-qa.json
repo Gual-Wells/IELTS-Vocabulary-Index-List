@@ -1,0 +1,161 @@
+{
+  "protocol": "vix-seed-qa/1",
+  "seedRevision": 9,
+  "appVersion": "5.1.1",
+  "generatedAt": "2026-09-11T00:00:00.000Z",
+  "counts": {
+    "entries": 23917,
+    "memberships": 61905,
+    "relationComponents": 20793
+  },
+  "coverage": "23917/23917",
+  "nonGlossDrift": 0,
+  "entryOrderDrift": 0,
+  "canonicalConversionMismatches": 0,
+  "emptyGlosses": 0,
+  "sourceCounts": {
+    "VIX-9-TECH": 91,
+    "VIX-9-ECDICT": 20089,
+    "VIX-9-PATTERN": 35,
+    "VIX-9-CURATED": 8,
+    "VIX-9-MT": 3694
+  },
+  "fallbackCount": 3694,
+  "smoke": [
+    {
+      "domainId": "domain_computer_terms",
+      "text": "agent",
+      "expected": "智能体",
+      "actual": "智能体",
+      "ok": true
+    },
+    {
+      "domainId": "domain_computer_terms",
+      "text": "abstract data type",
+      "expected": "抽象数据类型",
+      "actual": "抽象数据类型",
+      "ok": true
+    },
+    {
+      "domainId": "domain_computer_terms",
+      "text": "base64",
+      "expected": "Base64 编码",
+      "actual": "Base64 编码",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_english",
+      "text": "compel",
+      "expected": "强迫；迫使",
+      "actual": "强迫；迫使",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_english",
+      "text": "bourbon",
+      "expected": "波旁威士忌；波旁王朝成员",
+      "actual": "波旁威士忌；波旁王朝成员",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_english",
+      "text": "give one's attention",
+      "expected": "给予关注；注意",
+      "actual": "给予关注；注意",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_collocations",
+      "text": "require someone to do",
+      "expected": "要求某人做……",
+      "actual": "要求某人做……",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_collocations",
+      "text": "account for differences",
+      "expected": "解释差异；说明差异",
+      "actual": "解释差异；说明差异",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_collocations",
+      "text": "be responsible for",
+      "expected": "对……负责；是……的原因",
+      "actual": "对……负责；是……的原因",
+      "ok": true
+    },
+    {
+      "domainId": "domain_general_collocations",
+      "text": "there is no point in [doing] ...",
+      "expected": "[做]……没有意义",
+      "actual": "[做]……没有意义",
+      "ok": true
+    }
+  ],
+  "entryChunks": [
+    {
+      "path": "data/seed5-runtime/entries-000.json",
+      "bytes": 4194117,
+      "sha256": "8f9fe40d5fb690856f17b4bc55ee859d8b1cdf5b3864fd502af86b591bd26670",
+      "count": 13323
+    },
+    {
+      "path": "data/seed5-runtime/entries-001.json",
+      "bytes": 3335011,
+      "sha256": "3c3cee0b23fa2705d5ce4273a0e92c44788923960525775572c1dca65e4ce255",
+      "count": 10594
+    }
+  ],
+  "membershipChunksUnchanged": [
+    {
+      "path": "data/seed5-runtime/memberships-000.json",
+      "bytes": 4194272,
+      "sha256": "3c82be7925b27bd599fc2bb1bc1d8cdee2749ce8c3a46289a3309838b29664e6",
+      "count": 15475
+    },
+    {
+      "path": "data/seed5-runtime/memberships-001.json",
+      "bytes": 4194164,
+      "sha256": "a48af21aca18693c7ec43165940bc164dd5ce89080ab570617ffb72e97437135",
+      "count": 15441
+    },
+    {
+      "path": "data/seed5-runtime/memberships-002.json",
+      "bytes": 4194110,
+      "sha256": "d924576e57486a7438b6239a0b90ed93dcb912770e54098ce6e297a8fe4936aa",
+      "count": 15386
+    },
+    {
+      "path": "data/seed5-runtime/memberships-003.json",
+      "bytes": 4194240,
+      "sha256": "6a57c29bbf2c62c26558481cea051b8e3f5dae2dea98236f9f554ac95328e42e",
+      "count": 15494
+    },
+    {
+      "path": "data/seed5-runtime/memberships-004.json",
+      "bytes": 29862,
+      "sha256": "4009ea5d2daf9737a73cac7e44f31e84dc322702b54e42ab160b14d24b9315f5",
+      "count": 109
+    }
+  ],
+  "relationChunksUnchanged": [
+    {
+      "path": "data/seed5-runtime/relations-000.json",
+      "bytes": 4193909,
+      "sha256": "d57ffe00234bb60e785241dea09d5b0d89cfe3a6aa70c4e8a8bdd480c1cb4d9e",
+      "count": 10589
+    },
+    {
+      "path": "data/seed5-runtime/relations-001.json",
+      "bytes": 4004363,
+      "sha256": "79e9595960967f2a700b24bd5a73df38f4c526cc9ea60b9fc6f66735572bd980",
+      "count": 10204
+    }
+  ],
+  "baseline": {
+    "path": "data/seed-baselines/seed-9-glosses.json",
+    "bytes": 3039593,
+    "sha256": "8fbc3126d9954561a9515c57a0b12ca241c6f44e06ebbaf49ca33e380989b5b3"
+  }
+}

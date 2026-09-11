@@ -3,7 +3,7 @@ import { APP_VERSION } from './v5-version.js';
 
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
-export const BUILTIN_SEED_REVISION = 8;
+export const BUILTIN_SEED_REVISION = 9;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
 const SEED_MIGRATION_BACKUP_STORE = 'snapshots';

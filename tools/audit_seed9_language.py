@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import glob,json,re
-from collections import Counter,defaultdict
+from collections import Counter
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -12,9 +12,11 @@ for p in sorted(glob.glob(str(ROOT/'data/seed5-runtime/entries-*.json'))):
     entries+=json.load(open(p,encoding='utf-8'))
 assert len(entries)==len(rows)==23917
 
+# Mainland-invalid / strongly Taiwan-specific technical spellings. Do not flag
+# legitimate Mainland terms such as “阵列”.
 tech_forbidden=[
     '软体','网路','资讯','资料库','程式','记忆体','硬碟','伺服器','滑鼠','印表机','作业系统',
-    '超文字','协定','非同步','可延伸','位元','快取','外挂','阵列','物件','布林','字串','萤幕',
+    '超文字','协定','非同步','可延伸','位元','快取','外挂','物件','布林','字串','萤幕',
     '登入','登出','相容','介面','资料夹','执行绪','伫列','程序码',
 ]
 all_forbidden=['做为','想像']

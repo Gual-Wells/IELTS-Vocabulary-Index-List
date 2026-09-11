@@ -1,8 +1,0 @@
-{
-  "protocol": "vix-seed9-semantic-review/1",
-  "targetCount": 4434,
-  "computerCount": 1583,
-  "mtCount": 3694,
-  "chunkSize": 200,
-  "chunkCount": 23
-}

@@ -21,12 +21,16 @@ function statusText(connection) {
     : '尚未同步'}`;
 }
 
+function setTextIfChanged(node, text) {
+  if (node && node.textContent !== text) node.textContent = text;
+}
+
 function reflectConnection(connection) {
   const section = mirrorSettingsSection();
   if (!section) return;
 
   const status = section.querySelector(':scope > .help-text');
-  if (status) status.textContent = statusText(connection);
+  setTextIfChanged(status, statusText(connection));
 
   const row = section.querySelector(':scope > .settings-row');
   const buttons = row ? [...row.querySelectorAll(':scope > button')] : [];
@@ -38,7 +42,7 @@ function reflectConnection(connection) {
   pick.dataset.mirrorAction = 'pick';
   disconnect.dataset.mirrorAction = 'disconnect';
 
-  connect.textContent = connection?.paired ? '重新连接' : '连接';
+  setTextIfChanged(connect, connection?.paired ? '重新连接' : '连接');
   if (!connection?.paired) {
     sync.disabled = true;
     pick.disabled = true;

@@ -1,8 +1,9 @@
 {
   "protocol": "vix-seed9-user-scope-review/1",
-  "seed8BlankGeneralEnglish": 0,
-  "seed8BlankComputerTerms": 0,
-  "seed8BlankTotal": 0,
+  "baselineCommit": "aac041c4d3a4d5a3910a2bf492e509090f7a7a21",
+  "originalBlankGeneralEnglish": 0,
+  "originalBlankComputerTerms": 0,
+  "originalBlankTotal": 0,
   "generalUsageAll": 595,
   "uniqueTargetCount": 595,
   "chunkSize": 100,

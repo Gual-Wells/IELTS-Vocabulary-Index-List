@@ -2,7 +2,7 @@
   "protocol": "vix-seed-qa/1",
   "seedRevision": 9,
   "appVersion": "5.1.1",
-  "generatedAt": "2026-09-11T14:35:00.000Z",
+  "generatedAt": "2026-09-11T15:40:00.000Z",
   "counts": {
     "entries": 23917,
     "memberships": 61905,
@@ -14,14 +14,16 @@
   "canonicalConversionMismatches": 0,
   "emptyGlosses": 0,
   "sourceCounts": {
-    "VIX-9-TECH-REVIEWED": 1528,
+    "VIX-9-TECH-REVIEWED": 1526,
     "VIX-9-TECH": 55,
-    "VIX-9-MT": 2825,
-    "VIX-9-PATTERN": 72,
-    "VIX-9-ECDICT": 19404,
-    "VIX-9-CURATED": 33
+    "VIX-9-LANGUAGE-REVIEWED": 30,
+    "VIX-9-USAGE-REVIEWED": 595,
+    "VIX-9-CURATED": 33,
+    "VIX-9-MT": 2423,
+    "VIX-9-ECDICT": 19234,
+    "VIX-9-PATTERN": 21
   },
-  "fallbackCount": 2825,
+  "fallbackCount": 2423,
   "smoke": [
     {
       "domainId": "domain_computer_terms",
@@ -97,15 +99,15 @@
   "entryChunks": [
     {
       "path": "data/seed5-runtime/entries-000.json",
-      "bytes": 4194177,
-      "sha256": "4d176c993fdd42efd024fe4efcf0d1347be4b0df03321a56d657664ce2cfedae",
-      "count": 13345
+      "bytes": 4194186,
+      "sha256": "610e2bcb980fa9e1cd4252a87a79bec542ed24b32965723d1b63896fd099b13f",
+      "count": 13344
     },
     {
       "path": "data/seed5-runtime/entries-001.json",
-      "bytes": 3328550,
-      "sha256": "d1894398f0822fe436ec4dc5c1561c5b61bddaebdb5aabff2f63b3ac59852c78",
-      "count": 10572
+      "bytes": 3328547,
+      "sha256": "a210a18c1e88c81ccb56cd6e270f1c16edde54ee490cbdd9b4fbff5e80fe3679",
+      "count": 10573
     }
   ],
   "membershipChunksUnchanged": [
@@ -156,13 +158,19 @@
   ],
   "baseline": {
     "path": "data/seed-baselines/seed-9-glosses.json",
-    "bytes": 3039970,
-    "sha256": "ae96fcf2cf3815fdeec0943ee0549fc98a7415bd04ca99183434b033b8167850"
+    "bytes": 3046623,
+    "sha256": "ed1e69df50abd9586b9030b087938d8df0d3a17af364614bb6dd68fee2552797"
   },
   "semanticReview": {
     "computerReviewed": 1583,
-    "computerChanged": 833,
+    "computerChanged": 834,
     "fallbackToNew": 0,
-    "reference": "Seed 8 technical glosses used only as domain-disambiguation cross-check"
+    "reference": "Seed 8 technical glosses used only as domain-disambiguation cross-check",
+    "generalUsageReviewed": 595,
+    "generalUsageChanged": 151,
+    "generalUsageOverrideCount": 152,
+    "generalUsageDecisionCoverage": "595/595",
+    "languageCleanupChanged": 30,
+    "languageCleanupExactOverrides": 29
   }
 }

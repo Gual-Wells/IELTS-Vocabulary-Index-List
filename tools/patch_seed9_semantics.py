@@ -14,6 +14,8 @@ new='''    for src, dst in MAINLAND_TECH_REPLACEMENTS.items():
         if domain != "domain_computer_terms" and src in {"资料", "档案"}:
             continue
         text = text.replace(src, dst)
+    # Mainland wording/orthography fixes that are valid across domains.
+    text = text.replace("做为", "作为").replace("想像", "想象")
     text = re.sub(r"…{3,}", "……", text)
     # Keep the gloss compact and remove source-specific metadata remnants.
 '''
@@ -48,10 +50,24 @@ extras='''    "a spot on one's fame": "名誉上的污点",
     "such as": "例如；诸如",
     "be resistant to": "抵抗……；对……有抵抗力",
     "one of the most [adjective] ...": "最[形容词]的……之一",
+    "as": "作为；如同；当……时；因为",
+    "given that ..., ...": "鉴于……，……",
+    "in contrast to ...": "与……相比；与……形成对比",
+    "there are several reasons why ...": "……有若干原因",
+    "analogy between": "……之间的类比",
 '''
 if '"in this case": "在这种情况下"' not in s:
     assert marker in s
     s=s.replace(marker,marker+extras,1)
+elif '"given that ..., ...":' not in s:
+    # Previous semantic pass already inserted the first block; append only new polish rules.
+    polish='''    "as": "作为；如同；当……时；因为",
+    "given that ..., ...": "鉴于……，……",
+    "in contrast to ...": "与……相比；与……形成对比",
+    "there are several reasons why ...": "……有若干原因",
+    "analogy between": "……之间的类比",
+'''
+    s=s.replace(marker,marker+polish,1)
 
 # Known ordinary-English dictionary failures or strongly outdated/irrelevant senses.
 gmarker='GENERAL_OVERRIDES = {\n'
@@ -65,10 +81,43 @@ gextras='''    "preside at": "主持；担任……主席",
     "transcription": "转录；文字记录；抄写",
     "artificial": "人工的；人造的；虚假的",
     "essay": "文章；短文；论文",
+    "plastic": "塑料；塑料制的；可塑的",
+    "publicly": "公开地；公然地",
+    "foster": "培养；促进；收养；养育的",
+    "shortsighted": "近视的；目光短浅的",
+    "under oath": "宣誓后；在誓言约束下",
+    "converge": "汇聚；会聚；趋同",
+    "build on": "以……为基础；在……上发展",
+    "sportsman": "运动员；体育爱好者",
+    "live up to": "达到；不辜负（期望）",
+    "openness": "开放；开放性；坦诚",
+    "reverend": "牧师；教士；可敬的",
+    "unencumbered": "不受束缚的；没有负担的",
+    "filial": "子女的；孝顺的",
+    "stutter": "口吃；结巴；结结巴巴地说",
+    "sphere": "球；球体；天体；范围；领域",
 '''
 if '"preside at": "主持；担任……主席"' not in s:
     assert gmarker in s
     s=s.replace(gmarker,gmarker+gextras,1)
+elif '"plastic": "塑料；塑料制的；可塑的"' not in s:
+    polish='''    "plastic": "塑料；塑料制的；可塑的",
+    "publicly": "公开地；公然地",
+    "foster": "培养；促进；收养；养育的",
+    "shortsighted": "近视的；目光短浅的",
+    "under oath": "宣誓后；在誓言约束下",
+    "converge": "汇聚；会聚；趋同",
+    "build on": "以……为基础；在……上发展",
+    "sportsman": "运动员；体育爱好者",
+    "live up to": "达到；不辜负（期望）",
+    "openness": "开放；开放性；坦诚",
+    "reverend": "牧师；教士；可敬的",
+    "unencumbered": "不受束缚的；没有负担的",
+    "filial": "子女的；孝顺的",
+    "stutter": "口吃；结巴；结结巴巴地说",
+    "sphere": "球；球体；天体；范围；领域",
+'''
+    s=s.replace(gmarker,gmarker+polish,1)
 
 # Expand textbook abbreviations before MT while preserving the original Entry text.
 main_marker='def main():\n'

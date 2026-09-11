@@ -9,40 +9,52 @@ permissions:
   contents: read
 
 jobs:
-  inspect-seed:
+  source-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Profile entries
+      - name: Download ECDICT and measure coverage
         run: |
+          curl -L --fail --retry 3 --silent --show-error -o /tmp/ecdict.csv https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv
+          ls -lh /tmp/ecdict.csv
           python - <<'PY'
-          import json, glob, collections, random
+          import csv,json,glob,collections
           entries=[]
           for p in sorted(glob.glob('data/seed5-runtime/entries-*.json')):
               entries.extend(json.load(open(p,encoding='utf-8')))
-          print('TOTAL',len(entries))
-          print('DOMAINS',collections.Counter(e['domainId'] for e in entries))
-          print('KINDS',collections.Counter((e['domainId'],e['kind']) for e in entries))
-          print('POS_TOP',collections.Counter(x for e in entries for x in e.get('partsOfSpeech',[])).most_common(40))
-          by_text=collections.defaultdict(list)
-          for e in entries: by_text[e['normalizedText']].append(e)
-          dups={k:v for k,v in by_text.items() if len(v)>1}
-          print('DUP_TEXTS',len(dups),'DUP_ENTRIES',sum(len(v) for v in dups.values()))
-          for k,v in list(dups.items())[:20]:
-              print('DUP',k,[(e['domainId'],e['id'],e['gloss']) for e in v])
-          rng=random.Random(51011)
-          for domain in sorted(set(e['domainId'] for e in entries)):
-              pool=[e for e in entries if e['domainId']==domain]
-              print('\n===',domain,len(pool),'===')
-              for e in rng.sample(pool,min(25,len(pool))):
-                  print(json.dumps({k:e[k] for k in ('id','kind','partsOfSpeech','text','gloss')},ensure_ascii=False))
+          terms={}
+          with open('/tmp/ecdict.csv',encoding='utf-8',errors='replace',newline='') as f:
+              for r in csv.DictReader(f):
+                  w=(r.get('word') or '').strip().lower()
+                  if w and w not in terms: terms[w]=r
+          for d in sorted(set(e['domainId'] for e in entries)):
+              pool=[e for e in entries if e['domainId']==d]
+              hit=[e for e in pool if e['normalizedText'] in terms and (terms[e['normalizedText']].get('translation') or '').strip()]
+              print('COVERAGE',d,len(hit),'/',len(pool),round(len(hit)/len(pool)*100,2))
+          samples=['trample','compel','commitment','abstract data type','be entitled to','be responsible for','give one\'s attention','discriminate between...and']
+          for s in samples:
+              r=terms.get(s.lower())
+              print('ECDICT',s,repr((r or {}).get('translation')), 'DEF',repr((r or {}).get('definition')))
           PY
-      - name: Check runtime converter exports
+      - name: Verify Google translate fallback
         run: |
-          node --input-type=module - <<'JS'
-          import * as m from './js/v3-model.js';
-          console.log(Object.keys(m).filter(k => /traditional|simplified|gloss/i.test(k)).sort());
-          JS
+          python - <<'PY'
+          import json,urllib.parse,urllib.request
+          tests=[
+            'abstract data type','batch inference','agent','hallucination',
+            'be entitled to','give one\'s attention','There is no point in [doing] ...',
+            'account for differences','require someone to do','versatile people'
+          ]
+          for t in tests:
+              q=urllib.parse.urlencode({'client':'gtx','sl':'en','tl':'zh-CN','dt':'t','q':t})
+              req=urllib.request.Request('https://translate.googleapis.com/translate_a/single?'+q,headers={'User-Agent':'Mozilla/5.0'})
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+                  out=''.join(seg[0] for seg in data[0] if seg and seg[0])
+                  print('GT',repr(t),'=>',repr(out))
+              except Exception as ex:
+                  print('GTERR',repr(t),type(ex).__name__,str(ex))
+          PY

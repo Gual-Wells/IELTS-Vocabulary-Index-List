@@ -1,7 +1,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.1.1-recovery-20260910-1`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.1.1-mirror-session-20260911-1`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   "./js/v3-provider-runtime.js",
@@ -26,6 +26,7 @@ const PRECACHE = [
   "./js/v5-version.js",
   "./js/vix-protocols.js",
   "./js/vix-mirror-site.js",
+  "./js/v5-mirror-ui-runtime.js",
   "./js/vix-provider-site.js",
   "./js/v5-suppression-runtime.js",
   "./js/v5-mirror-runtime.js",

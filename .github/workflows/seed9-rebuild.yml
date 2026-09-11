@@ -1,0 +1,44 @@
+name: Seed 9 rebuild
+
+on:
+  push:
+    branches: [seed9-full-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect entry schema
+        run: |
+          python - <<'PY'
+          import json, glob, collections
+          files = sorted(glob.glob('data/seed5-runtime/entries-*.json'))
+          entries=[]
+          for p in files:
+              with open(p,encoding='utf-8') as f:
+                  x=json.load(f)
+              print('FILE',p,'TYPE',type(x).__name__,'LEN',len(x) if hasattr(x,'__len__') else None)
+              if isinstance(x,dict):
+                  print('TOP_KEYS',list(x)[:20])
+                  for k,v in x.items():
+                      if isinstance(v,list): entries.extend(v)
+              elif isinstance(x,list): entries.extend(x)
+          print('TOTAL',len(entries))
+          keys=collections.Counter(k for e in entries if isinstance(e,dict) for k in e)
+          print('KEY_COUNTS',dict(keys))
+          for i,e in enumerate(entries[:8]):
+              print('ENTRY',i,json.dumps(e,ensure_ascii=False,indent=2)[:12000])
+          # summarize strings and empties
+          for k in sorted(keys):
+              vals=[e.get(k) for e in entries if isinstance(e,dict) and k in e]
+              types=collections.Counter(type(v).__name__ for v in vals)
+              print('FIELD',k,'TYPES',dict(types),'SAMPLE',repr(vals[:3])[:1500])
+          PY

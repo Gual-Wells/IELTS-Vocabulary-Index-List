@@ -26,24 +26,34 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Reset generated repair inputs to alpha14 main baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout origin/main -- data/seed5-runtime js/v3-db.js sw.js
+          rm -f data/seed-baselines/seed-8-glosses.json data/seed-baselines/seed-9-alpha14-repair-qa.json
+          test "$(node -p "require('./data/seed5-runtime/manifest.json').seedRevision")" = "8"
+
       - name: Download pinned and secondary Chinese references
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/coca
 
-          # Final reviewed Seed9 is used only as a candidate/reference layer.
+          # Final reviewed Seed9 is only a candidate/reference layer. Its MT rows
+          # are never considered source-backed unless another reference agrees.
           curl -fL --retry 3 \
             'https://raw.githubusercontent.com/Gual-Wells/IELTS-Vocabulary-Index-List/seed9-semantic-review/data/seed-baselines/seed-9-glosses.json' \
             -o /tmp/seed9-glosses.json
 
-          # Primary dictionary reference: exact pinned ECDICT commit.
+          # Primary lexical reference: exact pinned ECDICT commit.
           curl -fL --retry 3 \
             'https://raw.githubusercontent.com/skywind3000/ECDICT/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/ecdict.csv' \
             -o /tmp/ecdict.csv
 
           # Restore the richer pinned COCA community source that Seed5 originally
-          # reduced to rank+word TSV. It is reference evidence, not blindly copied.
+          # reduced to rank+word TSV. It is evidence, not blindly copied text.
           for part in $(seq 1 50); do
             start=$(( (part - 1) * 200 + 1 ))
             end=$(( part * 200 ))
@@ -53,17 +63,24 @@ jobs:
               -o "/tmp/coca/${file}"
           done
 
-          # Secondary evidence. FreeDict is version-pinned. Kaikki/Wiktionary is
-          # optional because its generated snapshot URL is rolling; failure here
-          # never causes the repair to invent a source.
+          # Secondary reference: version-pinned FreeDict English -> Chinese.
           curl -fL --retry 3 \
             'https://download.freedict.org/dictionaries/eng-zho/2025.11.23/freedict-eng-zho-2025.11.23.src.tar.xz' \
             -o /tmp/freedict-eng-zho.tar.xz
+          rm -rf /tmp/freedict-src
           mkdir -p /tmp/freedict-src
           tar -xJf /tmp/freedict-eng-zho.tar.xz -C /tmp/freedict-src
-          fdtei=$(find /tmp/freedict-src -type f \( -name '*.tei' -o -name '*.xml' \) | head -n 1 || true)
-          if [ -n "$fdtei" ]; then cp "$fdtei" /tmp/eng-zho.tei; fi
+          fdtei=$(grep -RIl '<entry' /tmp/freedict-src --include='*.tei' --include='*.xml' | head -n 1 || true)
+          if [ -z "$fdtei" ]; then
+            fdtei=$(find /tmp/freedict-src -type f \( -name '*.tei' -o -name '*.xml' \) -printf '%s\t%p\n' | sort -nr | head -n 1 | cut -f2- || true)
+          fi
+          test -n "$fdtei"
+          cp "$fdtei" /tmp/eng-zho.tei
+          grep -q '<entry' /tmp/eng-zho.tei
+          echo "FreeDict TEI: $fdtei ($(wc -c </tmp/eng-zho.tei) bytes)"
 
+          # Chinese Wiktionary extraction is supplementary and rolling. Failure
+          # does not turn into fabricated provenance.
           curl -fL --retry 2 \
             'https://kaikki.org/zhwiktionary/%E8%8B%B1%E8%AF%AD/kaikki.org-dictionary-%E8%8B%B1%E8%AF%AD.jsonl' \
             -o /tmp/kaikki-en.jsonl || rm -f /tmp/kaikki-en.jsonl
@@ -146,9 +163,9 @@ jobs:
           assert qa['usage']['reviewed'] == 595
           assert qa['usage']['genericTemplateRemaining'] == 0
           assert qa['baseline8']['count'] == 23917
+          assert qa['referenceCoverage']['FreeDict'] > 10000, qa['referenceCoverage']
           scope = qa['repairScope']
           assert qa['repairedTargets'] == scope['generalMissing'] + scope['computerMissing'] + 595
-          # Historical alpha audit identified exactly these general-English holes.
           assert scope['generalMissing'] == 9143, scope
           assert scope['generalMissingWords'] == 3051, scope
           assert scope['generalMissingPhrases'] == 6092, scope
@@ -156,6 +173,7 @@ jobs:
               'scope': scope,
               'sourceCounts': qa['sourceCounts'],
               'evidenceCounts': qa['evidenceCounts'],
+              'matchCounts': qa.get('matchCounts', {}),
               'aiFallbackCount': qa['aiFallbackCount'],
           }, ensure_ascii=False))
           PY

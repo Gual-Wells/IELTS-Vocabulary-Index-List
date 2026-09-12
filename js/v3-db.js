@@ -5,7 +5,7 @@ import { reconcileSeedUpgrade } from './v5-seed-migration.js';
 export const DB_NAME = 'gual-vocabulary-index';
 export const DB_VERSION = 5;
 export const HISTORY_LIMIT = 100;
-export const BUILTIN_SEED_REVISION = 8;
+export const BUILTIN_SEED_REVISION = 9;
 export const BUILTIN_COMPUTER_DOMAIN_ID = 'domain_computer_terms';
 const SEED_MIGRATION_BACKUP_DB_NAME = 'vix-seed-migration-backups-v1';
 const SEED_MIGRATION_BACKUP_STORE = 'snapshots';
@@ -436,10 +436,10 @@ async function loadSeedMigrationBase() {
 }
 
 async function loadSeedFieldBaseline(revision) {
-  if (revision !== 7) return null;
-  const raw = await loadSeedFile('seed-baselines/seed-7-glosses.json');
+  if (![7, 8].includes(revision)) return null;
+  const raw = await loadSeedFile(`seed-baselines/seed-${revision}-glosses.json`);
   if (raw?.protocol !== 'vix-seed-field-baseline/1' || Number(raw.seedRevision) !== revision || !Array.isArray(raw.entries)) {
-    throw new Error('Seed 7 gloss baseline is invalid');
+    throw new Error(`Seed ${revision} gloss baseline is invalid`);
   }
   return raw;
 }

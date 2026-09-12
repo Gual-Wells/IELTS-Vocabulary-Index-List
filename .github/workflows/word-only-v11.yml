@@ -22,8 +22,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python .github/scripts/word_only_v11.py || true
-          python .github/scripts/word_only_v11_finalize.py || true
+          python - <<'PY'
+          from pathlib import Path
+          for name in ('.github/scripts/word_only_v11.py', '.github/scripts/word_only_v11_finalize.py'):
+              p=Path(name); s=p.read_text(encoding='utf-8')
+              old="    brace=src.find('{',start)"
+              new="    signature_end=src.find(') {',start)\n    if signature_end < 0: raise SystemExit(f'{name}: function body not found')\n    brace=signature_end+2"
+              if old not in s: raise SystemExit(f'{name}: parser patch target missing')
+              p.write_text(s.replace(old,new),encoding='utf-8')
+          PY
+          python .github/scripts/word_only_v11.py
+          python .github/scripts/word_only_v11_finalize.py
           python .github/scripts/word_only_v11_post.py
       - name: JavaScript syntax and asset QA
         shell: bash

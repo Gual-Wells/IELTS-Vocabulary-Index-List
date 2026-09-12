@@ -1,0 +1,34 @@
+name: Fix Seed11 cleanup runner
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-seed11-cleanup-runner.yml'
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fix patch cardinality and retrigger cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/seed11-runtime-phrase-cleanup.yml')
+          s=p.read_text(encoding='utf-8')
+          old="              'collection card phrase count')"
+          new="              'collection card phrase count', 2)"
+          if s.count(old) != 1:
+              raise SystemExit(f'cleanup cardinality patch target count={s.count(old)}')
+          p.write_text(s.replace(old,new), encoding='utf-8')
+          PY
+          rm .github/workflows/fix-seed11-cleanup-runner.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci: fix Seed11 cleanup patch cardinality'
+          git push origin HEAD:main

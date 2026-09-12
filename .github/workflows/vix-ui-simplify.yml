@@ -1,4 +1,4 @@
-name: VIX UI simplification
+name: VIX UI cleanup
 on:
   push:
     paths:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 jobs:
-  simplify:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,31 +15,90 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Apply requested simplification
+      - name: Remove retired provider/UI remnants
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('tools/oneoff_vix_ui_simplify.py')
+          import re
+
+          def top_span(text, name):
+              p = re.compile(r'^(?:export\s+)?(?:async\s+)?function\s+' + re.escape(name) + r'\s*\(', re.M)
+              m = p.search(text)
+              if not m:
+                  return None
+              n = re.compile(r'^(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(', re.M).search(text, m.end())
+              return m.start(), n.start() if n else len(text)
+
+          def remove_function(text, name):
+              span = top_span(text, name)
+              if not span:
+                  return text
+              a, b = span
+              return text[:a] + text[b:]
+
+          def replace_function(text, name, replacement):
+              span = top_span(text, name)
+              if not span:
+                  raise SystemExit(f'function not found: {name}')
+              a, b = span
+              return text[:a] + replacement.rstrip() + '\n\n' + text[b:]
+
+          p = Path('js/v3-ui.js')
           s = p.read_text(encoding='utf-8')
-          old = r'[\s\S]*?'
-          new = r'[^;]*?'
-          if s.count(old) != 1:
-              raise SystemExit(f'import matcher token count={s.count(old)}')
-          s = s.replace(old, new, 1)
-          s = s.replace('ui-compact-no-groq-20260913-1', 'ui-compact-20260913-1')
-          p.write_text(s, encoding='utf-8')
-          PY
-          python3 tools/oneoff_vix_ui_simplify.py
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('css/v4.0.2.css')
-          s = p.read_text(encoding='utf-8')
-          s = s.replace('/* Query providers use the same dark outline language. */\n.query-menu-option.oxford-option,\n.query-menu-option.groq-option {\n  color: var(--text) !important;\n}\n', '')
+
+          # Provider task/query helpers are dead after the Groq runtime removal.
+          for name in ['providerQueryIsCurrent', 'providerResultBody', 'isChineseQuery', 'collectionCountSummary']:
+              s = remove_function(s, name)
+          s = replace_function(s, 'cancelActiveTaskForDataChange', 'async function cancelActiveTaskForDataChange() {}')
+          s = s.replace("let activeTask = null;\n", '')
+          s = s.replace("let taskPanelExpanded = true;\n", '')
+
+          # Remove the one remaining annotation subscriber branch that only coordinated the retired AI task.
+          s, n = re.subn(
+              r"\n\s*if \(activeTask && detail\?\.kind !== 'batch'\) \{\n\s*for \(const entryId of detail\?\.entryIds \|\| \[\]\) activeTask\.manualAnnotationEntryIds\?\.add\(entryId\);\n\s*\}",
+              '', s, count=1,
+          )
+          if n != 1:
+              raise SystemExit(f'activeTask subscriber block: expected 1, found {n}')
+
+          # Remove provider-only store imports that no longer have callers.
+          s = s.replace('reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,',
+                        'reorderLibrary, resetToSeed, restoreBackup,')
+
+          # Dedicated Oxford icon and the old global-table switch icon are no longer rendered.
+          s, n1 = re.subn(r"^\s*dictionary:\s*'.*?',\n", '', s, count=1, flags=re.M)
+          s, n2 = re.subn(r"^\s*switchParallel:\s*'.*?',\n", '', s, count=1, flags=re.M)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'icon cleanup counts dictionary={n1} switch={n2}')
+
+          # No stale global-nonstructured UI semantics should remain in the view layer.
+          s = s.replace("collection?.type === 'system-global-content' || ", '')
+
+          forbidden = [
+              'activeProviderQuery', 'providerQueryIsCurrent', 'providerResultBody', 'provider-result-',
+              'activeTask', 'taskPanelExpanded', 'renderTaskPanel', 'isChineseQuery', 'system-global-content',
+              'recordAiAnnotationChanges', 'replaceAnnotations',
+          ]
+          for token in forbidden:
+              if token in s:
+                  raise SystemExit(f'v3-ui retired token remains: {token}')
           p.write_text(s.rstrip() + '\n', encoding='utf-8')
-          p = Path('js/v5-bridge.js')
-          p.write_text(p.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+
+          # Remove the now-unreachable query-menu/provider presentation block from the newest stylesheet.
+          p = Path('css/v5.0.0.css')
+          css = p.read_text(encoding='utf-8')
+          marker = '/* Only the providers that still exist own columns in the query chooser. */'
+          start = css.find(marker)
+          if start >= 0:
+              nxt = css.find('\n.mirror-', start + len(marker))
+              if nxt >= 0:
+                  css = css[:start] + css[nxt+1:]
+              else:
+                  # The provider/query chooser rules sit before later product overrides; remove just their contiguous block.
+                  css = re.sub(r'/\* Only the providers that still exist own columns in the query chooser\. \*/[\s\S]*?(?=\n/\*|\n\.home-mirror-button|\Z)', '', css, count=1)
+          p.write_text(css.rstrip() + '\n', encoding='utf-8')
           PY
       - name: Static QA
         shell: bash
@@ -58,16 +117,15 @@ jobs:
           test ! -e js/v5-speech.js
           test ! -e css/provider-runtime.css
           if grep -RIni --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'groq' js css index.html sw.js; then
-            echo 'Groq residue remains'
-            exit 1
+            echo 'Groq residue remains'; exit 1
           fi
-          if grep -RIn --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'SYSTEM_GLOBAL_CONTENT_ID' js/v3-ui.js js/v3-store.js js/v3-integrations.js; then
-            echo 'Global content UI residue remains'
-            exit 1
+          if grep -nE 'activeProviderQuery|providerQueryIsCurrent|providerResultBody|provider-result-|activeTask|taskPanelExpanded|renderTaskPanel|isChineseQuery|system-global-content|recordAiAnnotationChanges|replaceAnnotations' js/v3-ui.js; then
+            echo 'Retired UI/provider residue remains'; exit 1
           fi
+          grep -q "const actionItems = \[actions.refresh, actions.pin, actions.query\]" js/v3-ui.js
+          grep -q '在牛津英汉辞书中查询' js/v3-ui.js
           grep -q 'managerEntryRatio' js/v3-ui.js
           grep -q 'home-mirror-button' js/v3-ui.js
-          grep -q '在牛津英汉辞书中查询' js/v3-ui.js
       - name: Browser startup smoke test
         shell: bash
         run: |
@@ -92,13 +150,17 @@ jobs:
             exit 1
           fi
           echo 'BROWSER_STARTUP_SMOKE_OK'
-      - name: Commit product changes
+      - name: Commit cleanup
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A js css index.html sw.js
+          git add js/v3-ui.js css/v5.0.0.css
           git diff --cached --check
-          git commit -m 'refactor: simplify VIX home and entry controls'
+          if git diff --cached --quiet; then
+            echo 'No cleanup changes required.'
+            exit 0
+          fi
+          git commit -m 'refactor: remove retired provider UI remnants'
           git push origin HEAD:main

@@ -27,7 +27,9 @@ jobs:
           new = r'[^;]*?'
           if s.count(old) != 1:
               raise SystemExit(f'import matcher token count={s.count(old)}')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          s = s.replace(old, new, 1)
+          s = s.replace('ui-compact-no-groq-20260913-1', 'ui-compact-20260913-1')
+          p.write_text(s, encoding='utf-8')
           PY
           python3 tools/oneoff_vix_ui_simplify.py
       - name: Static QA

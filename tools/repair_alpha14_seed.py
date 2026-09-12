@@ -40,6 +40,29 @@ def norm(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
 
+def phrase_sig(value: str) -> str:
+    """Conservative phrase signature used only for secondary reference lookup.
+
+    It normalizes common learner-dictionary placeholders without changing the
+    stored VIX English text.  The signature is accepted only when it resolves
+    to a unique source headword, so it cannot silently collapse ambiguous
+    dictionary entries.
+    """
+    text = norm(value)
+    text = text.replace("…", "...")
+    text = re.sub(r"\.{2,}", " ", text)
+    text = re.sub(r"[\[\]{}()]", " ", text)
+    text = re.sub(r"\b(?:somebody|someone)\b", "sb", text)
+    text = re.sub(r"\b(?:something)\b", "sth", text)
+    text = re.sub(r"\b(?:somebody's|someone's|sb\.?['’]s|one['’]s)\b", "<poss>", text)
+    text = re.sub(r"\bsb\.(?=\s|$)", "sb", text)
+    text = re.sub(r"\bsth\.(?=\s|$)", "sth", text)
+    text = re.sub(r"\bdoing sth\.?\b", "doing sth", text)
+    text = re.sub(r"\bdo sth\.?\b", "do sth", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,;:.!?-")
+    return text
+
+
 def has_han(value: str) -> bool:
     return bool(HAN_RE.search(str(value or "")))
 
@@ -59,6 +82,15 @@ def similar_zh(left: str, right: str) -> bool:
         return True
     sa, sb = set(a), set(b)
     return len(sa & sb) / max(1, min(len(sa), len(sb))) >= 0.45
+
+
+def clean_reference(value: str, limit: int = 500) -> str:
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    text = text.replace("\r", "\n")
+    text = re.sub(r"\n+", "；", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"；{2,}", "；", text)
+    return text.strip(" ；")[:limit]
 
 
 def load_runtime_entries() -> list[dict]:
@@ -95,7 +127,7 @@ def load_ecdict() -> dict[str, str]:
         reader = csv.DictReader(handle)
         for row in reader:
             key = norm(row.get("word", ""))
-            trans = str(row.get("translation", "") or "").strip()
+            trans = clean_reference(row.get("translation", ""))
             if key and has_han(trans) and key not in result:
                 result[key] = trans
     return result
@@ -110,7 +142,8 @@ def load_coca() -> dict[str, str]:
             key = norm(match.group(2))
             end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
             block = text[match.end():end]
-            zh = "；".join(re.findall(r"[\u3400-\u9fff][^\n`]{0,100}", block))[:500]
+            chunks = [clean_reference(piece, 140) for piece in re.findall(r"[\u3400-\u9fff][^\n`]{0,140}", block)]
+            zh = clean_reference("；".join(piece for piece in chunks if has_han(piece)))
             if key and has_han(zh):
                 result.setdefault(key, zh)
     return result
@@ -126,10 +159,11 @@ def load_freedict() -> dict[str, str]:
             if not elem.tag.endswith("entry"):
                 continue
             orths = [str(node.text or "").strip() for node in elem.iter() if node.tag.endswith("orth") and str(node.text or "").strip()]
-            all_text = "；".join(str(node.text or "").strip() for node in elem.iter() if has_han(str(node.text or "")))
+            chunks = [str(piece).strip() for piece in elem.itertext() if str(piece).strip() and has_han(str(piece))]
+            all_text = clean_reference("；".join(chunks))
             if has_han(all_text):
                 for orth in orths:
-                    result.setdefault(norm(orth), all_text[:500])
+                    result.setdefault(norm(orth), all_text)
             elem.clear()
     except ET.ParseError:
         return {}
@@ -153,33 +187,57 @@ def load_kaikki() -> dict[str, str]:
                     if has_han(gloss):
                         chunks.append(str(gloss).strip())
             if key and chunks:
-                result.setdefault(key, "；".join(chunks)[:500])
+                result.setdefault(key, clean_reference("；".join(chunks)))
     return result
+
+
+def build_unique_signature_index(mapping: dict[str, str]) -> dict[str, tuple[str, str]]:
+    buckets: dict[str, list[tuple[str, str]]] = {}
+    for headword, gloss in mapping.items():
+        signature = phrase_sig(headword)
+        if not signature:
+            continue
+        buckets.setdefault(signature, []).append((headword, gloss))
+    return {signature: rows[0] for signature, rows in buckets.items() if len(rows) == 1}
 
 
 def is_blank_structured(entry: dict) -> bool:
     return not str(entry.get("glossHans") or "").strip() and not str(entry.get("glossHant") or "").strip()
 
 
-def evidence_for(key: str, candidate: str, dictionaries: list[tuple[str, dict[str, str]]]) -> list[str]:
+def references_for(key: str, dictionaries: list[tuple[str, dict[str, str], dict[str, tuple[str, str]]]]) -> list[dict]:
+    refs: list[dict] = []
+    signature = phrase_sig(key)
+    for name, exact_map, sig_map in dictionaries:
+        if key in exact_map:
+            refs.append({"source": name, "match": "exact", "headword": key, "gloss": exact_map[key]})
+            continue
+        hit = sig_map.get(signature)
+        if hit:
+            headword, gloss = hit
+            refs.append({"source": name, "match": "signature", "headword": headword, "gloss": gloss})
+    return refs
+
+
+def evidence_for(candidate: str, refs: list[dict]) -> list[str]:
     evidence: list[str] = []
-    for name, mapping in dictionaries:
-        ref = mapping.get(key, "")
-        if ref and similar_zh(candidate, ref):
-            evidence.append(name)
+    for ref in refs:
+        if similar_zh(candidate, ref.get("gloss", "")):
+            label = ref["source"] if ref.get("match") == "exact" else f"{ref['source']}-signature"
+            evidence.append(label)
     return evidence
 
 
 def main() -> None:
     entries = load_runtime_entries()
-    by_id = {entry["id"]: entry for entry in entries}
     reference = load_seed9_reference()
 
     ecdict = load_ecdict()
     coca = load_coca()
     freedict = load_freedict()
     kaikki = load_kaikki()
-    dictionaries = [("ECDICT", ecdict), ("COCA-CN", coca), ("FreeDict", freedict), ("zhWiktionary", kaikki)]
+    raw_dictionaries = [("ECDICT", ecdict), ("COCA-CN", coca), ("FreeDict", freedict), ("zhWiktionary", kaikki)]
+    dictionaries = [(name, mapping, build_unique_signature_index(mapping)) for name, mapping in raw_dictionaries]
 
     missing_general = [e for e in entries if e.get("domainId") == GENERAL and e.get("kind") in {"word", "phrase"} and is_blank_structured(e)]
     missing_tech = [e for e in entries if e.get("domainId") == TECH and e.get("kind") in {"word", "phrase"} and is_blank_structured(e)]
@@ -190,6 +248,7 @@ def main() -> None:
     targets: list[list] = []
     source_counts: Counter[str] = Counter()
     evidence_counts: Counter[str] = Counter()
+    match_counts: Counter[str] = Counter()
     fallback_rows: list[dict] = []
 
     for entry in missing_general + missing_tech + usage:
@@ -197,7 +256,10 @@ def main() -> None:
         if not candidate:
             raise SystemExit(f"no candidate Chinese gloss for {entry['id']} {entry.get('text')}")
         key = norm(entry.get("text", ""))
-        evidence = evidence_for(key, candidate, dictionaries)
+        refs = references_for(key, dictionaries)
+        evidence = evidence_for(candidate, refs)
+        for ref in refs:
+            match_counts[f"{ref['source']}:{ref['match']}"] += 1
 
         if entry.get("domainId") == USAGE:
             if ref_source != "VIX-9-USAGE-REVIEWED":
@@ -206,12 +268,12 @@ def main() -> None:
         elif entry.get("domainId") == TECH:
             source = "VIX-A14-TECH-REFERENCE"
         elif ref_source == "VIX-9-ECDICT":
-            if key not in ecdict:
-                raise SystemExit(f"ECDICT-tagged reference missing exact pinned ECDICT headword: {entry.get('text')}")
+            exact = any(ref["source"] == "ECDICT" and ref["match"] == "exact" for ref in refs)
+            signature = any(ref["source"] == "ECDICT" and ref["match"] == "signature" for ref in refs)
+            if not exact and not signature:
+                raise SystemExit(f"ECDICT-tagged reference missing pinned ECDICT headword/signature: {entry.get('text')}")
             source = "VIX-A14-ECDICT-VERIFIED"
-            if "ECDICT" not in evidence:
-                # Seed9's cleaned/POS-filtered gloss may be shorter than the raw line; exact
-                # headword presence is still sufficient provenance, but record weak semantic overlap.
+            if not any(item.startswith("ECDICT") for item in evidence):
                 evidence.append("ECDICT-headword")
         elif ref_source in {"VIX-9-CURATED", "VIX-9-PATTERN", "VIX-9-LANGUAGE-REVIEWED"}:
             source = "VIX-A14-CURATED"
@@ -220,7 +282,14 @@ def main() -> None:
                 source = "VIX-A14-FALLBACK-CORROBORATED"
             else:
                 source = "VIX-A14-AI-FALLBACK"
-                fallback_rows.append({"id": entry["id"], "text": entry.get("text"), "kind": entry.get("kind"), "seed9Source": ref_source, "candidate": candidate})
+                fallback_rows.append({
+                    "id": entry["id"],
+                    "text": entry.get("text"),
+                    "kind": entry.get("kind"),
+                    "seed9Source": ref_source,
+                    "candidate": candidate,
+                    "references": refs,
+                })
 
         source_counts[source] += 1
         for item in evidence:
@@ -233,7 +302,7 @@ def main() -> None:
         raise SystemExit("target-ID coverage mismatch")
 
     report = {
-        "protocol": "vix-alpha14-source-repair-stage/1",
+        "protocol": "vix-alpha14-source-repair-stage/2",
         "fromSeedRevision": 8,
         "toSeedRevision": 9,
         "counts": {
@@ -246,14 +315,11 @@ def main() -> None:
             "targets": len(targets),
             "aiFallback": len(fallback_rows),
         },
-        "referenceCoverage": {
-            "ECDICT": len(ecdict),
-            "COCA-CN": len(coca),
-            "FreeDict": len(freedict),
-            "zhWiktionary": len(kaikki),
-        },
+        "referenceCoverage": {name: len(mapping) for name, mapping in raw_dictionaries},
+        "referenceSignatureCoverage": {name: len(build_unique_signature_index(mapping)) for name, mapping in raw_dictionaries},
         "sourceCounts": dict(source_counts),
         "evidenceCounts": dict(evidence_counts),
+        "matchCounts": dict(match_counts),
         "fallbackRows": fallback_rows,
         "targets": targets,
     }

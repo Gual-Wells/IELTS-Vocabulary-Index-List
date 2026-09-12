@@ -6,6 +6,9 @@ import {
 } from './v3-model.js';
 import { APP_VERSION } from './v5-version.js';
 
+const HARD_RETIRED_DOMAIN_IDS = new Set(['domain_computer_terms', 'domain_general_collocations']);
+const HARD_RETIRED_SOURCE_KEYS = new Set(['MDN','PY','GH','K8S','CNCF','NIST','NIST-AI','IETF','CORE','DSA','DATA','OS','HW','DEVOPS','VIX-4-CURATED','VIX-6-CURATED','VIX-7-CURATED','VIX-A14-USAGE-REBUILT']);
+
 const ENTITY_FIELDS = Object.freeze({
   domains: ['name', 'order', 'glossEnabled', 'contentMode', 'relationExcluded'],
   collections: ['domainId', 'name', 'label', 'type', 'order', 'hidden'],
@@ -201,8 +204,10 @@ function mergeMemberships(baseItems, currentItems, targetItems, forceEntryIds, f
 }
 
 function mergeContentSources(currentSources, targetSources) {
-  const merged = new Map((targetSources || []).map((item) => [item.key, clone(item)]));
-  for (const item of currentSources || []) merged.set(item.key, clone(item));
+  const merged = new Map((targetSources || []).filter((item) => !HARD_RETIRED_SOURCE_KEYS.has(item.key)).map((item) => [item.key, clone(item)]));
+  for (const item of currentSources || []) {
+    if (!HARD_RETIRED_SOURCE_KEYS.has(item.key)) merged.set(item.key, clone(item));
+  }
   return [...merged.values()];
 }
 
@@ -283,7 +288,8 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, {
     if (forceEntryIds.has(entry.id)) forceDomainIds.add(entry.domainId);
   }
 
-  const domains = mergeById('domains', base.domains, current.domains, target.domains, forceDomainIds, report);
+  const domains = mergeById('domains', base.domains, current.domains, target.domains, forceDomainIds, report)
+    .filter((item) => !HARD_RETIRED_DOMAIN_IDS.has(item.id));
   const domainIds = new Set(domains.map((item) => item.id));
   const collections = mergeById('collections', base.collections, current.collections, target.collections, forceCollectionIds, report)
     .filter((item) => domainIds.has(item.domainId));

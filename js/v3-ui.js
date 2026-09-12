@@ -1542,8 +1542,8 @@ function reconcileLibraryOrderDraft(draft) {
 
 function managerEntryRatio(collectionId) {
   const state = getState();
-  const occupied = state.structuralProjection?.get(collectionId)?.length || 0;
-  const actual = state.projection?.get(collectionId)?.length || 0;
+  const occupied = state.projection?.get(collectionId)?.length || 0;
+  const actual = state.structuralProjection?.get(collectionId)?.length || 0;
   return `${occupied.toLocaleString()} / ${actual.toLocaleString()}`;
 }
 

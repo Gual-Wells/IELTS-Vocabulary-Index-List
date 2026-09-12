@@ -1,0 +1,219 @@
+name: PWA icon boundary alignment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pwa-icon-align-v6.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Rebuild PWA icons from original repository artwork
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          from collections import deque
+          import colorsys, json, math, re
+
+          root = Path('.')
+          icons = root / 'assets/icons'
+          src_path = icons / 'vix-icon-512-v4.png'
+          src = Image.open(src_path).convert('RGB')
+          if src.size != (512, 512):
+              raise SystemExit(f'unexpected source icon size: {src.size}')
+
+          w, h = src.size
+          px = src.load()
+
+          # Estimate the warm interior/background from corner patches. The original
+          # v4 asset is the canonical repository artwork; no logo is redrawn here.
+          samples = []
+          for y in list(range(0, 28)) + list(range(h-28, h)):
+              for x in list(range(0, 28)) + list(range(w-28, w)):
+                  samples.append(px[x, y])
+          samples.sort(key=lambda c: sum(c))
+          bg = samples[len(samples)//2]
+
+          # The original frame is a low-saturation warm gray component distinct
+          # from the green V. Detect that component and crop the entire original
+          # framed mark as one unit so V/frame proportions remain unchanged.
+          mask = [[False] * w for _ in range(h)]
+          for y in range(h):
+              for x in range(w):
+                  r, g, b = px[x, y]
+                  hh, ss, vv = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+                  dist = math.sqrt((r-bg[0])**2 + (g-bg[1])**2 + (b-bg[2])**2)
+                  # warm gray/taupe border; exclude green logo and very light field
+                  if ss <= 0.22 and vv <= 0.92 and dist >= 24:
+                      mask[y][x] = True
+
+          seen = [[False] * w for _ in range(h)]
+          comps = []
+          for y in range(h):
+              for x in range(w):
+                  if not mask[y][x] or seen[y][x]:
+                      continue
+                  q = deque([(x, y)])
+                  seen[y][x] = True
+                  comp = []
+                  while q:
+                      cx, cy = q.popleft()
+                      comp.append((cx, cy))
+                      for ny in range(max(0, cy-1), min(h, cy+2)):
+                          for nx in range(max(0, cx-1), min(w, cx+2)):
+                              if mask[ny][nx] and not seen[ny][nx]:
+                                  seen[ny][nx] = True
+                                  q.append((nx, ny))
+                  comps.append(comp)
+
+          if not comps:
+              raise SystemExit('could not detect original v4 frame')
+
+          # Prefer a component with a large spatial envelope; this selects the
+          # rounded frame rather than tiny antialias/noise components.
+          ranked = []
+          for comp in comps:
+              xs = [p[0] for p in comp]; ys = [p[1] for p in comp]
+              bbox = (min(xs), min(ys), max(xs)+1, max(ys)+1)
+              bw, bh = bbox[2]-bbox[0], bbox[3]-bbox[1]
+              score = bw * bh
+              ranked.append((score, len(comp), bbox, comp))
+          ranked.sort(reverse=True, key=lambda t: (t[0], t[1]))
+          _, frame_pixels, frame_bbox, _ = ranked[0]
+          fx0, fy0, fx1, fy1 = frame_bbox
+          fw, fh = fx1-fx0, fy1-fy0
+
+          if not (160 <= fw <= 500 and 160 <= fh <= 500):
+              raise SystemExit(f'unexpected original frame bbox: {frame_bbox}, pixels={frame_pixels}')
+          if abs(fw-fh) > max(fw, fh) * 0.12:
+              raise SystemExit(f'frame is not square enough: {frame_bbox}')
+
+          # Square crop around the *existing* frame. A tiny source-space margin
+          # preserves the antialiased outside edge/shadow, but removes the large
+          # empty moat that made the frame appear as an inner card on iOS.
+          cx = (fx0 + fx1) / 2
+          cy = (fy0 + fy1) / 2
+          side = max(fw, fh)
+          source_margin = max(2, round(side * 0.018))
+          side += 2 * source_margin
+          x0 = max(0, round(cx - side/2)); y0 = max(0, round(cy - side/2))
+          x1 = min(w, x0 + side); y1 = min(h, y0 + side)
+          # Rebalance if clipped.
+          x0 = max(0, x1 - side); y0 = max(0, y1 - side)
+          crop = src.crop((x0, y0, x1, y1))
+          if crop.width != crop.height:
+              s = min(crop.width, crop.height)
+              crop = crop.crop(((crop.width-s)//2, (crop.height-s)//2,
+                                (crop.width-s)//2+s, (crop.height-s)//2+s))
+
+          # Put the original framed mark almost full-bleed. The 1.6% outer moat
+          # lets the thin border survive iOS/PWA mask antialiasing while visually
+          # sitting on the actual app-icon boundary rather than inside another tile.
+          def render(size):
+              moat = max(2, round(size * 0.016))
+              inner = size - 2 * moat
+              scaled = crop.resize((inner, inner), Image.Resampling.LANCZOS)
+              # Use the original outer/background color; this is only canvas fill.
+              canvas = Image.new('RGB', (size, size), bg)
+              canvas.paste(scaled, (moat, moat))
+              return canvas
+
+          outputs = {
+              'vix-icon-180-v6.png': 180,
+              'vix-icon-192-v6.png': 192,
+              'vix-icon-512-v6.png': 512,
+              'vix-icon-maskable-192-v6.png': 192,
+              'vix-icon-maskable-512-v6.png': 512,
+          }
+          for name, size in outputs.items():
+              render(size).save(icons / name, optimize=True)
+
+          # Keep the already-correct VIX install name; only point install surfaces
+          # at the boundary-aligned v6 assets.
+          manifest_path = root / 'manifest.webmanifest'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['name'] = 'VIX'
+          manifest['short_name'] = 'VIX'
+          manifest['icons'] = [
+              {'src':'./assets/icons/vix-icon-192-v6.png','sizes':'192x192','type':'image/png','purpose':'any'},
+              {'src':'./assets/icons/vix-icon-512-v6.png','sizes':'512x512','type':'image/png','purpose':'any'},
+              {'src':'./assets/icons/vix-icon-maskable-192-v6.png','sizes':'192x192','type':'image/png','purpose':'maskable'},
+              {'src':'./assets/icons/vix-icon-maskable-512-v6.png','sizes':'512x512','type':'image/png','purpose':'maskable'},
+          ]
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          index_path = root / 'index.html'
+          index = index_path.read_text(encoding='utf-8')
+          index = re.sub(r'vix-icon-180-v\d+\.png', 'vix-icon-180-v6.png', index)
+          index = re.sub(r'vix-icon-192-v\d+\.png', 'vix-icon-192-v6.png', index)
+          index_path.write_text(index, encoding='utf-8')
+
+          sw_path = root / 'sw.js'
+          sw = sw_path.read_text(encoding='utf-8')
+          sw = re.sub(r"const CACHE_NAME = `\$\{CACHE_PREFIX\}[^`]+`;",
+                      "const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.14-seed10-pwa-icon-v6-20260912-1`;", sw)
+          sw = re.sub(r'vix-icon-180-v\d+\.png', 'vix-icon-180-v6.png', sw)
+          sw = re.sub(r'vix-icon-192-v\d+\.png', 'vix-icon-192-v6.png', sw)
+          sw = re.sub(r'vix-icon-512-v\d+\.png', 'vix-icon-512-v6.png', sw)
+          sw_path.write_text(sw, encoding='utf-8')
+
+          print('SOURCE_V4_FRAME', {'bbox': frame_bbox, 'pixels': frame_pixels, 'crop': (x0,y0,x1,y1), 'bg': bg})
+          PY
+
+      - name: Validate boundary alignment and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import json
+
+          m = json.loads(Path('manifest.webmanifest').read_text(encoding='utf-8'))
+          assert m['name'] == 'VIX' and m['short_name'] == 'VIX'
+          expected = {
+              'assets/icons/vix-icon-180-v6.png': (180,180),
+              'assets/icons/vix-icon-192-v6.png': (192,192),
+              'assets/icons/vix-icon-512-v6.png': (512,512),
+              'assets/icons/vix-icon-maskable-192-v6.png': (192,192),
+              'assets/icons/vix-icon-maskable-512-v6.png': (512,512),
+          }
+          for p, s in expected.items():
+              im = Image.open(p)
+              assert im.size == s, (p, im.size)
+              assert im.mode in ('RGB','RGBA')
+          html = Path('index.html').read_text(encoding='utf-8')
+          assert 'apple-mobile-web-app-title" content="VIX"' in html
+          assert 'vix-icon-180-v6.png' in html and 'vix-icon-192-v6.png' in html
+          sw = Path('sw.js').read_text(encoding='utf-8')
+          assert 'pwa-icon-v6-20260912-1' in sw
+          assert Path('assets/icons/vix-icon-512-v4.png').exists()
+          print('PWA_ICON_V6_QA_OK')
+          PY
+          git diff --check
+
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pwa-icon-align-v6.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.webmanifest index.html sw.js assets/icons/vix-icon-*-v6.png .github/workflows/pwa-icon-align-v6.yml
+          git commit -m 'fix(pwa): align original VIX frame to install icon boundary'
+          git push origin HEAD:main

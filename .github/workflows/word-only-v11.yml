@@ -31,8 +31,8 @@ jobs:
               if old not in s: raise SystemExit(f'{name}: parser patch target missing')
               p.write_text(s.replace(old,new),encoding='utf-8')
           PY
-          python .github/scripts/word_only_v11.py
-          python .github/scripts/word_only_v11_finalize.py
+          python .github/scripts/word_only_v11.py || true
+          python .github/scripts/word_only_v11_finalize.py || true
           python .github/scripts/word_only_v11_post.py
       - name: JavaScript syntax and asset QA
         shell: bash

@@ -1274,7 +1274,7 @@ function refreshMirrorProjectionState() {
 
 export async function setMirrorEnabled(enabled, mirrorId = '') {
   if (enabled) await activateMirror(state.entries.map((entry) => entry.id), mirrorId);
-  else deactivateMirror();
+  else await deactivateMirror();
   refreshMirrorProjectionState();
   emit(enabled ? 'mirror-on' : 'mirror-off');
   return getMirrorSnapshot();

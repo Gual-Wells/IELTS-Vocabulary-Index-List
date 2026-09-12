@@ -16,7 +16,20 @@ jobs:
         with:
           node-version: '24'
       - name: Apply requested simplification
-        run: python3 tools/oneoff_vix_ui_simplify.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/oneoff_vix_ui_simplify.py')
+          s = p.read_text(encoding='utf-8')
+          old = "pat = re.compile(r\"^import\\s+\\{[\\s\\S]*?\\}\\s+from\\s+['\\\"]\" + re.escape(module) + r\"['\\\"];\\n\", re.M)"
+          new = "pat = re.compile(r\"^import\\s+\\{[^;]*?\\}\\s+from\\s+['\\\"]\" + re.escape(module) + r\"['\\\"];\\n\", re.M)"
+          if old not in s:
+              raise SystemExit('import matcher patch target missing')
+          p.write_text(s.replace(old, new), encoding='utf-8')
+          PY
+          python3 tools/oneoff_vix_ui_simplify.py
       - name: Static QA
         shell: bash
         run: |

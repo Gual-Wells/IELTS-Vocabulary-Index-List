@@ -1,3 +1,4 @@
+# usage-domain rebuild trigger v1
 name: Usage domain gloss rebuild
 
 on:

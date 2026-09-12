@@ -1,0 +1,53 @@
+name: Fix manager entry ratio
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-manager-entry-ratio.yml'
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Patch ratio semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('js/v3-ui.js')
+          s = p.read_text(encoding='utf-8')
+          old = """function managerEntryRatio(collectionId) {\n  const state = getState();\n  const occupied = state.structuralProjection?.get(collectionId)?.length || 0;\n  const actual = state.projection?.get(collectionId)?.length || 0;\n  return `${occupied.toLocaleString()} / ${actual.toLocaleString()}`;\n}"""
+          new = """function managerEntryRatio(collectionId) {\n  const state = getState();\n  const occupied = state.projection?.get(collectionId)?.length || 0;\n  const actual = state.structuralProjection?.get(collectionId)?.length || 0;\n  return `${occupied.toLocaleString()} / ${actual.toLocaleString()}`;\n}"""
+          if s.count(old) != 1:
+              raise SystemExit(f'managerEntryRatio target count={s.count(old)}')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-ui.js
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('js/v3-ui.js').read_text(encoding='utf-8')
+          assert "const occupied = state.projection?.get(collectionId)?.length || 0;" in s
+          assert "const actual = state.structuralProjection?.get(collectionId)?.length || 0;" in s
+          PY
+      - name: Commit product fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm .github/workflows/fix-manager-entry-ratio.yml
+          git add js/v3-ui.js .github/workflows/fix-manager-entry-ratio.yml
+          git diff --cached --check
+          git commit -m 'fix: report raw entry count in manager ratio'
+          git push origin HEAD:main

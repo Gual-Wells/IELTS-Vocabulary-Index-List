@@ -385,42 +385,6 @@ body > .toast-region {
   pointer-events: none;
 }
 
-/* Only the providers that still exist own columns in the query chooser. */
-.query-menu {
-  width: max-content !important;
-  min-width: 0 !important;
-  grid-template-columns: repeat(2, 46px) !important;
-}
-
-@media (max-width: 620px) {
-  .modal-card-management,
-  .modal-card-action {
-    width: calc(var(--visual-width, 100vw) - 28px);
-    max-width: calc(var(--visual-width, 100vw) - 28px);
-  }
-  .mirror-review-row { grid-template-columns: auto minmax(0, 1fr); }
-  .mirror-review-row > .mirror-class-badge {
-    grid-column: 2;
-    justify-self: start;
-  }
-  .modal-card-file-picker {
-    width: 100%;
-    max-width: 100%;
-    max-height: calc(var(--visual-height, 100dvh) - 20px);
-  }
-  .mirror-explorer { padding: 10px; }
-  .mirror-explorer-toolbar { grid-template-columns: minmax(108px, .64fr) minmax(0, 1fr); gap: 8px; }
-  .mirror-explorer-path { min-width: 0; padding: 0 10px; }
-  .mirror-explorer-path span:first-child { overflow: hidden; text-overflow: ellipsis; }
-  .mirror-explorer-heading { display: none; }
-  .mirror-library { border-top: 1px solid var(--line); border-radius: 13px; }
-  .mirror-library-card { grid-template-columns: minmax(0, 1fr) auto; }
-  .mirror-library-actions { min-width: 0; padding-left: 4px; }
-  .mirror-library-state { display: none; }
-  .mirror-library-actions .compact-button { min-width: 0; padding-inline: 10px; }
-  .bridge-download-row { gap: 10px 18px; }
-}
-
 
 /* 2026-09-13 compact VIX home + entry controls */
 .home-mirror-button {

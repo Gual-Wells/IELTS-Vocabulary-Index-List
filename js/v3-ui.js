@@ -3,7 +3,7 @@ import {
   clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
-  removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
+  removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, resetToSeed, restoreBackup,
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
   deleteMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, selectMirror, setMirrorEnabled,
 } from './v3-store.js';
@@ -43,14 +43,12 @@ let pendingJumpReason = 'jump';
 let persistentJumpEntryId = '';
 let pinIndex = 0;
 let pinCollectionId = '';
-let activeTask = null;
 let review = { ids: [], index: 0, collectionId: '', viewKind: '' };
 let activeSearchFrame = null;
 let activeConfirmFrame = null;
 let collectionRenderContext = null;
 let scrollPersistenceTimer = 0;
 let suppressScrollPersistenceUntil = 0;
-let taskPanelExpanded = true;
 let waitingServiceWorker = null;
 let serviceWorkerReloadPending = false;
 let activeSection = 'main';
@@ -253,8 +251,6 @@ const ICONS = {
   mirror: '<path d="M5.2 5.2h5.1v13.6H5.2zM13.7 5.2h5.1v13.6h-5.1z"></path><path d="M12 3.8v16.4"></path>',
   multi: '<circle cx="5.2" cy="12" r="2.2"></circle><path d="M7.5 12h3.2c2.2 0 2.2-5 4.5-5h3.5M15.9 4.4 18.7 7l-2.8 2.6M10.7 12c2.2 0 2.2 5 4.5 5h3.5M15.9 14.4l2.8 2.6-2.8 2.6"></path>',
   globalDown: '<path d="M5 5h14M7.2 8.6h9.6"></path><path d="M12 9v7.1M9.3 13.5 12 16.2l2.7-2.7"></path><rect x="6.2" y="18" width="11.6" height="2.6" rx="1.3"></rect>',
-  dictionary: '<path d="M6 5.2h11.2c.9 0 1.6.7 1.6 1.6v10.4H7.6c-.9 0-1.6-.7-1.6-1.6V5.2Z"></path><path d="M8.7 9h6.8M6 16.4h12.8M7.6 19h11.2"></path>',
-  switchParallel: '<path d="M5 8h12.2M14.4 5.2 17.2 8l-2.8 2.8"></path><path d="M19 16H6.8M9.6 13.2 6.8 16l2.8 2.8"></path>',
   query: '<circle cx="9.3" cy="10.3" r="5.15"></circle><path d="m13.2 14.15 3.9 3.9"></path><path d="M17.3 4.65v4.3M15.15 6.8h4.3"></path>',
   warning: '<path d="M10.5 4.2 3.6 17.1A2 2 0 0 0 5.35 20h13.3a2 2 0 0 0 1.75-2.9L13.5 4.2a1.7 1.7 0 0 0-3 0Z"></path><path d="M12 8.4v5.1M12 16.7h.01"></path>',
   file: '<path d="M6 3.8h7.4l4.6 4.6v11.8H6z"></path><path d="M13.4 3.8v4.6H18M8.8 12h6.4M8.8 15.4h6.4"></path>',
@@ -680,7 +676,6 @@ function openDialog({
 }
 
 function closeActionDialog() {
-  if (activeProviderQuery) { activeProviderQuery.controller.abort(); activeProviderQuery = null; }
   const top = dialogStack.at(-1);
   if (top?.kind === 'action') closeDialog();
 }
@@ -767,7 +762,7 @@ function viewKindForCollection(collection, entry = null, requested = '') {
   if (!collection) return 'word';
   const state = getState();
   const domain = collection.domainId ? state.domainById.get(collection.domainId) : null;
-  if (collection.type === 'system-global-content' || collection.type === 'system-domain-content' || domain?.contentMode === 'nonStructured') return 'content';
+  if (collection.type === 'system-domain-content' || domain?.contentMode === 'nonStructured') return 'content';
   if (collection.type === 'normal') {
     if (requested === 'word') return 'word';
     if (entry?.kind === 'content') return 'content';
@@ -1384,29 +1379,6 @@ function sourceLabelForCollection(entryId, collectionId) {
   const state = getState();
   const membership = (state.membershipsByEntry.get(entryId) || []).find((item) => item.collectionId === collectionId);
   return membership?.sourceLabel || '';
-}
-
-function isChineseQuery(value) {
-  return /[\u3400-\u9fff]/u.test(String(value || ''));
-}
-
-function collectionCountSummary(collectionId) {
-  const state = getState();
-  const collection = state.collectionById.get(collectionId);
-  const entries = getVisibleEntries(collectionId);
-  if (collection?.type === 'system-global-content' || collection?.type === 'system-domain-content') return `${entries.length.toLocaleString()} 内容`;
-  if (isGlobalCollection(collectionId)) {
-    const count = state.projectionUniqueCounts.get(collectionId) || 0;
-    if (collectionId === SYSTEM_GLOBAL_WORDS_ID) return `${count.toLocaleString()} 词`;
-    return `${count.toLocaleString()} 内容`;
-  }
-  let words = 0, phrases = 0, contents = 0;
-  for (const entry of entries) {
-    if (entry.kind === 'phrase') phrases += 1;
-    else if (entry.kind === 'content') contents += 1;
-    else words += 1;
-  }
-  return contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`;
 }
 
 function collectionCard(collection) {
@@ -4527,23 +4499,6 @@ async function refreshEntryStudyDate(entry, collection, sourceButton = null) {
   }
 }
 
-function providerQueryIsCurrent(sequence) {
-  return activeProviderQuery?.sequence === sequence && !activeProviderQuery.frame.closing
-    && dialogStack.includes(activeProviderQuery.frame);
-}
-
-function providerResultBody(provider, entry, statusText = '准备查询') {
-  return [
-    el('div', { className: 'provider-result-card', dataset: { provider }, 'aria-busy': 'false' }, [
-      el('h3', { className: 'provider-result-word', text: entry.text }),
-      el('div', { className: 'provider-mode-controls', role: 'group', 'aria-label': '查询用途' }),
-      el('p', { className: 'provider-result-status', text: statusText, role: 'status', 'aria-live': 'polite' }),
-      el('div', { className: 'provider-result-content' }),
-      el('div', { className: 'provider-result-actions' }),
-    ]),
-  ];
-}
-
 function openOxfordLookup(entry) {
   window.location.assign(buildOxfordLookupUrl(entry.text));
 }
@@ -5541,16 +5496,7 @@ function confirmDeleteEntry(entryId) {
     }), { title: '删除内容前是否下载备份？' }));
 }
 
-async function cancelActiveTaskForDataChange() {
-  if (!activeTask) return;
-  const task = activeTask;
-  task.cancelledForDataChange = true;
-  task.controller.cancel();
-  task.status = '正在停止 AI 核查…';
-  renderTaskPanel(task.status);
-  await task.completion;
-  showToast('数据即将变更，AI 核查已取消');
-}
+async function cancelActiveTaskForDataChange() {}
 
 function annotationReviewIds(collectionId = '', viewKind = '') {
   const state = getState();
@@ -5932,9 +5878,6 @@ function handleStoreEvent({ type, detail }) {
     if (collection && getViewMode(collection.id) === 'alphabet') return;
   }
   if (type === 'annotation-change') {
-    if (activeTask && detail?.kind !== 'batch') {
-      for (const entryId of detail?.entryIds || []) activeTask.manualAnnotationEntryIds?.add(entryId);
-    }
     refreshVisibleEntryRows(detail?.entryIds || []);
     if (currentCollectionId) {
       const collection = getState().collectionById.get(currentCollectionId);

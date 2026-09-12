@@ -58,6 +58,7 @@ if dictionary_count != 1 or switch_count != 1:
     raise SystemExit(f"icon cleanup counts dictionary={dictionary_count} switch={switch_count}")
 
 s = s.replace("collection?.type === 'system-global-content' || ", "")
+s = s.replace("collection.type === 'system-global-content' || ", "")
 
 for token in [
     "activeProviderQuery",

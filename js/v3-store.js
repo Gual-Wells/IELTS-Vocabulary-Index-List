@@ -1,7 +1,7 @@
 import {
   buildRelationComponentsForEntries, buildProjection, canonicalizeBackup, cleanStudyStampReferences, createCollection, createDomain, createEntry,
   createMembership, createStudyStamp, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
-  relationEdgeSuppressed, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID, tokenizeEnglish, uniqueProjectionCount,
+  relationEdgeSuppressed, safeId, searchBackup, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID, tokenizeEnglish, uniqueProjectionCount,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, recordHistoryOnly, redo as dbRedo,
@@ -387,9 +387,6 @@ export async function addDomain(name, { glossEnabled = false, contentMode = 'str
     if (draft.domains.some((item) => normalizeEnglish(item.name) === normalized)) throw new Error('词域名称已存在');
     const domain = createDomain({ name, glossEnabled, contentMode, order: nextOrder(draft.domains) });
     draft.domains.push(domain);
-    if (domain.contentMode === 'structured') draft.collections.push(createCollection({
-      domainId: domain.id, name: '短语总表', type: 'system-phrases', order: Number.MAX_SAFE_INTEGER,
-    }));
   });
 }
 
@@ -445,7 +442,6 @@ export async function renameCollection(collectionId, name, label = '') {
   return mutate('重命名词表', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
-    if (collection.type === 'system-phrases') throw new Error('系统短语表不可重命名');
     const normalized = normalizeEnglish(name);
     if (draft.collections.some((item) => item.id !== collectionId && item.domainId === collection.domainId && normalizeEnglish(item.name) === normalized)) {
       throw new Error('该词域已有同名词表');
@@ -548,7 +544,6 @@ export async function deleteCollection(collectionId) {
   return mutate('删除词表', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
-    if (collection.type === 'system-phrases') throw new Error('系统短语表不可删除');
     draft.collections = draft.collections.filter((item) => item.id !== collectionId);
     const affectedEntryIds = new Set(draft.memberships.filter((item) => item.collectionId === collectionId).map((item) => item.entryId));
     draft.memberships = draft.memberships.filter((item) => item.collectionId !== collectionId);
@@ -591,8 +586,8 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
   const text = normalizeDisplayText(item?.text || item?.word || '');
   const normalized = normalizeEnglish(text);
   if (!normalized) return null;
-  if (collection.type === 'system-phrases' && !isPhraseText(text)) throw new Error(`系统短语表不能导入普通词：${text}`);
-  const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
+  if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
+    const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
   let entry = draft.entries.find((candidate) => candidate.domainId === collection.domainId && candidate.normalizedText === normalized);
   if (!entry) {
     entry = createEntry({
@@ -772,7 +767,8 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
     if (!normalized) throw new Error('内容不能为空');
     let entry = draft.entries.find((item) => item.domainId === collection.domainId && item.normalizedText === normalized);
     if (!entry) {
-      const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
+      if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
+    const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
       entry = createEntry({
         domainId: collection.domainId,
         text,

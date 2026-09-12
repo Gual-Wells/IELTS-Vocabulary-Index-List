@@ -40,7 +40,7 @@ const verifyDescriptor = (d) => {
 function splitChunks(items, maxBytes) {
   const chunks = [];
   let current = [];
-  let currentBytes = 2; // []
+  let currentBytes = 2;
   for (const item of items) {
     const itemBytes = Buffer.byteLength(compact(item), 'utf8');
     const addition = itemBytes + (current.length ? 1 : 0);
@@ -69,11 +69,7 @@ for (const d of [manifest.meta, ...manifest.entries, ...manifest.memberships, ..
 const entryPaths = listFiles(/^entries-\d+\.json$/);
 const original = loadAll(entryPaths);
 if (original.length !== 23917) throw new Error(`entry count mismatch: ${original.length}`);
-const originalById = new Map(original.map((entry) => [entry.id, entry]));
 
-// Baseline Seed 8 before any modification. This is required for safe 8 -> 9
-// field-level migration: unchanged built-in glosses can be repaired while real
-// user edits remain authoritative.
 const baseline8 = {
   protocol: 'vix-seed-field-baseline/1',
   seedRevision: 8,
@@ -84,7 +80,8 @@ const baseline8Path = path.join(BASELINES, 'seed-8-glosses.json');
 fs.writeFileSync(baseline8Path, compact(baseline8) + '\n', 'utf8');
 
 const stage = readJson(STAGE);
-if (stage.protocol !== 'vix-alpha14-source-repair-stage/1' || Number(stage.fromSeedRevision) !== 8 || Number(stage.toSeedRevision) !== 9) {
+if (!['vix-alpha14-source-repair-stage/1', 'vix-alpha14-source-repair-stage/2'].includes(stage.protocol)
+    || Number(stage.fromSeedRevision) !== 8 || Number(stage.toSeedRevision) !== 9) {
   throw new Error('invalid alpha14 repair stage');
 }
 const targets = new Map();
@@ -155,8 +152,6 @@ chunks.forEach((chunk, index) => {
   entryDescriptors.push(d);
 });
 
-// Update runtime metadata, but intentionally keep the application version at
-// 5.0.0-alpha.14. This is a Seed repair revision, not a presentation release.
 meta.appVersion = '5.0.0-alpha.14';
 meta.exportedAt = GENERATED_AT;
 meta.settings = {
@@ -197,7 +192,9 @@ const qa = {
   usage: { reviewed: usageAfter.length, genericTemplateRemaining: 0 },
   sourceCounts,
   referenceCoverage: stage.referenceCoverage || {},
+  referenceSignatureCoverage: stage.referenceSignatureCoverage || {},
   evidenceCounts: stage.evidenceCounts || {},
+  matchCounts: stage.matchCounts || {},
   aiFallbackCount: Number(stage.counts?.aiFallback || 0),
   aiFallbackRows: stage.fallbackRows || [],
   baseline8: {

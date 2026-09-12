@@ -21,97 +21,53 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import re
 
-          def replace_required(text, old, new, label, count=None):
-              found=text.count(old)
-              if found == 0:
-                  raise SystemExit(f'missing patch target: {label}')
-              if count is not None and found != count:
-                  raise SystemExit(f'unexpected target count for {label}: {found}')
-              return text.replace(old,new)
+          def sub1(s, pattern, repl, label, flags=0):
+              out,n=re.subn(pattern,repl,s,count=1,flags=flags)
+              if n != 1: raise SystemExit(f'{label}: expected 1 replacement, got {n}')
+              return out
 
-          p=Path('js/v3-model.js')
-          s=p.read_text(encoding='utf-8')
-          old="""  for (const domain of domains) {
+          p=Path('js/v3-model.js'); s=p.read_text(encoding='utf-8')
+          pattern=r"  for \(const domain of domains\) \{\n    const phraseCollections = collections\.filter\(\(item\) => item\.domainId === domain\.id && item\.type === 'system-phrases'\);\n    if \(domain\.contentMode === 'structured'\) \{\n      if \(phraseCollections\.length !== 1\) throw new Error\(`结构化词域 \$\{domain\.name\} 必须恰有一个系统短语表`\);\n      if \(phraseCollections\[0\]\.id !== systemPhraseCollectionId\(domain\.id\)\) throw new Error\('系统短语表 ID 无效'\);\n    \} else if \(phraseCollections\.length\) throw new Error\(`非结构词域 \$\{domain\.name\} 不应持久化系统短语表`\);\n  \}"
+          repl="""  for (const domain of domains) {
             const phraseCollections = collections.filter((item) => item.domainId === domain.id && item.type === 'system-phrases');
-            if (domain.contentMode === 'structured') {
-              if (phraseCollections.length !== 1) throw new Error(`结构化词域 ${domain.name} 必须恰有一个系统短语表`);
-              if (phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('系统短语表 ID 无效');
-            } else if (phraseCollections.length) throw new Error(`非结构词域 ${domain.name} 不应持久化系统短语表`);
-          }
-          """
-          new="""  for (const domain of domains) {
-            const phraseCollections = collections.filter((item) => item.domainId === domain.id && item.type === 'system-phrases');
-            // Seed11 retired phrase tables. One legacy table is accepted only so
-            // pre-Seed11 snapshots can be canonicalized and migrated safely.
+            // Seed11 no longer requires or creates a phrase system table. A single
+            // legacy table is tolerated only while pre-Seed11 snapshots migrate.
             if (domain.contentMode === 'structured') {
               if (phraseCollections.length > 1) throw new Error(`结构化词域 ${domain.name} 最多只能保留一个旧系统短语表`);
               if (phraseCollections[0] && phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('旧系统短语表 ID 无效');
             } else if (phraseCollections.length) throw new Error(`非结构词域 ${domain.name} 不应持久化系统短语表`);
-          }
-          """
-          s=replace_required(s,old,new,'phrase-table validation',1)
-          old="""  const projection = new Map(collections.map((item) => [item.id, []]));
-            projection.set(SYSTEM_GLOBAL_WORDS_ID, []);
-            projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
-            projection.set(SYSTEM_GLOBAL_CONTENT_ID, []);
-          """
-          new="""  const projection = new Map(collections.map((item) => [item.id, []]));
-            const hasLegacyPhrases = entries.some((item) => item.kind === 'phrase')
-              || collections.some((item) => item.type === 'system-phrases');
-            projection.set(SYSTEM_GLOBAL_WORDS_ID, []);
-            if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
-            projection.set(SYSTEM_GLOBAL_CONTENT_ID, []);
-          """
-          s=replace_required(s,old,new,'projection legacy phrase gate',1)
-          old="""  projection.set(SYSTEM_GLOBAL_WORDS_ID, globalWords.sort(globalSorter));
-            projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
-            projection.set(SYSTEM_GLOBAL_CONTENT_ID, globalContent.sort(globalSorter));
-          """
-          new="""  projection.set(SYSTEM_GLOBAL_WORDS_ID, globalWords.sort(globalSorter));
-            if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
-            projection.set(SYSTEM_GLOBAL_CONTENT_ID, globalContent.sort(globalSorter));
-          """
-          s=replace_required(s,old,new,'projection legacy phrase output',1)
-          old="pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID"
-          new="pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || (entry?.kind === 'phrase' && pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID) || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID"
-          s=replace_required(s,old,new,'legacy phrase pin scope',1)
+          }"""
+          s=sub1(s,pattern,repl,'phrase-table validator')
+          anchor="  const projection = new Map(collections.map((item) => [item.id, []]));\n"
+          if anchor not in s: raise SystemExit('projection anchor missing')
+          s=s.replace(anchor,anchor+"  const hasLegacyPhrases = entries.some((item) => item.kind === 'phrase') || collections.some((item) => item.type === 'system-phrases');\n",1)
+          if s.count('  projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);') != 1: raise SystemExit('global phrase projection initializer mismatch')
+          s=s.replace('  projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);',"  if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);",1)
+          if s.count('  projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));') != 1: raise SystemExit('global phrase projection output mismatch')
+          s=s.replace('  projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));',"  if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));",1)
+          old='pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID'
+          if s.count(old) != 1: raise SystemExit('pin virtual scope target mismatch')
+          s=s.replace(old,"pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || (entry?.kind === 'phrase' && pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID) || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID",1)
           p.write_text(s,encoding='utf-8')
 
-          p=Path('js/v3-store.js')
-          s=p.read_text(encoding='utf-8')
+          p=Path('js/v3-store.js'); s=p.read_text(encoding='utf-8')
           s=s.replace('systemPhraseCollectionId, ','').replace('SYSTEM_GLOBAL_PHRASES_ID, ','')
-          old="""    draft.domains.push(domain);
-            if (domain.contentMode === 'structured') draft.collections.push(createCollection({
-              domainId: domain.id, name: '短语总表', type: 'system-phrases', order: Number.MAX_SAFE_INTEGER,
-            }));
-          """
-          new="""    draft.domains.push(domain);
-          """
-          s=replace_required(s,old,new,'new-domain phrase table creation',1)
+          s,n=re.subn(r"\n    if \(domain\.contentMode === 'structured'\) draft\.collections\.push\(createCollection\(\{\n      domainId: domain\.id, name: '短语总表', type: 'system-phrases', order: Number\.MAX_SAFE_INTEGER,\n    \}\)\);",'',s,count=1)
+          if n != 1: raise SystemExit(f'new-domain phrase system table removal: {n}')
           s=s.replace("    if (collection.type === 'system-phrases') throw new Error('系统短语表不可重命名');\n",'')
           s=s.replace("    if (collection.type === 'system-phrases') throw new Error('系统短语表不可删除');\n",'')
-          old="""  if (collection.type === 'system-phrases' && !isPhraseText(text)) throw new Error(`系统短语表不能导入普通词：${text}`);
-            const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
-          """
-          new="""  if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
-            const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
-          """
-          s=replace_required(s,old,new,'import word-only classification',1)
-          old="""      const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
-              entry = createEntry({
-          """
-          new="""      if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
-              const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
-              entry = createEntry({
-          """
-          s=replace_required(s,old,new,'manual add word-only classification',1)
+          s=s.replace("  if (collection.type === 'system-phrases' && !isPhraseText(text)) throw new Error(`系统短语表不能导入普通词：${text}`);\n",'')
+          old="const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');"
+          count=s.count(old)
+          if count != 2: raise SystemExit(f'word/phrase auto classification count: {count}')
+          s=s.replace(old,"if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);\n    const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';")
           p.write_text(s,encoding='utf-8')
 
-          p=Path('sw.js')
-          s=p.read_text(encoding='utf-8')
-          s=replace_required(s,'seed11-word-only-20260912-1','seed11-word-only-20260912-2','service-worker cache generation',1)
-          p.write_text(s,encoding='utf-8')
+          p=Path('sw.js'); s=p.read_text(encoding='utf-8')
+          if s.count('seed11-word-only-20260912-1') != 1: raise SystemExit('cache generation mismatch')
+          p.write_text(s.replace('seed11-word-only-20260912-1','seed11-word-only-20260912-2',1),encoding='utf-8')
           PY
       - name: Validate Seed11 and runtime system tables
         shell: bash
@@ -125,31 +81,24 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import { canonicalizeBackup, buildProjection, SYSTEM_GLOBAL_PHRASES_ID } from './js/v3-model.js';
-          const root='data/seed5-runtime/';
-          const manifest=JSON.parse(fs.readFileSync(root+'manifest.json','utf8'));
+          const manifest=JSON.parse(fs.readFileSync('data/seed5-runtime/manifest.json','utf8'));
           const seed=JSON.parse(fs.readFileSync(manifest.meta.path,'utf8'));
           for (const key of ['entries','memberships','relationComponents']) {
             seed[key]=[];
             for (const d of manifest[key]) seed[key].push(...JSON.parse(fs.readFileSync(d.path,'utf8')));
           }
           const canonical=canonicalizeBackup(seed);
-          if (canonical.collections.some(x=>x.type==='system-phrases'||String(x.id||'').endsWith('__phrases'))) throw new Error('Seed11 still persists phrase system table');
-          if (canonical.entries.some(x=>x.kind==='phrase')) throw new Error('Seed11 still contains phrase entries');
-          const projection=buildProjection(canonical);
-          if (projection.has(SYSTEM_GLOBAL_PHRASES_ID)) throw new Error('word-only runtime still creates global phrase virtual table');
+          if (canonical.collections.some(x=>x.type==='system-phrases'||String(x.id||'').endsWith('__phrases'))) throw new Error('Seed11 persists phrase system table');
+          if (canonical.entries.some(x=>x.kind==='phrase')) throw new Error('Seed11 contains phrase entries');
+          if (buildProjection(canonical).has(SYSTEM_GLOBAL_PHRASES_ID)) throw new Error('word-only runtime creates global phrase virtual table');
           if (manifest.counts.entries!==15644 || manifest.counts.relationComponents!==0) throw new Error('unexpected Seed11 counts');
           console.log('SEED11_SYSTEM_TABLE_QA_OK');
           JS
           python - <<'PY'
           from pathlib import Path
           s=Path('js/v3-store.js').read_text(encoding='utf-8')
-          forbidden=[
-            "name: '短语总表', type: 'system-phrases'",
-            "isPhraseText(text) ? 'phrase' : 'word'",
-            '系统短语表不能导入普通词',
-          ]
-          for item in forbidden:
-            assert item not in s, item
+          for item in ["name: '短语总表', type: 'system-phrases'","isPhraseText(text) ? 'phrase' : 'word'",'系统短语表不能导入普通词']:
+              assert item not in s, item
           print('STORE_WORD_ONLY_QA_OK')
           PY
           git diff --check

@@ -1,6 +1,6 @@
 {
-  "name": "Vocabulary Index",
-  "short_name": "Vocabulary Index",
+  "name": "VIX",
+  "short_name": "VIX",
   "description": "本地优先、可审计的英语词汇、短语与非结构化内容索引。",
   "start_url": "./",
   "scope": "./",
@@ -9,16 +9,28 @@
   "theme_color": "#fafafa",
   "icons": [
     {
-      "src": "./assets/icons/vix-icon-192-v4.png",
+      "src": "./assets/icons/vix-icon-192-v5.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "./assets/icons/vix-icon-512-v4.png",
+      "src": "./assets/icons/vix-icon-512-v5.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/vix-icon-maskable-192-v5.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/icons/vix-icon-maskable-512-v5.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

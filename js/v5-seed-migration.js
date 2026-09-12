@@ -7,6 +7,8 @@ import {
 import { APP_VERSION } from './v5-version.js';
 
 const HARD_RETIRED_DOMAIN_IDS = new Set(['domain_computer_terms', 'domain_general_collocations']);
+const HARD_RETIRED_ENTRY_KINDS = new Set(['phrase']);
+const HARD_RETIRED_COLLECTION_TYPES = new Set(['system-phrases', 'system-global-phrases']);
 const HARD_RETIRED_SOURCE_KEYS = new Set(['MDN','PY','GH','K8S','CNCF','NIST','NIST-AI','IETF','CORE','DSA','DATA','OS','HW','DEVOPS','VIX-4-CURATED','VIX-6-CURATED','VIX-7-CURATED','VIX-A14-USAGE-REBUILT']);
 
 const ENTITY_FIELDS = Object.freeze({
@@ -292,10 +294,10 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, {
     .filter((item) => !HARD_RETIRED_DOMAIN_IDS.has(item.id));
   const domainIds = new Set(domains.map((item) => item.id));
   const collections = mergeById('collections', base.collections, current.collections, target.collections, forceCollectionIds, report)
-    .filter((item) => domainIds.has(item.domainId));
+    .filter((item) => domainIds.has(item.domainId) && !HARD_RETIRED_COLLECTION_TYPES.has(item.type) && !String(item.id || '').endsWith('__phrases'));
   const collectionIds = new Set(collections.map((item) => item.id));
   const entries = mergeById('entries', base.entries, current.entries, target.entries, forceEntryIds, report, entryFieldBaselines)
-    .filter((item) => domainIds.has(item.domainId));
+    .filter((item) => domainIds.has(item.domainId) && !HARD_RETIRED_ENTRY_KINDS.has(item.kind));
   const entryIds = new Set(entries.map((item) => item.id));
   const memberships = mergeMemberships(base.memberships, current.memberships, target.memberships,
     forceEntryIds, forceCollectionIds, entryIds, collectionIds, report);
@@ -305,7 +307,7 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, {
   const finalMemberships = memberships.filter((item) => finalEntryIds.has(item.entryId));
   const pins = current.pins.filter((item) => finalEntryIds.has(item.entryId)
     && (!baseCollectionById.has(item.contextCollectionId) || collectionIds.has(item.contextCollectionId)));
-  const annotations = current.annotations.filter((item) => finalEntryIds.has(item.entryId));
+  const annotations = [];
   const studyStamps = current.studyStamps.filter((item) => finalEntryIds.has(item.entryId));
 
   const reconciled = canonicalizeBackup({
@@ -328,6 +330,9 @@ export function reconcileSeedUpgrade(baseInput, currentInput, targetInput, {
       contentSources: mergeContentSources(current.settings.contentSources, target.settings.contentSources),
     },
   });
+  reconciled.relationComponents = [];
+  reconciled.annotations = [];
+  delete reconciled.settings.closeLowLevelRelations;
   validateBackup(reconciled);
   report.result = {
     domains: reconciled.domains.length,

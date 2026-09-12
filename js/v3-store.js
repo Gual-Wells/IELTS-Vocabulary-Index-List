@@ -59,6 +59,13 @@ async function ensureLowLevelLexemes() {
 
 function buildState(snapshot) {
   const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: APP_VERSION, exportedAt: new Date().toISOString(), ...snapshot });
+  backup.collections = backup.collections.filter((item) => item.type !== 'system-phrases' && item.type !== 'system-global-phrases' && !String(item.id || '').endsWith('__phrases'));
+  backup.entries = backup.entries.filter((item) => item.kind !== 'phrase');
+  const wordOnlyEntryIds = new Set(backup.entries.map((item) => item.id));
+  const wordOnlyCollectionIds = new Set(backup.collections.map((item) => item.id));
+  backup.memberships = backup.memberships.filter((item) => wordOnlyEntryIds.has(item.entryId) && wordOnlyCollectionIds.has(item.collectionId));
+  backup.relationComponents = [];
+  backup.annotations = [];
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -120,7 +127,6 @@ function buildState(snapshot) {
 
   const collectionById = new Map(collections.map((item) => [item.id, item]));
   collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局词汇总表', label: '', type: 'system-global-words', order: -3, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
-  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语总表', label: '', type: 'system-global-phrases', order: -2, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   collectionById.set(SYSTEM_GLOBAL_CONTENT_ID, { id: SYSTEM_GLOBAL_CONTENT_ID, domainId: '', name: '全局非结构总表', label: '', type: 'system-global-content', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
     if (domain.contentMode === 'nonStructured') {
@@ -191,8 +197,7 @@ export function getState() {
 export async function reloadStore(type = 'reload', detail = null) {
   if (reloadPromise) return reloadPromise;
   reloadPromise = (async () => {
-    await ensureLowLevelLexemes();
-    const snapshot = await readSnapshot();
+      const snapshot = await readSnapshot();
     state = buildState(snapshot);
     emit(type, detail);
     return state;
@@ -1200,9 +1205,7 @@ export function getVisibleEntries(collectionId) {
   return state.projection.get(collectionId) || [];
 }
 
-export function getRelatedEntries(entryId, { raw = false } = {}) {
-  return (raw ? state.rawRelationsByEntry : state.relatedEntriesByEntry).get(entryId) || [];
-}
+export function getRelatedEntries(_entryId, _options = {}) { return []; }
 
 export function getRelatedPhrases(entryId) {
   return getRelatedEntries(entryId).filter((entry) => entry.kind === 'phrase');
@@ -1212,9 +1215,7 @@ export function getPhraseComponents(entryId) {
   return state.relationComponentsByEntry.get(entryId) || [];
 }
 
-export function getRelationComponents(entryId) {
-  return state.relationComponentsByEntry.get(entryId) || [];
-}
+export function getRelationComponents(_entryId) { return []; }
 
 export function search(query, options = {}) {
   const entryIds = options.entryIds instanceof Set ? options.entryIds : null;

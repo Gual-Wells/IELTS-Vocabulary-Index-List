@@ -1,10 +1,10 @@
 import {
   acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
   clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
-  editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getRelationComponents, getRelatedEntries, getState,
+  editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
   removeEntryFromCollection, renameCollection, renameDomain, reorderLibrary, recordAiAnnotationChanges, replaceAnnotations, resetToSeed, restoreBackup,
-  refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setDomainRelationExcluded, setLastPosition, setLowLevelRelationsClosed, setNumberMode, setViewMode, subscribe, togglePin, undo,
+  refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
   deleteMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, selectMirror, setMirrorEnabled,
 } from './v3-store.js';
 import {
@@ -14,7 +14,7 @@ import {
 import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
-import { normalizeEnglish, positionScopeDomainId, systemPhraseCollectionId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
+import { normalizeEnglish, positionScopeDomainId, systemDomainContentCollectionId, systemDomainWordsCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID } from './v3-model.js';
 import { NEW_COLLECTION_TARGET, NEW_DOMAIN_TARGET, createVixPackage } from './v3-exchange.js';
 import { buildOxfordLookupUrl, createEntryContext } from './v3-integrations.js';
 import { createProviderSession } from './v3-provider-runtime.js';
@@ -24,9 +24,10 @@ import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, seman
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, deleteTtsSecret, getBridgeConfig,
-  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, requestSpeech, saveGroqSecret, saveMirrorFileRecord, saveTtsSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret, validateTtsSecret,
+  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
+  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
+import { deleteGroqSpeechApiKey, requestGroqSpeech, saveGroqSpeechApiKey, speakWithSystemTts, validateGroqSpeechApiKey } from './v5-speech.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -1318,7 +1319,7 @@ function positionDomainId(collection, entry = null) {
 
 function isGlobalCollection(collectionOrId) {
   const id = typeof collectionOrId === 'string' ? collectionOrId : collectionOrId?.id;
-  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(id);
+  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(id);
 }
 
 function relationExpansionKey(collectionId, entryId, viewKind = currentViewKind) {
@@ -1440,7 +1441,7 @@ function collectionCard(collection) {
   const count = collection.type === 'normal'
     ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`)
     : (isGlobalCollection(collection.id) ? (state.projectionUniqueCounts.get(collection.id) || 0) : entries.length).toLocaleString();
-  const globalSystem = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
+  const globalSystem = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
   const domainSystem = !globalSystem && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
     || collection.id === systemPhraseCollectionId(collection.domainId)
@@ -2634,11 +2635,11 @@ function renderHome(token = renderRevision) {
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const systemCollections = domain.contentMode === 'nonStructured'
       ? [state.collectionById.get(systemDomainContentCollectionId(domain.id))]
-      : [state.collectionById.get(systemDomainWordsCollectionId(domain.id)), state.collectionById.get(systemPhraseCollectionId(domain.id))];
+      : [state.collectionById.get(systemDomainWordsCollectionId(domain.id))];
     const collections = [...systemCollections, ...normalCollections].filter(Boolean);
     const grid = collections.length ? el('div', { className: 'collection-grid' }, collections.map(collectionCard).filter(Boolean)) : el('div', { className: 'empty-state', text: '暂无内容' });
     sections.push(el('section', { className: 'index-scope domain-scope', dataset: { domainId: domain.id, contentMode: domain.contentMode || 'structured' } }, [
-      el('header', { className: 'scope-heading' }, [el('h3', { text: domain.name }), domain.relationExcluded ? el('span', { className: 'scope-state-note', text: '关联已关闭' }) : null]),
+      el('header', { className: 'scope-heading' }, [el('h3', { text: domain.name }), null]),
       grid,
     ]));
   }
@@ -2669,7 +2670,7 @@ function renderCollection(token = renderRevision) {
   applySnapshotBeforeRender(pendingPageSnapshot, collection, currentViewKind);
   if (pendingJumpEntryId) prepareTargetExpansion(collection, state.entryById.get(pendingJumpEntryId), currentViewKind, pendingJumpReason);
   const entries = collection.type === 'normal' ? entriesForCollectionView(collection.id, currentViewKind) : allEntries;
-  const globalSystemView = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
+  const globalSystemView = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
   const domainSystemView = !globalSystemView && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
     || collection.id === systemPhraseCollectionId(collection.domainId)
@@ -2907,6 +2908,26 @@ function bindBrowseAnchorButton(buttonNode, collection, section) {
   };
 }
 
+function toggleAllCollectionSections(collection, section = currentViewKind) {
+  const context = collectionRenderContext;
+  const sectionContext = context?.sections?.get(section);
+  if (!context || context.collection.id !== collection.id || !sectionContext) return;
+  const expanded = expandedLettersFor(collection.id, section);
+  if (context.mode === 'date') {
+    const keys = [...sectionContext.dateGroups.keys()];
+    const openAll = keys.some((key) => !expanded.has(dateExpansionKey(key)));
+    for (const key of keys) setDateSectionOpen(section, key, openAll, { persist: false });
+  } else {
+    const keys = [...sectionContext.grouped.keys()];
+    const openAll = keys.some((key) => !expanded.has(key));
+    for (const key of keys) setLetterSectionOpen(section, key, openAll, { persist: false });
+  }
+  persistCurrentHistorySnapshot();
+  renderBottomToolbar(collection, section);
+  refreshAlphabetSectionMetrics();
+  updateBackToTopVisibility();
+}
+
 function renderBottomToolbar(collection, section = currentViewKind) {
   const mode = currentMode(collection, section);
   const lastButton = elements['bottom-last-position'];
@@ -2924,14 +2945,15 @@ function renderBottomToolbar(collection, section = currentViewKind) {
   modeButton.onclick = () => switchCollectionMode(collection).catch(displayError);
 
   const switchButton = elements['bottom-view-switch'];
-  const domain = collection.domainId ? getState().domainById.get(collection.domainId) : null;
-  const canSwitch = collection.type === 'normal' && domain?.contentMode !== 'nonStructured';
-  const nextKind = section === 'word' ? 'phrase' : 'word';
-  switchButton.replaceChildren(svgIcon(section === 'content' ? 'phrase' : (nextKind === 'phrase' ? 'phrase' : 'word')));
-  switchButton.disabled = !canSwitch;
-  switchButton.title = canSwitch ? `切换到${nextKind === 'phrase' ? '短语' : '词汇'}视图` : (section === 'content' ? '非结构内容不按词汇或短语分页' : '系统总表已按内容类型固定');
+  const sectionContext = collectionRenderContext?.sections?.get(section);
+  const expansionSet = expandedLettersFor(collection.id, section);
+  const sectionKeys = collectionRenderContext?.mode === 'date' ? [...(sectionContext?.dateGroups?.keys?.() || [])] : [...(sectionContext?.grouped?.keys?.() || [])];
+  const allExpanded = sectionKeys.length > 0 && sectionKeys.every((key) => expansionSet.has(collectionRenderContext?.mode === 'date' ? dateExpansionKey(key) : key));
+  switchButton.replaceChildren(svgIcon('phrase'));
+  switchButton.disabled = !sectionKeys.length;
+  switchButton.title = allExpanded ? '全部收起' : '全部展开';
   switchButton.setAttribute('aria-label', switchButton.title);
-  switchButton.onclick = canSwitch ? () => switchCollectionView(collection).catch(displayError) : null;
+  switchButton.onclick = sectionKeys.length ? () => toggleAllCollectionSections(collection, section) : null;
 
   elements['bottom-search'].replaceChildren(svgIcon('search'));
   elements['bottom-search'].onclick = openSearchDialog;
@@ -3303,6 +3325,10 @@ function populateNavigationBar(nav, controls) {
     activeSection: '',
   };
   letterTrackStates.set(track, trackState);
+  track.scrollLeft = 0;
+  trackState.manualLocked = true;
+  trackState.manualLockScrollY = window.scrollY;
+  requestAnimationFrame(() => { if (track.isConnected && trackState.manualLocked) track.scrollLeft = 0; });
   const lockManualPosition = () => {
     if (trackState.cameraFrame) cancelAnimationFrame(trackState.cameraFrame);
     trackState.cameraFrame = 0;
@@ -4570,9 +4596,8 @@ function providerQueryIsCurrent(sequence) {
 function providerResultBody(provider, entry, statusText = '准备查询') {
   return [
     el('div', { className: 'provider-result-card', dataset: { provider }, 'aria-busy': 'false' }, [
-      el('p', { className: 'provider-result-provider', text: provider }),
       el('h3', { className: 'provider-result-word', text: entry.text }),
-      el('div', { className: 'provider-mode-controls', role: 'group', 'aria-label': 'Groq 查询用途' }),
+      el('div', { className: 'provider-mode-controls', role: 'group', 'aria-label': '查询用途' }),
       el('p', { className: 'provider-result-status', text: statusText, role: 'status', 'aria-live': 'polite' }),
       el('div', { className: 'provider-result-content' }),
       el('div', { className: 'provider-result-actions' }),
@@ -4584,72 +4609,28 @@ function createLazySpeechSession() {
   const controller = new AbortController();
   const buffers = new Map();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  let context = null;
-  let source = null;
-  let activeControl = null;
-
-  const resetControl = () => {
-    if (activeControl) {
-      activeControl.disabled = false;
-      activeControl.dataset.state = '';
-    }
-    activeControl = null;
-  };
-  const stop = () => {
-    if (source) {
-      try { source.stop(); } catch {}
-      source.disconnect();
-      source = null;
-    }
-    resetControl();
-  };
+  let context = null; let source = null; let activeControl = null;
+  const resetControl = () => { if (!activeControl) return; activeControl.disabled=false; delete activeControl.dataset.state; activeControl=null; };
+  const stop = () => { try { source?.stop(); } catch {} source=null; if ('speechSynthesis' in window) speechSynthesis.cancel(); resetControl(); };
   const speak = async (text, control) => {
-    if (!AudioContextClass) throw new Error('当前浏览器不支持音频播放');
-    stop();
-    activeControl = control;
-    control.disabled = true;
-    control.dataset.state = 'loading';
-    context ||= new AudioContextClass();
-    // Start/resume inside the click activation; generation itself stays lazy.
-    await context.resume();
-    let buffer = buffers.get(text);
-    if (!buffer) {
-      const payload = await requestSpeech(text, { signal: controller.signal });
-      const binary = atob(String(payload?.audioContent || ''));
-      if (!binary) throw new Error('Bridge 返回的发音为空');
-      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      buffer = await context.decodeAudioData(bytes.buffer.slice(0));
-      buffers.set(text, buffer);
-    }
-    if (controller.signal.aborted || activeControl !== control) return;
-    source = context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(context.destination);
-    control.disabled = false;
-    control.dataset.state = 'playing';
-    source.addEventListener('ended', () => {
-      source?.disconnect();
-      source = null;
-      resetControl();
-    }, { once: true });
-    source.start();
-  };
-  return {
-    speak: async (text, control) => {
-      try { await speak(text, control); }
-      catch (error) {
-        resetControl();
-        if (error?.name !== 'AbortError' && error?.code !== 'cancelled') displayError(error);
+    stop(); activeControl=control; control.disabled=true; control.dataset.state='loading';
+    try {
+      let buffer=buffers.get(text);
+      if (!buffer) {
+        try {
+          const audio=await requestGroqSpeech(text,{signal:controller.signal});
+          if (!AudioContextClass) throw new Error('当前浏览器不能解码 Groq 语音');
+          context ||= new AudioContextClass(); await context.resume(); buffer=await context.decodeAudioData(audio.slice(0)); buffers.set(text,buffer);
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          control.dataset.state='native'; await speakWithSystemTts(text,{signal:controller.signal}); resetControl(); return;
+        }
       }
-    },
-    dispose: () => {
-      controller.abort();
-      stop();
-      buffers.clear();
-      context?.close().catch(() => undefined);
-      context = null;
-    },
+      if (controller.signal.aborted || activeControl !== control) return;
+      context ||= new AudioContextClass(); await context.resume(); source=context.createBufferSource(); source.buffer=buffer; source.connect(context.destination); source.onended=()=>{source=null;resetControl();}; control.dataset.state='playing'; source.start();
+    } catch (error) { resetControl(); if (error?.name!=='AbortError' && error?.code!=='cancelled') displayError(error); }
   };
+  return { speak, stop, dispose: () => { controller.abort(); stop(); buffers.clear(); context?.close().catch(()=>undefined); context=null; } };
 }
 
 async function startProviderQuery(provider, entry, collection) {
@@ -4658,7 +4639,7 @@ async function startProviderQuery(provider, entry, collection) {
     activeProviderQuery.session.dispose();
     if (dialogStack.at(-1) === activeProviderQuery.frame) closeDialog();
   }
-  const queryFrame = openActionDialog({ title: provider + ' 查询', body: providerResultBody(provider, entry) });
+  const queryFrame = openActionDialog({ title: '查询', body: providerResultBody(provider, entry) });
   const card = queryFrame.body.querySelector('.provider-result-card');
   const status = card.querySelector('.provider-result-status');
   const content = card.querySelector('.provider-result-content');
@@ -4908,9 +4889,7 @@ function entryActionButtons(entry, collection, pinned, studyStamp) {
     'aria-pressed': pinned ? 'true' : 'false',
     on: { click: (event) => toggleEntryPin(entry, collection, event.currentTarget).catch(displayError) },
   }, [svgIcon('pin')]);
-  const query = iconButton('query', 'entry-query', '选择查询方式', (event) => openQueryMenu(entry, collection, event.currentTarget));
-  query.setAttribute('aria-haspopup', 'menu');
-  query.setAttribute('aria-expanded', 'false');
+  const query = iconButton('query', 'entry-query', '查询', () => startProviderQuery('Groq', entry, collection).catch(displayError));
   const more = iconButton('more', 'entry-more', '更多', () => openEntryActions(entry.id, collection.id));
   return { refresh, pin, query, more };
 }
@@ -4923,28 +4902,19 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
   const annotation = annotationRecord?.annotation || null;
   const numberMode = state.settings.numberMode || 'global';
   const indexText = numberMode === 'group' ? `${indexes.groupIndex}` : numberMode === 'global' ? `${indexes.globalIndex}` : '';
-  const expanded = expandedRelations.has(relationExpansionKey(collection.id, entry.id));
-  const relations = expanded ? relationItemsForEntry(entry) : null;
-  const hasRelations = expanded ? Boolean(relations?.length) : hasRelationsForEntry(entry);
   const gloss = displayGlossForEntry(entry, collection, domain);
   const sourceDomainLabel = sourceDomainLabelForEntry(entry, collection);
   const studyStamp = getStudyStamp(entry, collection.id);
   const layoutKind = entryLayoutKind(entry, gloss);
   const row = el('article', {
-    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${expanded ? ' relations-open' : ''}${annotation ? ' annotated' : ''}${hasRelations ? ' has-relations' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
+    className: `entry-row ${layoutKind}${indexText ? ' has-index' : ' no-index'}${gloss ? ' has-gloss' : ' no-gloss'}${annotation ? ' annotated' : ''}${sourceDomainLabel ? ' has-source-domain' : ''}`,
     id: `entry-${entry.id}`,
     dataset: { entryId: entry.id, section: sectionForEntry(entry), layout: layoutKind },
   });
   const actions = entryActionButtons(entry, collection, pinned, studyStamp);
   const actionItems = [];
-  if (hasRelations) {
-    const relationButton = iconButton('disclosure', `entry-relations${expanded ? ' active' : ''}`, expanded ? '收起关联' : '展开关联', () => toggleEntryRelations(entry.id).catch(displayError));
-    relationButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    actionItems.push(relationButton);
-  } else {
-    actionItems.push(el('span', { className: 'entry-action-placeholder relation-placeholder', 'aria-hidden': 'true' }));
-  }
-  actionItems.push(actions.refresh, actions.pin, actions.query, actions.more);
+  const oxford = iconButton('dictionary', 'entry-relations', '词典查询', () => openOxfordLookup(entry));
+  actionItems.push(oxford, actions.refresh, actions.pin, actions.query, actions.more);
   const textViewport = createTextViewport(entry, collection, gloss, annotationRecord, layoutKind);
   const actionMainChildren = [];
   if (studyStamp) actionMainChildren.push(el('span', {
@@ -4973,13 +4943,7 @@ function renderEntryRow(entry, collection, domain, indexes = { groupIndex: 0, gl
     primary.setAttribute('aria-label', `处理 ${entry.text} 的待核查标注`);
   }
   const shell = el('div', { className: 'entry-primary-shell' }, [primary]);
-  const relationSlot = el('div', {
-    className: 'entry-relation-slot',
-    'aria-hidden': expanded ? 'false' : 'true',
-  });
-  const relationPanel = expanded ? renderRelationPanel(entry, relations) : null;
-  if (relationPanel) relationSlot.append(el('div', { className: 'entry-relation-reveal' }, [relationPanel]));
-  row.append(shell, relationSlot);
+  row.append(shell);
   return row;
 }
 
@@ -4992,8 +4956,6 @@ function openEntryActions(entryId, collectionId) {
   const annotation = state.annotationByEntry.get(entry.id);
   const normalActions = [
     button('编辑', '', () => openEditEntryDialog(entry.id, collection.id)),
-    entry.kind === 'word' ? button('添加短语', '', () => openAddRelatedPhraseDialog(entry.id)) : null,
-    annotation ? button('核查标注', '', () => { closeActionDialog(); startAnnotationReview(collection.id, entry.id); }) : null,
   ].filter(Boolean);
   const dangerActions = [];
   if (memberships.some((item) => item.collectionId === collection.id)) {
@@ -5547,7 +5509,7 @@ function openAddDomainDialog() {
   const name = el('input', { required: true, maxlength: 40, placeholder: '例如：计算机科学' });
   const gloss = el('input', { type: 'checkbox' });
   const mode = el('select', {}, [
-    el('option', { value: 'structured', text: '结构化（词汇 / 短语）' }),
+    el('option', { value: 'structured', text: '结构化（词汇）' }),
     el('option', { value: 'nonStructured', text: '非结构（内容）' }),
   ]);
   openDialog({
@@ -5563,13 +5525,10 @@ function openDomainMenu(domainId) {
   const domain = state.domainById.get(domainId);
   const name = el('input', { value: domain.name, maxlength: 40, required: true });
   const gloss = el('input', { type: 'checkbox', checked: domain.glossEnabled });
-  const relationExcluded = el('input', { type: 'checkbox', checked: Boolean(domain.relationExcluded) });
   const body = [
     field('独立域名称', name),
-    field('内容模式', el('input', { value: domain.contentMode === 'nonStructured' ? '非结构（内容）' : '结构化（词汇 / 短语）', readOnly: true })),
+    field('内容模式', el('input', { value: domain.contentMode === 'nonStructured' ? '非结构（内容）' : '结构化（词汇）', readOnly: true })),
     el('label', { className: 'inline-field' }, [el('span', { text: '显示并编辑繁体释义' }), gloss]),
-    el('label', { className: 'inline-field' }, [el('span', { text: '不参与关联' }), relationExcluded]),
-    el('p', { className: 'help-text', text: '“不参与关联”只在显示与查询上下文中逻辑隐藏关系；底层双向关系仍完整维护，关闭后立即恢复。' }),
   ];
   if (domain.id !== 'domain_general_english') body.push(button('删除整个独立域', 'danger-button', () => confirmDeleteDomain(domain.id)));
   openDialog({
@@ -5577,7 +5536,6 @@ function openDomainMenu(domainId) {
     onSubmit: async () => {
       if (name.value.trim() !== domain.name) await renameDomain(domain.id, name.value);
       if (gloss.checked !== domain.glossEnabled) await setDomainGlossEnabled(domain.id, gloss.checked);
-      if (relationExcluded.checked !== Boolean(domain.relationExcluded)) await setDomainRelationExcluded(domain.id, relationExcluded.checked);
     },
   });
 }
@@ -5691,19 +5649,10 @@ function openCollectionActions(collectionId) {
     ]));
   }
   actions.push(el('div', { className: 'action-group' }, [
-    el('p', { className: 'action-group-title', text: 'AI' }),
-    el('div', { className: 'action-list' }, [
-      button('AI 核查', '', () => openAiCheckDialog(collection.id), { disabled: Boolean(activeTask) || !entries.length }),
-      annotationCount ? button(`待核查 ${annotationCount}`, '', () => { closeActionDialog(); startAnnotationReview(collection.id, '', currentViewKind); }) : null,
-    ].filter(Boolean)),
-  ]));
-  actions.push(el('div', { className: 'action-group' }, [
     el('p', { className: 'action-group-title', text: '数据' }),
     el('div', { className: 'action-list' }, [
       collection.type === 'normal' ? button('导入', '', () => openImportDialog(collection.id)) : null,
       button('导出 CSV', '', () => { exportCollectionCsv(collection.id); closeActionDialog(); }),
-      button('撤销', '', async () => { closeActionDialog(); await performUndo(); }),
-      button('重做', '', async () => { closeActionDialog(); await performRedo(); }),
     ].filter(Boolean)),
   ]));
   actions.push(el('div', { className: 'action-group' }, [
@@ -6124,7 +6073,6 @@ function openSearchDialog() {
   const scope = el('select');
   scope.append(el('option', { value: 'all', text: '全部内容' }));
   scope.append(el('option', { value: 'global:words', text: '全局词汇' }));
-  scope.append(el('option', { value: 'global:phrases', text: '全局短语' }));
   scope.append(el('option', { value: 'global:content', text: '全局非结构总表' }));
   const domains = [...state.domains].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   for (const domain of domains) {
@@ -6134,7 +6082,6 @@ function openSearchDialog() {
       group.append(el('option', { value: `domain-content:${domain.id}`, text: '内容总表' }));
     } else {
       group.append(el('option', { value: `domain-words:${domain.id}`, text: '词汇总表' }));
-      group.append(el('option', { value: `domain-phrases:${domain.id}`, text: '短语总表' }));
     }
     for (const collection of state.collections.filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name))) {
       group.append(el('option', { value: `collection:${collection.id}`, text: collection.name }));
@@ -6145,10 +6092,8 @@ function openSearchDialog() {
   if (!current) scope.value = 'all';
   else if (current.type === 'normal') scope.value = `collection:${current.id}`;
   else if (current.id === SYSTEM_GLOBAL_WORDS_ID) scope.value = 'global:words';
-  else if (current.id === SYSTEM_GLOBAL_PHRASES_ID) scope.value = 'global:phrases';
   else if (current.id === SYSTEM_GLOBAL_CONTENT_ID) scope.value = 'global:content';
   else if (current.type === 'system-domain-content') scope.value = `domain-content:${current.domainId}`;
-  else if (current.type === 'system-phrases') scope.value = `domain-phrases:${current.domainId}`;
   else scope.value = `domain-words:${current.domainId}`;
 
   const aiButton = button('AI 联想', 'secondary-button hidden', async () => {});
@@ -6163,10 +6108,8 @@ function openSearchDialog() {
     allowedScopeValue = value;
     if (value === 'all') allowedIds = new Set(state.entries.map((entry) => entry.id));
     else if (value === 'global:words') allowedIds = new Set(getVisibleEntries(SYSTEM_GLOBAL_WORDS_ID).map((entry)=>entry.id));
-    else if (value === 'global:phrases') allowedIds = new Set(getVisibleEntries(SYSTEM_GLOBAL_PHRASES_ID).map((entry)=>entry.id));
     else if (value === 'global:content') allowedIds = new Set(getVisibleEntries(SYSTEM_GLOBAL_CONTENT_ID).map((entry)=>entry.id));
     else if (value.startsWith('domain-words:')) allowedIds = new Set(getVisibleEntries(systemDomainWordsCollectionId(value.slice(13))).map((entry)=>entry.id));
-    else if (value.startsWith('domain-phrases:')) allowedIds = new Set(getVisibleEntries(systemPhraseCollectionId(value.slice(15))).map((entry)=>entry.id));
     else if (value.startsWith('domain-content:')) allowedIds = new Set(getVisibleEntries(systemDomainContentCollectionId(value.slice(15))).map((entry)=>entry.id));
     else if (value.startsWith('domain:')) {
       const domainId = value.slice(7); allowedIds = new Set(state.entries.filter((entry)=>entry.domainId===domainId).map((entry)=>entry.id));
@@ -6237,119 +6180,41 @@ function applyRecoveredBridgeCredential(config, result, tokenInput) {
 
 function openBridgeDialog({ onConfigured = null } = {}) {
   const saved = getBridgeConfig();
-  const url = el('input', {
-    type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev',
-    autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-  });
-  const token = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token',
-    name: 'vix-opaque-credential', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
-    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  }));
-  const groqKey = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: '', placeholder: 'Groq API Key',
-    name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
-    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  }));
-  const ttsKey = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: '', placeholder: 'Google Cloud TTS API Key',
-    name: 'vix-tts-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
-    spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
-    'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
-  }));
+  const url = el('input', { type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev', autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' });
+  const token = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token', name: 'vix-opaque-credential', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
+  const queryKey = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: '', placeholder: 'Groq Query API Key', name: 'vix-provider-secret', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
+  const speechKey = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: '', placeholder: 'Groq Speech API Key', name: 'vix-speech-secret', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
   const test = button('测试', 'secondary-button', async () => {
-    test.disabled = true;
-    const oldText = test.textContent;
-    test.textContent = '测试中…';
+    const oldText = test.textContent; test.disabled = true; test.textContent = '测试中…';
     try {
       let config = { url: url.value, deviceToken: token.value };
-      const candidateKey = groqKey.value.trim();
-      const candidateTtsKey = ttsKey.value.trim();
       let result = await testBridgeConfig(config, { probeGroq: false });
       config = applyRecoveredBridgeCredential(config, result, token);
-      if (candidateKey) {
-        const validated = await validateGroqSecret(candidateKey, { config });
-        const groqModels = Array.isArray(validated?.models) ? validated.models : [];
-        result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
-      }
-      if (candidateTtsKey) await validateTtsSecret(candidateTtsKey, { config });
-      if (!candidateKey && !candidateTtsKey) {
-        result = await testBridgeConfig(config);
-      }
-      showToast('Bridge 配置可用');
-    } finally {
-      test.disabled = false;
-      test.textContent = oldText;
-    }
+      if (queryKey.value.trim()) await validateGroqSecret(queryKey.value.trim(), { config });
+      if (speechKey.value.trim()) await validateGroqSpeechApiKey(speechKey.value.trim());
+      showToast('配置可用');
+    } finally { test.disabled = false; test.textContent = oldText; }
   });
-  const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
-    await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } });
-    groqKey.value = '';
-    syncCredentialMask(groqKey);
-    showToast('Groq Key 已删除');
+  const removeQueryKey = button('删除查询 Key', 'secondary-button', async () => {
+    await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } }); queryKey.value=''; syncCredentialMask(queryKey); showToast('查询 Key 已删除');
   });
-  const removeTtsKey = button('删除语音 Key', 'secondary-button', async () => {
-    await deleteTtsSecret({ config: { url: url.value, deviceToken: token.value } });
-    ttsKey.value = '';
-    syncCredentialMask(ttsKey);
-    showToast('语音 Key 已删除');
-  });
-  const clear = button('清除配置', 'secondary-button', () => {
-    clearBridgeConfig();
-    url.value = '';
-    token.value = '';
-    syncCredentialMask(token);
-    showToast('本机 Bridge 配置已清除');
-  });
-  const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
+  const removeSpeechKey = button('删除语音 Key', 'secondary-button', () => { deleteGroqSpeechApiKey(); speechKey.value=''; syncCredentialMask(speechKey); showToast('语音 Key 已删除'); });
+  const clear = button('清除配置', 'secondary-button', () => { clearBridgeConfig(); deleteGroqSpeechApiKey(); url.value=''; token.value=''; queryKey.value=''; speechKey.value=''; syncCredentialMask(token); syncCredentialMask(queryKey); syncCredentialMask(speechKey); showToast('配置已清除'); });
+  const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX Function' });
   const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
-  openDialog({
-    title: 'Bridge', variant: 'management', submitText: '保存',
-    body: [
-      field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
-      field('Google Cloud TTS API Key', ttsKey),
-      el('div', { className: 'settings-row' }, [test, removeKey, removeTtsKey, clear]),
-      el('section', { className: 'bridge-integration-resources' }, [
-        el('h3', { text: '集成资源' }),
-        el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
-      ]),
-    ],
-    onSubmit: async () => {
-      let nextConfig = { url: url.value, deviceToken: token.value };
-      let result = await testBridgeConfig(nextConfig, { probeGroq: false });
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
-      if (groqKey.value.trim()) {
-        try {
-          await saveGroqSecret(groqKey.value, { config: nextConfig });
-          groqKey.value = '';
-          syncCredentialMask(groqKey);
-        }
-        catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
-      }
-      if (ttsKey.value.trim()) {
-        try {
-          await saveTtsSecret(ttsKey.value, { config: nextConfig });
-          ttsKey.value = '';
-          syncCredentialMask(ttsKey);
-        }
-        catch (error) { throw new Error(`语音 Key 保存失败：${error?.message || String(error)}`); }
-      }
-      result = await testBridgeConfig(nextConfig);
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
-      const activeModelIds = Array.isArray(result?.groqModels)
-        ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
-        : [];
-      setBridgeConfig(nextConfig);
-      if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
-      onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
-      scheduleMirrorContextSync({ notifyFailure: true });
-      warmMirrorRemoteCatalog();
-      scheduleMirrorInboxPoll();
-      showToast('Bridge 已保存');
-    },
-  });
+  openDialog({ title: 'Bridge', variant: 'management', submitText: '保存', body: [
+    field('Bridge URL', url), field('Device Token', token),
+    field('Groq 查询 API Key', queryKey, '用于词条查询；由 Bridge 保存。'),
+    field('Groq 语音 API Key', speechKey, '用于 Orpheus 英语发音；与查询 Key 独立。未配置或调用失败时自动使用 iOS / 浏览器系统 TTS。'),
+    el('div', { className: 'settings-row' }, [test, removeQueryKey, removeSpeechKey, clear]),
+    el('section', { className: 'bridge-integration-resources' }, [el('h3', { text: '集成资源' }), el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink])]),
+  ], onSubmit: async () => {
+    let nextConfig = { url: url.value, deviceToken: token.value };
+    const probe = await testBridgeConfig(nextConfig, { probeGroq: false }); nextConfig = applyRecoveredBridgeCredential(nextConfig, probe, token); setBridgeConfig(nextConfig);
+    if (queryKey.value.trim()) { await saveGroqSecret(queryKey.value.trim(), { config: nextConfig }); queryKey.value=''; syncCredentialMask(queryKey); }
+    if (speechKey.value.trim()) { await validateGroqSpeechApiKey(speechKey.value.trim()); saveGroqSpeechApiKey(speechKey.value.trim()); speechKey.value=''; syncCredentialMask(speechKey); }
+    onConfigured?.(); showToast('Bridge 已保存');
+  }});
 }
 
 function openSettingsDialog() {
@@ -6364,7 +6229,6 @@ function openSettingsDialog() {
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
     el('option', { value: 'global', text: '连续编号', selected: !['none', 'group'].includes(state.settings.numberMode) }),
   ]);
-  const lowLevelRelations = el('input', { type: 'checkbox', className: 'vix-checkbox', checked: state.settings.closeLowLevelRelations !== false });
   const renderModels = (catalog = getModelCatalog()) => {
     model.replaceChildren(el('option', { value: '', text: '请选择可用模型' }),
       ...catalog.map((item) => el('option', { value: item.id, text: item.id + ' · ' + item.label,
@@ -6398,7 +6262,6 @@ function openSettingsDialog() {
   const body = [
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }),
       field('查询模型', model), refresh]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: '关联' }), el('label', { className: 'inline-field checkbox-field' }, [el('span', { text: '过滤低级组件关联' }), lowLevelRelations])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
@@ -6414,7 +6277,6 @@ function openSettingsDialog() {
     selectModel(model.value);
     if (refreshedIds) saveModelCatalog(refreshedIds);
     await setNumberMode(numberMode.value);
-    await setLowLevelRelationsClosed(lowLevelRelations.checked);
     showToast('已保存');
   } });
   frame.onDispose = () => {
@@ -6606,10 +6468,7 @@ export async function initializeUI({ onProgress = () => {} } = {}) {
   elements['home-button'].addEventListener('click', resetNavigationToHome);
   elements['clear-all-annotations']?.addEventListener('click', () => clearAllAnnotationsFromHome().catch(displayError));
   elements['search-button'].addEventListener('click', openSearchDialog);
-  elements['settings-button'].addEventListener('click', () => {
-    if (currentCollectionId) openCollectionActions(currentCollectionId);
-    else openSettingsDialog();
-  });
+  elements['settings-button'].addEventListener('click', openSettingsDialog);
   elements['task-capsule'].addEventListener('click', () => {
     if (!activeTask) return;
     taskPanelExpanded = true;

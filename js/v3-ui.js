@@ -1,5 +1,5 @@
 import {
-  acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,
+  acknowledgeMigrationNotice, addCollection, addDomain, addEntry,
   clearAllAnnotations, clearAnnotationsForEntries, deleteCollection, deleteDomain, deleteEntry, dismissAnnotation,
   editEntry, editEntryInCollection, exportFullBackup, getLastPosition, getState,
   getPinsForCollection, getVisibleEntries, getViewMode, getCalendarMonth, getStudyStamp, hydrateRuntimeViewState, persistRuntimeViewState, importEntries, initializeStore, moveCollection, redo,
@@ -782,12 +782,11 @@ function viewKindForCollection(collection, entry = null, requested = '') {
   const domain = collection.domainId ? state.domainById.get(collection.domainId) : null;
   if (collection.type === 'system-global-content' || collection.type === 'system-domain-content' || domain?.contentMode === 'nonStructured') return 'content';
   if (collection.type === 'normal') {
-    if (['word', 'phrase'].includes(requested)) return requested;
-    if (entry?.kind === 'phrase') return 'phrase';
+    if (requested === 'word') return 'word';
     if (entry?.kind === 'content') return 'content';
     return 'word';
   }
-  return isPhraseCollection(collection) ? 'phrase' : 'word';
+  return 'word';
 }
 
 function newNavigationToken(prefix = 'nav') {
@@ -1308,7 +1307,6 @@ function projectionCollectionForEntry(entryId) {
   const state = getState();
   const entry = state.entryById.get(entryId);
   if (!entry) return '';
-  if (entry.kind === 'phrase') return systemPhraseCollectionId(entry.domainId);
   if (entry.kind === 'content') return systemDomainContentCollectionId(entry.domainId);
   return systemDomainWordsCollectionId(entry.domainId);
 }
@@ -1347,8 +1345,7 @@ function entriesForCollectionView(collectionId, viewKind = '') {
   if (collection?.type !== 'normal') return entries;
   const domain = state.domainById.get(collection.domainId);
   if (domain?.contentMode === 'nonStructured') return entries.filter((entry) => entry.kind === 'content');
-  const kind = ['word', 'phrase'].includes(viewKind) ? viewKind : (['word', 'phrase'].includes(currentViewKind) ? currentViewKind : 'word');
-  return entries.filter((entry) => entry.kind === kind);
+  return entries.filter((entry) => entry.kind === 'word');
 }
 
 function entryIdsForCollectionView(collectionId, viewKind = '') {
@@ -1416,7 +1413,6 @@ function collectionCountSummary(collectionId) {
   if (isGlobalCollection(collectionId)) {
     const count = state.projectionUniqueCounts.get(collectionId) || 0;
     if (collectionId === SYSTEM_GLOBAL_WORDS_ID) return `${count.toLocaleString()} 词`;
-    if (collectionId === SYSTEM_GLOBAL_PHRASES_ID) return `${count.toLocaleString()} 短语`;
     return `${count.toLocaleString()} 内容`;
   }
   let words = 0, phrases = 0, contents = 0;
@@ -1425,7 +1421,7 @@ function collectionCountSummary(collectionId) {
     else if (entry.kind === 'content') contents += 1;
     else words += 1;
   }
-  return contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`;
+  return contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`;
 }
 
 function collectionCard(collection) {
@@ -1439,14 +1435,13 @@ function collectionCard(collection) {
     else words += 1;
   }
   const count = collection.type === 'normal'
-    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`)
+    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`)
     : (isGlobalCollection(collection.id) ? (state.projectionUniqueCounts.get(collection.id) || 0) : entries.length).toLocaleString();
   const globalSystem = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
   const domainSystem = !globalSystem && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
-    || collection.id === systemPhraseCollectionId(collection.domainId)
     || collection.id === systemDomainContentCollectionId(collection.domainId)
-    || collection.type === 'system-phrases' || collection.type === 'system-domain-content'
+    || collection.type === 'system-domain-content'
   );
   const classes = ['collection-card', collection.type === 'normal' ? 'composite-card' : '', globalSystem || domainSystem ? 'system-card' : '', globalSystem ? 'global-system-card' : '', domainSystem ? 'domain-system-card' : ''].filter(Boolean).join(' ');
   return el('button', {
@@ -1595,7 +1590,6 @@ function libraryManagerBody(draft) {
   const domainList = el('div', { className: 'manager-domain-list' });
   const domains = draft.domainIds.map((id) => state.domainById.get(id)).filter(Boolean);
   for (const domain of domains) {
-    const phraseCollection = state.collectionById.get(systemPhraseCollectionId(domain.id));
     const normalCollections = (draft.collectionIdsByDomain[domain.id] || [])
       .map((id) => state.collectionById.get(id)).filter(Boolean);
     const section = el('section', { className: 'manager-domain', dataset: { sortId: domain.id } });
@@ -1609,11 +1603,6 @@ function libraryManagerBody(draft) {
         el('span', { className: 'manager-lock', text: '1' }),
         el('span', { className: 'manager-name', text: '词汇总表' }),
         el('span', { className: 'manager-count', text: getVisibleEntries(systemDomainWordsCollectionId(domain.id)).length.toLocaleString() }),
-      ]),
-      el('div', { className: 'manager-row fixed' }, [
-        el('span', { className: 'manager-lock', text: '2' }),
-        el('span', { className: 'manager-name', text: phraseCollection?.name || '短语' }),
-        el('span', { className: 'manager-count', text: phraseCollection ? getVisibleEntries(phraseCollection.id).length.toLocaleString() : '0' }),
       ]),
     ]);
     const list = el('div', { className: 'manager-list' });
@@ -2548,7 +2537,7 @@ async function switchHomeGlobalMode(sourceButton = null) {
     homeGlobalMode = homeGlobalMode === 'structured' ? 'nonStructured' : 'structured';
     const state = getState();
     const cards = homeGlobalMode === 'structured'
-      ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]
+      ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID))]
       : [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_CONTENT_ID))];
     scope.dataset.mode = homeGlobalMode;
     grid.replaceChildren(...cards.filter(Boolean));
@@ -2620,7 +2609,7 @@ function renderHome(token = renderRevision) {
     on: { click: (event) => { switchHomeGlobalMode(event.currentTarget).catch(displayError); } },
   }, [svgIcon('switchParallel')]);
   const globalCards = homeGlobalMode === 'structured'
-    ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]
+    ? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID))]
     : [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_CONTENT_ID))];
   const sections = [el('section', { className: 'index-scope global-scope', dataset: { mode: homeGlobalMode } }, [
     el('header', { className: 'scope-heading' }, [
@@ -2673,9 +2662,8 @@ function renderCollection(token = renderRevision) {
   const globalSystemView = [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collection.id);
   const domainSystemView = !globalSystemView && (
     collection.id === systemDomainWordsCollectionId(collection.domainId)
-    || collection.id === systemPhraseCollectionId(collection.domainId)
     || collection.id === systemDomainContentCollectionId(collection.domainId)
-    || collection.type === 'system-phrases' || collection.type === 'system-domain-content'
+    || collection.type === 'system-domain-content'
   );
   elements['collection-view'].classList.toggle('system-collection-view', globalSystemView || domainSystemView);
   elements['collection-view'].classList.toggle('global-system-view', globalSystemView);
@@ -2700,10 +2688,10 @@ function renderCollection(token = renderRevision) {
     else words += 1;
   }
   const countText = collection.type === 'normal'
-    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`)
+    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`)
     : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : allEntries.length).toLocaleString();
   const viewLabel = collection.type === 'normal'
-    ? (currentViewKind === 'phrase' ? '短语视图' : currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';
+    ? (currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';
   const collectionSubtitle = [countText, viewLabel].filter(Boolean).join(' · ');
   elements['page-subtitle'].textContent = collectionSubtitle;
   renderLargeTitle({
@@ -3011,16 +2999,13 @@ async function switchCollectionViewNow(collection, requestedKind = '') {
 }
 
 function sectionForEntry(entry) {
-  return entry?.kind === 'phrase' ? 'phrase' : entry?.kind === 'content' ? 'content' : 'word';
+  return entry?.kind === 'content' ? 'content' : 'word';
 }
 
 function isCompositeCollection(collection) {
   return collection?.type === 'normal';
 }
 
-function isPhraseCollection(collection) {
-  return collection?.type === 'system-phrases' || collection?.type === 'system-global-phrases';
-}
 
 function syncPinIndexForEntry(collectionId, entryId) {
   const state = getState();
@@ -5798,7 +5783,7 @@ async function openAiAddDialog(collectionId) {
     try {
       generate.disabled = true;
       generate.textContent = '生成中…';
-      candidates = await suggestEntries({ domainName: domain.name, collectionName: collection.name, instruction: `${collection.type === 'system-phrases' ? 'Generate multi-word English phrases only. ' : ''}${instruction.value}`, existing: getVisibleEntries(collectionId).map((item) => item.text), glossEnabled: domain.glossEnabled });
+      candidates = await suggestEntries({ domainName: domain.name, collectionName: collection.name, instruction: instruction.value, existing: getVisibleEntries(collectionId).map((item) => item.text), glossEnabled: domain.glossEnabled });
       resultBox.classList.remove('hidden');
       resultBox.replaceChildren(...candidates.map((item) => el('div', { className: 'preview-item', text: `${item.text}${item.gloss ? ` · ${item.gloss}` : ''}` })));
     } catch (error) { displayError(error); }

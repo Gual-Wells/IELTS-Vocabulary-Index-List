@@ -300,6 +300,9 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     && Array.isArray(currentInput?.relationComponents) && currentInput?.settings && typeof currentInput.settings === 'object';
   const before = looksCanonical ? clone(currentInput) : canonicalizeBackup(currentInput);
   const pkg = normalizeVixPackage(rawPackage);
+  if (pkg.data.collections.some((item) => item.kind === 'phrases') || pkg.data.entries.some((item) => item.kind === 'phrase')) {
+    throw new Error('当前版本已移除短语条目与系统短语表，不能导入旧短语内容');
+  }
   const mismatch = declaredTargetMismatch(pkg, selection);
   const target = buildTargetSelection(pkg, selection, before);
   if (!['global', 'domain', 'collection'].includes(target.scope)) throw new Error('无效导入范围');
@@ -398,17 +401,6 @@ export function planVixImport(currentInput, rawPackage, selection = {}, conflict
     collectionMap.set(incoming.key, collection.id);
     if (!collectionMap.has('')) collectionMap.set('', collection.id);
     if (target.scope === 'collection') targetCollection = collection;
-  }
-
-  // Structured domains have exactly one phrase total; non-structured domains never persist one.
-  for (const domainId of new Set(domainMap.values())) {
-    const domain = domains.find((item) => item.id === domainId);
-    const phraseId = systemPhraseCollectionId(domainId);
-    if (domain?.contentMode === 'nonStructured') {
-      collections = collections.filter((item) => item.id !== phraseId && !(item.domainId === domainId && item.type === 'system-phrases'));
-    } else if (!collections.some((item) => item.id === phraseId)) {
-      collections.push(createCollection({ id: phraseId, domainId, name: '短语总表', type: 'system-phrases', order: 1, timestamp }));
-    }
   }
 
   if (target.scope === 'collection' && target.mode === 'replace') {

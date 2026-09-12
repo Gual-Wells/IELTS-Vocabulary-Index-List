@@ -1,5 +1,5 @@
 // @ts-check
-import { SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
+import { SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';
 
 export const OXFORD_LOOKUP_SCHEME = 'hk-com-oupc-oecd-lookup://x-callback-url/s';
 export const ENTRY_CONTEXT_FORMAT = 'vix-entry-context';
@@ -9,7 +9,7 @@ const MAX_CONTEXT_RELATIONS = 16;
 function clean(value) { return String(value ?? '').trim(); }
 
 function isGlobalCollection(collectionId) {
-  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);
+  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);
 }
 
 function preferredMembership(state, entry, requestedCollectionId = '') {

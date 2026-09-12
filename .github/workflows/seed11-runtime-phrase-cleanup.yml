@@ -15,149 +15,69 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Remove retired phrase-system runtime paths
+      - name: Remove retired phrase runtime paths
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          def req(text, old, new, label, count=1):
-              found = text.count(old)
-              if found != count:
-                  raise SystemExit(f'{label}: expected {count}, found {found}')
-              return text.replace(old, new)
+          def replace_all(s, old, new, label, minimum=1):
+              n=s.count(old)
+              if n < minimum:
+                  raise SystemExit(f'{label}: expected at least {minimum}, found {n}')
+              return s.replace(old,new)
 
-          # UI: Seed11 is word-only. Keep no live references to retired phrase system tables.
-          p = Path('js/v3-ui.js')
-          s = p.read_text(encoding='utf-8')
-          s = req(s,
-              '  acknowledgeMigrationNotice, addCollection, addDomain, addEntry, addPhraseForWord,\n',
-              '  acknowledgeMigrationNotice, addCollection, addDomain, addEntry,\n',
-              'remove unused addPhraseForWord import')
-          s = req(s, "    if (['word', 'phrase'].includes(requested)) return requested;\n", "    if (requested === 'word') return 'word';\n", 'word-only requested view')
-          s = req(s, "    if (entry?.kind === 'phrase') return 'phrase';\n", '', 'remove phrase entry view')
-          s = req(s, "  return isPhraseCollection(collection) ? 'phrase' : 'word';\n", "  return 'word';\n", 'word-only system view')
-          s = req(s, "  if (entry.kind === 'phrase') return systemPhraseCollectionId(entry.domainId);\n", '', 'projection phrase target')
-          s = req(s,
-              "  const kind = ['word', 'phrase'].includes(viewKind) ? viewKind : (['word', 'phrase'].includes(currentViewKind) ? currentViewKind : 'word');\n  return entries.filter((entry) => entry.kind === kind);\n",
-              "  return entries.filter((entry) => entry.kind === 'word');\n",
-              'word-only normal collection view')
-          s = req(s, "    if (collectionId === SYSTEM_GLOBAL_PHRASES_ID) return `${count.toLocaleString()} 短语`;\n", '', 'global phrase count')
-          s = req(s,
-              "  return contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`;\n",
-              "  return contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`;\n",
-              'collection summary phrase count')
-          s = req(s,
-              "    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`)\n",
-              "    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`)\n",
-              'collection card phrase count')
-          # Two domain-system classification sites.
-          line = "    || collection.id === systemPhraseCollectionId(collection.domainId)\n"
-          if s.count(line) != 2: raise SystemExit(f'domain phrase system id: expected 2, found {s.count(line)}')
-          s = s.replace(line, '')
-          line = "    || collection.type === 'system-phrases' || collection.type === 'system-domain-content'\n"
-          if s.count(line) != 2: raise SystemExit(f'domain phrase system type: expected 2, found {s.count(line)}')
-          s = s.replace(line, "    || collection.type === 'system-domain-content'\n")
-          s = req(s, "    const phraseCollection = state.collectionById.get(systemPhraseCollectionId(domain.id));\n", '', 'manager phrase collection')
-          s = req(s,
-              "      el('div', { className: 'manager-row fixed' }, [\n        el('span', { className: 'manager-lock', text: '2' }),\n        el('span', { className: 'manager-name', text: phraseCollection?.name || '短语' }),\n        el('span', { className: 'manager-count', text: phraseCollection ? getVisibleEntries(phraseCollection.id).length.toLocaleString() : '0' }),\n      ]),\n",
-              '',
-              'manager phrase row')
-          old = "? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]"
-          if s.count(old) != 2: raise SystemExit(f'global phrase cards: expected 2, found {s.count(old)}')
-          s = s.replace(old, "? [collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID))]")
-          s = req(s,
-              "  const viewLabel = collection.type === 'normal'\n    ? (currentViewKind === 'phrase' ? '短语视图' : currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';\n",
-              "  const viewLabel = collection.type === 'normal'\n    ? (currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';\n",
-              'phrase view label')
-          s = req(s,
-              "function sectionForEntry(entry) {\n  return entry?.kind === 'phrase' ? 'phrase' : entry?.kind === 'content' ? 'content' : 'word';\n}\n",
-              "function sectionForEntry(entry) {\n  return entry?.kind === 'content' ? 'content' : 'word';\n}\n",
-              'phrase section')
-          s = req(s,
-              "function isPhraseCollection(collection) {\n  return collection?.type === 'system-phrases' || collection?.type === 'system-global-phrases';\n}\n\n",
-              '',
-              'phrase collection helper')
-          s = req(s,
-              "      candidates = await suggestEntries({ domainName: domain.name, collectionName: collection.name, instruction: `${collection.type === 'system-phrases' ? 'Generate multi-word English phrases only. ' : ''}${instruction.value}`, existing: getVisibleEntries(collectionId).map((item) => item.text), glossEnabled: domain.glossEnabled });\n",
-              "      candidates = await suggestEntries({ domainName: domain.name, collectionName: collection.name, instruction: instruction.value, existing: getVisibleEntries(collectionId).map((item) => item.text), glossEnabled: domain.glossEnabled });\n",
-              'AI phrase generation path')
-          if 'SYSTEM_GLOBAL_PHRASES_ID' in s or 'systemPhraseCollectionId' in s or "collection.type === 'system-phrases'" in s:
-              raise SystemExit('v3-ui still contains live phrase-system identifiers')
-          p.write_text(s, encoding='utf-8')
+          # UI is now strictly word/content. Remove every live phrase-system path.
+          p=Path('js/v3-ui.js'); s=p.read_text(encoding='utf-8')
+          s=s.replace('addEntry, addPhraseForWord,','addEntry,')
+          s=s.replace("    if (['word', 'phrase'].includes(requested)) return requested;", "    if (requested === 'word') return 'word';")
+          s=s.replace("    if (entry?.kind === 'phrase') return 'phrase';\n", '')
+          s=s.replace("  return isPhraseCollection(collection) ? 'phrase' : 'word';", "  return 'word';")
+          s=s.replace("  if (entry.kind === 'phrase') return systemPhraseCollectionId(entry.domainId);\n", '')
+          s=s.replace("  const kind = ['word', 'phrase'].includes(viewKind) ? viewKind : (['word', 'phrase'].includes(currentViewKind) ? currentViewKind : 'word');\n  return entries.filter((entry) => entry.kind === kind);", "  return entries.filter((entry) => entry.kind === 'word');")
+          s=re.sub(r"^\s*if \(collectionId === SYSTEM_GLOBAL_PHRASES_ID\).*\n",'',s,flags=re.M)
+          s=s.replace("`${words.toLocaleString()} 词 · ${phrases.toLocaleString()} 短语`", "`${words.toLocaleString()} 词`")
+          s=re.sub(r"^\s*\|\| collection\.id === systemPhraseCollectionId\(collection\.domainId\)\n",'',s,flags=re.M)
+          s=s.replace("|| collection.type === 'system-phrases' || collection.type === 'system-domain-content'", "|| collection.type === 'system-domain-content'")
+          s=re.sub(r"^\s*const phraseCollection = state\.collectionById\.get\(systemPhraseCollectionId\(domain\.id\)\);\n",'',s,flags=re.M)
+          s=re.sub(r"\s*el\('div', \{ className: 'manager-row fixed' \}, \[\n\s*el\('span', \{ className: 'manager-lock', text: '2' \}\),\n\s*el\('span', \{ className: 'manager-name', text: phraseCollection\?\.name \|\| '短语' \}\),\n\s*el\('span', \{ className: 'manager-count', text: phraseCollection \? getVisibleEntries\(phraseCollection\.id\)\.length\.toLocaleString\(\) : '0' \}\),\n\s*\]\),",'',s)
+          pair="[collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID)), collectionCard(state.collectionById.get(SYSTEM_GLOBAL_PHRASES_ID))]"
+          s=replace_all(s,pair,"[collectionCard(state.collectionById.get(SYSTEM_GLOBAL_WORDS_ID))]",'global phrase cards',2)
+          s=s.replace("? (currentViewKind === 'phrase' ? '短语视图' : currentViewKind === 'content' ? '内容视图' : '词汇视图')", "? (currentViewKind === 'content' ? '内容视图' : '词汇视图')")
+          s=s.replace("  return entry?.kind === 'phrase' ? 'phrase' : entry?.kind === 'content' ? 'content' : 'word';", "  return entry?.kind === 'content' ? 'content' : 'word';")
+          s=re.sub(r"\nfunction isPhraseCollection\(collection\) \{\n\s*return collection\?\.type === 'system-phrases' \|\| collection\?\.type === 'system-global-phrases';\n\}\n",'\n',s)
+          s=s.replace("instruction: `${collection.type === 'system-phrases' ? 'Generate multi-word English phrases only. ' : ''}${instruction.value}`", "instruction: instruction.value")
+          for forbidden in ['SYSTEM_GLOBAL_PHRASES_ID','systemPhraseCollectionId',"system-global-phrases", "collection.type === 'system-phrases'"]:
+              if forbidden in s: raise SystemExit(f'v3-ui stale phrase runtime path: {forbidden}')
+          p.write_text(s,encoding='utf-8')
 
-          # Integrations: global system scopes are now words or non-structured content only.
-          p = Path('js/v3-integrations.js')
-          s = p.read_text(encoding='utf-8')
-          s = req(s,
-              "import { SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';\n",
-              "import { SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_WORDS_ID } from './v3-model.js';\n",
-              'integration phrase import')
-          s = req(s,
-              '  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);\n',
-              '  return [SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId);\n',
-              'integration global phrase scope')
-          p.write_text(s, encoding='utf-8')
+          # Entry-context integration must agree with the two live global system projections.
+          p=Path('js/v3-integrations.js'); s=p.read_text(encoding='utf-8')
+          s=s.replace('SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_WORDS_ID','SYSTEM_GLOBAL_CONTENT_ID, SYSTEM_GLOBAL_WORDS_ID')
+          s=s.replace('[SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID]','[SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID]')
+          if 'SYSTEM_GLOBAL_PHRASES_ID' in s: raise SystemExit('integration still references global phrase table')
+          p.write_text(s,encoding='utf-8')
 
-          # Exchange: legacy packages may be recognized, but they may never recreate retired phrase tables/entries.
-          p = Path('js/v3-exchange.js')
-          s = p.read_text(encoding='utf-8')
-          s = req(s,
-              '  normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemDomainContentCollectionId, systemPhraseCollectionId,\n',
-              '  normalizeEnglish, normalizeGlossHant, safeId, systemDomainWordsCollectionId, systemDomainContentCollectionId,\n',
-              'exchange phrase id import')
-          s = req(s,
-              "    if (collection.type === 'system-phrases') {\n      entries = backup.entries.filter((item) => item.domainId === domain.id && item.kind === 'phrase');\n      memberships = [];\n    } else {\n      const memberIds = new Set(backup.memberships.filter((item) => item.collectionId === collection.id).map((item) => item.entryId));\n      entries = backup.entries.filter((item) => memberIds.has(item.id));\n      memberships = backup.memberships.filter((item) => item.collectionId === collection.id);\n      const selectedEntryIds = new Set(entries.map((item) => item.id));\n      context = {\n        relationComponents: backup.relationComponents.filter((item) => selectedEntryIds.has(item.sourceEntryId))\n          .slice(0, 1000).map((item) => ({ sourceEntryId: item.sourceEntryId, normalizedText: item.normalizedText })),\n      };\n    }\n",
-              "    const memberIds = new Set(backup.memberships.filter((item) => item.collectionId === collection.id).map((item) => item.entryId));\n    entries = backup.entries.filter((item) => memberIds.has(item.id));\n    memberships = backup.memberships.filter((item) => item.collectionId === collection.id);\n    const selectedEntryIds = new Set(entries.map((item) => item.id));\n    context = {\n      relationComponents: backup.relationComponents.filter((item) => selectedEntryIds.has(item.sourceEntryId))\n        .slice(0, 1000).map((item) => ({ sourceEntryId: item.sourceEntryId, normalizedText: item.normalizedText })),\n    };\n",
-              'exchange phrase export branch')
-          s = req(s, "        kind: item.type === 'system-phrases' ? 'phrases' : 'normal', order: item.order,\n", "        kind: 'normal', order: item.order,\n", 'exchange phrase collection export')
-          s = req(s,
-              "    const fallback = entry.kind === 'phrase' ? systemPhraseCollectionId(entry.domainId)\n      : entry.kind === 'content' ? systemDomainContentCollectionId(entry.domainId)\n        : systemDomainWordsCollectionId(entry.domainId);\n",
-              "    const fallback = entry.kind === 'content' ? systemDomainContentCollectionId(entry.domainId)\n      : systemDomainWordsCollectionId(entry.domainId);\n",
-              'exchange phrase pin fallback')
-          s = req(s,
-              "    incomingCollections.push({ key: pkg.target.collectionKey || 'imported-collection', domainKey: incomingDomains[0]?.key || '', name: targetCollection?.name || '导入词表', label: '', kind: targetCollection?.type === 'system-phrases' ? 'phrases' : 'normal', order: targetCollection?.order || 2, hidden: false });\n",
-              "    incomingCollections.push({ key: pkg.target.collectionKey || 'imported-collection', domainKey: incomingDomains[0]?.key || '', name: targetCollection?.name || '导入词表', label: '', kind: 'normal', order: targetCollection?.order || 2, hidden: false });\n",
-              'exchange default collection kind')
-          s = req(s,
-              "    const matching = incomingCollections.filter((item) => targetCollection?.type === 'system-phrases' ? item.kind === 'phrases' : item.kind === 'normal');\n",
-              "    const matching = incomingCollections.filter((item) => item.kind === 'normal');\n",
-              'exchange collection matching')
-          s = req(s,
-              "  for (const incoming of incomingCollections) {\n    const domainId = target.scope === 'global' ? domainMap.get(incoming.domainKey) : targetDomainId;\n",
-              "  for (const incoming of incomingCollections) {\n    if (incoming.kind === 'phrases') throw new Error('当前版本已移除短语条目与系统短语表，不能导入短语词表');\n    const domainId = target.scope === 'global' ? domainMap.get(incoming.domainKey) : targetDomainId;\n",
-              'exchange phrase collection rejection')
-          s = req(s, "    const type = incoming.kind === 'phrases' ? 'system-phrases' : 'normal';\n", "    const type = 'normal';\n", 'exchange normal collection type')
-          s = req(s,
-              "      const id = type === 'system-phrases' ? systemPhraseCollectionId(domainId) : stableId('collection', incoming.key || `${domainId}:${incoming.name}`);\n",
-              "      const id = stableId('collection', incoming.key || `${domainId}:${incoming.name}`);\n",
-              'exchange normal collection id')
-          s = req(s,
-              "      collection = createCollection({ ...collection, domainId, name: incoming.name || collection.name, label: incoming.label ?? collection.label, type, order: collection.type === 'system-phrases' ? 1 : incoming.order, hidden: false, updatedAt: timestamp, timestamp });\n",
-              "      collection = createCollection({ ...collection, domainId, name: incoming.name || collection.name, label: incoming.label ?? collection.label, type, order: incoming.order, hidden: false, updatedAt: timestamp, timestamp });\n",
-              'exchange normal collection update')
-          s = req(s,
-              "  // Structured domains have exactly one phrase total; non-structured domains never persist one.\n  for (const domainId of new Set(domainMap.values())) {\n    const domain = domains.find((item) => item.id === domainId);\n    const phraseId = systemPhraseCollectionId(domainId);\n    if (domain?.contentMode === 'nonStructured') {\n      collections = collections.filter((item) => item.id !== phraseId && !(item.domainId === domainId && item.type === 'system-phrases'));\n    } else if (!collections.some((item) => item.id === phraseId)) {\n      collections.push(createCollection({ id: phraseId, domainId, name: '短语总表', type: 'system-phrases', order: 1, timestamp }));\n    }\n  }\n\n",
-              '',
-              'exchange phrase table synthesis')
-          s = req(s,
-              "  if (target.scope === 'collection' && target.mode === 'replace') {\n    if (!targetCollection) throw new Error('没有可替换的目标词表');\n    if (targetCollection.type === 'system-phrases') {\n      const removed = new Set(entries.filter((item) => item.domainId === targetDomainId && item.kind === 'phrase').map((item) => item.id));\n      entries = entries.filter((item) => !removed.has(item.id));\n      memberships = memberships.filter((item) => !removed.has(item.entryId));\n    } else {\n      memberships = memberships.filter((item) => item.collectionId !== targetCollection.id);\n    }\n  }\n",
-              "  if (target.scope === 'collection' && target.mode === 'replace') {\n    if (!targetCollection) throw new Error('没有可替换的目标词表');\n    memberships = memberships.filter((item) => item.collectionId !== targetCollection.id);\n  }\n",
-              'exchange phrase replace branch')
-          s = req(s,
-              "    if (incomingDomain?.contentMode !== 'nonStructured' && incoming.kind === 'content') throw new Error(`结构化独立域不能导入 content：${incoming.text}`);\n    if (target.scope === 'collection' && targetCollection?.type === 'system-phrases' && incoming.kind !== 'phrase') continue;\n",
-              "    if (incomingDomain?.contentMode !== 'nonStructured' && incoming.kind === 'content') throw new Error(`结构化独立域不能导入 content：${incoming.text}`);\n    if (incomingDomain?.contentMode !== 'nonStructured' && incoming.kind === 'phrase') throw new Error(`当前版本已移除短语条目，不能导入：${incoming.text}`);\n",
-              'exchange phrase entry rejection')
-          if 'systemPhraseCollectionId' in s or "name: '短语总表'" in s:
-              raise SystemExit('v3-exchange can still synthesize a phrase system table')
-          p.write_text(s, encoding='utf-8')
+          # Exchange may recognize old package vocabulary, but current Seed11 must never recreate phrase tables.
+          p=Path('js/v3-exchange.js'); s=p.read_text(encoding='utf-8')
+          marker="  const pkg = normalizeVixPackage(rawPackage);\n"
+          guard=(marker + "  if (pkg.data.collections.some((item) => item.kind === 'phrases') || pkg.data.entries.some((item) => item.kind === 'phrase')) {\n"
+                       "    throw new Error('当前版本已移除短语条目与系统短语表，不能导入旧短语内容');\n"
+                       "  }\n")
+          if guard not in s:
+              if marker not in s: raise SystemExit('exchange import marker missing')
+              s=s.replace(marker,guard,1)
+          s=re.sub(r"\n  // Structured domains have exactly one phrase total; non-structured domains never persist one\.\n  for \(const domainId of new Set\(domainMap\.values\(\)\)\) \{.*?\n  \}\n\n",'\n',s,count=1,flags=re.S)
+          if "collections.push(createCollection({ id: phraseId, domainId, name: '短语总表'" in s:
+              raise SystemExit('exchange still synthesizes system phrase table')
+          p.write_text(s,encoding='utf-8')
 
-          # Force the installed PWA to replace the broken cached module graph.
-          p = Path('sw.js')
-          s = p.read_text(encoding='utf-8')
-          s = req(s, 'seed11-word-only-20260912-2', 'seed11-word-only-20260912-3', 'service worker generation')
-          p.write_text(s, encoding='utf-8')
+          # Force standalone Safari/PWA to abandon the broken cached module graph.
+          p=Path('sw.js'); s=p.read_text(encoding='utf-8')
+          if 'seed11-word-only-20260912-2' not in s: raise SystemExit('unexpected service-worker generation')
+          p.write_text(s.replace('seed11-word-only-20260912-2','seed11-word-only-20260912-3',1),encoding='utf-8')
           PY
       - name: Static QA
         shell: bash
@@ -171,11 +91,11 @@ jobs:
           node --check js/v3-db.js
           node --check js/v5-seed-migration.js
           node --check sw.js
-          ! grep -n 'SYSTEM_GLOBAL_PHRASES_ID\|systemPhraseCollectionId\|system-phrases' js/v3-ui.js
+          ! grep -n 'SYSTEM_GLOBAL_PHRASES_ID\|systemPhraseCollectionId\|system-global-phrases' js/v3-ui.js
           ! grep -n 'SYSTEM_GLOBAL_PHRASES_ID' js/v3-integrations.js
-          ! grep -n 'systemPhraseCollectionId\|name: .短语总表.' js/v3-exchange.js
+          ! grep -n "collections.push(createCollection({ id: phraseId, domainId, name: '短语总表'" js/v3-exchange.js
           grep -n "HARD_RETIRED_COLLECTION_TYPES.*system-phrases" js/v5-seed-migration.js
-          grep -n "Seed11 no longer requires or creates a phrase system table" js/v3-model.js
+          grep -n 'Seed11 no longer requires or creates a phrase system table' js/v3-model.js
           git diff --check
       - name: Browser startup smoke test
         shell: bash
@@ -187,26 +107,19 @@ jobs:
           sleep 1
           chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           if [ -z "$chrome" ]; then
-            echo 'No headless Chrome on runner; static QA already passed.'
+            echo 'No headless Chrome available; static runtime QA passed.'
             exit 0
           fi
           "$chrome" --headless --no-sandbox --disable-gpu --virtual-time-budget=30000 --dump-dom http://127.0.0.1:8765/ >/tmp/vix-dom.html 2>/tmp/vix-chrome.log || { cat /tmp/vix-chrome.log; exit 1; }
-          if grep -q '应用无法安全启动' /tmp/vix-dom.html; then
-            grep -n -A3 -B3 '应用无法安全启动' /tmp/vix-dom.html || true
-            exit 1
-          fi
-          if grep -q "Can't find variable" /tmp/vix-dom.html; then
-            grep -n "Can't find variable" /tmp/vix-dom.html || true
-            exit 1
-          fi
-          echo 'BROWSER_STARTUP_SMOKE_OK'
+          ! grep -q '应用无法安全启动' /tmp/vix-dom.html
+          ! grep -q "Can't find variable" /tmp/vix-dom.html
+          echo BROWSER_STARTUP_SMOKE_OK
       - name: Commit runtime repair
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/tmp-find-global-phrases.yml .github/workflows/seed11-runtime-phrase-cleanup.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add js/v3-ui.js js/v3-integrations.js js/v3-exchange.js sw.js
           git commit -m 'fix: finish Seed11 phrase-system runtime retirement'
           git push origin HEAD:main

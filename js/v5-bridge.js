@@ -155,24 +155,15 @@ export function testBridge(options = {}) {
 }
 
 async function testBridgeConfigOnce(config, options = {}) {
-  const { probeGroq = true, ...requestOptions } = options;
+  const requestOptions = options;
   const status = await bridgeRequest('/v1/status', { ...requestOptions, config });
-  if (probeGroq && status?.groqState === 'master_key_mismatch') {
-    throw new BridgeError('master_key_mismatch', 'Bridge Master Key 与已保存的 Groq Key 不匹配，请重新保存 Groq Key', 409);
-  }
-  if (probeGroq && status?.groqState === 'unreadable') {
-    throw new BridgeError('groq_secret_unreadable', 'Groq Key 无法解密，请在 Bridge 中重新保存', 409);
-  }
   if (status?.ttsState === 'master_key_mismatch') {
     throw new BridgeError('master_key_mismatch', 'Bridge Master Key 已变更并与保存的 Google TTS Key 不匹配，请重新保存语音 Key', 409);
   }
   if (status?.ttsState === 'unreadable') {
     throw new BridgeError('tts_secret_unreadable', 'Google TTS Key 无法解密，请在 Bridge 中重新保存', 409);
   }
-  if (!probeGroq || !status?.groq) return status;
-  const models = await bridgeRequest('/v1/groq/models', { ...requestOptions, config });
-  const groqModels = Array.isArray(models?.data) ? models.data : [];
-  return { ...status, groqReachable: true, groqModelCount: groqModels.length, groqModels };
+  return status;
 }
 
 function iosSchemeCredentialRecoveryCandidate(value) {
@@ -226,22 +217,6 @@ export function acknowledgeMirrorRun(runId, options = {}) {
   return bridgeRequest(`/v1/runs/${encodeURIComponent(runId)}/ack`, { ...options, method: 'POST', body: {} });
 }
 
-export function saveGroqSecret(apiKey, options = {}) {
-  const key = String(apiKey || '').trim();
-  if (!key) throw new BridgeError('configuration', '请填写 Groq API Key');
-  return bridgeRequest('/v1/settings/groq', { ...options, method: 'PUT', body: { apiKey: key } });
-}
-
-export function validateGroqSecret(apiKey, options = {}) {
-  const key = String(apiKey || '').trim();
-  if (!key) throw new BridgeError('configuration', '请填写 Groq API Key');
-  return bridgeRequest('/v1/settings/groq/validate', { ...options, method: 'POST', body: { apiKey: key } });
-}
-
-export function deleteGroqSecret(options = {}) {
-  return bridgeRequest('/v1/settings/groq', { ...options, method: 'DELETE' });
-}
-
 export function saveTtsSecret(apiKey, options = {}) {
   const key = String(apiKey || '').trim();
   if (!key) throw new BridgeError('configuration', '请填写 Google Cloud TTS API Key');
@@ -262,12 +237,4 @@ export function requestSpeech(text, options = {}) {
   const value = String(text || '').trim();
   if (!value) throw new BridgeError('configuration', '发音文本为空');
   return bridgeRequest('/v1/tts/synthesize', { ...options, method: 'POST', body: { text: value } });
-}
-
-export function getGroqModels(options = {}) {
-  return bridgeRequest('/v1/groq/models', options);
-}
-
-export function requestGroqCompletion(body, options = {}) {
-  return bridgeRequest('/v1/groq/chat', { ...options, method: 'POST', body });
 }

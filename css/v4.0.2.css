@@ -13,9 +13,3 @@ html.system-modal-surface,
 html.system-modal-surface body {
   background: #8f8f8e !important;
 }
-
-/* Query providers use the same dark outline language. */
-.query-menu-option.oxford-option,
-.query-menu-option.groq-option {
-  color: var(--text) !important;
-}

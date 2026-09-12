@@ -1,7 +1,7 @@
 import {
   buildRelationComponentsForEntries, buildProjection, canonicalizeBackup, cleanStudyStampReferences, createCollection, createDomain, createEntry,
   createMembership, createStudyStamp, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
-  relationEdgeSuppressed, safeId, searchBackup, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_CONTENT_ID, tokenizeEnglish, uniqueProjectionCount,
+  relationEdgeSuppressed, safeId, searchBackup, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish, uniqueProjectionCount,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, recordHistoryOnly, redo as dbRedo,
@@ -127,7 +127,6 @@ function buildState(snapshot) {
 
   const collectionById = new Map(collections.map((item) => [item.id, item]));
   collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局词汇总表', label: '', type: 'system-global-words', order: -3, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
-  collectionById.set(SYSTEM_GLOBAL_CONTENT_ID, { id: SYSTEM_GLOBAL_CONTENT_ID, domainId: '', name: '全局非结构总表', label: '', type: 'system-global-content', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
     if (domain.contentMode === 'nonStructured') {
       collectionById.set(systemDomainContentCollectionId(domain.id), { id: systemDomainContentCollectionId(domain.id), domainId: domain.id, name: '内容总表', label: '', type: 'system-domain-content', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });

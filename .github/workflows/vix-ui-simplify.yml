@@ -1,4 +1,4 @@
-name: VIX UI cleanup
+name: VIX UI cleanup final
 on:
   push:
     paths:

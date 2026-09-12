@@ -40,6 +40,8 @@ ui=ui.replace('不参与关联','').replace('过滤低级组件关联','')
 for token in ['setLowLevelRelationsClosed, ', 'setDomainRelationExcluded, ', 'getRelationComponents, ', 'getRelatedEntries, ']:
     ui=ui.replace(token,'')
 
+# Generated UI must pass git diff whitespace checks.
+ui='\n'.join(line.rstrip() for line in ui.splitlines())+'\n'
 p.write_text(ui,encoding='utf-8')
 
 manifest=json.loads((root/'data/seed5-runtime/manifest.json').read_text(encoding='utf-8'))

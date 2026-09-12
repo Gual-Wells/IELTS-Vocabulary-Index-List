@@ -1,0 +1,21 @@
+name: Temporary find global phrases ref
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-find-global-phrases.yml'
+permissions:
+  contents: read
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find stale references
+        run: |
+          set -euo pipefail
+          echo '=== SYSTEM_GLOBAL_PHRASES_ID ==='
+          grep -RIn --exclude-dir=.git 'SYSTEM_GLOBAL_PHRASES_ID' . || true
+          echo '=== systemPhraseCollectionId ==='
+          grep -RIn --exclude-dir=.git 'systemPhraseCollectionId' . || true
+          echo '=== system-phrases ==='
+          grep -RIn --exclude-dir=.git 'system-phrases' js data/seed5-runtime/manifest.json sw.js || true

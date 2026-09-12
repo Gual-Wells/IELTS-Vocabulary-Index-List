@@ -238,3 +238,28 @@ export function requestSpeech(text, options = {}) {
   if (!value) throw new BridgeError('configuration', '发音文本为空');
   return bridgeRequest('/v1/tts/synthesize', { ...options, method: 'POST', body: { text: value } });
 }
+
+
+export function saveGroqSecret(apiKey, options = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new BridgeError('configuration', '请填写 Groq Query API Key');
+  return bridgeRequest('/v1/settings/groq', { ...options, method: 'PUT', body: { apiKey: key } });
+}
+
+export function validateGroqSecret(apiKey, options = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new BridgeError('configuration', '请填写 Groq Query API Key');
+  return bridgeRequest('/v1/settings/groq/validate', { ...options, method: 'POST', body: { apiKey: key } });
+}
+
+export function deleteGroqSecret(options = {}) {
+  return bridgeRequest('/v1/settings/groq', { ...options, method: 'DELETE' });
+}
+
+export function getGroqModels(options = {}) {
+  return bridgeRequest('/v1/groq/models', options);
+}
+
+export function requestGroqCompletion(body, options = {}) {
+  return bridgeRequest('/v1/groq/chat', { ...options, method: 'POST', body });
+}

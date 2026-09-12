@@ -408,3 +408,41 @@ body > .toast-region {
   .entry-actions { grid-template-columns: repeat(3, 38px); }
   .entry-actions > button { width: 38px; }
 }
+
+
+/* 2026-09-13 long gloss scrolling + compact AI search */
+.entry-gloss {
+  display: block !important;
+  max-height: 2.5em;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+.entry-gloss::-webkit-scrollbar { width: 0; height: 0; }
+.search-mode-switch {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--surface-soft); margin-bottom: 10px;
+}
+.search-mode-button {
+  min-height: 42px; border: 0; border-radius: 0; background: transparent;
+  color: var(--muted); font-weight: 700; cursor: pointer;
+}
+.search-mode-button + .search-mode-button { border-left: 1px solid var(--line); }
+.search-mode-button.active { color: var(--accent-ink); background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+.ai-search-enabled .search-controls { align-items: stretch; }
+.ai-search-submit { flex: 0 0 auto; min-width: 76px; }
+.ai-search-result {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+  padding: 14px 15px 16px; box-shadow: var(--shadow-sm);
+}
+.ai-search-result-label { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; margin-bottom: 8px; }
+.ai-search-result-copy { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.ai-search-skeleton { height: 88px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(90deg, var(--surface) 0%, var(--surface-soft) 50%, var(--surface) 100%); background-size: 200% 100%; animation: ai-search-shimmer 1.1s linear infinite; }
+@keyframes ai-search-shimmer { to { background-position: -200% 0; } }
+.bridge-ai-settings { margin-top: 8px; }

@@ -1542,8 +1542,22 @@ function reconcileLibraryOrderDraft(draft) {
 
 function managerEntryRatio(collectionId) {
   const state = getState();
-  const occupied = state.projection?.get(collectionId)?.length || 0;
-  const actual = state.structuralProjection?.get(collectionId)?.length || 0;
+  // Occupied = the Entries won by this collection after collection-priority
+  // competition. This is structural ownership and deliberately ignores Mirror.
+  const occupied = state.structuralProjection?.get(collectionId)?.length || 0;
+  const collection = state.collectionById?.get(collectionId);
+  let actual = 0;
+  if (collectionId === SYSTEM_GLOBAL_WORDS_ID) {
+    actual = state.entries.filter((entry) => entry.kind === 'word').length;
+  } else if (collection?.type === 'system-domain-words') {
+    actual = state.entries.filter((entry) => entry.domainId === collection.domainId && entry.kind === 'word').length;
+  } else if (collection?.type === 'system-domain-content') {
+    actual = state.entries.filter((entry) => entry.domainId === collection.domainId && entry.kind === 'content').length;
+  } else {
+    // Actual/raw = every Entry originally carried by this collection before
+    // priority ownership competition. Mirror hidden/suppression is irrelevant.
+    actual = new Set((state.membershipsByCollection?.get(collectionId) || []).map((item) => item.entryId)).size;
+  }
   return `${occupied.toLocaleString()} / ${actual.toLocaleString()}`;
 }
 

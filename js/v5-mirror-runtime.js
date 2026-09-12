@@ -15,7 +15,6 @@ const suppression = new SuppressionRuntime();
 let current = null;
 /** @type {any | null} */
 let active = null;
-let enabledPreference = false;
 /** @type {Map<string, {record: any, reviewedAt: string}>} */
 let library = new Map();
 let initialized = false;
@@ -187,16 +186,8 @@ export async function initializeMirrorRuntime() {
   let legacyCurrent = null;
   for (const row of rows) {
     if (row?.key === CURRENT_KEY) {
-      if (typeof row.mirrorId === 'string') {
-        currentId = row.mirrorId;
-        // Existing installs predate persisted enabled state. Preserve the old
-        // selected-Mirror expectation by treating a missing flag as enabled
-        // once, then writing an explicit boolean on the next state change.
-        enabledPreference = row.enabled === undefined ? true : row.enabled === true;
-      } else if (row.value) {
-        legacyCurrent = row.value;
-        enabledPreference = true;
-      }
+      if (typeof row.mirrorId === 'string') currentId = row.mirrorId;
+      else if (row.value) legacyCurrent = row.value;
       continue;
     }
     if (!String(row?.key || '').startsWith(RECORD_PREFIX) || !row.record) continue;
@@ -214,12 +205,10 @@ export async function initializeMirrorRuntime() {
       library.set(record.mirrorId, { record, reviewedAt: record.createdAt });
       currentId = record.mirrorId;
       await putRow({ key: RECORD_PREFIX + record.mirrorId, record: clone(record), reviewedAt: record.createdAt });
-      await putRow({ key: CURRENT_KEY, mirrorId: record.mirrorId, enabled: true });
+      await putRow({ key: CURRENT_KEY, mirrorId: record.mirrorId });
     } catch {}
   }
   current = library.get(currentId)?.record || null;
-  active = enabledPreference && current ? validateMirrorRecord(clone(current)) : null;
-  if (!current) enabledPreference = false;
   initialized = true;
   return getMirrorSnapshot();
 }
@@ -251,12 +240,8 @@ export async function commitMirrorCurrent(record, structuralEntryIds) {
   const envelope = { record: validated, reviewedAt };
   library.set(validated.mirrorId, envelope);
   await putRow({ key: RECORD_PREFIX + validated.mirrorId, ...clone(envelope) });
+  await putRow({ key: CURRENT_KEY, mirrorId: validated.mirrorId });
   current = validated;
-  if (enabledPreference) {
-    active = validateMirrorRecord(clone(current));
-    setMirrorSuppression(suppression, universe, active.entryIds);
-  }
-  await putRow({ key: CURRENT_KEY, mirrorId: validated.mirrorId, enabled: enabledPreference });
   emit('current');
   return getMirrorSnapshot();
 }
@@ -265,9 +250,9 @@ export async function selectMirrorCurrent(mirrorId) {
   await initializeMirrorRuntime();
   const envelope = library.get(String(mirrorId || ''));
   if (!envelope) throw new Error('Mirror 材料不存在');
-  if (active && active.mirrorId !== envelope.record.mirrorId) await deactivateMirror();
+  if (active && active.mirrorId !== envelope.record.mirrorId) deactivateMirror();
   current = envelope.record;
-  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId, enabled: enabledPreference });
+  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId });
   emit('selected');
   return getMirrorSnapshot();
 }
@@ -278,18 +263,14 @@ export async function activateMirror(structuralEntryIds, mirrorId = '') {
   if (mirrorId) await selectMirrorCurrent(mirrorId);
   if (!current) throw new Error('当前设备没有可用 Mirror');
   active = validateMirrorRecord(clone(current));
-  enabledPreference = true;
   setMirrorSuppression(suppression, structuralEntryIds, active.entryIds);
-  await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId, enabled: true });
   emit('active');
   return getMirrorSnapshot();
 }
 
-export async function deactivateMirror() {
+export function deactivateMirror() {
   active = null;
-  enabledPreference = false;
   setMirrorSuppression(suppression, [], null);
-  if (current) await putRow({ key: CURRENT_KEY, mirrorId: current.mirrorId, enabled: false });
   emit('inactive');
   return getMirrorSnapshot();
 }
@@ -299,7 +280,7 @@ export async function deleteMirrorRecord(mirrorId) {
   const id = String(mirrorId || '');
   const envelope = library.get(id);
   if (!envelope) return getMirrorSnapshot();
-  if (active?.mirrorId === id) await deactivateMirror();
+  if (active?.mirrorId === id) deactivateMirror();
   library.delete(id);
   await deleteRow(RECORD_PREFIX + id);
   if (current?.mirrorId === id) {
@@ -312,13 +293,6 @@ export async function deleteMirrorRecord(mirrorId) {
 
 /** @param {Map<string, any[]>} structuralProjection */
 export function effectiveProjectionFromMirror(structuralProjection) {
-  if (active) {
-    const universe = new Set();
-    for (const entries of structuralProjection.values()) {
-      for (const entry of entries) if (entry?.id) universe.add(entry.id);
-    }
-    setMirrorSuppression(suppression, universe, active.entryIds);
-  }
   return deriveEffectiveProjection(structuralProjection, suppression);
 }
 
@@ -330,7 +304,6 @@ export async function clearMirrorCurrent() {
   await initializeMirrorRuntime();
   await deleteRow(CURRENT_KEY);
   current = null;
-  enabledPreference = false;
   emit(active ? 'current-cleared-active-preserved' : 'current-cleared');
   return getMirrorSnapshot();
 }

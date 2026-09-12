@@ -1,0 +1,172 @@
+name: Alpha14 Seed source repair
+
+on:
+  push:
+    branches: [alpha14-seed-source-repair]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download pinned and secondary Chinese references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/coca
+
+          # Final reviewed Seed9 is used only as a candidate/reference layer.
+          curl -fL --retry 3 \
+            'https://raw.githubusercontent.com/Gual-Wells/IELTS-Vocabulary-Index-List/seed9-semantic-review/data/seed-baselines/seed-9-glosses.json' \
+            -o /tmp/seed9-glosses.json
+
+          # Primary dictionary reference: exact pinned ECDICT commit.
+          curl -fL --retry 3 \
+            'https://raw.githubusercontent.com/skywind3000/ECDICT/bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b/ecdict.csv' \
+            -o /tmp/ecdict.csv
+
+          # Restore the richer pinned COCA community source that Seed5 originally
+          # reduced to rank+word TSV. It is reference evidence, not blindly copied.
+          for part in $(seq 1 50); do
+            start=$(( (part - 1) * 200 + 1 ))
+            end=$(( part * 200 ))
+            file=$(printf 'part%03d_%d-%d.md' "$part" "$start" "$end")
+            curl -fL --retry 3 \
+              "https://raw.githubusercontent.com/llt22/coca-vocabulary-20000/cee58af112e7469261bd52ce5a44d75986ac757b/vocabulary/${file}" \
+              -o "/tmp/coca/${file}"
+          done
+
+          # Secondary evidence. FreeDict is version-pinned. Kaikki/Wiktionary is
+          # optional because its generated snapshot URL is rolling; failure here
+          # never causes the repair to invent a source.
+          curl -fL --retry 3 \
+            'https://download.freedict.org/dictionaries/eng-zho/2025.11.23/freedict-eng-zho-2025.11.23.src.tar.xz' \
+            -o /tmp/freedict-eng-zho.tar.xz
+          mkdir -p /tmp/freedict-src
+          tar -xJf /tmp/freedict-eng-zho.tar.xz -C /tmp/freedict-src
+          fdtei=$(find /tmp/freedict-src -type f \( -name '*.tei' -o -name '*.xml' \) | head -n 1 || true)
+          if [ -n "$fdtei" ]; then cp "$fdtei" /tmp/eng-zho.tei; fi
+
+          curl -fL --retry 2 \
+            'https://kaikki.org/zhwiktionary/%E8%8B%B1%E8%AF%AD/kaikki.org-dictionary-%E8%8B%B1%E8%AF%AD.jsonl' \
+            -o /tmp/kaikki-en.jsonl || rm -f /tmp/kaikki-en.jsonl
+
+      - name: Build focused repair stage
+        env:
+          ECDICT_PATH: /tmp/ecdict.csv
+          COCA_DIR: /tmp/coca
+          FREEDICT_PATH: /tmp/eng-zho.tei
+          KAIKKI_PATH: /tmp/kaikki-en.jsonl
+          SEED9_REFERENCE: /tmp/seed9-glosses.json
+          ALPHA14_REPAIR_STAGE: /tmp/alpha14-seed-repair-stage.json
+        run: python tools/repair_alpha14_seed.py
+
+      - name: Apply only damaged Seed fields
+        env:
+          ALPHA14_REPAIR_STAGE: /tmp/alpha14-seed-repair-stage.json
+          SEED_REPAIR_GENERATED_AT: '2026-09-12T08:00:00.000Z'
+        run: node tools/apply_alpha14_seed_repair.mjs
+
+      - name: Activate Seed 9 migration safely
+        shell: python
+        run: |
+          from pathlib import Path
+
+          db = Path('js/v3-db.js')
+          text = db.read_text(encoding='utf-8')
+          text = text.replace('export const BUILTIN_SEED_REVISION = 8;', 'export const BUILTIN_SEED_REVISION = 9;')
+          old = """async function loadSeedFieldBaseline(revision) {
+            if (revision !== 7) return null;
+            const raw = await loadSeedFile('seed-baselines/seed-7-glosses.json');
+            if (raw?.protocol !== 'vix-seed-field-baseline/1' || Number(raw.seedRevision) !== revision || !Array.isArray(raw.entries)) {
+              throw new Error('Seed 7 gloss baseline is invalid');
+            }
+            return raw;
+          }"""
+          new = """async function loadSeedFieldBaseline(revision) {
+            if (![7, 8].includes(revision)) return null;
+            const raw = await loadSeedFile(`seed-baselines/seed-${revision}-glosses.json`);
+            if (raw?.protocol !== 'vix-seed-field-baseline/1' || Number(raw.seedRevision) !== revision || !Array.isArray(raw.entries)) {
+              throw new Error(`Seed ${revision} gloss baseline is invalid`);
+            }
+            return raw;
+          }"""
+          if old not in text:
+            raise SystemExit('expected Seed baseline loader not found')
+          text = text.replace(old, new)
+          if 'BUILTIN_SEED_REVISION = 9' not in text:
+            raise SystemExit('Seed revision patch failed')
+          db.write_text(text, encoding='utf-8')
+
+          sw = Path('sw.js')
+          sw_text = sw.read_text(encoding='utf-8')
+          old_cache = 'v5.0.0-alpha.14-shell-20260908-1'
+          new_cache = 'v5.0.0-alpha.14-seed9-20260912-1'
+          if old_cache not in sw_text:
+            raise SystemExit('expected alpha14 SW cache generation not found')
+          sw.write_text(sw_text.replace(old_cache, new_cache), encoding='utf-8')
+
+      - name: Focused QA gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-db.js
+          node --check js/v5-seed-migration.js
+          node --check js/v3-model.js
+          node --check sw.js
+          node --check tools/apply_alpha14_seed_repair.mjs
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          qa = json.loads(Path('data/seed-baselines/seed-9-alpha14-repair-qa.json').read_text(encoding='utf-8'))
+          assert qa['seedRevision'] == 9
+          assert qa['counts'] == {'entries': 23917, 'memberships': 61905, 'relationComponents': 20793}
+          assert qa['nonTargetEntryDrift'] == 0
+          assert qa['nonGlossDrift'] == 0
+          assert qa['canonicalConversionMismatches'] == 0
+          assert qa['structuredBlankAfter'] == {'general': 0, 'computer': 0}
+          assert qa['usage']['reviewed'] == 595
+          assert qa['usage']['genericTemplateRemaining'] == 0
+          assert qa['baseline8']['count'] == 23917
+          scope = qa['repairScope']
+          assert qa['repairedTargets'] == scope['generalMissing'] + scope['computerMissing'] + 595
+          # Historical alpha audit identified exactly these general-English holes.
+          assert scope['generalMissing'] == 9143, scope
+          assert scope['generalMissingWords'] == 3051, scope
+          assert scope['generalMissingPhrases'] == 6092, scope
+          print('FOCUSED_QA_OK', json.dumps({
+              'scope': scope,
+              'sourceCounts': qa['sourceCounts'],
+              'evidenceCounts': qa['evidenceCounts'],
+              'aiFallbackCount': qa['aiFallbackCount'],
+          }, ensure_ascii=False))
+          PY
+
+      - name: Commit generated Seed repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/seed5-runtime data/seed-baselines/seed-8-glosses.json data/seed-baselines/seed-9-alpha14-repair-qa.json js/v3-db.js sw.js
+          git diff --cached --stat
+          git commit -m 'fix(seed): repair alpha14 missing glosses from source references'
+          git push origin HEAD:alpha14-seed-source-repair

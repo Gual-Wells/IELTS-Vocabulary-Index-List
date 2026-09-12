@@ -19,9 +19,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The previous Mirror persistence change was made only because the ratio
-          # requirement was misunderstood. Restore Mirror runtime to the state
-          # immediately before that unintended behavior change.
           git show 887481795b02628c6305e95cb6cd5bd88adc1602:js/v5-mirror-runtime.js > js/v5-mirror-runtime.js
 
           python3 - <<'PY'
@@ -33,8 +30,8 @@ jobs:
           pattern = re.compile(r"function managerEntryRatio\(collectionId\) \{[\s\S]*?\n\}", re.M)
           replacement = '''function managerEntryRatio(collectionId) {
             const state = getState();
-            // Occupied = the entries this collection wins after collection-priority
-            // competition. This projection is structural and deliberately ignores Mirror.
+            // Occupied = the Entries won by this collection after collection-priority
+            // competition. This is structural ownership and deliberately ignores Mirror.
             const occupied = state.structuralProjection?.get(collectionId)?.length || 0;
             const collection = state.collectionById?.get(collectionId);
             let actual = 0;
@@ -45,8 +42,8 @@ jobs:
             } else if (collection?.type === 'system-domain-content') {
               actual = state.entries.filter((entry) => entry.domainId === collection.domainId && entry.kind === 'content').length;
             } else {
-              // Actual/raw = every Entry originally carried by this collection's
-              // memberships before ownership competition. Mirror is irrelevant here.
+              // Actual/raw = every Entry originally carried by this collection before
+              // priority ownership competition. Mirror hidden/suppression is irrelevant.
               actual = new Set((state.membershipsByCollection?.get(collectionId) || []).map((item) => item.entryId)).size;
             }
             return `${occupied.toLocaleString()} / ${actual.toLocaleString()}`;
@@ -56,10 +53,9 @@ jobs:
               raise SystemExit(f'managerEntryRatio replacement count={n}')
           p.write_text(s2, encoding='utf-8')
 
-          # Force clients off the build that contained the unintended Mirror-persistence change.
           sw = Path('sw.js')
           t = sw.read_text(encoding='utf-8')
-          t2, n = re.subn(r"ui-compact-20260913-2", "ui-compact-20260913-3", t, count=1)
+          t2, n = re.subn(r"ui-compact-20260913-3", "ui-compact-20260913-4", t, count=1)
           if n != 1:
               raise SystemExit(f'SW cache replacement count={n}')
           sw.write_text(t2, encoding='utf-8')

@@ -355,6 +355,9 @@ ui=read(Path('js/v3-ui.js'))
 assert "button('AI 核查'" not in ui
 assert "button('添加短语'" not in ui
 assert "button('撤销', '', async" not in ui and "button('重做', '', async" not in ui
+for needle in ('Google Cloud TTS','saveTtsSecret','requestSpeech(','deleteTtsSecret','validateTtsSecret'):
+    hits=[f'{i+1}:{line}' for i,line in enumerate(ui.splitlines()) if needle in line]
+    if hits: print('LEGACY_TTS_RESIDUAL', needle, *hits, sep='\n')
 assert 'Google Cloud TTS' not in ui and 'saveTtsSecret' not in ui and 'requestSpeech(' not in ui
 assert "startProviderQuery('Groq', entry, collection)" in ui
 assert "iconButton('dictionary', 'entry-relations'" in ui

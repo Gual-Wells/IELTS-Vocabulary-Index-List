@@ -22,6 +22,11 @@ ui=ui.replace("    field('内容模式', el('input', { value: domain.contentMode
 ui=ui.replace("    el('label', { className: 'inline-field' }, [el('span', { text: '不参与关联' }), relationExcluded]),\n",'')
 ui=ui.replace("    el('p', { className: 'help-text', text: '“不参与关联”只在显示与查询上下文中逻辑隐藏关系；底层双向关系仍完整维护，关闭后立即恢复。' }),\n",'')
 ui=ui.replace("      if (relationExcluded.checked !== Boolean(domain.relationExcluded)) await setDomainRelationExcluded(domain.id, relationExcluded.checked);\n",'')
+# Hard label scrub covers any historical duplicated block with different spacing.
+ui=ui.replace('结构化（词汇 / 短语）','结构化（词汇）')
+ui=ui.replace('“不参与关联”只在显示与查询上下文中逻辑隐藏关系；底层双向关系仍完整维护，关闭后立即恢复。','')
+ui=ui.replace('不参与关联','')
+ui=ui.replace('过滤低级组件关联','')
 # Remove now-unused store imports from the UI module.
 for token in ['setLowLevelRelationsClosed, ', 'setDomainRelationExcluded, ', 'getRelationComponents, ', 'getRelatedEntries, ']:
     ui=ui.replace(token,'')
@@ -44,7 +49,7 @@ for forbidden in (
     'Google Cloud TTS','saveTtsSecret','deleteTtsSecret','validateTtsSecret','requestSpeech(',
     "button('AI 核查'","button('添加短语'","button('撤销', '', async","button('重做', '', async",
     '全局短语','短语总表','domain-phrases:','结构化（词汇 / 短语）','不参与关联',
-    "el('h3', { text: '关联' })",'过滤低级组件关联','setLowLevelRelationsClosed(','setDomainRelationExcluded('
+    '过滤低级组件关联','setLowLevelRelationsClosed(','setDomainRelationExcluded('
 ):
     assert forbidden not in ui, forbidden
 assert "startProviderQuery('Groq', entry, collection)" in ui

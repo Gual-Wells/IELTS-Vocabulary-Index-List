@@ -3,7 +3,7 @@
   "appVersion": "5.0.0-alpha.14",
   "fromSeedRevision": 8,
   "seedRevision": 9,
-  "generatedAt": "2026-09-12T09:00:00.000Z",
+  "generatedAt": "2026-09-12T13:20:17.889Z",
   "counts": {
     "entries": 23917,
     "memberships": 61905,
@@ -30,17 +30,19 @@
   },
   "usage": {
     "reviewed": 595,
-    "genericTemplateRemaining": 0
+    "genericTemplateRemaining": 0,
+    "rebuiltFromEnglish": 595,
+    "source": "VIX-A14-USAGE-REBUILT"
   },
   "sourceCounts": {
-    "VIX-A14-USAGE-REVIEWED": 595,
     "VIX-A14-CURATED": 51,
     "VIX-A14-AI-FALLBACK": 2178,
     "VIX-A14-FREEDICT": 8,
     "VIX-A14-PHRASE-REFERENCE": 188,
     "VIX-A14-ECDICT-VERIFIED": 6715,
     "VIX-A14-WIKTIONARY": 1,
-    "VIX-A14-ECDICT-VARIANT": 2
+    "VIX-A14-ECDICT-VARIANT": 2,
+    "VIX-A14-USAGE-REBUILT": 595
   },
   "referenceCoverage": {
     "ECDICT": 767532,
@@ -15321,21 +15323,21 @@
   "entryChunks": [
     {
       "path": "data/seed5-runtime/entries-000.json",
-      "bytes": 4193973,
-      "sha256": "f97d5c6edb4f512d5788a9dc81b83df57814e9a9bafe3849ba6d5660eeca286a",
-      "count": 10234
+      "bytes": 4194088,
+      "sha256": "3d5a214ff75937dcef33689090374e95d12fa0f7b1bb303272a71e2c28d67eba",
+      "count": 10228
     },
     {
       "path": "data/seed5-runtime/entries-001.json",
-      "bytes": 4194288,
-      "sha256": "eff4449af59096447ccb8be10405ace3ed3d60d6bfd6eb80f642830e091da39f",
-      "count": 9929
+      "bytes": 4193915,
+      "sha256": "555878ce404b69330d21bfc1d044aa0dc474005c5c5c9ada30a05cb8ad03faf5",
+      "count": 9927
     },
     {
       "path": "data/seed5-runtime/entries-002.json",
-      "bytes": 1595180,
-      "sha256": "aa55b54fe34122cadbdb19757a55d4994a87ddce0093435595be7dc474951ee9",
-      "count": 3754
+      "bytes": 1598497,
+      "sha256": "0dd491f9c393fae26fae898d689a3e2fef10f6dc6cdb18be1fa353c6182db71f",
+      "count": 3762
     }
   ],
   "membershipsUnchanged": [
@@ -15383,5 +15385,17 @@
       "sha256": "79e9595960967f2a700b24bd5a73df38f4c526cc9ea60b9fc6f66735572bd980",
       "count": 10204
     }
-  ]
+  ],
+  "usageRebuild": {
+    "protocol": "vix-usage-gloss-rebuild/1",
+    "sourceEntries": 595,
+    "changedEntries": 595,
+    "machineTranslationAllowed": true,
+    "machineTranslationProvider": "Google Translate public endpoint",
+    "exactSemanticOverrides": 163,
+    "nonUsageEntryDrift": 0,
+    "nonGlossDrift": 0,
+    "canonicalConversionMismatches": 0,
+    "emptyGlosses": 0
+  }
 }

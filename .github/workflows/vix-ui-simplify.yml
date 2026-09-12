@@ -32,6 +32,15 @@ jobs:
           p.write_text(s, encoding='utf-8')
           PY
           python3 tools/oneoff_vix_ui_simplify.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('css/v4.0.2.css')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('/* Query providers use the same dark outline language. */\n.query-menu-option.oxford-option,\n.query-menu-option.groq-option {\n  color: var(--text) !important;\n}\n', '')
+          p.write_text(s.rstrip() + '\n', encoding='utf-8')
+          p = Path('js/v5-bridge.js')
+          p.write_text(p.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+          PY
       - name: Static QA
         shell: bash
         run: |
@@ -48,8 +57,14 @@ jobs:
           test ! -e js/v3-provider-views.js
           test ! -e js/v5-speech.js
           test ! -e css/provider-runtime.css
-          ! grep -RIni --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'groq' js css index.html sw.js
-          ! grep -RIn --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'SYSTEM_GLOBAL_CONTENT_ID' js/v3-ui.js js/v3-store.js js/v3-integrations.js
+          if grep -RIni --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'groq' js css index.html sw.js; then
+            echo 'Groq residue remains'
+            exit 1
+          fi
+          if grep -RIn --exclude-dir=.git --exclude='vix-ui-simplify.yml' --exclude='oneoff_vix_ui_simplify.py' 'SYSTEM_GLOBAL_CONTENT_ID' js/v3-ui.js js/v3-store.js js/v3-integrations.js; then
+            echo 'Global content UI residue remains'
+            exit 1
+          fi
           grep -q 'managerEntryRatio' js/v3-ui.js
           grep -q 'home-mirror-button' js/v3-ui.js
           grep -q '在牛津英汉辞书中查询' js/v3-ui.js

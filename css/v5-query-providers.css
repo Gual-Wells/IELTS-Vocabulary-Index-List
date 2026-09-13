@@ -7,6 +7,19 @@
 .query-menu-option.oxford-option { color: var(--accent-ink); }
 .query-menu-option.chatgpt-option { color: var(--accent); }
 
+/* Match the historical 4.7.3+D.1 icon renderer exactly: outline SVGs use
+   currentColor instead of the browser's default black fill. */
+.query-menu-option .ui-icon,
+.provider-extension-close .ui-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.provider-study-option[aria-label^="Groq "] { color: var(--text); }
+.provider-study-option[aria-label^="ChatGPT "] { color: var(--accent); }
+
 html.provider-extension-open,
 html.provider-extension-open body { overflow: hidden !important; }
 
@@ -158,7 +171,6 @@ html.provider-extension-open body { overflow: hidden !important; }
   border: 1px solid var(--line) !important;
   border-radius: 12px !important;
   background: var(--surface-soft) !important;
-  color: var(--accent-ink);
 }
 .provider-study-option .ui-icon { width: 21px !important; height: 21px !important; }
 .provider-study-option .query-provider-label {

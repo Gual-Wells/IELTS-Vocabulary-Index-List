@@ -1,0 +1,75 @@
+name: Restore historical VIX AI search
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-historical-ai-search.yml'
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply historical AI search restoration
+        run: python3 tools/restore_historical_ai_search.py
+      - name: Static QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-ui.js
+          node --check js/v3-ai.js
+          node --check js/v3-provider-runtime.js
+          node --check js/v3-groq-contracts.js
+          node --check js/v5-bridge.js
+          node --check sw.js
+          test ! -e js/v5-groq-search.js
+          grep -q "AI 联想" js/v3-ui.js
+          grep -q "suggestSearchTerms" js/v3-ui.js
+          grep -q "field('查询模型', model)" js/v3-ui.js
+          grep -q "Groq 查询 API Key" js/v3-ui.js
+          grep -q "export function saveGroqSecret" js/v5-bridge.js
+          grep -q "export function requestGroqCompletion" js/v5-bridge.js
+          grep -q "./js/v3-ai.js" sw.js
+          if grep -qE 'search-mode-switch|runGroqSearch|v5-groq-search|AI 搜索 Key|向 AI 提问' js/v3-ui.js css/v5.0.0.css sw.js; then
+            echo 'Custom replacement AI-search implementation still present'; exit 1
+          fi
+      - name: Browser startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 >/tmp/vix-http.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No headless Chrome; static QA passed.'
+            exit 0
+          fi
+          "$chrome" --headless --no-sandbox --disable-gpu --virtual-time-budget=30000 --dump-dom http://127.0.0.1:8765/ >/tmp/vix-dom.html 2>/tmp/vix-chrome.log || { cat /tmp/vix-chrome.log; exit 1; }
+          if grep -q '应用无法安全启动' /tmp/vix-dom.html; then
+            grep -n -A4 -B4 '应用无法安全启动' /tmp/vix-dom.html || true
+            cat /tmp/vix-chrome.log || true
+            exit 1
+          fi
+          if grep -q "Can't find variable" /tmp/vix-dom.html; then
+            grep -n "Can't find variable" /tmp/vix-dom.html || true
+            exit 1
+          fi
+          echo 'BROWSER_STARTUP_SMOKE_OK'
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/v3-ui.js js/v3-ai.js js/v3-provider-runtime.js js/v3-groq-contracts.js js/v5-bridge.js css/v5.0.0.css sw.js
+          git rm -f --ignore-unmatch js/v5-groq-search.js
+          git diff --cached --check
+          git commit -m 'fix: restore historical AI search flow'
+          git push origin HEAD:main

@@ -1,4 +1,5 @@
 name: One-shot Collins selector v2
+# retry after cache-key fix
 
 on:
   push:

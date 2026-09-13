@@ -1,0 +1,62 @@
+name: Alpha15 Oxford preview QA
+on:
+  push:
+    paths:
+      - '.github/workflows/alpha15-preview-qa.yml'
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Static QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-app.js
+          node --check js/v3-ui.js
+          node --check js/v3-ai.js
+          node --check js/v5-version.js
+          node --check sw.js
+          grep -q "APP_VERSION = '5.0.0-alpha.15'" js/v5-version.js
+          grep -q 'application-version" content="5.0.0-alpha.15' index.html
+          grep -q 'v5.0.0-alpha.15.css' index.html
+          grep -q 'v5.0.0-alpha.15.css' sw.js
+          grep -q 'prefers-color-scheme: dark' css/v5.0.0-alpha.15.css
+          grep -q 'collection-grid' css/v5.0.0-alpha.15.css
+          grep -q 'letter-nav' css/v5.0.0-alpha.15.css
+          python3 - <<'PY'
+          from pathlib import Path
+          css = Path('css/v5.0.0-alpha.15.css').read_text()
+          assert css.count('{') == css.count('}'), 'unbalanced CSS braces'
+          print('CSS_BRACE_QA_OK')
+          PY
+      - name: Browser startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 >/tmp/vix-http.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No headless Chrome; static QA passed.'
+            exit 0
+          fi
+          "$chrome" --headless --no-sandbox --disable-gpu --virtual-time-budget=30000 --dump-dom http://127.0.0.1:8765/ >/tmp/vix-dom.html 2>/tmp/vix-chrome.log || { cat /tmp/vix-chrome.log; exit 1; }
+          grep -q '5.0.0-alpha.15' /tmp/vix-dom.html
+          if grep -q '应用无法安全启动' /tmp/vix-dom.html; then
+            grep -n -A4 -B4 '应用无法安全启动' /tmp/vix-dom.html || true
+            cat /tmp/vix-chrome.log || true
+            exit 1
+          fi
+          if grep -q "Can't find variable" /tmp/vix-dom.html; then
+            grep -n "Can't find variable" /tmp/vix-dom.html || true
+            exit 1
+          fi
+          echo 'BROWSER_STARTUP_SMOKE_OK'

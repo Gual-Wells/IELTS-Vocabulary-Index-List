@@ -2539,7 +2539,7 @@ function renderHome(token = renderRevision) {
   setContextDockVisible(elements['pin-bar'], 'has-pin', false, { clearAfterHide: true });
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = 'Vocabulary Index';
-  elements['page-subtitle'].textContent = APP_VERSION;
+  elements['page-subtitle'].textContent = '';
   renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');

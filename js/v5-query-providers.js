@@ -167,7 +167,7 @@ function openShell(query) {
   panelBody.replaceChildren();
   const header = node('header', 'provider-extension-header');
   const titleWrap = node('div', 'provider-extension-title');
-  titleWrap.append(node('span', 'provider-extension-kicker', 'Collins COBUILD'), node('h2', '', query));
+  titleWrap.append(node('span', 'provider-extension-kicker', 'Collins Dictionary'), node('h2', '', query));
   header.append(titleWrap, iconButton('close', 'provider-extension-close', '关闭 Collins', closeOverlay));
   const content = node('div', 'provider-extension-content');
   panelBody.append(header, content);
@@ -286,9 +286,9 @@ async function runGroqLearning(result, host) {
       messages: [
         {
           role: 'system',
-          content: '你是英语词典学习助手。用户会给你刚刚实时查询到的 Collins COBUILD 单条词条。不要机械复述整篇词典；请用繁体中文把分散的信息连接起来，重点解释：核心义项脉络、可数性/句法变化、常见搭配和短语为什么这样成立、例句真正值得学的表达，以及容易只看中文释义时漏掉的语义延伸。只分析当前素材；需要推断时明确说是推断。输出清晰短段落，不要使用 JSON。',
+          content: '你是英语词典学习助手。用户会给你刚刚实时查询到的 Collins 单条词典词条。不要机械复述整篇词典；请用繁体中文把分散的信息连接起来，重点解释：核心义项脉络、可数性/句法变化、常见搭配和短语为什么这样成立、例句真正值得学的表达，以及容易只看中文释义时漏掉的语义延伸。只分析当前素材；需要推断时明确说是推断。输出清晰短段落，不要使用 JSON。',
         },
-        { role: 'user', content: JSON.stringify({ headword: result.query, dictionary: result.dictionaryName || 'Collins COBUILD', entry: source }) },
+        { role: 'user', content: JSON.stringify({ headword: result.query, dictionary: result.dictionaryName || 'Collins Dictionary', entry: source }) },
       ],
     }, { signal: controller.signal });
     if (controller.signal.aborted) return;
@@ -309,9 +309,9 @@ async function runGroqLearning(result, host) {
 function openChatGPTCollinsLearning(result) {
   const source = String(result.plainText || textFromHtml(result.entryContent)).slice(0, 7500);
   const prompt = [
-    '下面是我刚刚实时查询到的一条 Collins COBUILD 词典内容。请不要重抄词条，而是作为英语学习助手把其中分散的信息连接成我能主动使用的学习点。重点说明核心义项之间的关系、可数性和句法变化、搭配/短语为什么这样用、例句里值得主动吸收的表达，以及中文直译容易漏掉的语义。必要时可以补充解释，但请把词典原文与额外推断区分开。用繁体中文，简洁但讲清楚。',
+    '下面是我刚刚实时查询到的一条 Collins 词典内容。请不要重抄词条，而是作为英语学习助手把其中分散的信息连接成我能主动使用的学习点。重点说明核心义项之间的关系、可数性和句法变化、搭配/短语为什么这样用、例句里值得主动吸收的表达，以及中文直译容易漏掉的语义。必要时可以补充解释，但请把词典原文与额外推断区分开。用繁体中文，简洁但讲清楚。',
     `查询项：${result.query}`,
-    `词典：${result.dictionaryName || 'Collins COBUILD'}`,
+    `词典：${result.dictionaryName || 'Collins Dictionary'}`,
     '当前词条内容：',
     source,
   ].join('\n');
@@ -320,7 +320,7 @@ function openChatGPTCollinsLearning(result) {
 
 function renderCollinsResult(content, result) {
   content.replaceChildren();
-  const meta = node('div', 'collins-result-meta', result.dictionaryName || 'Collins COBUILD');
+  const meta = node('div', 'collins-result-meta', result.dictionaryName || 'Collins Dictionary');
   const entry = node('article', 'collins-entry-content');
   entry.append(sanitizedCollinsFragment(result.entryContent));
   const actions = node('section', 'provider-study-actions');

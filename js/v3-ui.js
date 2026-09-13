@@ -27,7 +27,10 @@ import {
   acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
   getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
-import { deleteCollinsSecret, saveCollinsSecret, validateCollinsSecret } from './v5-collins-bridge.js';
+import {
+  COLLINS_DICTIONARY_OPTIONS, deleteCollinsSecret, getCollinsDictionaryPreference,
+  saveCollinsSecret, setCollinsDictionaryPreference, validateCollinsSecret,
+} from './v5-collins-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -6182,6 +6185,13 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
   }));
+  const collinsDictionary = el('select', {
+    name: 'vix-collins-dictionary', autocomplete: 'off',
+  });
+  for (const option of COLLINS_DICTIONARY_OPTIONS) {
+    collinsDictionary.append(el('option', { value: option.code, text: option.label }));
+  }
+  collinsDictionary.value = getCollinsDictionaryPreference();
   const test = button('测试', 'secondary-button', async () => {
     const oldText = test.textContent;
     test.disabled = true;
@@ -6190,6 +6200,7 @@ function openBridgeDialog({ onConfigured = null } = {}) {
       let config = { url: url.value, deviceToken: token.value };
       const candidateGroqKey = groqKey.value.trim();
       const candidateCollinsKey = collinsKey.value.trim();
+      const selectedCollinsDictionary = collinsDictionary.value;
       let result = await testBridgeConfig(config, { probeGroq: false });
       config = applyRecoveredBridgeCredential(config, result, token);
       if (candidateGroqKey) {
@@ -6199,7 +6210,7 @@ function openBridgeDialog({ onConfigured = null } = {}) {
       } else {
         result = await testBridgeConfig(config);
       }
-      if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config });
+      if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config, dictionaryCode: selectedCollinsDictionary });
       showToast('Bridge 配置可用');
     } finally {
       test.disabled = false;
@@ -6238,6 +6249,7 @@ function openBridgeDialog({ onConfigured = null } = {}) {
       field('Device Token', token),
       field('Groq API Key', groqKey),
       field('Collins API Key', collinsKey),
+      field('Collins 目标词典', collinsDictionary, '仅列出当前 Collins API 申请中的两部 American English 词典。'),
       el('div', { className: 'settings-row' }, [test, removeKey, removeCollinsKey, clear]),
       el('section', { className: 'bridge-integration-resources' }, [
         el('h3', { text: '集成资源' }),
@@ -6255,13 +6267,15 @@ function openBridgeDialog({ onConfigured = null } = {}) {
           syncCredentialMask(groqKey);
         } catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
       }
+      const selectedCollinsDictionary = collinsDictionary.value;
       if (collinsKey.value.trim()) {
         try {
-          await saveCollinsSecret(collinsKey.value, { config: nextConfig });
+          await saveCollinsSecret(collinsKey.value, { config: nextConfig, dictionaryCode: selectedCollinsDictionary });
           collinsKey.value = '';
           syncCredentialMask(collinsKey);
         } catch (error) { throw new Error(`Collins Key 保存失败：${error?.message || String(error)}`); }
       }
+      setCollinsDictionaryPreference(selectedCollinsDictionary);
       setBridgeConfig(nextConfig);
       result = await testBridgeConfig(nextConfig);
       const activeModelIds = Array.isArray(result?.groqModels)

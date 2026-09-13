@@ -1,7 +1,7 @@
 // @ts-check
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 const CACHE_PREFIX = 'gual-vocabulary-index-';
-const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.14-providers-20260913-4`;
+const CACHE_NAME = `${CACHE_PREFIX}v5.0.0-alpha.14-providers-20260914-5`;
 const APP_SHELL = new URL('./index.html', sw.location.href).href;
 const PRECACHE = [
   './css/provider-runtime.css', './css/v5.0.0.css', './css/v5-query-providers.css', './js/v3-provider-runtime.js', './js/v3-groq-contracts.js', './js/v3-provider-views.js',

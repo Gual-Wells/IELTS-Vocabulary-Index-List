@@ -1407,7 +1407,6 @@ function collectionCard(collection) {
     on: { click: () => { navigateCollection(collection.id, '', 'home').catch(displayError); } },
   }, [
     el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
-    el('div', { className: 'count', text: count }),
   ]);
 }
 
@@ -1581,7 +1580,7 @@ function libraryManagerBody(draft) {
       el('div', { className: 'manager-row fixed' }, [
         el('span', { className: 'manager-lock', text: '1' }),
         el('span', { className: 'manager-name', text: '词汇总表' }),
-        el('span', { className: 'manager-count', text: managerEntryRatio(systemDomainWordsCollectionId(domain.id)), title: '占有 Entry / 实际 Entry' }),
+        el('span', { className: 'manager-count', text: state.entries.filter((entry) => entry.domainId === domain.id && entry.kind === 'word').length.toLocaleString(), title: '词汇总数' }),
       ]),
     ]);
     const list = el('div', { className: 'manager-list' });
@@ -2541,7 +2540,7 @@ function renderHome(token = renderRevision) {
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = 'Vocabulary Index';
   elements['page-subtitle'].textContent = APP_VERSION;
-  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
+  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 

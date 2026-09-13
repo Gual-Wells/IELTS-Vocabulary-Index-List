@@ -1,0 +1,277 @@
+/* VIX 5.0.0-alpha.15 — Oxford editorial preview, phase 1/2.
+   This first half intentionally targets the visual foundation, Home and Collection views.
+   Search, Settings, Library Manager and Mirror keep their current structure for phase 2. */
+
+:root {
+  color-scheme: light;
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-soft: #f1f1ee;
+  --text: #1d1d1b;
+  --muted: #6f6f69;
+  --line: #ddddda;
+  --line-strong: #c3c3bd;
+  --accent: #a71932;
+  --accent-ink: #801126;
+  --accent-soft: #f7e7eb;
+  --shadow-sm: 0 2px 8px rgb(24 20 18 / 5%);
+  --shadow: 0 10px 28px rgb(24 20 18 / 8%);
+  --oxford-header: #a71932;
+  --oxford-header-ink: #ffffff;
+  --oxford-rule: color-mix(in srgb, var(--text) 13%, transparent);
+}
+
+html, body { background: var(--bg); }
+body { color: var(--text); }
+
+/* Oxford-like navigation chrome: concentrated colour above, quiet paper below. */
+.topbar {
+  background: var(--oxford-header);
+  color: var(--oxford-header-ink);
+  border-bottom-color: transparent;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 10%);
+}
+.topbar .brand-block h1,
+.topbar .brand-block p,
+.topbar .icon-button { color: var(--oxford-header-ink); }
+.topbar .brand-block p { opacity: .76; }
+.topbar .icon-button:active { background: rgb(255 255 255 / 16%); }
+.topbar .icon-button:focus-visible { outline-color: rgb(255 255 255 / 72%); }
+
+/* Editorial titles: typography carries hierarchy instead of large cards. */
+.large-title {
+  margin-bottom: 12px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line);
+}
+.large-title-eyebrow {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.large-title-heading {
+  color: var(--text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 650;
+  letter-spacing: -.012em;
+}
+.large-title-subtitle { color: var(--muted); }
+
+/* Home: dictionary catalogue rather than dashboard cards. */
+.domain-section { margin-bottom: 24px; }
+.domain-heading {
+  min-height: 38px;
+  margin: 0;
+  padding: 4px 12px 7px;
+  align-items: end;
+  border-bottom: 2px solid var(--accent);
+}
+.domain-heading h3 {
+  color: var(--text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  font-weight: 650;
+}
+.domain-heading p { color: var(--muted); font-size: 11px; }
+
+.collection-grid,
+.global-grid {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  background: var(--surface);
+}
+.collection-card,
+.global-grid .collection-card {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 16px;
+  grid-template-rows: auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 0 13px 0 15px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: none;
+  overflow: hidden;
+}
+.collection-card:last-child,
+.global-grid .collection-card:last-child { border-bottom: 0; }
+.collection-card:active,
+.global-grid .collection-card:active { background: var(--accent-soft); }
+.collection-card h3,
+.global-grid .collection-card h3 {
+  grid-column: 1;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 15.5px;
+  font-weight: 680;
+  line-height: 1.25;
+}
+.collection-card .count,
+.global-grid .collection-card .count {
+  position: static;
+  grid-column: 2;
+  justify-self: end;
+  color: var(--muted);
+  font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.collection-card .count-label,
+.global-grid .collection-card .count-label { display: none; }
+.collection-card::after,
+.global-grid .collection-card::after {
+  content: "›";
+  grid-column: 3;
+  justify-self: end;
+  color: var(--line-strong);
+  font: 300 24px/1 Georgia, serif;
+}
+.home-footnote { margin-top: 20px; color: var(--muted); }
+
+/* Collection header: remove dashboard chrome and let metadata read like dictionary furniture. */
+.collection-toolbar {
+  min-height: 38px;
+  margin: 0 0 4px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.collection-context { color: var(--muted); font-size: 11px; }
+.collection-context span + span::before { color: var(--line-strong); }
+.collection-quick-actions .icon-button { color: var(--muted); }
+
+/* Alphabet index: thin editorial tab rail instead of a row of rounded buttons. */
+.letter-nav {
+  gap: 0;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+}
+.letter-nav button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 40px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+.letter-nav button.empty { opacity: .28; }
+.letter-nav button.active {
+  border-color: transparent;
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+.letter-nav button:active { background: var(--accent-soft); }
+
+/* Dictionary body: flat continuous entries with strong headwords and quiet utilities. */
+.entry-list { gap: 14px; }
+.letter-section {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: clip;
+}
+.letter-heading {
+  min-height: 40px;
+  padding: 0 11px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+.letter-heading:active { background: var(--accent-soft); }
+.letter-title {
+  color: var(--accent);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+.letter-count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.letter-indicator { color: var(--muted); }
+.letter-body { border-top: 0; background: var(--surface); }
+.entry-row {
+  min-height: 57px;
+  border-bottom: 1px solid var(--oxford-rule);
+  background: var(--surface);
+}
+.entry-row:last-child { border-bottom: 0; }
+.entry-text {
+  color: var(--text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16.4px;
+  font-weight: 700;
+  letter-spacing: -.008em;
+}
+.entry-gloss {
+  color: var(--muted);
+  font-size: 11.6px;
+  line-height: 1.28;
+}
+.entry-index,
+.entry-study-date { color: var(--muted); font-variant-numeric: tabular-nums; }
+.entry-actions .icon-button,
+.entry-control-main .icon-button { color: var(--muted); }
+.entry-actions .icon-button:active,
+.entry-control-main .icon-button:active { color: var(--accent-ink); background: var(--accent-soft); }
+.entry-pin.active { color: var(--accent); background: var(--accent-soft); }
+.copy-entry:active,
+.entry-text-viewport:active { background: var(--accent-soft); }
+
+/* Keep long-gloss scrolling from alpha.14; only tune the scrollbar affordance. */
+.entry-gloss { scrollbar-color: color-mix(in srgb, var(--accent) 40%, transparent) transparent; }
+
+@media (max-width: 620px) {
+  main { padding-inline: 10px; }
+  .domain-heading { padding-inline: 10px; }
+  .collection-card,
+  .global-grid .collection-card { min-height: 55px; padding-inline: 12px 10px; }
+  .collection-card h3,
+  .global-grid .collection-card h3 { font-size: 15px; }
+  .letter-nav button { flex-basis: 32px; width: 32px; }
+  .entry-list { gap: 12px; }
+}
+
+/* Dark theme follows the same editorial hierarchy; only surfaces and semantic colours invert. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #101011;
+    --surface: #171719;
+    --surface-strong: #171719;
+    --surface-soft: #202023;
+    --text: #f1f1ee;
+    --muted: #aaa9a4;
+    --line: #353538;
+    --line-strong: #4a4a4e;
+    --accent: #e34a63;
+    --accent-ink: #ff8899;
+    --accent-soft: #351820;
+    --shadow-sm: 0 2px 8px rgb(0 0 0 / 28%);
+    --shadow: 0 10px 30px rgb(0 0 0 / 36%);
+    --oxford-header: #771326;
+    --oxford-header-ink: #ffffff;
+    --oxford-rule: rgb(255 255 255 / 10%);
+  }
+  html, body { background: var(--bg); }
+  .topbar { box-shadow: 0 1px 0 rgb(255 255 255 / 7%); }
+  .letter-nav { background: color-mix(in srgb, var(--bg) 94%, transparent); }
+  .collection-card::after,
+  .global-grid .collection-card::after { color: #66666b; }
+}

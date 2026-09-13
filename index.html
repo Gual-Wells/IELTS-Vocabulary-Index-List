@@ -7,11 +7,11 @@
   <meta name="theme-color" content="#fafafa">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="VIX">
+  <meta name="apple-mobile-web-app-title" content="Vocabulary Index">
   <meta name="application-version" content="5.0.0-alpha.14">
-  <meta name="description" content="本地优先、按词域组织的英语词汇索引">
+  <meta name="description" content="本地优先、按词域组织的英语词汇、短语与非结构内容索引">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>VIX</title>
+  <title>Vocabulary Index 5.0.0-alpha.14</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./assets/icons/vix-icon-180-v4.png">
   <link rel="icon" href="./assets/icons/vix-icon-192-v4.png" sizes="192x192">
@@ -32,6 +32,7 @@
   <link rel="stylesheet" href="./css/v4.7.1.css">
   <link rel="stylesheet" href="./css/v4.7.2.css">
   <link rel="stylesheet" href="./css/v4.7.3.css">
+  <link rel="stylesheet" href="./css/provider-runtime.css">
   <link rel="stylesheet" href="./css/v5.0.0.css">
 </head>
 <body>
@@ -94,9 +95,13 @@
       <button id="bottom-last-position" type="button" aria-label="继续上次浏览位置"></button>
       <button id="back-to-top" type="button" aria-label="返回顶部"></button>
       <button id="bottom-mode" type="button" aria-label="切换排序模式"></button>
-      <button id="bottom-view-switch" type="button" aria-label="全部展开或收起"></button>
+      <button id="bottom-view-switch" type="button" aria-label="切换词汇或短语视图"></button>
       <button id="bottom-search" type="button" aria-label="搜索"></button>
     </nav>
+
+    <button id="task-capsule" class="task-capsule hidden" type="button" aria-label="打开 AI 核查任务"></button>
+    <div id="task-panel" class="task-panel hidden" aria-live="polite"></div>
+    <div id="query-menu" class="query-menu hidden" role="menu" aria-label="选择查询方式"></div>
     <div id="relation-target-menu" class="relation-target-menu hidden" role="menu" aria-label="选择跳转目标"></div>
   </div>
 

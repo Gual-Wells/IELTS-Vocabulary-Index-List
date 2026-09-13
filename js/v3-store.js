@@ -1,7 +1,7 @@
 import {
   buildRelationComponentsForEntries, buildProjection, canonicalizeBackup, cleanStudyStampReferences, createCollection, createDomain, createEntry,
   createMembership, createStudyStamp, isPhraseText, normalizeDisplayText, normalizeEnglish, normalizeGlossHant,
-  relationEdgeSuppressed, safeId, searchBackup, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, tokenizeEnglish, uniqueProjectionCount,
+  relationEdgeSuppressed, safeId, searchBackup, systemPhraseCollectionId, systemDomainWordsCollectionId, systemDomainContentCollectionId, SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID, tokenizeEnglish, uniqueProjectionCount,
 } from './v3-model.js';
 import {
   commitChanges, exportBackup, getSetting, initializeDatabase, readSnapshot, recordHistoryOnly, redo as dbRedo,
@@ -59,13 +59,6 @@ async function ensureLowLevelLexemes() {
 
 function buildState(snapshot) {
   const backup = canonicalizeBackup({ schemaVersion: 6, appVersion: APP_VERSION, exportedAt: new Date().toISOString(), ...snapshot });
-  backup.collections = backup.collections.filter((item) => item.type !== 'system-phrases' && item.type !== 'system-global-phrases' && !String(item.id || '').endsWith('__phrases'));
-  backup.entries = backup.entries.filter((item) => item.kind !== 'phrase');
-  const wordOnlyEntryIds = new Set(backup.entries.map((item) => item.id));
-  const wordOnlyCollectionIds = new Set(backup.collections.map((item) => item.id));
-  backup.memberships = backup.memberships.filter((item) => wordOnlyEntryIds.has(item.entryId) && wordOnlyCollectionIds.has(item.collectionId));
-  backup.relationComponents = [];
-  backup.annotations = [];
   const domains = backup.domains.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const collections = backup.collections.sort((a, b) => {
     if (a.domainId !== b.domainId) return a.domainId.localeCompare(b.domainId);
@@ -127,6 +120,8 @@ function buildState(snapshot) {
 
   const collectionById = new Map(collections.map((item) => [item.id, item]));
   collectionById.set(SYSTEM_GLOBAL_WORDS_ID, { id: SYSTEM_GLOBAL_WORDS_ID, domainId: '', name: '全局词汇总表', label: '', type: 'system-global-words', order: -3, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_PHRASES_ID, { id: SYSTEM_GLOBAL_PHRASES_ID, domainId: '', name: '全局短语总表', label: '', type: 'system-global-phrases', order: -2, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
+  collectionById.set(SYSTEM_GLOBAL_CONTENT_ID, { id: SYSTEM_GLOBAL_CONTENT_ID, domainId: '', name: '全局非结构总表', label: '', type: 'system-global-content', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
   for (const domain of domains) {
     if (domain.contentMode === 'nonStructured') {
       collectionById.set(systemDomainContentCollectionId(domain.id), { id: systemDomainContentCollectionId(domain.id), domainId: domain.id, name: '内容总表', label: '', type: 'system-domain-content', order: -1, hidden: false, virtual: true, createdAt: '', updatedAt: '' });
@@ -196,7 +191,8 @@ export function getState() {
 export async function reloadStore(type = 'reload', detail = null) {
   if (reloadPromise) return reloadPromise;
   reloadPromise = (async () => {
-      const snapshot = await readSnapshot();
+    await ensureLowLevelLexemes();
+    const snapshot = await readSnapshot();
     state = buildState(snapshot);
     emit(type, detail);
     return state;
@@ -386,6 +382,9 @@ export async function addDomain(name, { glossEnabled = false, contentMode = 'str
     if (draft.domains.some((item) => normalizeEnglish(item.name) === normalized)) throw new Error('词域名称已存在');
     const domain = createDomain({ name, glossEnabled, contentMode, order: nextOrder(draft.domains) });
     draft.domains.push(domain);
+    if (domain.contentMode === 'structured') draft.collections.push(createCollection({
+      domainId: domain.id, name: '短语总表', type: 'system-phrases', order: Number.MAX_SAFE_INTEGER,
+    }));
   });
 }
 
@@ -441,6 +440,7 @@ export async function renameCollection(collectionId, name, label = '') {
   return mutate('重命名词表', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
+    if (collection.type === 'system-phrases') throw new Error('系统短语表不可重命名');
     const normalized = normalizeEnglish(name);
     if (draft.collections.some((item) => item.id !== collectionId && item.domainId === collection.domainId && normalizeEnglish(item.name) === normalized)) {
       throw new Error('该词域已有同名词表');
@@ -543,6 +543,7 @@ export async function deleteCollection(collectionId) {
   return mutate('删除词表', (draft) => {
     const collection = draft.collections.find((item) => item.id === collectionId);
     if (!collection) throw new Error('词表不存在');
+    if (collection.type === 'system-phrases') throw new Error('系统短语表不可删除');
     draft.collections = draft.collections.filter((item) => item.id !== collectionId);
     const affectedEntryIds = new Set(draft.memberships.filter((item) => item.collectionId === collectionId).map((item) => item.entryId));
     draft.memberships = draft.memberships.filter((item) => item.collectionId !== collectionId);
@@ -585,8 +586,8 @@ function upsertEntryInDraft(draft, collection, item, sourceOrder) {
   const text = normalizeDisplayText(item?.text || item?.word || '');
   const normalized = normalizeEnglish(text);
   if (!normalized) return null;
-  if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
-    const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
+  if (collection.type === 'system-phrases' && !isPhraseText(text)) throw new Error(`系统短语表不能导入普通词：${text}`);
+  const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
   let entry = draft.entries.find((candidate) => candidate.domainId === collection.domainId && candidate.normalizedText === normalized);
   if (!entry) {
     entry = createEntry({
@@ -766,8 +767,7 @@ export async function addEntry(collectionId, text, { sourceLabel = '', gloss = '
     if (!normalized) throw new Error('内容不能为空');
     let entry = draft.entries.find((item) => item.domainId === collection.domainId && item.normalizedText === normalized);
     if (!entry) {
-      if (domain?.contentMode !== 'nonStructured' && isPhraseText(text)) throw new Error(`当前版本仅接受单词条目：${text}`);
-    const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : 'word';
+      const desiredKind = domain?.contentMode === 'nonStructured' ? 'content' : (isPhraseText(text) ? 'phrase' : 'word');
       entry = createEntry({
         domainId: collection.domainId,
         text,
@@ -1200,7 +1200,9 @@ export function getVisibleEntries(collectionId) {
   return state.projection.get(collectionId) || [];
 }
 
-export function getRelatedEntries(_entryId, _options = {}) { return []; }
+export function getRelatedEntries(entryId, { raw = false } = {}) {
+  return (raw ? state.rawRelationsByEntry : state.relatedEntriesByEntry).get(entryId) || [];
+}
 
 export function getRelatedPhrases(entryId) {
   return getRelatedEntries(entryId).filter((entry) => entry.kind === 'phrase');
@@ -1210,7 +1212,9 @@ export function getPhraseComponents(entryId) {
   return state.relationComponentsByEntry.get(entryId) || [];
 }
 
-export function getRelationComponents(_entryId) { return []; }
+export function getRelationComponents(entryId) {
+  return state.relationComponentsByEntry.get(entryId) || [];
+}
 
 export function search(query, options = {}) {
   const entryIds = options.entryIds instanceof Set ? options.entryIds : null;
@@ -1274,7 +1278,7 @@ function refreshMirrorProjectionState() {
 
 export async function setMirrorEnabled(enabled, mirrorId = '') {
   if (enabled) await activateMirror(state.entries.map((entry) => entry.id), mirrorId);
-  else await deactivateMirror();
+  else deactivateMirror();
   refreshMirrorProjectionState();
   emit(enabled ? 'mirror-on' : 'mirror-off');
   return getMirrorSnapshot();

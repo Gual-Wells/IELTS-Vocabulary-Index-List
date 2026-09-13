@@ -1697,14 +1697,11 @@ export function canonicalizeBackup(input) {
   entries.sort((a, b) => a.domainId.localeCompare(b.domainId) || a.normalizedText.localeCompare(b.normalizedText, 'en'));
   memberships.sort((a, b) => a.collectionId.localeCompare(b.collectionId) || a.sourceOrder - b.sourceOrder || a.entryId.localeCompare(b.entryId));
   const rebuiltComponents = buildRelationComponentsForEntries(entries);
-  const entryDomainByIdForPins = new Map(entries.map((item) => [item.id, item.domainId]));
   const pins = array(input?.pins).map((item, index) => ({
     id: item?.id || safeId('pin', item?.entryId),
     entryId: String(item?.entryId || ''),
     domainId: String(item?.domainId || ''),
-    contextCollectionId: String(item?.contextCollectionId || '') === SYSTEM_GLOBAL_CONTENT_ID
-      ? systemDomainContentCollectionId(String(item?.domainId || entryDomainByIdForPins.get(String(item?.entryId || '')) || ''))
-      : String(item?.contextCollectionId || ''),
+    contextCollectionId: String(item?.contextCollectionId || ''),
     order: Number.isFinite(item?.order) ? item.order : index,
     createdAt: item?.createdAt || timestamp,
   }));
@@ -1837,14 +1834,12 @@ export function validateBackup(backup, { relationComponentsAlreadyBuilt = false,
   });
 
   for (const domain of domains) {
-  const phraseCollections = collections.filter((item) => item.domainId === domain.id && item.type === 'system-phrases');
-  // Seed11 no longer requires or creates a phrase system table. A single
-  // legacy table is tolerated only while pre-Seed11 snapshots migrate.
-  if (domain.contentMode === 'structured') {
-    if (phraseCollections.length > 1) throw new Error(`结构化词域 ${domain.name} 最多只能保留一个旧系统短语表`);
-    if (phraseCollections[0] && phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('旧系统短语表 ID 无效');
-  } else if (phraseCollections.length) throw new Error(`非结构词域 ${domain.name} 不应持久化系统短语表`);
-}
+    const phraseCollections = collections.filter((item) => item.domainId === domain.id && item.type === 'system-phrases');
+    if (domain.contentMode === 'structured') {
+      if (phraseCollections.length !== 1) throw new Error(`结构化词域 ${domain.name} 必须恰有一个系统短语表`);
+      if (phraseCollections[0].id !== systemPhraseCollectionId(domain.id)) throw new Error('系统短语表 ID 无效');
+    } else if (phraseCollections.length) throw new Error(`非结构词域 ${domain.name} 不应持久化系统短语表`);
+  }
 
   for (const collection of collections) {
     if (!domainIds.has(collection.domainId)) throw new Error('词表指向不存在词域');
@@ -1873,7 +1868,7 @@ export function validateBackup(backup, { relationComponentsAlreadyBuilt = false,
     const entry = entryById.get(pin.entryId);
     const collection = collectionById.get(pin.contextCollectionId);
     const domainTotalId = entry ? systemDomainWordsCollectionId(entry.domainId) : '';
-    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || (entry?.kind === 'phrase' && pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID) || pin.contextCollectionId === domainTotalId || pin.contextCollectionId === systemDomainContentCollectionId(entry?.domainId || '');
+    const virtualValid = pin.contextCollectionId === SYSTEM_GLOBAL_WORDS_ID || pin.contextCollectionId === SYSTEM_GLOBAL_PHRASES_ID || pin.contextCollectionId === SYSTEM_GLOBAL_CONTENT_ID || pin.contextCollectionId === domainTotalId || pin.contextCollectionId === systemDomainContentCollectionId(entry?.domainId || '');
     if (!entry || pin.domainId !== entry.domainId || (!virtualValid && (!collection || collection.domainId !== entry.domainId))) {
       throw new Error('PIN 关联无效');
     }
@@ -1913,9 +1908,9 @@ export function buildProjection(backup) {
     membershipsByEntry.set(membership.entryId, list);
   });
   const projection = new Map(collections.map((item) => [item.id, []]));
-  const hasLegacyPhrases = entries.some((item) => item.kind === 'phrase') || collections.some((item) => item.type === 'system-phrases');
   projection.set(SYSTEM_GLOBAL_WORDS_ID, []);
-  if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
+  projection.set(SYSTEM_GLOBAL_PHRASES_ID, []);
+  projection.set(SYSTEM_GLOBAL_CONTENT_ID, []);
   for (const domain of domains) {
     if (domain.contentMode === 'nonStructured') projection.set(systemDomainContentCollectionId(domain.id), []);
     else projection.set(systemDomainWordsCollectionId(domain.id), []);
@@ -1923,6 +1918,7 @@ export function buildProjection(backup) {
 
   const globalWords = [];
   const globalPhrases = [];
+  const globalContent = [];
   for (const entry of entries) {
     const domain = domainById.get(entry.domainId);
     const candidates = (membershipsByEntry.get(entry.id) || [])
@@ -1934,6 +1930,7 @@ export function buildProjection(backup) {
 
     if (entry.kind === 'content' || domain?.contentMode === 'nonStructured') {
       projection.get(systemDomainContentCollectionId(entry.domainId))?.push(entry);
+      globalContent.push(entry);
       if (candidates[0]) projection.get(candidates[0].collection.id)?.push(entry);
       continue;
     }
@@ -1951,9 +1948,10 @@ export function buildProjection(backup) {
     || (domainOrder.get(a.domainId) ?? Number.MAX_SAFE_INTEGER) - (domainOrder.get(b.domainId) ?? Number.MAX_SAFE_INTEGER)
     || a.id.localeCompare(b.id);
   projection.set(SYSTEM_GLOBAL_WORDS_ID, globalWords.sort(globalSorter));
-  if (hasLegacyPhrases) projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
+  projection.set(SYSTEM_GLOBAL_PHRASES_ID, globalPhrases.sort(globalSorter));
+  projection.set(SYSTEM_GLOBAL_CONTENT_ID, globalContent.sort(globalSorter));
   for (const [collectionId, list] of projection.entries()) {
-    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID].includes(collectionId)) continue;
+    if ([SYSTEM_GLOBAL_WORDS_ID, SYSTEM_GLOBAL_PHRASES_ID, SYSTEM_GLOBAL_CONTENT_ID].includes(collectionId)) continue;
     list.sort((a, b) => a.normalizedText.localeCompare(b.normalizedText, 'en') || a.id.localeCompare(b.id));
   }
   return projection;

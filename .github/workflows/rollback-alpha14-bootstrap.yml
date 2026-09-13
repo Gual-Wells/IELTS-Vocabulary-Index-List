@@ -1,0 +1,106 @@
+name: Repair alpha14 rollback bootstrap
+
+on:
+  push:
+    paths:
+      - '.github/workflows/rollback-alpha14-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add rollback bootstrap compatibility
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('js/v3-db.js')
+          s = p.read_text(encoding='utf-8')
+
+          old_sig = "async function importFreshSeed(db, { onProgress = () => {} } = {}) {"
+          new_sig = "async function importFreshSeed(db, { onProgress = () => {}, forceReset = false } = {}) {"
+          if old_sig not in s:
+              raise SystemExit('importFreshSeed signature not found')
+          s = s.replace(old_sig, new_sig, 1)
+
+          old_resume = "  const resumed = state?.protocol === FRESH_IMPORT_PROTOCOL && state.planId === plan.planId;\n  if (!resumed) state = await resetFreshImport(db, plan.planId, plan.totalRecords);"
+          new_resume = "  const resumed = !forceReset && state?.protocol === FRESH_IMPORT_PROTOCOL && state.planId === plan.planId;\n  if (!resumed) state = await resetFreshImport(db, plan.planId, plan.totalRecords);"
+          if old_resume not in s:
+              raise SystemExit('fresh import resume block not found')
+          s = s.replace(old_resume, new_resume, 1)
+
+          old_init = '''export async function initializeDatabase({ onProgress = () => {} } = {}) {
+            const db = await openDatabase();
+            const existing = await getSetting('schemaVersion', null);
+            if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+            if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
+
+            return enqueueWrite(async () => {
+              const fresh = await importFreshSeed(db, { onProgress });
+              return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
+            });
+          }'''
+          new_init = '''async function alpha14SnapshotCompatible(db) {
+            const current = await readCurrentSnapshot(db);
+            if (!current) return false;
+            if (Number(current.settings?.builtInSeedRevision || 0) > BUILTIN_SEED_REVISION) return false;
+            try {
+              validateBackup(current);
+              return true;
+            } catch {
+              return false;
+            }
+          }
+
+          export async function initializeDatabase({ onProgress = () => {} } = {}) {
+            const db = await openDatabase();
+            const existing = await getSetting('schemaVersion', null);
+            if (Number(existing) === SCHEMA_VERSION) {
+              if (!(await alpha14SnapshotCompatible(db))) {
+                return enqueueWrite(async () => {
+                  onProgress({ phase: 'seed-import', label: '正在恢复 alpha.14 内置词库', percent: 2 });
+                  const fresh = await importFreshSeed(db, { onProgress, forceReset: true });
+                  return { migrated: false, initialized: true, rollbackReset: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
+                });
+              }
+              return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+            }
+            if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
+
+            return enqueueWrite(async () => {
+              const fresh = await importFreshSeed(db, { onProgress });
+              return { migrated: false, initialized: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
+            });
+          }'''
+          if old_init not in s:
+              raise SystemExit('initializeDatabase block not found')
+          s = s.replace(old_init, new_init, 1)
+          p.write_text(s, encoding='utf-8')
+
+          sw = Path('sw.js')
+          t = sw.read_text(encoding='utf-8')
+          old_cache = "v5.0.0-alpha.14-shell-20260908-1"
+          new_cache = "v5.0.0-alpha.14-rollback-20260913-1"
+          if old_cache not in t:
+              raise SystemExit('alpha14 cache generation not found')
+          sw.write_text(t.replace(old_cache, new_cache, 1), encoding='utf-8')
+          PY
+
+          node --check js/v3-db.js
+          node --check sw.js
+          git diff --check
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name 'Gual-Wells'
+          git config user.email 'suyuzhouwithgual7@gmail.com'
+          git add js/v3-db.js sw.js
+          git commit -m 'fix: make original alpha.14 rollback self-healing'
+          git push origin HEAD:main

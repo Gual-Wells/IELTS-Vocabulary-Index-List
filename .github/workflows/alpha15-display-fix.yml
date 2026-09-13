@@ -1,0 +1,115 @@
+name: Alpha15 display cleanup
+on:
+  push:
+    paths:
+      - '.github/workflows/alpha15-display-fix.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply requested display fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('js/v3-ui.js')
+          s = p.read_text(encoding='utf-8')
+
+          old = "renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });"
+          new = "renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });"
+          if old not in s:
+              raise SystemExit('home global vocabulary subtitle pattern missing')
+          s = s.replace(old, new, 1)
+
+          old = """  }, [
+            el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
+            el('div', { className: 'count', text: count }),
+          ]);"""
+          new = """  }, [
+            el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
+          ]);"""
+          if old not in s:
+              raise SystemExit('collection card count pattern missing')
+          s = s.replace(old, new, 1)
+
+          old = "el('span', { className: 'manager-count', text: managerEntryRatio(systemDomainWordsCollectionId(domain.id)), title: '占有 Entry / 实际 Entry' }),"
+          new = "el('span', { className: 'manager-count', text: state.entries.filter((entry) => entry.domainId === domain.id && entry.kind === 'word').length.toLocaleString(), title: '词汇总数' }),"
+          if old not in s:
+              raise SystemExit('manager total count pattern missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('css/v5.0.0-alpha.15.css')
+          s = p.read_text(encoding='utf-8')
+          old = '  grid-template-columns: minmax(0, 1fr) auto 16px;'
+          new = '  grid-template-columns: minmax(0, 1fr) 16px;'
+          if old not in s:
+              raise SystemExit('home grid columns pattern missing')
+          s = s.replace(old, new, 1)
+          old = '''.collection-card::after,\n.global-grid .collection-card::after {\n  content: "›";\n  grid-column: 3;'''
+          new = '''.collection-card::after,\n.global-grid .collection-card::after {\n  content: "›";\n  grid-column: 2;'''
+          if old not in s:
+              raise SystemExit('home chevron grid pattern missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('sw.js')
+          s = p.read_text(encoding='utf-8')
+          old = 'v5.0.0-alpha.15-oxford-preview-20260913-1'
+          new = 'v5.0.0-alpha.15-oxford-preview-20260913-2'
+          if old not in s:
+              raise SystemExit('service worker cache generation pattern missing')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Static QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-ui.js
+          node --check sw.js
+          grep -q "title: '词汇总数'" js/v3-ui.js
+          grep -q "subtitle: ''" js/v3-ui.js
+          if grep -q "className: 'count', text: count" js/v3-ui.js; then
+            echo 'Home collection count is still rendered'; exit 1
+          fi
+          grep -q 'grid-template-columns: minmax(0, 1fr) 16px' css/v5.0.0-alpha.15.css
+          grep -q 'v5.0.0-alpha.15-oxford-preview-20260913-2' sw.js
+      - name: Browser startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 >/tmp/vix-http.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No headless Chrome; static QA passed.'
+            exit 0
+          fi
+          "$chrome" --headless --no-sandbox --disable-gpu --virtual-time-budget=30000 --dump-dom http://127.0.0.1:8765/ >/tmp/vix-dom.html 2>/tmp/vix-chrome.log || { cat /tmp/vix-chrome.log; exit 1; }
+          if grep -q '应用无法安全启动' /tmp/vix-dom.html; then
+            cat /tmp/vix-chrome.log || true
+            exit 1
+          fi
+          echo 'BROWSER_STARTUP_SMOKE_OK'
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/v3-ui.js css/v5.0.0-alpha.15.css sw.js
+          git diff --cached --check
+          git commit -m 'fix: simplify alpha.15 home and manager counts'
+          git push origin HEAD:main

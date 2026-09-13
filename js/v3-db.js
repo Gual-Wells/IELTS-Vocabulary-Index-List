@@ -346,14 +346,14 @@ function reportFreshImport(onProgress, state, label = '正在导入内置词库'
   });
 }
 
-async function importFreshSeed(db, { onProgress = () => {} } = {}) {
+async function importFreshSeed(db, { onProgress = () => {}, forceReset = false } = {}) {
   onProgress({ phase: 'seed-download', label: '正在核验内置词库', percent: 3 });
   const manifest = await loadSeedRuntimeManifest();
   const meta = await loadSeedRuntimeAsset(manifest.meta);
   if (Number(meta?.schemaVersion) !== SCHEMA_VERSION) throw new Error('Seed5 runtime metadata is incompatible with the current schema');
   const plan = freshImportPlan(manifest, meta);
   let state = await readImportState(db);
-  const resumed = state?.protocol === FRESH_IMPORT_PROTOCOL && state.planId === plan.planId;
+  const resumed = !forceReset && state?.protocol === FRESH_IMPORT_PROTOCOL && state.planId === plan.planId;
   if (!resumed) state = await resetFreshImport(db, plan.planId, plan.totalRecords);
   reportFreshImport(onProgress, state, resumed ? '正在继续导入内置词库' : '正在导入内置词库');
 
@@ -489,10 +489,31 @@ async function ensureBuiltInSeedRevision(db) {
   });
 }
 
+async function alpha14SnapshotCompatible(db) {
+  const current = await readCurrentSnapshot(db);
+  if (!current) return false;
+  if (Number(current.settings?.builtInSeedRevision || 0) > BUILTIN_SEED_REVISION) return false;
+  try {
+    validateBackup(current);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function initializeDatabase({ onProgress = () => {} } = {}) {
   const db = await openDatabase();
   const existing = await getSetting('schemaVersion', null);
-  if (Number(existing) === SCHEMA_VERSION) return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+  if (Number(existing) === SCHEMA_VERSION) {
+    if (!(await alpha14SnapshotCompatible(db))) {
+      return enqueueWrite(async () => {
+        onProgress({ phase: 'seed-import', label: '正在恢复 alpha.14 内置词库', percent: 2 });
+        const fresh = await importFreshSeed(db, { onProgress, forceReset: true });
+        return { migrated: false, initialized: true, rollbackReset: true, builtInSeedRevision: BUILTIN_SEED_REVISION, ...fresh };
+      });
+    }
+    return { migrated: false, ...(await ensureBuiltInSeedRevision(db)) };
+  }
   if (existing != null) throw new Error('检测到旧内容世代。请完成 4.0.x 内容世代替换后再启动。');
 
   return enqueueWrite(async () => {

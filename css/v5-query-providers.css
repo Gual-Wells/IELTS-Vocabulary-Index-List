@@ -4,8 +4,8 @@
   min-width: 0 !important;
   grid-template-columns: repeat(4, 46px) !important;
 }
-.query-menu-option.collins-option,
-.query-menu-option.chatgpt-option { color: var(--accent-ink); }
+.query-menu-option.oxford-option { color: var(--accent-ink); }
+.query-menu-option.chatgpt-option { color: var(--accent); }
 
 html.provider-extension-open,
 html.provider-extension-open body { overflow: hidden !important; }

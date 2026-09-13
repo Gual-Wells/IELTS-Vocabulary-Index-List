@@ -24,9 +24,10 @@ import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, seman
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, deleteTtsSecret, getBridgeConfig,
-  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, requestSpeech, saveGroqSecret, saveMirrorFileRecord, saveTtsSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret, validateTtsSecret,
+  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
+  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
+import { deleteCollinsSecret, saveCollinsSecret, validateCollinsSecret } from './v5-collins-bridge.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -4580,78 +4581,6 @@ function providerResultBody(provider, entry, statusText = '准备查询') {
   ];
 }
 
-function createLazySpeechSession() {
-  const controller = new AbortController();
-  const buffers = new Map();
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  let context = null;
-  let source = null;
-  let activeControl = null;
-
-  const resetControl = () => {
-    if (activeControl) {
-      activeControl.disabled = false;
-      activeControl.dataset.state = '';
-    }
-    activeControl = null;
-  };
-  const stop = () => {
-    if (source) {
-      try { source.stop(); } catch {}
-      source.disconnect();
-      source = null;
-    }
-    resetControl();
-  };
-  const speak = async (text, control) => {
-    if (!AudioContextClass) throw new Error('当前浏览器不支持音频播放');
-    stop();
-    activeControl = control;
-    control.disabled = true;
-    control.dataset.state = 'loading';
-    context ||= new AudioContextClass();
-    // Start/resume inside the click activation; generation itself stays lazy.
-    await context.resume();
-    let buffer = buffers.get(text);
-    if (!buffer) {
-      const payload = await requestSpeech(text, { signal: controller.signal });
-      const binary = atob(String(payload?.audioContent || ''));
-      if (!binary) throw new Error('Bridge 返回的发音为空');
-      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      buffer = await context.decodeAudioData(bytes.buffer.slice(0));
-      buffers.set(text, buffer);
-    }
-    if (controller.signal.aborted || activeControl !== control) return;
-    source = context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(context.destination);
-    control.disabled = false;
-    control.dataset.state = 'playing';
-    source.addEventListener('ended', () => {
-      source?.disconnect();
-      source = null;
-      resetControl();
-    }, { once: true });
-    source.start();
-  };
-  return {
-    speak: async (text, control) => {
-      try { await speak(text, control); }
-      catch (error) {
-        resetControl();
-        if (error?.name !== 'AbortError' && error?.code !== 'cancelled') displayError(error);
-      }
-    },
-    dispose: () => {
-      controller.abort();
-      stop();
-      buffers.clear();
-      context?.close().catch(() => undefined);
-      context = null;
-    },
-  };
-}
-
 async function startProviderQuery(provider, entry, collection) {
   if (activeProviderQuery) {
     activeProviderQuery.controller.abort();
@@ -4666,13 +4595,10 @@ async function startProviderQuery(provider, entry, collection) {
   const modes = card.querySelector('.provider-mode-controls');
   let mode = 'lookup';
   let session = null;
-  let speechSession = null;
   const modeButtons = [];
   const setModes = () => modeButtons.forEach(([value, control]) => control.setAttribute('aria-pressed', String(mode === value)));
   const runQuery = async () => {
     session?.dispose();
-    speechSession?.dispose();
-    speechSession = null;
     const sequence = ++providerQuerySequence;
     const requestModel = provider === 'Groq' ? getSelectedModel() : '';
     content.replaceChildren();
@@ -4697,9 +4623,7 @@ async function startProviderQuery(provider, entry, collection) {
       const rendered = await session.run(async (signal, onState) => {
         const context = createEntryContext(getState(), entry, collection.id, { appVersion: APP_VERSION });
         if (mode === 'verification') return renderGroqVerification(await verifyVocabularyEntry(context, { signal, onState }));
-        const result = await queryVocabularyEntry(context, { signal, onState });
-        speechSession = createLazySpeechSession();
-        return renderGroqLookup(result, { onSpeak: speechSession.speak });
+        return renderGroqLookup(await queryVocabularyEntry(context, { signal, onState }));
       });
       if (!providerQueryIsCurrent(sequence)) return;
       content.replaceChildren(rendered);
@@ -4724,7 +4648,6 @@ async function startProviderQuery(provider, entry, collection) {
   } else { modes.hidden = true; }
   queryFrame.onDispose = () => {
     session?.dispose();
-    speechSession?.dispose();
     content.replaceChildren(); // dictionary results never survive their presentation frame
     if (activeProviderQuery?.frame === queryFrame) activeProviderQuery = null;
   };
@@ -6253,31 +6176,30 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
   }));
-  const ttsKey = bindCredentialMask(el('input', {
-    type: 'text', className: 'credential-input', value: '', placeholder: 'Google Cloud TTS API Key',
-    name: 'vix-tts-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+  const collinsKey = bindCredentialMask(el('input', {
+    type: 'text', className: 'credential-input', value: '', placeholder: 'Collins API Key',
+    name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
     spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
     'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
   }));
   const test = button('测试', 'secondary-button', async () => {
-    test.disabled = true;
     const oldText = test.textContent;
+    test.disabled = true;
     test.textContent = '测试中…';
     try {
       let config = { url: url.value, deviceToken: token.value };
-      const candidateKey = groqKey.value.trim();
-      const candidateTtsKey = ttsKey.value.trim();
+      const candidateGroqKey = groqKey.value.trim();
+      const candidateCollinsKey = collinsKey.value.trim();
       let result = await testBridgeConfig(config, { probeGroq: false });
       config = applyRecoveredBridgeCredential(config, result, token);
-      if (candidateKey) {
-        const validated = await validateGroqSecret(candidateKey, { config });
+      if (candidateGroqKey) {
+        const validated = await validateGroqSecret(candidateGroqKey, { config });
         const groqModels = Array.isArray(validated?.models) ? validated.models : [];
         result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
-      }
-      if (candidateTtsKey) await validateTtsSecret(candidateTtsKey, { config });
-      if (!candidateKey && !candidateTtsKey) {
+      } else {
         result = await testBridgeConfig(config);
       }
+      if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config });
       showToast('Bridge 配置可用');
     } finally {
       test.disabled = false;
@@ -6290,27 +6212,33 @@ function openBridgeDialog({ onConfigured = null } = {}) {
     syncCredentialMask(groqKey);
     showToast('Groq Key 已删除');
   });
-  const removeTtsKey = button('删除语音 Key', 'secondary-button', async () => {
-    await deleteTtsSecret({ config: { url: url.value, deviceToken: token.value } });
-    ttsKey.value = '';
-    syncCredentialMask(ttsKey);
-    showToast('语音 Key 已删除');
+  const removeCollinsKey = button('删除 Collins Key', 'secondary-button', async () => {
+    await deleteCollinsSecret({ config: { url: url.value, deviceToken: token.value } });
+    collinsKey.value = '';
+    syncCredentialMask(collinsKey);
+    showToast('Collins Key 已删除');
   });
   const clear = button('清除配置', 'secondary-button', () => {
     clearBridgeConfig();
     url.value = '';
     token.value = '';
+    groqKey.value = '';
+    collinsKey.value = '';
     syncCredentialMask(token);
-    showToast('本机 Bridge 配置已清除');
+    syncCredentialMask(groqKey);
+    syncCredentialMask(collinsKey);
+    showToast('Bridge 配置已清除');
   });
   const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
   const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
   openDialog({
     title: 'Bridge', variant: 'management', submitText: '保存',
     body: [
-      field('Bridge URL', url), field('Device Token', token), field('Groq API Key', groqKey),
-      field('Google Cloud TTS API Key', ttsKey),
-      el('div', { className: 'settings-row' }, [test, removeKey, removeTtsKey, clear]),
+      field('Bridge URL', url),
+      field('Device Token', token),
+      field('Groq API Key', groqKey),
+      field('Collins API Key', collinsKey),
+      el('div', { className: 'settings-row' }, [test, removeKey, removeCollinsKey, clear]),
       el('section', { className: 'bridge-integration-resources' }, [
         el('h3', { text: '集成资源' }),
         el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
@@ -6325,23 +6253,20 @@ function openBridgeDialog({ onConfigured = null } = {}) {
           await saveGroqSecret(groqKey.value, { config: nextConfig });
           groqKey.value = '';
           syncCredentialMask(groqKey);
-        }
-        catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
+        } catch (error) { throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`); }
       }
-      if (ttsKey.value.trim()) {
+      if (collinsKey.value.trim()) {
         try {
-          await saveTtsSecret(ttsKey.value, { config: nextConfig });
-          ttsKey.value = '';
-          syncCredentialMask(ttsKey);
-        }
-        catch (error) { throw new Error(`语音 Key 保存失败：${error?.message || String(error)}`); }
+          await saveCollinsSecret(collinsKey.value, { config: nextConfig });
+          collinsKey.value = '';
+          syncCredentialMask(collinsKey);
+        } catch (error) { throw new Error(`Collins Key 保存失败：${error?.message || String(error)}`); }
       }
-      result = await testBridgeConfig(nextConfig);
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
-      const activeModelIds = Array.isArray(result?.groqModels)
-        ? result.groqModels.filter((item) => item?.active !== false && typeof item?.id === 'string').map((item) => item.id)
-        : [];
       setBridgeConfig(nextConfig);
+      result = await testBridgeConfig(nextConfig);
+      const activeModelIds = Array.isArray(result?.groqModels)
+        ? result.groqModels.map((item) => String(item?.id || '')).filter(Boolean)
+        : [];
       if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
       onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
       scheduleMirrorContextSync({ notifyFailure: true });

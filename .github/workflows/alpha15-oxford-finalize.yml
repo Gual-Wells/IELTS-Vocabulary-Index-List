@@ -1,0 +1,104 @@
+name: Alpha15 Oxford finalize
+on:
+  push:
+    paths:
+      - '.github/workflows/alpha15-oxford-finalize.yml'
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply final alpha.15 presentation wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ui = Path('js/v3-ui.js')
+          text = ui.read_text(encoding='utf-8')
+          old = """  elements['page-title'].textContent = 'Vocabulary Index';\n  elements['page-subtitle'].textContent = APP_VERSION;\n  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });"""
+          new = """  elements['page-title'].textContent = 'Vocabulary Index';\n  elements['page-subtitle'].textContent = '';\n  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });"""
+          if old not in text:
+              raise SystemExit('renderHome subtitle pattern missing')
+          ui.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          sw = Path('sw.js')
+          text = sw.read_text(encoding='utf-8')
+          old = 'v5.0.0-alpha.15-oxford-preview-20260913-2'
+          new = 'v5.0.0-alpha.15-oxford-reference-20260913-3'
+          if old not in text:
+              raise SystemExit('service worker cache pattern missing')
+          sw.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Static QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/v3-ui.js
+          node --check sw.js
+          python3 - <<'PY'
+          from pathlib import Path
+          css = Path('css/v5.0.0-alpha.15.css').read_text(encoding='utf-8')
+          assert css.count('{') == css.count('}'), 'unbalanced CSS braces'
+          for token in ['#eb0030', '#f5efdc', '--ox-chrome: #000000', '.modal-card-search', '.settings-section', '.manager-domain']:
+              assert token in css, token
+          html = Path('index.html').read_text(encoding='utf-8')
+          assert 'content="#eb0030" media="(prefers-color-scheme: light)"' in html
+          assert 'content="#000000" media="(prefers-color-scheme: dark)"' in html
+          ui = Path('js/v3-ui.js').read_text(encoding='utf-8')
+          assert "elements['page-subtitle'].textContent = '';" in ui
+          assert "title: '词汇总数'" in ui
+          assert 'managerEntryRatio(collection.id)' in ui
+          sw = Path('sw.js').read_text(encoding='utf-8')
+          assert 'v5.0.0-alpha.15-oxford-reference-20260913-3' in sw
+          PY
+          git diff --check
+      - name: Browser startup and visual smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 >/tmp/vix-http.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$chrome" ]; then
+            echo 'No headless Chrome; static QA passed.'
+            exit 0
+          fi
+          "$chrome" --headless --no-sandbox --disable-gpu --window-size=430,932 --virtual-time-budget=35000 --dump-dom http://127.0.0.1:8765/ >/tmp/vix-dom.html 2>/tmp/vix-chrome.log || { cat /tmp/vix-chrome.log; exit 1; }
+          if grep -q '应用无法安全启动' /tmp/vix-dom.html; then
+            cat /tmp/vix-chrome.log || true
+            exit 1
+          fi
+          "$chrome" --headless --no-sandbox --disable-gpu --window-size=430,932 --virtual-time-budget=35000 --screenshot=/tmp/vix-light.png http://127.0.0.1:8765/ >/tmp/light.log 2>&1 || true
+          "$chrome" --headless --no-sandbox --disable-gpu --force-dark-mode --window-size=430,932 --virtual-time-budget=35000 --screenshot=/tmp/vix-dark.png http://127.0.0.1:8765/ >/tmp/dark.log 2>&1 || true
+          echo 'BROWSER_STARTUP_SMOKE_OK'
+      - name: Upload visual smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha15-oxford-smoke
+          path: |
+            /tmp/vix-light.png
+            /tmp/vix-dark.png
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Commit final wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/v3-ui.js sw.js
+          git diff --cached --check
+          git commit -m 'style: finish Oxford alpha.15 presentation wiring'
+          git push origin HEAD:main

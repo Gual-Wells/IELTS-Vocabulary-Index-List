@@ -21,6 +21,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path('js/v3-ui.js')
           s = p.read_text(encoding='utf-8')
@@ -31,16 +32,9 @@ jobs:
               raise SystemExit('home global vocabulary subtitle pattern missing')
           s = s.replace(old, new, 1)
 
-          old = """  }, [
-            el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
-            el('div', { className: 'count', text: count }),
-          ]);"""
-          new = """  }, [
-            el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
-          ]);"""
-          if old not in s:
-              raise SystemExit('collection card count pattern missing')
-          s = s.replace(old, new, 1)
+          s, count = re.subn(r"\n\s*el\('div', \{ className: 'count', text: count \}\),", '', s, count=1)
+          if count != 1:
+              raise SystemExit(f'collection card count removal matched {count} times')
 
           old = "el('span', { className: 'manager-count', text: managerEntryRatio(systemDomainWordsCollectionId(domain.id)), title: '占有 Entry / 实际 Entry' }),"
           new = "el('span', { className: 'manager-count', text: state.entries.filter((entry) => entry.domainId === domain.id && entry.kind === 'word').length.toLocaleString(), title: '词汇总数' }),"

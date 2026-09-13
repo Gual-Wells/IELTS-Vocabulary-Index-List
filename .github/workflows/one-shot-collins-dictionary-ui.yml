@@ -1,0 +1,116 @@
+name: One-shot Collins dictionary selector
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-shot-collins-dictionary-ui.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch Bridge settings UI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/v3-ui.js')
+          s = path.read_text()
+
+          old = "import { deleteCollinsSecret, saveCollinsSecret, validateCollinsSecret } from './v5-collins-bridge.js';"
+          new = """import {
+            COLLINS_DICTIONARY_OPTIONS, deleteCollinsSecret, getCollinsDictionaryPreference,
+            saveCollinsSecret, setCollinsDictionaryPreference, validateCollinsSecret,
+          } from './v5-collins-bridge.js';"""
+          if old not in s:
+              raise SystemExit('Collins import anchor not found')
+          s = s.replace(old, new, 1)
+
+          anchor = """  }));
+          const test = button('测试', 'secondary-button', async () => {"""
+          inserted = """  }));
+          const collinsDictionary = el('select', {
+            name: 'vix-collins-dictionary', autocomplete: 'off',
+          });
+          for (const option of COLLINS_DICTIONARY_OPTIONS) {
+            collinsDictionary.append(el('option', { value: option.code, text: option.label }));
+          }
+          collinsDictionary.value = getCollinsDictionaryPreference();
+          const test = button('测试', 'secondary-button', async () => {"""
+          if anchor not in s:
+              raise SystemExit('Collins dictionary insertion anchor not found')
+          s = s.replace(anchor, inserted, 1)
+
+          old = """      const candidateGroqKey = groqKey.value.trim();
+                const candidateCollinsKey = collinsKey.value.trim();"""
+          new = """      const candidateGroqKey = groqKey.value.trim();
+                const candidateCollinsKey = collinsKey.value.trim();
+                const selectedCollinsDictionary = collinsDictionary.value;"""
+          if old not in s:
+              raise SystemExit('Test candidate anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config });"
+          new = "if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config, dictionaryCode: selectedCollinsDictionary });"
+          if old not in s:
+              raise SystemExit('Collins test call anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """      field('Groq API Key', groqKey),
+                field('Collins API Key', collinsKey),"""
+          new = """      field('Groq API Key', groqKey),
+                field('Collins API Key', collinsKey),
+                field('Collins 目标词典', collinsDictionary, '仅列出当前 Collins API 申请中的两部 American English 词典。'),"""
+          if old not in s:
+              raise SystemExit('Bridge field list anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """      if (collinsKey.value.trim()) {
+                  try {
+                    await saveCollinsSecret(collinsKey.value, { config: nextConfig });
+                    collinsKey.value = '';
+                    syncCredentialMask(collinsKey);
+                  } catch (error) { throw new Error(`Collins Key 保存失败：${error?.message || String(error)}`); }
+                }
+                setBridgeConfig(nextConfig);"""
+          new = """      const selectedCollinsDictionary = collinsDictionary.value;
+                if (collinsKey.value.trim()) {
+                  try {
+                    await saveCollinsSecret(collinsKey.value, { config: nextConfig, dictionaryCode: selectedCollinsDictionary });
+                    collinsKey.value = '';
+                    syncCredentialMask(collinsKey);
+                  } catch (error) { throw new Error(`Collins Key 保存失败：${error?.message || String(error)}`); }
+                }
+                setCollinsDictionaryPreference(selectedCollinsDictionary);
+                setBridgeConfig(nextConfig);"""
+          if old not in s:
+              raise SystemExit('Collins save anchor not found')
+          s = s.replace(old, new, 1)
+
+          path.write_text(s)
+          PY
+      - name: Validate JavaScript syntax
+        run: |
+          node --check js/v3-ui.js
+          node --check js/v5-collins-bridge.js
+          node --check js/v5-query-providers.js
+      - name: Commit and retire one-shot workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/one-shot-collins-dictionary-ui.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: expose Collins dictionary selector"
+          git push origin HEAD:main

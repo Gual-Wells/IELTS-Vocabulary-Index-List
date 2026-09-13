@@ -1,12 +1,12 @@
 {
   "name": "VIX",
   "short_name": "VIX",
-  "description": "本地优先、按词域组织的英语词汇索引。",
+  "description": "本地优先、可审计的英语词汇、短语与非结构化内容索引。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f5efdc",
-  "theme_color": "#eb0030",
+  "background_color": "#fafafa",
+  "theme_color": "#fafafa",
   "icons": [
     {
       "src": "./assets/icons/vix-icon-192-v4.png",

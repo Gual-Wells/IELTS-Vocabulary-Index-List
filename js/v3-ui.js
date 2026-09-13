@@ -1407,6 +1407,7 @@ function collectionCard(collection) {
     on: { click: () => { navigateCollection(collection.id, '', 'home').catch(displayError); } },
   }, [
     el('div', { className: 'collection-card-title' }, [el('h3', { text: collection.name })]),
+    el('div', { className: 'count', text: count }),
   ]);
 }
 
@@ -1580,7 +1581,7 @@ function libraryManagerBody(draft) {
       el('div', { className: 'manager-row fixed' }, [
         el('span', { className: 'manager-lock', text: '1' }),
         el('span', { className: 'manager-name', text: '词汇总表' }),
-        el('span', { className: 'manager-count', text: state.entries.filter((entry) => entry.domainId === domain.id && entry.kind === 'word').length.toLocaleString(), title: '词汇总数' }),
+        el('span', { className: 'manager-count', text: managerEntryRatio(systemDomainWordsCollectionId(domain.id)), title: '占有 Entry / 实际 Entry' }),
       ]),
     ]);
     const list = el('div', { className: 'manager-list' });
@@ -2539,8 +2540,8 @@ function renderHome(token = renderRevision) {
   setContextDockVisible(elements['pin-bar'], 'has-pin', false, { clearAfterHide: true });
   elements['back-to-top']?.classList.add('hidden');
   elements['page-title'].textContent = 'Vocabulary Index';
-  elements['page-subtitle'].textContent = '';
-  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: '' });
+  elements['page-subtitle'].textContent = APP_VERSION;
+  renderLargeTitle({ eyebrow: 'VOCABULARY INDEX', title: '词汇索引', subtitle: `${(state.projectionUniqueCounts.get(SYSTEM_GLOBAL_WORDS_ID) || 0).toLocaleString()} 个全局词汇` });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '设置');
 
@@ -2627,11 +2628,17 @@ function renderCollection(token = renderRevision) {
     else if (entry.kind === 'content') contents += 1;
     else words += 1;
   }
-  elements['page-subtitle'].textContent = '';
+  const countText = collection.type === 'normal'
+    ? (contents ? `${contents.toLocaleString()} 内容` : `${words.toLocaleString()} 词`)
+    : (globalSystemView ? (state.projectionUniqueCounts.get(collection.id) || 0) : allEntries.length).toLocaleString();
+  const viewLabel = collection.type === 'normal'
+    ? (currentViewKind === 'content' ? '内容视图' : '词汇视图') : '';
+  const collectionSubtitle = [countText, viewLabel].filter(Boolean).join(' · ');
+  elements['page-subtitle'].textContent = collectionSubtitle;
   renderLargeTitle({
     eyebrow: activeMirrorLabel ? 'MIRROR · ' + collection.name : domain?.name || (globalSystemView ? '全局索引' : ''),
     title: activeMirrorLabel || collection.name,
-    subtitle: '',
+    subtitle: collectionSubtitle,
   });
   elements['settings-button'].replaceChildren(svgIcon('more'));
   elements['settings-button'].setAttribute('aria-label', '更多');
@@ -5723,15 +5730,9 @@ function openSearchDialog() {
     } catch (error) { if (sequence === requestSequence) displayError(error); }
     finally { if(sequence===requestSequence){ aiButton.disabled=false; aiButton.textContent='AI 联想'; } }
   });
-  const searchContent = el('div', { className: 'search-modal-content' }, [
-    el('div', { className: 'search-controls' }, [
-      el('div', { className: 'search-query-row' }, [input, aiButton]),
-      el('div', { className: 'search-scope-row' }, [el('span', { className: 'search-scope-label', text: '搜索范围' }), scope]),
-    ]),
-    status, results,
-  ]);
+  const searchContent = el('div', { className: 'search-modal-content' }, [el('div', { className: 'search-controls' }, [input, scope, aiButton]), status, results]);
   activeSearchFrame = openDialog({
-    title: '搜索', body: [searchContent], showCancel: false, variant: 'search', kind: 'search',
+    title: '搜索内容', body: [searchContent], showCancel: false, variant: 'search', kind: 'search',
   });
 }
 
@@ -5775,24 +5776,10 @@ function openBridgeDialog({ onConfigured = null } = {}) {
   const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX Function' });
   const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
   openDialog({ title: 'Bridge', variant: 'management', submitText: '保存', body: [
-    el('div', { className: 'bridge-settings' }, [
-      el('section', { className: 'bridge-section' }, [
-        el('h3', { text: '连接' }),
-        field('Bridge URL', url), field('Device Token', token),
-      ]),
-      el('section', { className: 'bridge-section' }, [
-        el('h3', { text: 'AI 搜索' }),
-        field('Groq 查询 API Key', queryKey, '用于搜索中的 AI 联想；由 Bridge 保存。'),
-      ]),
-      el('section', { className: 'bridge-section bridge-actions-section' }, [
-        el('h3', { text: '操作' }),
-        el('div', { className: 'bridge-action-list' }, [test, removeQueryKey, clear]),
-      ]),
-      el('section', { className: 'bridge-section bridge-integration-resources' }, [
-        el('h3', { text: '集成资源' }),
-        el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
-      ]),
-    ]),
+    field('Bridge URL', url), field('Device Token', token),
+    field('Groq 查询 API Key', queryKey, '用于搜索中的 AI 联想；由 Bridge 保存。'),
+    el('div', { className: 'settings-row' }, [test, removeQueryKey, clear]),
+    el('section', { className: 'bridge-integration-resources' }, [el('h3', { text: '集成资源' }), el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink])]),
   ], onSubmit: async () => {
     let nextConfig = { url: url.value, deviceToken: token.value };
     const probe = await testBridgeConfig(nextConfig, { probeGroq: false }); nextConfig = applyRecoveredBridgeCredential(nextConfig, probe, token); setBridgeConfig(nextConfig);

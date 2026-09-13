@@ -85,8 +85,8 @@ sw = Path('sw.js')
 w = sw.read_text()
 w = replace_once(
     w,
-    'gual-vocabulary-index-v5.0.0-alpha.14-providers-20260913-4',
-    'gual-vocabulary-index-v5.0.0-alpha.14-providers-20260914-5',
+    'v5.0.0-alpha.14-providers-20260913-4',
+    'v5.0.0-alpha.14-providers-20260914-5',
     'service worker cache generation',
 )
 sw.write_text(w)

@@ -7,6 +7,7 @@ import {
   refreshStudyDate, search, setCalendarMonth, setDomainGlossEnabled, setLastPosition, setNumberMode, setViewMode, subscribe, togglePin, undo,
   deleteMirror, getMirrorState, importMirrorCandidates, installMirrorCurrent, selectMirror, setMirrorEnabled,
 } from './v3-store.js';
+import { getModelCatalog, getSelectedModel, refreshModels, saveModelCatalog, selectModel, suggestSearchTerms } from './v3-ai.js';
 import {
   downloadText, entriesToCsv, readImportFile,
 } from './v3-import.js';
@@ -18,10 +19,9 @@ import { clampRootScrollTarget, createScrollCoordinator, geometryIsStable, seman
 import { ALPHABET_KEYS, MOTION_EASE, alphabetOrdinal, cameraTargetForActiveCell, createSemanticAxis, exponentialApproach, physicalAtSemantic, physicalScrollDuration, semanticAtPhysical, semanticScrollDuration } from './v3-motion-runtime.js';
 import { buildMirrorContext, extendMirrorRecord, prepareMirrorResult } from './v5-mirror3.js';
 import {
-  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteMirrorFile, getBridgeConfig,
-  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext,
+  acknowledgeMirrorRun, bridgeConfigured, cacheMirrorFileCatalog, clearBridgeConfig, deleteGroqSecret, deleteMirrorFile, getBridgeConfig,
+  getCachedMirrorFileCatalog, getMirrorFile, getMirrorInbox, listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,
 } from './v5-bridge.js';
-import { cachedGroqSearchModels, clearGroqSearchSecret, configureGroqSearchSecret, getGroqSearchModel, listGroqSearchModels, runGroqSearch, setGroqSearchModel, validateGroqSearchSecret } from './v5-groq-search.js';
 import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';
 
 /** @type {Record<string, any>} */
@@ -5642,6 +5642,10 @@ function closeReview() {
 }
 
 
+function isChineseQuery(value) {
+  return /[\u3400-\u9fff]/u.test(String(value || ''));
+}
+
 function openSearchDialog() {
   const state = getState();
   const input = el('input', { type: 'search', placeholder: '搜索', autocomplete: 'off', spellcheck: false, inputMode: 'search' });
@@ -5652,8 +5656,11 @@ function openSearchDialog() {
   for (const domain of domains) {
     scope.append(el('option', { value: `domain:${domain.id}`, text: `${domain.name} · 全部` }));
     const group = el('optgroup', { label: domain.name });
-    if (domain.contentMode === 'nonStructured') group.append(el('option', { value: `domain-content:${domain.id}`, text: '内容总表' }));
-    else group.append(el('option', { value: `domain-words:${domain.id}`, text: '词汇总表' }));
+    if (domain.contentMode === 'nonStructured') {
+      group.append(el('option', { value: `domain-content:${domain.id}`, text: '内容总表' }));
+    } else {
+      group.append(el('option', { value: `domain-words:${domain.id}`, text: '词汇总表' }));
+    }
     for (const collection of state.collections.filter((item) => item.domainId === domain.id && item.type === 'normal' && !item.hidden).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name))) {
       group.append(el('option', { value: `collection:${collection.id}`, text: collection.name }));
     }
@@ -5666,14 +5673,10 @@ function openSearchDialog() {
   else if (current.type === 'system-domain-content') scope.value = `domain-content:${current.domainId}`;
   else scope.value = `domain-words:${current.domainId}`;
 
+  const aiButton = button('AI 联想', 'secondary-button hidden', async () => {});
   const status = el('p', { className: 'search-status help-text' });
   const results = el('div', { className: 'search-results' });
-  const localMode = button('词库', 'search-mode-button active', () => setMode('local'));
-  const aiMode = button('AI', 'search-mode-button', () => setMode('ai'));
-  const aiSubmit = button('搜索', 'primary-button ai-search-submit hidden', () => runAiSearch());
-  const modeBar = el('div', { className: 'search-mode-switch', role: 'tablist', 'aria-label': '搜索方式' }, [localMode, aiMode]);
-  let mode = 'local';
-  let searchTimer = 0, allowedScopeValue = '', aiSequence = 0, aiController = null;
+  let requestSequence = 0, searchTimer = 0, allowedScopeValue = '';
   let allowedIds = new Set();
 
   const visibleIds = () => {
@@ -5708,76 +5711,29 @@ function openSearchDialog() {
     results.replaceChildren(...entries.map((entry) => searchResultButton(entry, selectResult, targetCollectionForResult(entry))));
   };
   const renderLocal = () => {
-    if (mode !== 'local') return;
+    requestSequence += 1;
     const query = input.value.trim();
+    aiButton.classList.toggle('hidden', !isChineseQuery(query));
     if (!query) { status.textContent=''; results.replaceChildren(); return; }
     showEntries(search(query, { limit: 80, entryIds: visibleIds() }));
   };
-  async function runAiSearch() {
-    if (mode !== 'ai') return;
-    const query = input.value.trim();
-    if (!query) { status.textContent = '请输入 AI 搜索内容'; results.replaceChildren(); return; }
-    aiController?.abort();
-    aiController = new AbortController();
-    const sequence = ++aiSequence;
-    status.textContent = '正在搜索…';
-    aiSubmit.disabled = true;
-    results.replaceChildren(el('div', { className: 'ai-search-skeleton', 'aria-hidden': 'true' }));
-    try {
-      const collection = currentCollectionId ? state.collectionById.get(currentCollectionId) : null;
-      const domain = collection ? state.domainById.get(collection.domainId) : null;
-      const response = await runGroqSearch(query, {
-        signal: aiController.signal,
-        context: { collection: collection?.name || '', domain: domain?.name || '' },
-      });
-      if (sequence !== aiSequence || mode !== 'ai') return;
-      status.textContent = '';
-      results.replaceChildren(el('article', { className: 'ai-search-result' }, [
-        el('div', { className: 'ai-search-result-label', text: 'AI' }),
-        el('div', { className: 'ai-search-result-copy', text: response.answer }),
-      ]));
-    } catch (error) {
-      if (sequence !== aiSequence || error?.name === 'AbortError' || aiController?.signal.aborted) return;
-      status.textContent = error?.message || 'AI 搜索失败';
-      results.replaceChildren();
-    } finally {
-      if (sequence === aiSequence) aiSubmit.disabled = false;
-    }
-  }
-  function setMode(next) {
-    mode = next === 'ai' ? 'ai' : 'local';
-    aiController?.abort();
-    aiSequence += 1;
-    localMode.classList.toggle('active', mode === 'local');
-    aiMode.classList.toggle('active', mode === 'ai');
-    localMode.setAttribute('aria-selected', mode === 'local' ? 'true' : 'false');
-    aiMode.setAttribute('aria-selected', mode === 'ai' ? 'true' : 'false');
-    scope.classList.toggle('hidden', mode === 'ai');
-    aiSubmit.classList.toggle('hidden', mode !== 'ai');
-    input.placeholder = mode === 'ai' ? '向 AI 提问或输入词汇' : '搜索';
-    status.textContent = '';
-    results.replaceChildren();
-    if (mode === 'local') renderLocal();
-    input.focus();
-  }
-  input.addEventListener('input', () => {
-    if (mode !== 'local') return;
-    clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(renderLocal, 140);
-  });
-  input.addEventListener('keydown', (event) => {
-    if (mode === 'ai' && event.key === 'Enter' && !event.isComposing) {
-      event.preventDefault();
-      runAiSearch();
-    }
-  });
+  input.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(renderLocal, 140); });
   scope.addEventListener('change', () => { allowedScopeValue=''; clearTimeout(searchTimer); renderLocal(); });
-  const searchControls = el('div', { className: 'search-controls' }, [input, scope, aiSubmit]);
-  const searchContent = el('div', { className: 'search-modal-content ai-search-enabled' }, [modeBar, searchControls, status, results]);
+  aiButton.addEventListener('click', async () => {
+    const query = input.value.trim(); if (!query) return;
+    const sequence = ++requestSequence; aiButton.disabled=true; aiButton.textContent='联想中…'; status.textContent='';
+    try {
+      const terms = await suggestSearchTerms(query); if (sequence !== requestSequence || !activeSearchFrame?.layer?.isConnected || activeSearchFrame.closing) return;
+      const allowed = visibleIds(), seen = new Set(), found=[];
+      for (const term of terms) { for (const entry of search(term,{limit:80,entryIds:allowed})) { if(seen.has(entry.id)) continue; seen.add(entry.id); found.push(entry); if(found.length>=80) break; } if(found.length>=80) break; }
+      showEntries(found);
+    } catch (error) { if (sequence === requestSequence) displayError(error); }
+    finally { if(sequence===requestSequence){ aiButton.disabled=false; aiButton.textContent='AI 联想'; } }
+  });
+  const searchContent = el('div', { className: 'search-modal-content' }, [el('div', { className: 'search-controls' }, [input, scope, aiButton]), status, results]);
   activeSearchFrame = openDialog({
     title: '搜索内容', body: [searchContent], showCancel: false, variant: 'search', kind: 'search',
   });
-  activeSearchFrame.onDispose = () => { aiController?.abort(); aiSequence += 1; };
 }
 
 function syncCredentialMask(input) {
@@ -5802,110 +5758,94 @@ function openBridgeDialog({ onConfigured = null } = {}) {
   const saved = getBridgeConfig();
   const url = el('input', { type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev', autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' });
   const token = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token', name: 'vix-opaque-credential', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
-  const queryKey = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: '', placeholder: 'Groq Query API Key（留空保持现有）', name: 'vix-groq-query-secret', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
-  const model = el('select');
-  const modelStatus = el('p', { className: 'help-text provider-settings-status' });
-  const fillModels = (models = cachedGroqSearchModels()) => {
-    const selected = getGroqSearchModel();
-    model.replaceChildren(el('option', { value: '', text: models.length ? '自动选择' : '尚未读取模型' }));
-    for (const id of models) model.append(el('option', { value: id, text: id, selected: id === selected }));
-    if (selected && models.includes(selected)) model.value = selected;
-  };
-  fillModels();
-  const refreshModels = button('刷新模型', 'secondary-button', async () => {
-    refreshModels.disabled = true;
-    modelStatus.textContent = '正在读取模型…';
-    try {
-      const config = { url: url.value, deviceToken: token.value };
-      const models = await listGroqSearchModels({ config });
-      fillModels(models);
-      modelStatus.textContent = `${models.length} 个可用模型`;
-    } finally { refreshModels.disabled = false; }
-  });
-  const removeAiKey = button('删除 AI Key', 'secondary-button', async () => {
-    const config = { url: url.value, deviceToken: token.value };
-    await clearGroqSearchSecret({ config });
-    queryKey.value = '';
-    syncCredentialMask(queryKey);
-    fillModels([]);
-    modelStatus.textContent = 'AI 搜索 Key 已删除';
-  });
+  const queryKey = bindCredentialMask(el('input', { type: 'text', className: 'credential-input', value: '', placeholder: 'Groq Query API Key', name: 'vix-provider-secret', autocomplete: 'off', spellcheck: false, autocorrect: 'off', autocapitalize: 'none' }));
   const test = button('测试', 'secondary-button', async () => {
-    const previous = test.textContent;
-    test.disabled = true;
-    test.textContent = '测试中…';
+    const oldText = test.textContent; test.disabled = true; test.textContent = '测试中…';
     try {
       let config = { url: url.value, deviceToken: token.value };
-      const result = await testBridgeConfig(config);
+      let result = await testBridgeConfig(config, { probeGroq: false });
       config = applyRecoveredBridgeCredential(config, result, token);
-      if (queryKey.value.trim()) await validateGroqSearchSecret(queryKey.value, { config });
-      showToast(queryKey.value.trim() ? 'Bridge 与 AI Key 均可用' : 'Bridge 配置可用');
-    } finally {
-      test.disabled = false;
-      test.textContent = previous;
-    }
+      if (queryKey.value.trim()) await validateGroqSecret(queryKey.value.trim(), { config });
+      showToast('配置可用');
+    } finally { test.disabled = false; test.textContent = oldText; }
   });
-  const clear = button('清除配置', 'secondary-button', () => {
-    clearBridgeConfig();
-    url.value = '';
-    token.value = '';
-    syncCredentialMask(token);
-    showToast('Bridge 配置已清除');
+  const removeQueryKey = button('删除查询 Key', 'secondary-button', async () => {
+    await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } }); queryKey.value=''; syncCredentialMask(queryKey); showToast('查询 Key 已删除');
   });
+  const clear = button('清除配置', 'secondary-button', () => { clearBridgeConfig(); url.value=''; token.value=''; queryKey.value=''; syncCredentialMask(token); syncCredentialMask(queryKey); showToast('配置已清除'); });
   const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX Function' });
   const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
-  openDialog({
-    title: 'Bridge', variant: 'management', submitText: '保存',
-    body: [
-      field('Bridge URL', url), field('Device Token', token),
-      el('div', { className: 'settings-row' }, [test, clear]),
-      el('section', { className: 'settings-section bridge-ai-settings' }, [
-        el('h3', { text: 'AI 搜索' }),
-        field('Groq Query API Key', queryKey),
-        field('模型', model),
-        el('div', { className: 'settings-row' }, [refreshModels, removeAiKey]),
-        modelStatus,
-      ]),
-      el('section', { className: 'bridge-integration-resources' }, [el('h3', { text: '集成资源' }), el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink])]),
-    ],
-    onSubmit: async () => {
-      let nextConfig = { url: url.value, deviceToken: token.value };
-      const probe = await testBridgeConfig(nextConfig);
-      nextConfig = applyRecoveredBridgeCredential(nextConfig, probe, token);
-      setBridgeConfig(nextConfig);
-      if (queryKey.value.trim()) {
-        const models = await configureGroqSearchSecret(queryKey.value, { config: nextConfig });
-        fillModels(models);
-      }
-      setGroqSearchModel(model.value);
-      onConfigured?.();
-      showToast('Bridge 已保存');
-    },
-  });
+  openDialog({ title: 'Bridge', variant: 'management', submitText: '保存', body: [
+    field('Bridge URL', url), field('Device Token', token),
+    field('Groq 查询 API Key', queryKey, '用于搜索中的 AI 联想；由 Bridge 保存。'),
+    el('div', { className: 'settings-row' }, [test, removeQueryKey, clear]),
+    el('section', { className: 'bridge-integration-resources' }, [el('h3', { text: '集成资源' }), el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink])]),
+  ], onSubmit: async () => {
+    let nextConfig = { url: url.value, deviceToken: token.value };
+    const probe = await testBridgeConfig(nextConfig, { probeGroq: false }); nextConfig = applyRecoveredBridgeCredential(nextConfig, probe, token); setBridgeConfig(nextConfig);
+    if (queryKey.value.trim()) { await saveGroqSecret(queryKey.value.trim(), { config: nextConfig }); queryKey.value=''; syncCredentialMask(queryKey); }
+    onConfigured?.(); showToast('Bridge 已保存');
+  }});
 }
 
 function openSettingsDialog() {
   const state = getState();
+  const settingsController = new AbortController();
+  let modelRequest = null;
+  const model = el('select');
+  let draftModel = getSelectedModel();
+  let refreshedIds = null;
   const numberMode = el('select', {}, [
     el('option', { value: 'none', text: '无序号', selected: state.settings.numberMode === 'none' }),
     el('option', { value: 'group', text: '小标题内编号', selected: state.settings.numberMode === 'group' }),
     el('option', { value: 'global', text: '连续编号', selected: !['none', 'group'].includes(state.settings.numberMode) }),
   ]);
+  const renderModels = (catalog = getModelCatalog()) => {
+    model.replaceChildren(el('option', { value: '', text: '请选择可用模型' }),
+      ...catalog.map((item) => el('option', { value: item.id, text: item.id + ' · ' + item.label,
+        disabled: !item.available, selected: item.id === draftModel })));
+    model.value = draftModel;
+  };
+  model.addEventListener('change', () => { draftModel = model.value; });
+  renderModels();
+  const refresh = button('刷新模型目录', 'secondary-button', async () => {
+    modelRequest?.abort();
+    const request = modelRequest = new AbortController();
+    try {
+      refresh.disabled = true;
+      refresh.dataset.oldText = refresh.textContent || '';
+      refresh.textContent = '刷新中…';
+      const result = await refreshModels({ signal: request.signal, persist: false });
+      if (settingsController.signal.aborted || request.signal.aborted || modelRequest !== request) return;
+      refreshedIds = result.filter((item) => item.active).map((item) => item.id);
+      renderModels(result);
+      showToast('模型目录已更新');
+    } catch (error) {
+      if (!settingsController.signal.aborted && !request.signal.aborted && modelRequest === request) displayError(error);
+    } finally {
+      if (modelRequest === request) {
+        refresh.disabled = false;
+        refresh.textContent = refresh.dataset.oldText || '刷新模型目录';
+        modelRequest = null;
+      }
+    }
+  });
   const body = [
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Groq' }), field('查询模型', model), refresh]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '显示' }), field('序号', numberMode)]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '词库' }), el('div', { className: 'settings-row' }, [button('管理词库', 'secondary-button', openLibraryManager)])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: '数据' }), el('div', { className: 'settings-row' }, [button('数据交换', 'secondary-button', openDataExchangeDialog)])]),
-    el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }), el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog())])]),
+    el('section', { className: 'settings-section' }, [el('h3', { text: 'Bridge' }), el('div', { className: 'settings-row' }, [button('打开 Bridge', 'secondary-button', () => openBridgeDialog({ onConfigured: () => renderModels() }))])]),
     el('section', { className: 'settings-section' }, [el('h3', { text: 'Mirror' }), el('div', { className: 'settings-row' }, [button('选择文件', 'secondary-button', openMirrorDialog)])]),
     el('section', { className: 'settings-section settings-version' }, [el('span', { text: 'Vocabulary Index ' + APP_VERSION })]),
   ];
-  openDialog({
-    title: '设置', body, variant: 'management', submitText: '保存',
-    onSubmit: async () => {
-      await setNumberMode(numberMode.value);
-      showToast('设置已保存');
-    },
-  });
+  const frame = openDialog({ title: '设置', body, variant: 'management', submitText: '保存', onSubmit: async () => {
+    selectModel(model.value);
+    if (refreshedIds) saveModelCatalog(refreshedIds);
+    await setNumberMode(numberMode.value);
+    showToast('已保存');
+  } });
+  frame.onDispose = () => { settingsController.abort(); modelRequest?.abort(); };
 }
 
 function showMigrationNotice() {

@@ -1,0 +1,293 @@
+name: Repair provider UI and remove Google TTS
+on:
+  push:
+    paths:
+      - '.github/workflows/repair-provider-ui.yml'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def function_span(text, name):
+              m = re.search(r'^(?:export\s+)?(?:async\s+)?function\s+' + re.escape(name) + r'\s*\(', text, re.M)
+              if not m:
+                  raise SystemExit(f'function {name} not found')
+              brace = text.find('{', m.end())
+              if brace < 0:
+                  raise SystemExit(f'function {name} opening brace missing')
+              depth = 0
+              quote = None
+              esc = False
+              line_comment = False
+              block_comment = False
+              i = brace
+              while i < len(text):
+                  c = text[i]
+                  n = text[i+1] if i + 1 < len(text) else ''
+                  if line_comment:
+                      if c == '\n': line_comment = False
+                      i += 1; continue
+                  if block_comment:
+                      if c == '*' and n == '/': block_comment = False; i += 2; continue
+                      i += 1; continue
+                  if quote:
+                      if esc: esc = False
+                      elif c == '\\': esc = True
+                      elif c == quote: quote = None
+                      i += 1; continue
+                  if c == '/' and n == '/': line_comment = True; i += 2; continue
+                  if c == '/' and n == '*': block_comment = True; i += 2; continue
+                  if c in "'\"`": quote = c; i += 1; continue
+                  if c == '{': depth += 1
+                  elif c == '}':
+                      depth -= 1
+                      if depth == 0:
+                          end = i + 1
+                          while end < len(text) and text[end] in ' \t': end += 1
+                          if end < len(text) and text[end] == '\n': end += 1
+                          return m.start(), end
+                  i += 1
+              raise SystemExit(f'function {name} unterminated')
+
+          def replace_function(text, name, replacement):
+              a, b = function_span(text, name)
+              return text[:a] + replacement.rstrip() + '\n\n' + text[b:].lstrip('\n')
+
+          def remove_function(text, name):
+              a, b = function_span(text, name)
+              return text[:a] + text[b:]
+
+          # --- native UI: Collins beside Groq; Google TTS fully removed ---
+          p = Path('js/v3-ui.js')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('deleteGroqSecret, deleteMirrorFile, deleteTtsSecret, getBridgeConfig,', 'deleteGroqSecret, deleteMirrorFile, getBridgeConfig,')
+          s = s.replace('listMirrorFiles, requestSpeech, saveGroqSecret, saveMirrorFileRecord, saveTtsSecret, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret, validateTtsSecret,', 'listMirrorFiles, saveGroqSecret, saveMirrorFileRecord, setBridgeConfig, testBridgeConfig, uploadMirrorContext, validateGroqSecret,')
+          if "from './v5-collins-bridge.js'" not in s:
+              marker = "import { APP_VERSION, NAVIGATION_MODEL } from './v5-version.js';"
+              s = s.replace(marker, "import { deleteCollinsSecret, saveCollinsSecret, validateCollinsSecret } from './v5-collins-bridge.js';\n" + marker)
+          if 'function createLazySpeechSession' in s:
+              s = remove_function(s, 'createLazySpeechSession')
+          s = s.replace('  let speechSession = null;\n', '')
+          s = s.replace('    speechSession?.dispose();\n    speechSession = null;\n', '')
+          s = s.replace("        const result = await queryVocabularyEntry(context, { signal, onState });\n        speechSession = createLazySpeechSession();\n        return renderGroqLookup(result, { onSpeak: speechSession.speak });", "        return renderGroqLookup(await queryVocabularyEntry(context, { signal, onState }));")
+          s = s.replace('    speechSession?.dispose();\n', '')
+
+          bridge = r'''function openBridgeDialog({ onConfigured = null } = {}) {
+            const saved = getBridgeConfig();
+            const url = el('input', {
+              type: 'url', value: saved.url, placeholder: 'https://vix-bridge.example.workers.dev',
+              autocomplete: 'url', spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+            });
+            const token = bindCredentialMask(el('input', {
+              type: 'text', className: 'credential-input', value: saved.deviceToken, placeholder: 'Device Token',
+              name: 'vix-opaque-credential', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+              spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+              'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+            }));
+            const groqKey = bindCredentialMask(el('input', {
+              type: 'text', className: 'credential-input', value: '', placeholder: 'Groq API Key',
+              name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+              spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+              'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+            }));
+            const collinsKey = bindCredentialMask(el('input', {
+              type: 'text', className: 'credential-input', value: '', placeholder: 'Collins API Key',
+              name: 'vix-provider-secret', autocomplete: 'off', inputmode: 'text', enterkeyhint: 'done',
+              spellcheck: false, autocorrect: 'off', autocapitalize: 'none',
+              'data-lpignore': 'true', 'data-1p-ignore': 'true', 'data-bwignore': 'true', 'data-form-type': 'other',
+            }));
+            const test = button('测试', 'secondary-button', async () => {
+              const oldText = test.textContent;
+              test.disabled = true;
+              test.textContent = '测试中…';
+              try {
+                let config = { url: url.value, deviceToken: token.value };
+                const candidateGroqKey = groqKey.value.trim();
+                const candidateCollinsKey = collinsKey.value.trim();
+                let result = await testBridgeConfig(config, { probeGroq: false });
+                config = applyRecoveredBridgeCredential(config, result, token);
+                if (candidateGroqKey) {
+                  const validated = await validateGroqSecret(candidateGroqKey, { config });
+                  const groqModels = Array.isArray(validated?.models) ? validated.models : [];
+                  result = { ...result, groqReachable: true, groqModelCount: groqModels.length, groqModels };
+                } else {
+                  result = await testBridgeConfig(config);
+                }
+                if (candidateCollinsKey) await validateCollinsSecret(candidateCollinsKey, { config });
+                showToast('Bridge 配置可用');
+              } finally {
+                test.disabled = false;
+                test.textContent = oldText;
+              }
+            });
+            const removeKey = button('删除 Groq Key', 'secondary-button', async () => {
+              await deleteGroqSecret({ config: { url: url.value, deviceToken: token.value } });
+              groqKey.value = '';
+              syncCredentialMask(groqKey);
+              showToast('Groq Key 已删除');
+            });
+            const removeCollinsKey = button('删除 Collins Key', 'secondary-button', async () => {
+              await deleteCollinsSecret({ config: { url: url.value, deviceToken: token.value } });
+              collinsKey.value = '';
+              syncCredentialMask(collinsKey);
+              showToast('Collins Key 已删除');
+            });
+            const clear = button('清除配置', 'secondary-button', () => {
+              clearBridgeConfig();
+              url.value = '';
+              token.value = '';
+              groqKey.value = '';
+              collinsKey.value = '';
+              syncCredentialMask(token);
+              syncCredentialMask(groqKey);
+              syncCredentialMask(collinsKey);
+              showToast('Bridge 配置已清除');
+            });
+            const functionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX-Function.ps1', download: 'VIX-Function.ps1', text: 'VIX 函数' });
+            const instructionLink = el('a', { className: 'integration-resource-link', href: './integration/vix-function/VIX_PERSONALIZED_INSTRUCTIONS.md', download: 'VIX_PERSONALIZED_INSTRUCTIONS.md', text: '个性化指令' });
+            openDialog({
+              title: 'Bridge', variant: 'management', submitText: '保存',
+              body: [
+                field('Bridge URL', url),
+                field('Device Token', token),
+                field('Groq API Key', groqKey),
+                field('Collins API Key', collinsKey),
+                el('div', { className: 'settings-row' }, [test, removeKey, removeCollinsKey, clear]),
+                el('section', { className: 'bridge-integration-resources' }, [
+                  el('h3', { text: '集成资源' }),
+                  el('div', { className: 'bridge-download-row' }, [functionLink, instructionLink]),
+                ]),
+              ],
+              onSubmit: async () => {
+                let nextConfig = { url: url.value, deviceToken: token.value };
+                let result = await testBridgeConfig(nextConfig, { probeGroq: false });
+                nextConfig = applyRecoveredBridgeCredential(nextConfig, result, token);
+                if (groqKey.value.trim()) {
+                  try {
+                    await saveGroqSecret(groqKey.value, { config: nextConfig });
+                    groqKey.value = '';
+                    syncCredentialMask(groqKey);
+                  } catch (error) {
+                    throw new Error(`Groq Key 保存失败：${error?.message || String(error)}`);
+                  }
+                }
+                if (collinsKey.value.trim()) {
+                  try {
+                    await saveCollinsSecret(collinsKey.value, { config: nextConfig });
+                    collinsKey.value = '';
+                    syncCredentialMask(collinsKey);
+                  } catch (error) {
+                    throw new Error(`Collins Key 保存失败：${error?.message || String(error)}`);
+                  }
+                }
+                setBridgeConfig(nextConfig);
+                result = await testBridgeConfig(nextConfig);
+                const activeModelIds = Array.isArray(result?.groqModels)
+                  ? result.groqModels.map((item) => String(item?.id || '')).filter(Boolean)
+                  : [];
+                if (result?.groqReachable && activeModelIds.length) saveModelCatalog(activeModelIds);
+                onConfigured?.({ groqReady: Boolean(result?.groqReachable), activeModelIds });
+                scheduleMirrorContextSync({ notifyFailure: true });
+                warmMirrorRemoteCatalog();
+                scheduleMirrorInboxPoll();
+                showToast('Bridge 已保存');
+              },
+            });
+          }'''
+          s = replace_function(s, 'openBridgeDialog', bridge)
+          for dead in ['deleteTtsSecret', 'requestSpeech', 'saveTtsSecret', 'validateTtsSecret', 'ttsKey', 'Google Cloud TTS', 'createLazySpeechSession', 'speechSession']:
+              if dead in s:
+                  raise SystemExit(f'frontend TTS residue in v3-ui.js: {dead}')
+          p.write_text(s, encoding='utf-8')
+
+          # --- Provider renderer: remove speech controls and callbacks entirely ---
+          p = Path('js/v3-provider-views.js')
+          s = p.read_text(encoding='utf-8')
+          if 'function speechButton' in s:
+              s = remove_function(s, 'speechButton')
+          s = s.replace('export function renderGroqLookup(result, { onSpeak = null } = {}) {', 'export function renderGroqLookup(result) {')
+          s = s.replace("  if (onSpeak) headword.append(speechButton(result.headword, onSpeak));\n", '')
+          s = s.replace("      if (onSpeak) english.append(speechButton(item.english, onSpeak));\n", '')
+          if 'speechButton' in s or 'onSpeak' in s or 'provider-speech-button' in s:
+              raise SystemExit('speech renderer residue')
+          p.write_text(s, encoding='utf-8')
+
+          # --- Bridge client: remove Google TTS routes/state handling ---
+          p = Path('js/v5-bridge.js')
+          s = p.read_text(encoding='utf-8')
+          s = re.sub(r"\n  if \(status\?\.ttsState === 'master_key_mismatch'\) \{[\s\S]*?\n  \}\n  if \(status\?\.ttsState === 'unreadable'\) \{[\s\S]*?\n  \}\n", '\n', s, count=1)
+          for name in ['saveTtsSecret', 'validateTtsSecret', 'deleteTtsSecret', 'requestSpeech']:
+              if f'function {name}' in s:
+                  s = remove_function(s, name)
+          for dead in ['/v1/settings/tts', '/v1/tts/synthesize', 'Google Cloud TTS', 'ttsState', 'saveTtsSecret', 'validateTtsSecret', 'deleteTtsSecret', 'requestSpeech']:
+              if dead in s:
+                  raise SystemExit(f'TTS residue in v5-bridge.js: {dead}')
+          p.write_text(s, encoding='utf-8')
+
+          # --- Restore historical D1 provider icon presentation ---
+          p = Path('css/v5-query-providers.css')
+          s = p.read_text(encoding='utf-8')
+          old = ".query-menu-option.collins-option,\n.query-menu-option.chatgpt-option { color: var(--accent-ink); }"
+          new = "/* 4.7.3+D.1 historical provider color mapping. The SVG resources use currentColor;\n   do not flatten all four providers to black. */\n.query-menu-option.oxford-option { color: var(--accent-ink); }\n.query-menu-option.chatgpt-option { color: var(--accent); }"
+          if old not in s:
+              raise SystemExit('provider color block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Strip speech-only CSS from the shared provider stylesheet.
+          p = Path('css/provider-runtime.css')
+          s = p.read_text(encoding='utf-8')
+          s = re.sub(r"\n\.provider-speech-button \{[\s\S]*?\.provider-speech-button:focus-visible \{[^\n]*\}\n", '\n', s, count=1)
+          if 'provider-speech-button' in s:
+              raise SystemExit('speech CSS residue')
+          p.write_text(s, encoding='utf-8')
+
+          # Undo the two rejected add-on resources and temporary files.
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('  <link rel="stylesheet" href="./css/v5-query-provider-polish.css">\n', '')
+          s = s.replace('  <script type="module" src="./js/v5-collins-settings.js"></script>\n', '')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('sw.js')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('v5.0.0-alpha.14-providers-20260913-2', 'v5.0.0-alpha.14-providers-20260913-3')
+          s = s.replace("'./css/v5-query-providers.css', './css/v5-query-provider-polish.css',", "'./css/v5-query-providers.css',")
+          s = s.replace("'./js/v5-query-providers.js', './js/v5-collins-settings.js',", "'./js/v5-query-providers.js',")
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          rm -f css/v5-query-provider-polish.css js/v5-collins-settings.js .tmp-never .tmp-sw-content
+
+          # Static gates: no Google TTS frontend code and no rejected add-ons.
+          node --check js/v3-ui.js
+          node --check js/v3-provider-views.js
+          node --check js/v5-bridge.js
+          node --check js/v5-query-providers.js
+          node --check js/v5-collins-bridge.js
+          ! grep -RniE 'Google Cloud TTS|text:synthesize|/v1/settings/tts|/v1/tts/synthesize|requestSpeech|saveTtsSecret|validateTtsSecret|deleteTtsSecret|provider-speech-button' js css index.html sw.js
+          ! grep -nE 'v5-query-provider-polish|v5-collins-settings' index.html sw.js
+
+          # Remove this one-shot workflow in the same product commit.
+          rm -f .github/workflows/repair-provider-ui.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: restore historical provider UI and remove Google TTS'
+          git push origin HEAD:main

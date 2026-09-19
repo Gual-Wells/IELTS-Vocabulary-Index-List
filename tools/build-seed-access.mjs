@@ -23,7 +23,7 @@ const letter=e=>{const x=String(e.normalizedText||'').charAt(0).toUpperCase();re
 function validInternalDateLabel(label){const m=/^(\d{2})-(\d{2})$/.exec(label);if(!m)return false;const month=Number(m[1]),day=Number(m[2]);if(month<1||month>12||day<1)return false;const md=[31,29,31,30,31,30,31,31,30,31,30,31][month-1];return day<=md;}
 async function loadDates(recordCount){
   const files=[];
-  for(const fd of await fs.readdir(DATES,{withFileTypes:true}).catch(()=>[])){
+  for(const fd of await fs.readdir(DATES,{withFileTypes:true})){
     const m=/^(\d{2}-\d{2})\.json$/.exec(fd.name);
     if(!fd.isFile()||!m)throw Error('invalid date file '+fd.name);
     const date=m[1];

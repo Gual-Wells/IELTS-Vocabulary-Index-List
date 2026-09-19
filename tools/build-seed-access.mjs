@@ -6,8 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const OUT=path.join(ROOT,'data','seed-access');
+const DATES=path.join(OUT,'dates');
 const CHECK=process.argv.includes('--check');
-const SECTIONS=['word','phrase','content'];
+const DOMAIN_ID='domain_general_english';
+const SECTION='word';
 const LETTERS=[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ','#'];
 const SHARD=8192;
 const min=v=>JSON.stringify(v)+'\n';
@@ -18,30 +20,69 @@ async function arrays(specs,tag=false){const out=[];for(let i=0;i<specs.length;i
 const inc=(m,k)=>{const n=(m.get(k)||0)+1;m.set(k,n);return n;};
 const section=(e,d)=>d.contentMode==='nonStructured'?'content':e.kind==='phrase'?'phrase':e.kind==='content'?'content':'word';
 const letter=e=>{const x=String(e.normalizedText||'').charAt(0).toUpperCase();return /^[A-Z]$/.test(x)?x:'#';};
+const dateCmp=(a,b)=>{const [ay,am,ad]=a.split('-'),[by,bm,bd]=b.split('-'),A=BigInt(ay),B=BigInt(by);return A<B?-1:A>B?1:Number(am)-Number(bm)||Number(ad)-Number(bd);};
+const leap=y=>y%400n===0n||(y%4n===0n&&y%100n!==0n);
+function validInternalDate(year,month,day){const y=BigInt(year),m=Number(month),d=Number(day);if(y<1n||m<1||m>12||d<1)return false;const md=[31,leap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];return d<=md;}
+async function loadDates(recordCount){
+  const files=[];
+  for(const yd of await fs.readdir(DATES,{withFileTypes:true}).catch(()=>[])){
+    if(!yd.isDirectory()||!/^\d{4,}$/.test(yd.name)||BigInt(yd.name)<1n)throw Error('invalid date year '+yd.name);
+    for(const fd of await fs.readdir(path.join(DATES,yd.name),{withFileTypes:true})){
+      const m=/^(\d{2})-(\d{2})\.json$/.exec(fd.name);
+      if(!fd.isFile()||!m)throw Error('invalid date file '+yd.name+'/'+fd.name);
+      const date=yd.name+'-'+m[1]+'-'+m[2];
+      if(!validInternalDate(yd.name,m[1],m[2]))throw Error('invalid internal date '+date);
+      const rel='data/seed-access/dates/'+yd.name+'/'+fd.name;
+      const text=await fs.readFile(path.join(ROOT,rel),'utf8'),v=JSON.parse(text);
+      if(v.protocol!=='vix-seed-access-date/1'||v.schemaVersion!==1||v.date!==date||!Array.isArray(v.globalRanks))throw Error('invalid date payload '+rel);
+      let prev=0;for(const rank of v.globalRanks){if(!Number.isInteger(rank)||rank<1||rank>recordCount||rank<=prev)throw Error('invalid date rank '+rel+'#'+rank);prev=rank;}
+      files.push({path:rel,date,globalRanks:v.globalRanks,gitBlobSha:gitsha(text)});
+    }
+  }
+  files.sort((a,b)=>dateCmp(a.date,b.date));
+  return files;
+}
 
 async function build(){
   const seedText=await fs.readFile(path.join(ROOT,'data','seed5-runtime','manifest.json'),'utf8');
   const seed=JSON.parse(seedText),meta=await json(seed.meta),entries=await arrays(seed.entries,true),memberships=await arrays(seed.memberships);
   if(entries.length!==seed.counts.entries||memberships.length!==seed.counts.memberships)throw Error('aggregate counts');
-  const domains=[...meta.domains].sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
-  const da=new Map(domains.map((d,i)=>[d.id,i+1])),db=new Map(domains.map(d=>[d.id,d]));
-  const collections=meta.collections.filter(c=>c.type==='normal'&&!c.hidden).sort((a,b)=>da.get(a.domainId)-da.get(b.domainId)||a.order-b.order||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
-  const ca=new Map(collections.map((c,i)=>[c.id,i+1])),cb=new Map(meta.collections.map(c=>[c.id,c])),bd=new Map(domains.map(d=>[d.id,[]]));
-  for(const c of collections)bd.get(c.domainId).push(c);
-  const cr=new Map();for(const cs of bd.values())cs.forEach((c,i)=>cr.set(c.id,i+1));
+  const domain=meta.domains.find(d=>d.id===DOMAIN_ID);if(!domain)throw Error('missing '+DOMAIN_ID);
+  const allDomains=[...meta.domains].sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
+  const domainAbsolute=allDomains.findIndex(d=>d.id===DOMAIN_ID)+1;
+  const allCollections=meta.collections.filter(c=>c.type==='normal'&&!c.hidden).sort((a,b)=>{const da=allDomains.findIndex(d=>d.id===a.domainId),db=allDomains.findIndex(d=>d.id===b.domainId);return da-db||a.order-b.order||a.name.localeCompare(b.name)||a.id.localeCompare(b.id);});
+  const collections=allCollections.filter(c=>c.domainId===DOMAIN_ID).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
+  const ca=new Map(allCollections.map((c,i)=>[c.id,i+1])),cr=new Map(collections.map((c,i)=>[c.id,i+1])),cb=new Map(meta.collections.map(c=>[c.id,c]));
   const mb=new Map();for(const m of memberships){if(!mb.has(m.entryId))mb.set(m.entryId,[]);mb.get(m.entryId).push(m);}
-  const owned=entries.map(e=>{const d=db.get(e.domainId);const q=(mb.get(e.id)||[]).map(m=>({m,c:cb.get(m.collectionId)})).filter(x=>x.c?.type==='normal'&&!x.c.hidden).sort((x,y)=>x.c.order-y.c.order||Number(x.m.sourceOrder||0)-Number(y.m.sourceOrder||0)||x.c.name.localeCompare(y.c.name)||x.c.id.localeCompare(y.c.id)||x.m.id.localeCompare(y.m.id));if(!d||!q.length)throw Error('unindexable '+e.id);return{e,d,c:q[0].c,m:q[0].m};});
-  owned.sort((x,y)=>da.get(x.d.id)-da.get(y.d.id)||cr.get(x.c.id)-cr.get(y.c.id)||Number(x.m.sourceOrder||0)-Number(y.m.sourceOrder||0)||x.e.id.localeCompare(y.e.id));
-  const dc=new Map(),cc=new Map(),sc=new Map(),lc=new Map();
-  const rows=owned.map((x,i)=>{const s=section(x.e,x.d),l=letter(x.e);return{entryId:x.e.id,text:x.e.text,normalizedText:x.e.normalizedText,entryShardIndex:x.e.__entryShardIndex,domainId:x.d.id,collectionId:x.c.id,section:s,letter:l,sourceOrder:Number(x.m.sourceOrder||0),domainAbsolute:da.get(x.d.id),collectionAbsolute:ca.get(x.c.id),collectionRelative:cr.get(x.c.id),sectionAbsolute:0,sectionPresent:0,letterAlphabet:0,letterPresent:0,globalRank:i+1,domainRank:inc(dc,x.d.id),collectionRank:inc(cc,x.c.id),sectionPriorityRank:inc(sc,x.c.id+'\0'+s),letterPriorityRank:inc(lc,x.c.id+'\0'+s+'\0'+l),sectionDisplayRank:0,letterDisplayRank:0};});
+  const owned=[];
+  for(const e of entries){
+    if(e.domainId!==DOMAIN_ID||section(e,domain)!==SECTION)continue;
+    const q=(mb.get(e.id)||[]).map(m=>({m,c:cb.get(m.collectionId)})).filter(x=>x.c?.type==='normal'&&!x.c.hidden&&x.c.domainId===DOMAIN_ID).sort((x,y)=>x.c.order-y.c.order||Number(x.m.sourceOrder||0)-Number(y.m.sourceOrder||0)||x.c.name.localeCompare(y.c.name)||x.c.id.localeCompare(y.c.id)||x.m.id.localeCompare(y.m.id));
+    if(!q.length)throw Error('unindexable '+e.id);
+    owned.push({e,c:q[0].c,m:q[0].m});
+  }
+  owned.sort((x,y)=>cr.get(x.c.id)-cr.get(y.c.id)||Number(x.m.sourceOrder||0)-Number(y.m.sourceOrder||0)||x.e.id.localeCompare(y.e.id));
+  const cc=new Map(),lc=new Map();
+  const rows=owned.map((x,i)=>{const l=letter(x.e);return{entryId:x.e.id,text:x.e.text,normalizedText:x.e.normalizedText,entryShardIndex:x.e.__entryShardIndex,collectionId:x.c.id,letter:l,sourceOrder:Number(x.m.sourceOrder||0),globalRank:i+1,collectionRank:inc(cc,x.c.id),letterPriorityRank:inc(lc,x.c.id+'\0'+l),collectionDisplayRank:0,letterDisplayRank:0,collectionAbsolute:ca.get(x.c.id),collectionRelative:cr.get(x.c.id),letterAlphabet:0,letterPresent:0,markDates:[]};});
+  const dateFiles=await loadDates(rows.length),byRank=new Map(rows.map(r=>[r.globalRank,r]));
+  for(const f of dateFiles)for(const rank of f.globalRanks)byRank.get(rank).markDates.push(f.date);
   const bc=new Map();for(const r of rows){if(!bc.has(r.collectionId))bc.set(r.collectionId,[]);bc.get(r.collectionId).push(r);}
-  const structure={schemaVersion:1,ordinalBase:1,domains:[]};
-  for(const d of domains){const dr=rows.filter(r=>r.domainId===d.id);const dn={id:d.id,name:d.name,order:d.order,absoluteOrdinal:da.get(d.id),count:dr.length,globalStartRank:dr[0]?.globalRank||0,globalEndRank:dr.at(-1)?.globalRank||0,collections:[]};for(const c of bd.get(d.id)){const rs=bc.get(c.id)||[];const cn={id:c.id,name:c.name,label:c.label||'',order:c.order,absoluteOrdinal:ca.get(c.id),relativeOrdinal:cr.get(c.id),count:rs.length,globalStartRank:rs[0]?.globalRank||0,globalEndRank:rs.at(-1)?.globalRank||0,sections:[]};const ps=SECTIONS.filter(s=>rs.some(r=>r.section===s));ps.forEach((s,si)=>{const sr=rs.filter(r=>r.section===s),disp=[...sr].sort((a,b)=>a.normalizedText.localeCompare(b.normalizedText,'en')||a.entryId.localeCompare(b.entryId));disp.forEach((r,i)=>r.sectionDisplayRank=i+1);sr.forEach(r=>{r.sectionAbsolute=SECTIONS.indexOf(s)+1;r.sectionPresent=si+1;});const sn={key:s,absoluteOrdinal:SECTIONS.indexOf(s)+1,presentOrdinal:si+1,count:sr.length,priorityGlobalRanks:sr.map(r=>r.globalRank),displayGlobalRanks:disp.map(r=>r.globalRank),letters:[]};const pl=LETTERS.filter(l=>sr.some(r=>r.letter===l));pl.forEach((l,li)=>{const pr=sr.filter(r=>r.letter===l),ds=disp.filter(r=>r.letter===l);ds.forEach((r,i)=>r.letterDisplayRank=i+1);pr.forEach(r=>{r.letterAlphabet=LETTERS.indexOf(l)+1;r.letterPresent=li+1;});sn.letters.push({key:l,alphabetOrdinal:LETTERS.indexOf(l)+1,presentOrdinal:li+1,count:pr.length,priorityGlobalRanks:pr.map(r=>r.globalRank),displayGlobalRanks:ds.map(r=>r.globalRank)});});cn.sections.push(sn);});dn.collections.push(cn);}structure.domains.push(dn);}
-  const fields=['globalRank','entryId','text','domainId','collectionId','section','letter','sourceOrder','domainRank','collectionPriorityRank','sectionPriorityRank','letterPriorityRank','sectionDisplayRank','letterDisplayRank','domainAbsoluteOrdinal','collectionAbsoluteOrdinal','collectionRelativeOrdinal','sectionAbsoluteOrdinal','sectionPresentOrdinal','letterAlphabetOrdinal','letterPresentOrdinal','entryShardIndex'];
-  const tuples=rows.map(r=>[r.globalRank,r.entryId,r.text,r.domainId,r.collectionId,r.section,r.letter,r.sourceOrder,r.domainRank,r.collectionRank,r.sectionPriorityRank,r.letterPriorityRank,r.sectionDisplayRank,r.letterDisplayRank,r.domainAbsolute,r.collectionAbsolute,r.collectionRelative,r.sectionAbsolute,r.sectionPresent,r.letterAlphabet,r.letterPresent,r.entryShardIndex]);
-  const st=min(structure),arts=[];for(let i=0;i<tuples.length;i+=SHARD){const a=tuples.slice(i,i+SHARD),n=arts.length,p='data/seed-access/records-'+String(n).padStart(3,'0')+'.json',t=min(a);arts.push({path:p,text:t,gitBlobSha:gitsha(t),count:a.length,globalStartRank:a[0][0],globalEndRank:a.at(-1)[0]});}
-  const manifest={protocol:'vix-seed-access/1',schemaVersion:1,ordinalBase:1,binding:{direction:'one-way',source:'data/seed5-runtime',target:'data/seed-access',sourceAuthoritative:true,targetDerived:true,writeBack:false},source:{manifestPath:'data/seed5-runtime/manifest.json',manifestSnapshot:seed,derivationInputs:['meta','entries','memberships']},semantics:{ownership:'first visible normal membership by collection.order, sourceOrder, collection.name, collection.id, membership.id',priority:'domain.order -> visible normal collection order -> owner sourceOrder -> entryId',display:'within collection section: normalizedText localeCompare(en) -> entryId',systemCollections:'excluded from priority ownership because they are runtime-derived views',sectionOrder:SECTIONS,letterOrder:LETTERS},recordTuple:fields,counts:{domains:domains.length,collections:collections.length,records:tuples.length},structure:{path:'data/seed-access/structure.json',gitBlobSha:gitsha(st)},records:arts.map(({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank})=>({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank}))};
-  return{out:new Map([['data/seed-access/manifest.json',min(manifest)],['data/seed-access/structure.json',st],...arts.map(a=>[a.path,a.text])]),files:new Set(arts.map(a=>path.basename(a.path)))};
+  const structure={schemaVersion:2,ordinalBase:1,scope:{domainId:DOMAIN_ID,domainName:domain.name,domainAbsoluteOrdinal:domainAbsolute,section:SECTION},collections:[]};
+  for(const c of collections){
+    const rs=bc.get(c.id)||[];if(!rs.length)continue;
+    const disp=[...rs].sort((a,b)=>a.normalizedText.localeCompare(b.normalizedText,'en')||a.entryId.localeCompare(b.entryId));
+    disp.forEach((r,i)=>r.collectionDisplayRank=i+1);
+    const cn={id:c.id,name:c.name,label:c.label||'',order:c.order,absoluteOrdinal:ca.get(c.id),relativeOrdinal:cr.get(c.id),count:rs.length,globalStartRank:rs[0].globalRank,globalEndRank:rs.at(-1).globalRank,priorityGlobalRanks:rs.map(r=>r.globalRank),displayGlobalRanks:disp.map(r=>r.globalRank),letters:[]};
+    const pl=LETTERS.filter(l=>rs.some(r=>r.letter===l));
+    pl.forEach((l,li)=>{const pr=rs.filter(r=>r.letter===l),ds=disp.filter(r=>r.letter===l);ds.forEach((r,i)=>r.letterDisplayRank=i+1);pr.forEach(r=>{r.letterAlphabet=LETTERS.indexOf(l)+1;r.letterPresent=li+1;});cn.letters.push({key:l,alphabetOrdinal:LETTERS.indexOf(l)+1,presentOrdinal:li+1,count:pr.length,priorityGlobalRanks:pr.map(r=>r.globalRank),displayGlobalRanks:ds.map(r=>r.globalRank)});});
+    structure.collections.push(cn);
+  }
+  const fields=['globalRank','entryId','text','collectionId','letter','sourceOrder','collectionPriorityRank','letterPriorityRank','collectionDisplayRank','letterDisplayRank','collectionAbsoluteOrdinal','collectionRelativeOrdinal','letterAlphabetOrdinal','letterPresentOrdinal','entryShardIndex','markDates'];
+  const tuples=rows.map(r=>[r.globalRank,r.entryId,r.text,r.collectionId,r.letter,r.sourceOrder,r.collectionRank,r.letterPriorityRank,r.collectionDisplayRank,r.letterDisplayRank,r.collectionAbsolute,r.collectionRelative,r.letterAlphabet,r.letterPresent,r.entryShardIndex,r.markDates]);
+  const markHash={protocol:'vix-seed-access-mark-hash/1',schemaVersion:1,ordinalBase:1,scope:{domainId:DOMAIN_ID,section:SECTION},counts:{records:rows.length,marked:rows.filter(r=>r.markDates.length).length,unmarked:rows.filter(r=>!r.markDates.length).length,dateFiles:dateFiles.length},byGlobalRank:Object.fromEntries(rows.map(r=>[String(r.globalRank),[r.entryId,r.markDates]]))};
+  const st=min(structure),mh=min(markHash),arts=[];for(let i=0;i<tuples.length;i+=SHARD){const a=tuples.slice(i,i+SHARD),n=arts.length,p='data/seed-access/records-'+String(n).padStart(3,'0')+'.json',t=min(a);arts.push({path:p,text:t,gitBlobSha:gitsha(t),count:a.length,globalStartRank:a[0][0],globalEndRank:a.at(-1)[0]});}
+  const manifest={protocol:'vix-seed-access/2',schemaVersion:2,ordinalBase:1,scope:{domainId:DOMAIN_ID,domainName:domain.name,domainAbsoluteOrdinal:domainAbsolute,section:SECTION,records:rows.length},binding:{seed:{direction:'one-way',source:'data/seed5-runtime',target:'data/seed-access',sourceAuthoritative:true,targetDerived:true,writeBack:false},marks:{source:'data/seed-access/dates',sourceAuthoritativeForMarks:true,calendar:'internal-proleptic-gregorian',epoch:'0001-01-01',externalDateMeaning:false,writeBackToSeed:false}},source:{manifestPath:'data/seed5-runtime/manifest.json',manifestSnapshot:seed,derivationInputs:['meta','entries','memberships']},semantics:{ownership:'first visible normal membership inside domain_general_english by collection.order, sourceOrder, collection.name, collection.id, membership.id',priority:'visible general-English collection order -> owner sourceOrder -> entryId',display:'within owning collection: normalizedText localeCompare(en) -> entryId',scopeFilter:'domain_general_english AND section=word',letterOrder:LETTERS,markValue:'markDates is derived only from date files; [] means unmarked'},recordTuple:fields,counts:{collections:structure.collections.length,records:tuples.length,marked:markHash.counts.marked,unmarked:markHash.counts.unmarked,dateFiles:dateFiles.length},structure:{path:'data/seed-access/structure.json',gitBlobSha:gitsha(st)},markHash:{path:'data/seed-access/mark-hash.json',gitBlobSha:gitsha(mh)},dates:dateFiles.map(f=>({path:f.path,date:f.date,count:f.globalRanks.length,gitBlobSha:f.gitBlobSha})),records:arts.map(({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank})=>({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank}))};
+  return{out:new Map([['data/seed-access/manifest.json',min(manifest)],['data/seed-access/structure.json',st],['data/seed-access/mark-hash.json',mh],...arts.map(a=>[a.path,a.text])]),files:new Set(arts.map(a=>path.basename(a.path)))};
 }
 async function verify(out,files){let ok=true;for(const[p,e]of out){try{if(await fs.readFile(path.join(ROOT,p),'utf8')!==e){console.error('STALE '+p);ok=false;}}catch{console.error('MISSING '+p);ok=false;}}for(const n of await fs.readdir(OUT).catch(()=>[])){if(/^records-\d{3}\.json$/.test(n)&&!files.has(n)){console.error('EXTRA data/seed-access/'+n);ok=false;}}if(!ok)process.exitCode=1;else console.log('seed-access is current');}
 async function write(out,files){await fs.mkdir(OUT,{recursive:true});for(const n of await fs.readdir(OUT).catch(()=>[])){if(/^records-\d{3}\.json$/.test(n)&&!files.has(n))await fs.rm(path.join(OUT,n),{force:true});}for(const[p,c]of out){const f=path.join(ROOT,p);await fs.mkdir(path.dirname(f),{recursive:true});await fs.writeFile(f,c,'utf8');}console.log('wrote '+out.size+' seed-access artifacts');}

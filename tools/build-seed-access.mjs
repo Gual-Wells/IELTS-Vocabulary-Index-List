@@ -20,26 +20,21 @@ async function arrays(specs,tag=false){const out=[];for(let i=0;i<specs.length;i
 const inc=(m,k)=>{const n=(m.get(k)||0)+1;m.set(k,n);return n;};
 const section=(e,d)=>d.contentMode==='nonStructured'?'content':e.kind==='phrase'?'phrase':e.kind==='content'?'content':'word';
 const letter=e=>{const x=String(e.normalizedText||'').charAt(0).toUpperCase();return /^[A-Z]$/.test(x)?x:'#';};
-const dateCmp=(a,b)=>{const [ay,am,ad]=a.split('-'),[by,bm,bd]=b.split('-'),A=BigInt(ay),B=BigInt(by);return A<B?-1:A>B?1:Number(am)-Number(bm)||Number(ad)-Number(bd);};
-const leap=y=>y%400n===0n||(y%4n===0n&&y%100n!==0n);
-function validInternalDate(year,month,day){const y=BigInt(year),m=Number(month),d=Number(day);if(y<1n||m<1||m>12||d<1)return false;const md=[31,leap(y)?29:28,31,30,31,30,31,31,30,31,30,31][m-1];return d<=md;}
+function validInternalDateLabel(label){const m=/^(\d{2})-(\d{2})$/.exec(label);if(!m)return false;const month=Number(m[1]),day=Number(m[2]);if(month<1||month>12||day<1)return false;const md=[31,29,31,30,31,30,31,31,30,31,30,31][month-1];return day<=md;}
 async function loadDates(recordCount){
   const files=[];
-  for(const yd of await fs.readdir(DATES,{withFileTypes:true}).catch(()=>[])){
-    if(!yd.isDirectory()||!/^\d{4,}$/.test(yd.name)||BigInt(yd.name)<1n)throw Error('invalid date year '+yd.name);
-    for(const fd of await fs.readdir(path.join(DATES,yd.name),{withFileTypes:true})){
-      const m=/^(\d{2})-(\d{2})\.json$/.exec(fd.name);
-      if(!fd.isFile()||!m)throw Error('invalid date file '+yd.name+'/'+fd.name);
-      const date=yd.name+'-'+m[1]+'-'+m[2];
-      if(!validInternalDate(yd.name,m[1],m[2]))throw Error('invalid internal date '+date);
-      const rel='data/seed-access/dates/'+yd.name+'/'+fd.name;
-      const text=await fs.readFile(path.join(ROOT,rel),'utf8'),v=JSON.parse(text);
-      if(v.protocol!=='vix-seed-access-date/1'||v.schemaVersion!==1||v.date!==date||!Array.isArray(v.globalRanks))throw Error('invalid date payload '+rel);
-      let prev=0;for(const rank of v.globalRanks){if(!Number.isInteger(rank)||rank<1||rank>recordCount||rank<=prev)throw Error('invalid date rank '+rel+'#'+rank);prev=rank;}
-      files.push({path:rel,date,globalRanks:v.globalRanks,gitBlobSha:gitsha(text)});
-    }
+  for(const fd of await fs.readdir(DATES,{withFileTypes:true}).catch(()=>[])){
+    const m=/^(\d{2}-\d{2})\.json$/.exec(fd.name);
+    if(!fd.isFile()||!m)throw Error('invalid date file '+fd.name);
+    const date=m[1];
+    if(!validInternalDateLabel(date))throw Error('invalid internal date label '+date);
+    const rel='data/seed-access/dates/'+fd.name;
+    const text=await fs.readFile(path.join(ROOT,rel),'utf8'),v=JSON.parse(text);
+    if(v.protocol!=='vix-seed-access-date/1'||v.schemaVersion!==1||v.date!==date||!Array.isArray(v.globalRanks))throw Error('invalid date payload '+rel);
+    let prev=0;for(const rank of v.globalRanks){if(!Number.isInteger(rank)||rank<1||rank>recordCount||rank<=prev)throw Error('invalid date rank '+rel+'#'+rank);prev=rank;}
+    files.push({path:rel,date,globalRanks:v.globalRanks,gitBlobSha:gitsha(text)});
   }
-  files.sort((a,b)=>dateCmp(a.date,b.date));
+  files.sort((a,b)=>a.date.localeCompare(b.date));
   return files;
 }
 
@@ -81,7 +76,7 @@ async function build(){
   const tuples=rows.map(r=>[r.globalRank,r.entryId,r.text,r.collectionId,r.letter,r.sourceOrder,r.collectionRank,r.letterPriorityRank,r.collectionDisplayRank,r.letterDisplayRank,r.collectionAbsolute,r.collectionRelative,r.letterAlphabet,r.letterPresent,r.entryShardIndex,r.markDates]);
   const markHash={protocol:'vix-seed-access-mark-hash/1',schemaVersion:1,ordinalBase:1,scope:{domainId:DOMAIN_ID,section:SECTION},counts:{records:rows.length,marked:rows.filter(r=>r.markDates.length).length,unmarked:rows.filter(r=>!r.markDates.length).length,dateFiles:dateFiles.length},byGlobalRank:Object.fromEntries(rows.map(r=>[String(r.globalRank),[r.entryId,r.markDates]]))};
   const st=min(structure),mh=min(markHash),arts=[];for(let i=0;i<tuples.length;i+=SHARD){const a=tuples.slice(i,i+SHARD),n=arts.length,p='data/seed-access/records-'+String(n).padStart(3,'0')+'.json',t=min(a);arts.push({path:p,text:t,gitBlobSha:gitsha(t),count:a.length,globalStartRank:a[0][0],globalEndRank:a.at(-1)[0]});}
-  const manifest={protocol:'vix-seed-access/2',schemaVersion:2,ordinalBase:1,scope:{domainId:DOMAIN_ID,domainName:domain.name,domainAbsoluteOrdinal:domainAbsolute,section:SECTION,records:rows.length},binding:{seed:{direction:'one-way',source:'data/seed5-runtime',target:'data/seed-access',sourceAuthoritative:true,targetDerived:true,writeBack:false},marks:{source:'data/seed-access/dates',sourceAuthoritativeForMarks:true,calendar:'internal-proleptic-gregorian',epoch:'0001-01-01',externalDateMeaning:false,writeBackToSeed:false}},source:{manifestPath:'data/seed5-runtime/manifest.json',manifestGitBlobSha:gitsha(seedText),seedRevision:seed.seedRevision,appVersion:seed.appVersion,inputs:{meta:seed.meta,entries:seed.entries,memberships:seed.memberships},counts:{entries:seed.counts.entries,memberships:seed.counts.memberships}},semantics:{ownership:'first visible normal membership inside domain_general_english by collection.order, sourceOrder, collection.name, collection.id, membership.id',priority:'visible general-English collection order -> owner sourceOrder -> entryId',display:'within owning collection: normalizedText localeCompare(en) -> entryId',scopeFilter:'domain_general_english AND section=word',letterOrder:LETTERS,markValue:'markDates is derived only from date files; [] means unmarked'},recordTuple:fields,counts:{collections:structure.collections.length,records:tuples.length,marked:markHash.counts.marked,unmarked:markHash.counts.unmarked,dateFiles:dateFiles.length},structure:{path:'data/seed-access/structure.json',gitBlobSha:gitsha(st)},markHash:{path:'data/seed-access/mark-hash.json',gitBlobSha:gitsha(mh)},dates:dateFiles.map(f=>({path:f.path,date:f.date,count:f.globalRanks.length,gitBlobSha:f.gitBlobSha})),records:arts.map(({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank})=>({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank}))};
+  const manifest={protocol:'vix-seed-access/2',schemaVersion:2,ordinalBase:1,scope:{domainId:DOMAIN_ID,domainName:domain.name,domainAbsoluteOrdinal:domainAbsolute,section:SECTION,records:rows.length},binding:{seed:{direction:'one-way',source:'data/seed5-runtime',target:'data/seed-access',sourceAuthoritative:true,targetDerived:true,writeBack:false},marks:{source:'data/seed-access/dates',sourceAuthoritativeForMarks:true,labelFormat:'MM-DD',firstLabel:'01-01',externalDateMeaning:false,writeBackToSeed:false}},source:{manifestPath:'data/seed5-runtime/manifest.json',manifestGitBlobSha:gitsha(seedText),seedRevision:seed.seedRevision,appVersion:seed.appVersion,inputs:{meta:seed.meta,entries:seed.entries,memberships:seed.memberships},counts:{entries:seed.counts.entries,memberships:seed.counts.memberships}},semantics:{ownership:'first visible normal membership inside domain_general_english by collection.order, sourceOrder, collection.name, collection.id, membership.id',priority:'visible general-English collection order -> owner sourceOrder -> entryId',display:'within owning collection: normalizedText localeCompare(en) -> entryId',scopeFilter:'domain_general_english AND section=word',letterOrder:LETTERS,markValue:'markDates is derived only from date files; [] means unmarked'},recordTuple:fields,counts:{collections:structure.collections.length,records:tuples.length,marked:markHash.counts.marked,unmarked:markHash.counts.unmarked,dateFiles:dateFiles.length},structure:{path:'data/seed-access/structure.json',gitBlobSha:gitsha(st)},markHash:{path:'data/seed-access/mark-hash.json',gitBlobSha:gitsha(mh)},dates:dateFiles.map(f=>({path:f.path,date:f.date,count:f.globalRanks.length,gitBlobSha:f.gitBlobSha})),records:arts.map(({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank})=>({path:p,gitBlobSha:g,count,globalStartRank,globalEndRank}))};
   return{out:new Map([['data/seed-access/manifest.json',min(manifest)],['data/seed-access/structure.json',st],['data/seed-access/mark-hash.json',mh],...arts.map(a=>[a.path,a.text])]),files:new Set(arts.map(a=>path.basename(a.path)))};
 }
 async function verify(out,files){let ok=true;for(const[p,e]of out){try{if(await fs.readFile(path.join(ROOT,p),'utf8')!==e){console.error('STALE '+p);ok=false;}}catch{console.error('MISSING '+p);ok=false;}}for(const n of await fs.readdir(OUT).catch(()=>[])){if(/^records-\d{3}\.json$/.test(n)&&!files.has(n)){console.error('EXTRA data/seed-access/'+n);ok=false;}}if(!ok)process.exitCode=1;else console.log('seed-access is current');}

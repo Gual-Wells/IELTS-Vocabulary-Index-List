@@ -25,21 +25,21 @@ All ranks and ordinals are 1-based. Each collection and letter retains priority-
 
 ## Internal date marks
 
-Marks live in a separate source folder:
+Marks live directly in one flat source folder:
 
-`data/seed-access/dates/<YEAR>/<MM-DD>.json`
+`data/seed-access/dates/<MM-DD>.json`
 
-The internal calendar starts at `0001-01-01`, uses ordinary proleptic-Gregorian month/leap-year rules, and has no connection to external/current dates. Years use at least four digits and may grow beyond four digits; there is no two-digit-year wraparound.
+There is **no year field or year directory**. The label starts from `01-01` and is only an internal month-day marker; it has no connection to the external/current date. The namespace is zero-padded `MM-DD`, with ordinary month/day bounds. Because there is no year component, `02-29` is simply a valid internal label.
 
-A date file is the authoritative mark source for that internal date:
+A date file is the authoritative mark source for that internal label:
 
 ```json
-{"protocol":"vix-seed-access-date/1","schemaVersion":1,"date":"0001-01-01","globalRanks":[]}
+{"protocol":"vix-seed-access-date/1","schemaVersion":1,"date":"01-01","globalRanks":[]}
 ```
 
 `globalRanks` must be strictly increasing, unique, and in the current reduced index range. The same rank may appear in multiple date files.
 
-The last field of every record is `markDates`, derived only from the date folder. `[]` means unmarked; one or more date strings mean marked by those internal dates.
+The last field of every record is `markDates`, derived only from the date folder. `[]` means unmarked; one or more `MM-DD` strings mean marked by those internal labels.
 
 ## Mark hash
 
@@ -57,7 +57,7 @@ Every one of the 15,644 ranks is present, including unmarked entries, so marked/
 - `structure.json`: General-English wordlist/letter navigation
 - `records-*.json`: compact vocabulary records with the derived `markDates` slot
 - `mark-hash.json`: complete rank -> entry/date-state hash
-- `dates/<YEAR>/<MM-DD>.json`: editable mark source
+- `dates/<MM-DD>.json`: editable mark source
 - `tools/build-seed-access.mjs`: zero-dependency generator/checker
 
 ## Regenerate / verify
@@ -67,4 +67,4 @@ node tools/build-seed-access.mjs
 node tools/build-seed-access.mjs --check
 ```
 
-The generator verifies Seed byte lengths/SHA-256 values, validates the internal date tree and rank ranges, preserves date files, writes only generated artifacts, and rejects stale or extra record shards in `--check` mode.
+The generator verifies Seed byte lengths/SHA-256 values, validates the flat `MM-DD` source files and rank ranges, preserves date files, writes only generated artifacts, and rejects stale or extra record shards in `--check` mode.

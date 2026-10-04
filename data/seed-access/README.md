@@ -23,23 +23,19 @@ All ranks and ordinals are 1-based. Each collection and letter retains priority-
 
 `records-*.json` contains the tuple declared by `manifest.json -> recordTuple`. Domain and section are not repeated in every record because they are fixed by the manifest scope.
 
-## Internal date marks
+## Real calendar date marks
 
-Marks live directly in one flat source folder:
+Marks live in one flat source folder: `data/seed-access/dates/<YY-MM-DD>.json`.
 
-`data/seed-access/dates/<MM-DD>.json`
-
-There is **no year field or year directory**. The label starts from `01-01` and is only an internal month-day marker; it has no connection to the external/current date. The namespace is zero-padded `MM-DD`, with ordinary month/day bounds. Because there is no year component, `02-29` is simply a valid internal label.
-
-A date file is the authoritative mark source for that internal label:
+The label records the actual study date in Asia/Shanghai. `YY` denotes 2000–2099; full chapter dates remain `YYYY-MM-DD`. Calendar validation rejects invalid dates, including non-leap-year February 29. There is no artificial start label. A date file is the mark authority:
 
 ```json
-{"protocol":"vix-seed-access-date/1","schemaVersion":1,"date":"01-01","globalRanks":[]}
+{"protocol":"vix-seed-access-date/1","schemaVersion":1,"date":"26-10-02","globalRanks":[]}
 ```
 
-`globalRanks` must be strictly increasing, unique, and in the current reduced index range. The same rank may appear in multiple date files.
+`globalRanks` must be strictly increasing, unique, and in the reduced index range. A rank may occur on multiple real dates. The last tuple field, `markDates`, derives only from these files; `[]` means unmarked.
 
-The last field of every record is `markDates`, derived only from the date folder. `[]` means unmarked; one or more `MM-DD` strings mean marked by those internal labels.
+On 2026-10-04, the existing 40 marks under `10-02` were migrated to `26-10-02`, matching commit `8836e601cad6a5f7ff3c04c2a341faf782450dd1` ("Mark Second Language 2026-10-02 vocabulary"). No vocabulary ranks were added or removed. The empty `01-01` placeholder was removed rather than assigned a fictitious date. Seed data and priority ownership remain unchanged.
 
 ## Mark hash
 
@@ -57,7 +53,7 @@ Every one of the 15,644 ranks is present, including unmarked entries, so marked/
 - `structure.json`: General-English wordlist/letter navigation
 - `records-*.json`: compact vocabulary records with the derived `markDates` slot
 - `mark-hash.json`: complete rank -> entry/date-state hash
-- `dates/<MM-DD>.json`: editable mark source
+- `dates/<YY-MM-DD>.json`: editable mark source
 - `tools/build-seed-access.mjs`: zero-dependency generator/checker
 
 ## Regenerate / verify
@@ -67,4 +63,4 @@ node tools/build-seed-access.mjs
 node tools/build-seed-access.mjs --check
 ```
 
-The generator verifies Seed byte lengths/SHA-256 values, validates the flat `MM-DD` source files and rank ranges, preserves date files, writes only generated artifacts, and rejects stale or extra record shards in `--check` mode.
+The generator verifies Seed byte lengths/SHA-256 values, validates the real `YY-MM-DD` calendar source files and rank ranges, preserves date files, writes only generated artifacts, and rejects stale or extra record shards in `--check` mode.

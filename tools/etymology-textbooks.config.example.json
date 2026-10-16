@@ -1,0 +1,37 @@
+{
+  "output_dir": "textbook",
+  "cache_dir": ".cache/etymology-textbooks",
+  "djvutxt": "djvutxt",
+  "books": [
+    {
+      "key": "chambers",
+      "path": "D:/local-sources/chambers.pdf",
+      "output": "Chambers_Etymology_Chat_Project.md",
+      "title": "Chambers Dictionary of Etymology",
+      "edition": "Barnhart editorial text, copyright 1988; Chambers reprint record through 2004; ISBN 0-550-14230-4",
+      "main_first": 33,
+      "main_last": 1290,
+      "columns": 2
+    },
+    {
+      "key": "oxford",
+      "path": "D:/local-sources/oxford-etymology.pdf",
+      "output": "Oxford_Etymology_Chat_Project.md",
+      "title": "The Oxford Dictionary of English Etymology",
+      "edition": "C. T. Onions, with G. W. S. Friedrichsen and R. W. Burchfield; 1966, reprint record through 1982; ISBN 0-19-861112-9",
+      "main_first": 13,
+      "main_last": 1036,
+      "columns": 2
+    },
+    {
+      "key": "klein",
+      "path": "D:/local-sources/klein.djvu",
+      "output": "Klein_Etymology_Chat_Project.md",
+      "title": "A Comprehensive Etymological Dictionary of the English Language",
+      "edition": "Ernest Klein; unabridged one-volume edition 1971, eighth impression 2003; ISBN 0-444-40930-0",
+      "main_first": 28,
+      "main_last": 870,
+      "columns": 3
+    }
+  ]
+}

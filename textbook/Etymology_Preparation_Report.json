@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "books": [
+    {
+      "book": "chambers",
+      "pages": 1320,
+      "sha256": "2b4859ff315543ede4aae7f0d367b8c428e4b302a401358773b488d402c8dd97",
+      "non_whitespace_character_conservation": "passed",
+      "sample_heading_hits": {
+        "female": true,
+        "salary": true,
+        "cleave": false,
+        "record": true,
+        "island": true,
+        "poison": true,
+        "robot": true,
+        "zymurgy": true
+      },
+      "source_units_accounted": 1360955
+    },
+    {
+      "book": "oxford",
+      "pages": 1037,
+      "sha256": "9f600fc00aeea04d77467c497b83990ecae19900ef2e34a24fd7a2ddeef8fd45",
+      "non_whitespace_character_conservation": "passed",
+      "sample_heading_hits": {
+        "female": false,
+        "salary": false,
+        "cleave": true,
+        "record": true,
+        "island": false,
+        "poison": true,
+        "robot": true,
+        "zymurgy": true
+      },
+      "source_units_accounted": 1002817
+    },
+    {
+      "book": "klein",
+      "pages": 871,
+      "sha256": "fe181638f8e617e232d9ec5b1a54b00d287487de80961aaa271f7144b31e3dba",
+      "non_whitespace_character_conservation": "passed",
+      "sample_heading_hits": {
+        "female": true,
+        "salary": true,
+        "cleave": true,
+        "record": true,
+        "island": false,
+        "poison": true,
+        "robot": true,
+        "zymurgy": true
+      },
+      "source_units_accounted": 221127
+    }
+  ]
+}

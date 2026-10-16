@@ -1,0 +1,95 @@
+{
+  "format": "etymology-retrieval-sources/1",
+  "prepared_on": "2026-10-16",
+  "scope": "Three user-supplied etymology books; existing Collins/Oxford learner books unchanged.",
+  "books": [
+    {
+      "key": "chambers",
+      "output": "Chambers_Etymology_Chat_Project.md",
+      "title": "Chambers Dictionary of Etymology",
+      "edition": "Barnhart editorial text, copyright 1988; Chambers reprint record through 2004; ISBN 0-550-14230-4",
+      "main_first": 33,
+      "main_last": 1290,
+      "columns": 2,
+      "preparer_sha256": "603a9a8ff21168aaaf52e08a41edd7958e4d1426dc53e755c989a9e62db0e50d",
+      "source_file": "Chambers dictionary of etymology (Barnhart, Robert K Steinmetz, Sol) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_bytes": 159164576,
+      "source_sha256": "00d63f9ecc5345b6dd35fa96efe96107740b4c86a5e6bbc4650045f63d9592c5",
+      "output_bytes": 8925620,
+      "output_sha256": "2b4859ff315543ede4aae7f0d367b8c428e4b302a401358773b488d402c8dd97",
+      "source_unit_kind": "OCR words",
+      "counts": {
+        "pages": 1320,
+        "source_units": 1360955,
+        "accounted_source_units": 1360955,
+        "body_rows": 168656
+      },
+      "empty_text_pages": [
+        1,
+        2,
+        3,
+        1317,
+        1320
+      ],
+      "heading_count": 13428,
+      "replacement_characters": 0,
+      "limitations": "Existing OCR, not full semantic or character-level proofreading; headings are inferred. Explicit line wraps/hyphens retained to avoid changing historical forms.",
+      "corrections": "Klein only: comma-space followed by Cyrillic п. in a grammar-label position -> Latin n.; NFC and control removal."
+    },
+    {
+      "key": "oxford",
+      "output": "Oxford_Etymology_Chat_Project.md",
+      "title": "The Oxford Dictionary of English Etymology",
+      "edition": "C. T. Onions, with G. W. S. Friedrichsen and R. W. Burchfield; 1966, reprint record through 1982; ISBN 0-19-861112-9",
+      "main_first": 13,
+      "main_last": 1036,
+      "columns": 2,
+      "preparer_sha256": "603a9a8ff21168aaaf52e08a41edd7958e4d1426dc53e755c989a9e62db0e50d",
+      "source_file": "The Oxford Dictionary of English Etymology (Onions (et al.)) (z-library.sk, 1lib.sk, z-lib.sk).pdf",
+      "source_bytes": 115603032,
+      "source_sha256": "abf2bed4bddb5632f913fac5bb16cef6704fbb0adb28d60c534fc1f1df452210",
+      "output_bytes": 5830483,
+      "output_sha256": "9f600fc00aeea04d77467c497b83990ecae19900ef2e34a24fd7a2ddeef8fd45",
+      "source_unit_kind": "OCR words",
+      "counts": {
+        "pages": 1037,
+        "source_units": 1002817,
+        "body_rows": 132700,
+        "accounted_source_units": 1002817
+      },
+      "empty_text_pages": [],
+      "heading_count": 18418,
+      "replacement_characters": 0,
+      "limitations": "Existing OCR, not full semantic or character-level proofreading; headings are inferred. Explicit line wraps/hyphens retained to avoid changing historical forms.",
+      "corrections": "Klein only: comma-space followed by Cyrillic п. in a grammar-label position -> Latin n.; NFC and control removal."
+    },
+    {
+      "key": "klein",
+      "output": "Klein_Etymology_Chat_Project.md",
+      "title": "A Comprehensive Etymological Dictionary of the English Language",
+      "edition": "Ernest Klein; unabridged one-volume edition 1971, eighth impression 2003; ISBN 0-444-40930-0",
+      "main_first": 28,
+      "main_last": 870,
+      "columns": 3,
+      "preparer_sha256": "603a9a8ff21168aaaf52e08a41edd7958e4d1426dc53e755c989a9e62db0e50d",
+      "source_file": "Kleins Comprehensive Etymological Dictionary of the English Language (Ernest Klein) (z-library.sk, 1lib.sk, z-lib.sk).djvu",
+      "source_bytes": 31244724,
+      "source_sha256": "1c04ea9cb10c025070cdf5d088baec17111b4dbc30f942c0cbf7c227e457cae9",
+      "output_bytes": 10473447,
+      "output_sha256": "fe181638f8e617e232d9ec5b1a54b00d287487de80961aaa271f7144b31e3dba",
+      "source_unit_kind": "OCR lines",
+      "counts": {
+        "pages": 871,
+        "source_units": 221127,
+        "grammar_label_n_repairs": 16,
+        "body_rows": 218846,
+        "accounted_source_units": 221127
+      },
+      "empty_text_pages": [],
+      "heading_count": 47876,
+      "replacement_characters": 0,
+      "limitations": "Existing OCR, not full semantic or character-level proofreading; headings are inferred. Explicit line wraps/hyphens retained to avoid changing historical forms.",
+      "corrections": "Klein only: comma-space followed by Cyrillic п. in a grammar-label position -> Latin n.; NFC and control removal."
+    }
+  ]
+}

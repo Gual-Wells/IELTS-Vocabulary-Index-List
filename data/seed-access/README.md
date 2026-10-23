@@ -37,6 +37,8 @@ The label records the actual study date in Asia/Shanghai. `YY` denotes 2000–20
 
 On 2026-10-04, the existing 40 marks under `10-02` were migrated to `26-10-02`, matching commit `8836e601cad6a5f7ff3c04c2a341faf782450dd1` ("Mark Second Language 2026-10-02 vocabulary"). No vocabulary ranks were added or removed. The empty `01-01` placeholder was removed rather than assigned a fictitious date. Seed data and priority ownership remain unchanged.
 
+On 2026-10-24, the user explicitly requested a one-time reset for The Second Language's new formal series. All 15 legacy date files were removed and the derived index regenerated: 924 marked / 14,720 unmarked became 0 marked / 15,644 unmarked. Vocabulary identity, ordering, Seed binding and the structural index are unchanged. The previous marks remain recoverable from parent commit `644bb8de99184c2ef85dace23f0a2f0240febbcb`; history was not rewritten. An absent `dates/` folder means no marks; the generator/checker accepts it, and marking clients create it when the next real study date is written. This explicit reset does not authorize automatic resets during ordinary daily runs.
+
 ## Mark hash
 
 `mark-hash.json` provides O(1)-style lookup over the whole auxiliary index:

@@ -23,7 +23,7 @@ const letter=e=>{const x=String(e.normalizedText||'').charAt(0).toUpperCase();re
 function validCalendarDateLabel(label){if(!/^\d{2}-\d{2}-\d{2}$/.test(label))return false;const full='20'+label,date=new Date(full+'T00:00:00.000Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===full;}
 async function loadDates(recordCount){
   const files=[];
-  for(const fd of await fs.readdir(DATES,{withFileTypes:true})){
+  for(const fd of await fs.readdir(DATES,{withFileTypes:true}).catch(error=>{if(error.code==='ENOENT')return[];throw error;})){
     const m=/^(\d{2}-\d{2}-\d{2})\.json$/.exec(fd.name);
     if(!fd.isFile()||!m)throw Error('invalid date file '+fd.name);
     const date=m[1];
